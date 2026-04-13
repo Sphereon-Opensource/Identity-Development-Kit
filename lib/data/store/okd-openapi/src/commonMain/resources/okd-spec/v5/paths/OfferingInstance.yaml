@@ -1,0 +1,94 @@
+
+post:
+  summary: POST /offerings/{offeringId}
+  operationId: postFileOnOfferingById
+  description: |
+    POST an file on the offerings.
+
+        For the OKD: Add a document to zitting (offering). example the zittingsverslag.
+        Documenten speciaal voor een persoon (beoordeling etc) moeten op de associatie van deze persoon geplaats worden.
+
+    note:
+    - This endpoint should be implemented by the DMS component, so that the components can upload documents for a offering.
+    - The call is a multipart/form-data call with 2 parts: metadata (json) and file (binary).
+  security:
+    - oAuthFlows:
+      - okd:alldocuments
+      - okd:examdocuments
+  tags:
+    - offerings
+  parameters:
+    - name: offeringId
+      in: path
+      description: Offering ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+  requestBody:
+    description: Multipart form data with metadata and file to upload
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          type: object
+          properties:
+            metadata:
+              $ref: '../schemas/ComponentOffering.yaml'
+            file:
+              type: string
+              format: binary
+              description: File to upload
+          required:
+            - metadata
+            - file
+        example:
+          metadata:
+            offeringId: "c9c3875b-0c6b-435a-a8a4-211bf66620b5"
+            primaryCode:
+              - codeType: offeringCode
+                code: "INFOMQNM-20FS"
+            offeringType: component
+            name:
+              - language: nl-NL
+                value: Examen Mediabeheer K3-W1
+            description:
+              - language: nl-NL
+                value: A beautiful description
+            consumers:
+              - consumerKey: nl-okd
+                documentType: examination
+                documentSubtype : Examendossier
+                documentId: dbd3e12a-ed8b-4488-ac34-26fd4f64f40b
+                documentName: verslag-100245.pdf
+                retentionPeriodSuggestion: 6M
+            startDateTime: 2023-10-12T12:00:50Z
+            endDateTime: 2023-10-14T12:00:50Z
+            teachingLanguage: nld
+            resultExpected: true
+          file: "(binary)"
+
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/DocumentUploadResponse.yaml'
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '422':
+      $ref: '../schemas/ErrorUnprocessableContent.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'
+

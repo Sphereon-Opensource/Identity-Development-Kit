@@ -1,0 +1,62 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:PaletteScale.kt$PaletteScale.Companion$fun fromTonalPalette(palette: TonalPalette): PaletteScale</ID>
+    <ID>ClassOrdering:SystemDefaults.kt$SystemDefaults$private fun TokenBuilder.addVariantIndependentExtensions()</ID>
+    <ID>ComplexInterface:ThemeStore.kt$ThemeStore</ID>
+    <ID>LargeClass:SystemDefaults.kt$SystemDefaults</ID>
+    <ID>LongMethod:SystemDefaults.kt$SystemDefaults$private fun TokenBuilder.addVariantIndependentExtensions()</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#000000"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#1D1B20"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#49454F"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#D0BCFF"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#E6E0E9"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#EADDFF"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"#FFFFFF"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"-0.25sp"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"0.15sp"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"0.1sp"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"0.25sp"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"0.4sp"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"0.5sp"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"100ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"150ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"200ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"250ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"300ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"350ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"400ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"450ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"500ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"550ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"600ms"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"Roboto Mono"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"Roboto"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"cubic-bezier(0, 0, 0, 1.0)"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"cubic-bezier(0, 0, 1, 1)"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"cubic-bezier(0.05, 0.7, 0.1, 1.0)"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"cubic-bezier(0.2, 0.0, 0, 1.0)"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"cubic-bezier(0.3, 0, 1, 1)"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"cubic-bezier(0.3, 0.0, 0.8, 0.15)"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{color.inverseOnSurface}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{color.onSurfaceVariant}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{color.onSurface}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{color.outlineVariant}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{color.outline}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{color.primary}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{shadow.elevation.lg}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{shadow.elevation.sm}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{shadow.elevation.xl}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{shadow.elevation.xs}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{shadow.elevation.xxl}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{spacing.1}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{spacing.2}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{spacing.4}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{spacing.6}"</ID>
+    <ID>StringLiteralDuplication:SystemDefaults.kt$SystemDefaults$"{spacing.8}"</ID>
+    <ID>TooManyFunctions:ThemeStore.kt$ThemeStore</ID>
+    <ID>UnusedPrivateProperty:DesignSystemPaletteResolver.kt$// Tertiary hue offset from primary private const val TERTIARY_HUE_OFFSET = 60.0</ID>
+    <ID>UnusedPrivateProperty:DesignSystemPaletteResolver.kt$private const val HUE_FULL_CIRCLE = 360.0</ID>
+  </CurrentIssues>
+</SmellBaseline>

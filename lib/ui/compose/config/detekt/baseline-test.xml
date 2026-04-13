@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>TooGenericExceptionThrown:BlobExplorerTest.kt$BlobExplorerTest.&lt;no name provided>$throw RuntimeException("Test error")</ID>
+    <ID>TooGenericExceptionThrown:BlobExplorerTest.kt$BlobExplorerTest.&lt;no name provided>$throw RuntimeException("list failed")</ID>
+  </CurrentIssues>
+</SmellBaseline>

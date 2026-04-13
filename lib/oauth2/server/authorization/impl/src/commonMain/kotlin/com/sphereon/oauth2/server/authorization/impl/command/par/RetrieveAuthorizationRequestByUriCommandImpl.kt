@@ -1,0 +1,112 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sphereon.oauth2.server.authorization.impl.command.par
+
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.server.authorization.command.RetrieveAuthorizationRequestByUriCommand
+import com.sphereon.oauth2.server.authorization.command.RetrieveByRequestUriArgs
+import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
+import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
+
+/**
+ * Implementation of RetrieveAuthorizationRequestByUriCommand
+ *
+ * Retrieves stored authorization requests by request_uri for PAR (RFC 9126).
+ *
+ * When a client uses a request_uri in an authorization request:
+ * ```
+ * GET /authorize?client_id=CLIENT_ID&request_uri=urn:ietf:params:oauth:request_uri:ABC123
+ * ```
+ *
+ * This command:
+ * 1. Retrieves the stored authorization request by request_uri
+ * 2. Verifies the request has not expired
+ * 3. Verifies the request has not been used (single-use or limited-use)
+ * 4. Verifies the client_id matches the stored request
+ * 5. Marks the request as used (or consumes it)
+ * 6. Returns the verified authorization request
+ *
+ * Security considerations:
+ * - request_uri MUST be validated before retrieval
+ * - Stored requests MUST be short-lived (typically 90 seconds)
+ * - Stored requests SHOULD be single-use
+ * - Client binding MUST be verified
+ * - Expired requests MUST be rejected
+ */
+@Inject
+@SingleIn(SessionScope::class)
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("RetrieveAuthorizationRequestByUriCommandImpl", exact = true)
+class RetrieveAuthorizationRequestByUriCommandImpl(
+    execution: SessionExecution,
+) : TypedServiceCommandAdapter<RetrieveByRequestUriArgs, VerifiedAuthorizationRequest>(
+        commandId = RetrieveAuthorizationRequestByUriCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<RetrieveByRequestUriArgs>(),
+        outputTypeToken = typeToken<VerifiedAuthorizationRequest>(),
+    ),
+    RetrieveAuthorizationRequestByUriCommand {
+    override val commandId: String get() = RetrieveAuthorizationRequestByUriCommand.COMMAND_ID
+
+    override suspend fun supports(args: Any): Boolean = args is RetrieveByRequestUriArgs
+
+    override suspend fun doExecute(
+        args: RetrieveByRequestUriArgs,
+        applyDuring: (RetrieveByRequestUriArgs) -> RetrieveByRequestUriArgs,
+    ): IdkResult<VerifiedAuthorizationRequest, IdkError> {
+        val applied = applyDuring(args)
+        return executeInternal(applied.requestUri).mapError { IdkError.fromDTO(it) }
+    }
+
+    private suspend fun executeInternal(requestUri: String): IdkResult<VerifiedAuthorizationRequest, AuthorizationServerError> {
+        // Verify request_uri format (RFC 9126 Section 2.2)
+        if (!requestUri.startsWith("urn:ietf:params:oauth:request_uri:")) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "Invalid request_uri format",
+                    exception = null,
+                ),
+            )
+        }
+
+        // TODO: Implement actual storage retrieval
+        // For now, return NOT_FOUND to indicate the request_uri was not found
+        // In a full implementation, this would:
+        // 1. Retrieve stored request from RequestUriStorage
+        // 2. Verify expiration
+        // 3. Verify not already used
+        // 4. Mark as used
+        // 5. Return verified authorization request
+
+        return Err(
+            AuthorizationServerError.InvalidRequest(
+                details = "Request URI not found: $requestUri",
+                exception = null,
+            ),
+        )
+    }
+}

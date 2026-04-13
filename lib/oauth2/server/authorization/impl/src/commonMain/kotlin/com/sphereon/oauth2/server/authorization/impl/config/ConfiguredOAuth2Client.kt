@@ -1,0 +1,66 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sphereon.oauth2.server.authorization.impl.config
+
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.common.model.ResponseType
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.model.ClientType
+
+internal data class ConfiguredOAuth2Client(
+    val configKey: String,
+    val enabled: Boolean = true,
+    val clientId: String,
+    val clientSecret: String? = null,
+    val clientName: String? = null,
+    val clientType: ClientType = ClientType.CONFIDENTIAL,
+    val grantTypes: List<GrantType>,
+    val responseTypes: List<ResponseType> = emptyList(),
+    val redirectUris: List<String> = emptyList(),
+    val allowedScopes: List<String>? = null,
+    val tokenEndpointAuthMethod: ClientAuthenticationMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+    val requirePkce: Boolean = clientType == ClientType.PUBLIC,
+    val requirePushedAuthorizationRequests: Boolean = false,
+    val dpopBoundAccessTokens: Boolean = false,
+    val accessTokenLifetime: Int = 3600,
+    val refreshTokenLifetime: Int? = null,
+    val authorizationCodeLifetime: Int = 600,
+    val trustedAttesterIssuers: List<String>? = null,
+    val trustedAttesterJwksUris: Map<String, String>? = null,
+) {
+    fun toClientRegistration(): ClientRegistration =
+        ClientRegistration(
+            clientId = clientId,
+            clientSecret = clientSecret,
+            clientName = clientName,
+            clientType = clientType,
+            grantTypes = grantTypes,
+            responseTypes = responseTypes,
+            redirectUris = redirectUris,
+            allowedScopes = allowedScopes,
+            tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            requirePkce = requirePkce,
+            requirePushedAuthorizationRequests = requirePushedAuthorizationRequests,
+            dpopBoundAccessTokens = dpopBoundAccessTokens,
+            accessTokenLifetime = accessTokenLifetime,
+            refreshTokenLifetime = refreshTokenLifetime,
+            authorizationCodeLifetime = authorizationCodeLifetime,
+            trustedAttesterIssuers = trustedAttesterIssuers,
+            trustedAttesterJwksUris = trustedAttesterJwksUris,
+        )
+}

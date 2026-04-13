@@ -1,0 +1,13 @@
+{
+  "issuer": "EXTERNAL_BASE_URL",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "z9WGorrwGNwzG3NKiyORBCrtKp8gXpp7G3a314Fvsi8",
+        "y": "Umng8ZKxkbYE-EH0kae9L9Uw5laC_djwY3cSiDJTB0c"
+      }
+    ]
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "vct": "EuPid",
+  "name": "EU Person Identification Data",
+  "description": "Personal identification data credential per EU Digital Identity Wallet (EUDI) ARF",
+  "display": [
+    {
+      "locale": "en-US",
+      "name": "EU Personal ID",
+      "description": "Personal identification credential for EU citizens",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "European Union"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
+    },
+    {
+      "locale": "de-DE",
+      "name": "EU Personalausweis",
+      "description": "Personenidentifikationsnachweis für EU-Bürger",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "Europäische Union"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
+    },
+    {
+      "locale": "es-ES",
+      "name": "Identificación Personal UE",
+      "description": "Credencial de identificación personal para ciudadanos de la UE",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "Unión Europea"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
+    },
+    {
+      "locale": "nl-NL",
+      "name": "EU Persoons-ID",
+      "description": "Persoonlijk identificatiebewijs voor EU-burgers",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "Europese Unie"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
+    }
+  ],
+  "claims": [
+    {
+      "path": ["family_name"],
+      "display": [
+        { "locale": "en-US", "label": "Family Name", "description": "Last name" },
+        { "locale": "de-DE", "label": "Nachname", "description": "Familienname" },
+        { "locale": "es-ES", "label": "Apellido", "description": "Apellido del titular" },
+        { "locale": "nl-NL", "label": "Achternaam", "description": "Achternaam" }
+      ],
+      "mandatory": true
+    },
+    {
+      "path": ["given_name"],
+      "display": [
+        { "locale": "en-US", "label": "Given Name", "description": "First name" },
+        { "locale": "de-DE", "label": "Vorname", "description": "Vorname" },
+        { "locale": "es-ES", "label": "Nombre", "description": "Nombre de pila" },
+        { "locale": "nl-NL", "label": "Voornaam", "description": "Voornaam" }
+      ],
+      "mandatory": true
+    },
+    {
+      "path": ["birth_date"],
+      "display": [
+        { "locale": "en-US", "label": "Date of Birth", "description": "Birth date" },
+        { "locale": "de-DE", "label": "Geburtsdatum", "description": "Geburtsdatum" },
+        { "locale": "es-ES", "label": "Fecha de Nacimiento", "description": "Fecha de nacimiento" },
+        { "locale": "nl-NL", "label": "Geboortedatum", "description": "Geboortedatum" }
+      ],
+      "sd": "always",
+      "mandatory": true
+    },
+    {
+      "path": ["age_over_18"],
+      "display": [
+        { "locale": "en-US", "label": "Age Over 18", "description": "Age attestation: 18 or older" },
+        { "locale": "de-DE", "label": "Alter über 18", "description": "Altersnachweis: 18 oder älter" },
+        { "locale": "es-ES", "label": "Mayor de 18", "description": "Verificación de edad: 18 o más" },
+        { "locale": "nl-NL", "label": "Ouder dan 18", "description": "Leeftijdsverificatie: 18 of ouder" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["nationality"],
+      "display": [
+        { "locale": "en-US", "label": "Nationality", "description": "Country of citizenship" },
+        { "locale": "de-DE", "label": "Staatsangehörigkeit", "description": "Land der Staatsangehörigkeit" },
+        { "locale": "es-ES", "label": "Nacionalidad", "description": "País de ciudadanía" },
+        { "locale": "nl-NL", "label": "Nationaliteit", "description": "Land van nationaliteit" }
+      ],
+      "sd": "always",
+      "mandatory": true
+    },
+    {
+      "path": ["resident_country"],
+      "display": [
+        { "locale": "en-US", "label": "Country of Residence", "description": "Country of residence" },
+        { "locale": "de-DE", "label": "Wohnsitzland", "description": "Land des Wohnsitzes" },
+        { "locale": "es-ES", "label": "País de Residencia", "description": "País de residencia" },
+        { "locale": "nl-NL", "label": "Woonland", "description": "Land van woonplaats" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["resident_city"],
+      "display": [
+        { "locale": "en-US", "label": "City", "description": "City of residence" },
+        { "locale": "de-DE", "label": "Stadt", "description": "Wohnort" },
+        { "locale": "es-ES", "label": "Ciudad", "description": "Ciudad de residencia" },
+        { "locale": "nl-NL", "label": "Woonplaats", "description": "Woonplaats" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["resident_postal_code"],
+      "display": [
+        { "locale": "en-US", "label": "Postal Code", "description": "Postal code" },
+        { "locale": "de-DE", "label": "Postleitzahl", "description": "Postleitzahl" },
+        { "locale": "es-ES", "label": "Código Postal", "description": "Código postal" },
+        { "locale": "nl-NL", "label": "Postcode", "description": "Postcode" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["resident_street"],
+      "display": [
+        { "locale": "en-US", "label": "Street Address", "description": "Street and number" },
+        { "locale": "de-DE", "label": "Straße", "description": "Straße und Hausnummer" },
+        { "locale": "es-ES", "label": "Dirección", "description": "Calle y número" },
+        { "locale": "nl-NL", "label": "Straat", "description": "Straat en huisnummer" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["issuing_authority"],
+      "display": [
+        { "locale": "en-US", "label": "Issuing Authority", "description": "Authority that issued the credential" },
+        { "locale": "de-DE", "label": "Ausstellende Behörde", "description": "Ausstellende Behörde" },
+        { "locale": "es-ES", "label": "Autoridad Emisora", "description": "Autoridad que emitió la credencial" },
+        { "locale": "nl-NL", "label": "Uitgevende Instantie", "description": "Instantie die het bewijs heeft uitgegeven" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["issuing_country"],
+      "display": [
+        { "locale": "en-US", "label": "Issuing Country", "description": "Country of issuance" },
+        { "locale": "de-DE", "label": "Ausstellungsland", "description": "Land der Ausstellung" },
+        { "locale": "es-ES", "label": "País Emisor", "description": "País de emisión" },
+        { "locale": "nl-NL", "label": "Uitgevend Land", "description": "Land van uitgifte" }
+      ],
+      "mandatory": true
+    },
+    {
+      "path": ["document_number"],
+      "display": [
+        { "locale": "en-US", "label": "Document Number", "description": "ID document number" },
+        { "locale": "de-DE", "label": "Dokumentennummer", "description": "Ausweisnummer" },
+        { "locale": "es-ES", "label": "Número de Documento", "description": "Número de documento de identidad" },
+        { "locale": "nl-NL", "label": "Documentnummer", "description": "Documentnummer" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["gender"],
+      "display": [
+        { "locale": "en-US", "label": "Gender", "description": "Gender" },
+        { "locale": "de-DE", "label": "Geschlecht", "description": "Geschlecht" },
+        { "locale": "es-ES", "label": "Género", "description": "Género" },
+        { "locale": "nl-NL", "label": "Geslacht", "description": "Geslacht" }
+      ],
+      "sd": "always"
+    },
+    {
+      "path": ["birth_place"],
+      "display": [
+        { "locale": "en-US", "label": "Place of Birth", "description": "Place of birth" },
+        { "locale": "de-DE", "label": "Geburtsort", "description": "Geburtsort" },
+        { "locale": "es-ES", "label": "Lugar de Nacimiento", "description": "Lugar de nacimiento" },
+        { "locale": "nl-NL", "label": "Geboorteplaats", "description": "Geboorteplaats" }
+      ],
+      "sd": "always"
+    }
+  ]
+}

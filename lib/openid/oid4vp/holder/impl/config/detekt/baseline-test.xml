@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:SimpleParseTest.kt$SimpleParseTest.&lt;no name provided>$override val commands: JarService.Commands get() = TODO("Not needed")</ID>
+  </CurrentIssues>
+</SmellBaseline>

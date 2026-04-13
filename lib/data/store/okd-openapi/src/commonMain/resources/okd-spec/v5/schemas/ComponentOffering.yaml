@@ -1,0 +1,15 @@
+allOf:
+  - $ref: '../schemas/OfferingId.yaml'
+  - $ref: '../schemas/ComponentOfferingProperties.yaml'
+  - type: object
+    required:
+      - offeringId
+      - startDateTime
+      - endDateTime
+      - primaryCode
+      - offeringType
+      - name
+      - description
+      - teachingLanguage
+      - resultExpected
+

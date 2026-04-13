@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:RestApiTransport.kt$RestApiTransport$override suspend fun open( senderKey: CoseKeyType, id: String, engagementData: EngagementData?, ): IdkResult&lt;String, IdkErrorType></ID>
+    <ID>LongMethod:RestApiTransport.kt$RestApiTransport$override suspend fun open( senderKey: CoseKeyType, id: String, engagementData: EngagementData?, ): IdkResult&lt;String, IdkErrorType></ID>
+    <ID>LongMethod:RestApiTransport.kt$RestApiTransport$private fun verifyKeyTypesAndCurves( deviceEngagement: DeviceEngagement, readerEngagement: ReaderEngagement, ): IdkResult&lt;Unit, IdkErrorType></ID>
+    <ID>LongParameterList:RestApiTransport.kt$RestApiTransport$( connectionMethod: RestApiConnectionMethod, execution: SessionExecution, private val httpClient: HttpClient, private val cborEncoder: CborEncoder, private val deviceRequestCborCodec: DeviceRequestCborCodec, private val deviceEngagementCborCodec: DeviceEngagementCborCodec, private val readerEngagementCborCodec: ReaderEngagementCborCodec, private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec, private val sessionDataCborCodec: SessionDataCborCodec, private val sessionTranscriptCborCodec: SessionTranscriptCborCodec, private val coseKeyCborCodec: CoseKeyCborCodec, override val role: MdocRole, engagementData: EngagementData?, )</ID>
+    <ID>LongParameterList:RestApiTransportFactory.kt$RestApiTransportFactory$( private val httpClientFactory: HttpClientFactory, private val cborEncoder: CborEncoder, private val deviceRequestCborCodec: DeviceRequestCborCodec, private val deviceEngagementCborCodec: DeviceEngagementCborCodec, private val readerEngagementCborCodec: ReaderEngagementCborCodec, private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec, private val sessionDataCborCodec: SessionDataCborCodec, private val sessionTranscriptCborCodec: SessionTranscriptCborCodec, private val coseKeyCborCodec: CoseKeyCborCodec, )</ID>
+    <ID>MagicNumber:RestApiTransport.kt$RestApiTransport$0x80</ID>
+    <ID>MagicNumber:RestApiTransport.kt$RestApiTransport$0xE0</ID>
+    <ID>MagicNumber:RestApiTransport.kt$RestApiTransport$16</ID>
+    <ID>MagicNumber:RestApiTransport.kt$RestApiTransport$32</ID>
+    <ID>MissingPackageDeclaration:RestApiTransport.kt$.RestApiTransport.kt</ID>
+    <ID>ReturnCount:RestApiTransport.kt$RestApiTransport$private fun verifyCipherSuite( deviceEngagement: DeviceEngagement, readerEngagement: ReaderEngagement, ): IdkResult&lt;Unit, IdkErrorType></ID>
+    <ID>ReturnCount:RestApiTransport.kt$RestApiTransport$private fun verifyKeyTypesAndCurves( deviceEngagement: DeviceEngagement, readerEngagement: ReaderEngagement, ): IdkResult&lt;Unit, IdkErrorType></ID>
+    <ID>TooGenericExceptionCaught:RestApiTransport.kt$RestApiTransport$e: Error</ID>
+    <ID>UseCheckOrError:RestApiTransport.kt$RestApiTransport$throw IllegalStateException("DeviceRequest not set for REST API holder")</ID>
+    <ID>UseCheckOrError:RestApiTransport.kt$RestApiTransport$throw IllegalStateException("No data in decrypted session data")</ID>
+    <ID>UseCheckOrError:RestApiTransport.kt$RestApiTransport$throw IllegalStateException("Session encryption not initialized. Call open() first.")</ID>
+  </CurrentIssues>
+</SmellBaseline>

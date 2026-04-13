@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UnusedParameter:EventCommandExtension.kt$EventCommandExtension$args: Arg</ID>
+    <ID>UnusedPrivateProperty:DefaultEventBuilder.kt$DefaultEventBuilder$private val scope: IdkScope</ID>
+  </CurrentIssues>
+</SmellBaseline>

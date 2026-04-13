@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:TypedUniversalOid4vpCommands.kt$CreateAuthRequestServiceCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>ClassOrdering:TypedUniversalOid4vpCommands.kt$DeleteAuthRequestServiceCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>ClassOrdering:TypedUniversalOid4vpCommands.kt$GetAuthRequestStatusServiceCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>StringLiteralDuplication:UniversalOid4vpCommands.kt$CreateAuthRequestEndpointCommand.Companion$"auth-requests"</ID>
+    <ID>StringLiteralDuplication:UniversalOid4vpCommands.kt$CreateAuthRequestEndpointCommand.Companion$"universal-oid4vp"</ID>
+  </CurrentIssues>
+</SmellBaseline>

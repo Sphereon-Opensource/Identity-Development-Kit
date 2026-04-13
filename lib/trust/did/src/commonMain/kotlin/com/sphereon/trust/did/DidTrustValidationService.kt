@@ -1,0 +1,176 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0
+ */
+
+package com.sphereon.trust.did
+
+import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.di.session.SessionScope
+import com.sphereon.did.resolver.DidResolutionOptions
+import com.sphereon.did.resolver.ResolveDidArgs
+import com.sphereon.did.resolver.ResolveDidCommand
+import com.sphereon.did.utils.ParsedDid
+import com.sphereon.trust.core.TrustValidationService
+import com.sphereon.trust.core.config.TrustConfigProvider
+import com.sphereon.trust.core.model.TrustAnchor
+import com.sphereon.trust.core.model.TrustContext
+import com.sphereon.trust.core.model.TrustStatus
+import com.sphereon.trust.core.model.TrustValidationRequest
+import com.sphereon.trust.core.model.TrustValidationResult
+import com.sphereon.trust.core.validation.AbstractTrustValidationService
+import com.sphereon.trust.did.extractor.DidEntityInfoExtractor
+import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.binding
+import kotlin.time.Clock
+
+/**
+ * DID-based trust validation service.
+ *
+ * Two-layer validation:
+ * 1. Method allow-list gate: The DID's method MUST be in the configured allowedMethods list.
+ * 2. Specific DID trust: The DID is trusted if it's in trustedDids or its controller is.
+ *
+ * Configuration is read from properties under `trust.anchors.did.*` via TrustConfigProvider.
+ * Request-level parameters override config (e.g., context.parameters["allowedMethods"]).
+ */
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesIntoSet(scope = SessionScope::class, binding = binding<TrustValidationService>())
+class DidTrustValidationService(
+    private val resolveDidCommand: ResolveDidCommand,
+    private val trustConfigProvider: TrustConfigProvider,
+    private val execution: SessionExecution,
+    private val entityInfoExtractor: DidEntityInfoExtractor,
+) : AbstractTrustValidationService("did", setOf(TrustContext.TYPE_DID)) {
+    private val logger = execution.log.logManager.withTagAsync("DidTrustValidationService")
+
+    override suspend fun validate(request: TrustValidationRequest): TrustValidationResult {
+        logger.debug("Validating DID trust for context: ${request.context}")
+
+        val did =
+            request.context.parameters["did"]
+                ?: return TrustValidationResult(
+                    trusted = false,
+                    status = TrustStatus.VALIDATION_ERROR,
+                    details = "No DID specified in context parameters",
+                    validatedAt = Clock.System.now(),
+                )
+
+        val parsed =
+            ParsedDid.tryParse(did)
+                ?: return TrustValidationResult(
+                    trusted = false,
+                    status = TrustStatus.VALIDATION_ERROR,
+                    details = "Invalid DID: $did",
+                    validatedAt = Clock.System.now(),
+                )
+
+        // Read config; request parameters override config values
+        val didConfig = trustConfigProvider.getTrustConfig().anchors.did
+        val allowedMethods =
+            request.context.parameters["allowedMethods"]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?: didConfig.allowedMethods
+        val trustedDids =
+            request.context.parameters["trustedDids"]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?: didConfig.trustedDids
+
+        // Layer 1: Method allow-list gate
+        if (allowedMethods.isNotEmpty() && parsed.method !in allowedMethods) {
+            return TrustValidationResult(
+                trusted = false,
+                status = TrustStatus.UNTRUSTED,
+                details = "DID method '${parsed.method}' is not in the allowed methods list: $allowedMethods",
+                validatedAt = Clock.System.now(),
+            )
+        }
+
+        // Layer 2: Specific DID trust
+        if (trustedDids.isNotEmpty()) {
+            if (did in trustedDids) {
+                val result =
+                    TrustValidationResult(
+                        trusted = true,
+                        status = TrustStatus.TRUSTED,
+                        details = "DID is in the trusted DIDs list",
+                        validatedAt = Clock.System.now(),
+                    )
+                return enrichWithEntityInfo(result, request, entityInfoExtractor)
+            }
+
+            // Check controller DID
+            return try {
+                val result =
+                    resolveDidCommand.execute(
+                        ResolveDidArgs(did = did, options = DidResolutionOptions()),
+                    )
+                if (result.isErr) {
+                    return TrustValidationResult(
+                        trusted = false,
+                        status = TrustStatus.VALIDATION_ERROR,
+                        details = "Failed to resolve DID: ${result.error}",
+                        validatedAt = Clock.System.now(),
+                    )
+                }
+                val resolutionResult = result.value
+                if (resolutionResult.didResolutionMetadata.error != null) {
+                    return TrustValidationResult(
+                        trusted = false,
+                        status = TrustStatus.VALIDATION_ERROR,
+                        details = "DID resolution error: ${resolutionResult.didResolutionMetadata.error}",
+                        validatedAt = Clock.System.now(),
+                    )
+                }
+
+                val controller = resolutionResult.didDocument?.controller
+                val controllerTrusted = controller != null && controller in trustedDids
+
+                if (controllerTrusted) {
+                    enrichWithEntityInfo(
+                        TrustValidationResult(
+                            trusted = true,
+                            status = TrustStatus.TRUSTED,
+                            details = "DID's controller is in the trusted DIDs list",
+                            validatedAt = Clock.System.now(),
+                        ),
+                        request,
+                        entityInfoExtractor,
+                    )
+                } else {
+                    TrustValidationResult(
+                        trusted = false,
+                        status = TrustStatus.UNTRUSTED,
+                        details = "DID and its controllers are not in the trusted DIDs list",
+                        validatedAt = Clock.System.now(),
+                    )
+                }
+            } catch (expected: Exception) {
+                logger.error("DID resolution failed during trust validation", exception = expected)
+                TrustValidationResult(
+                    trusted = false,
+                    status = TrustStatus.VALIDATION_ERROR,
+                    details = "DID resolution failed: ${expected.message}",
+                    validatedAt = Clock.System.now(),
+                )
+            }
+        }
+
+        // No explicit trust configuration - DID method is allowed but trust is unknown
+        return TrustValidationResult(
+            trusted = false,
+            status = TrustStatus.UNKNOWN,
+            details = "DID method '${parsed.method}' is allowed but no specific trust relationship configured",
+            validatedAt = Clock.System.now(),
+        )
+    }
+
+    override suspend fun getTrustAnchors(): List<TrustAnchor> = emptyList()
+}

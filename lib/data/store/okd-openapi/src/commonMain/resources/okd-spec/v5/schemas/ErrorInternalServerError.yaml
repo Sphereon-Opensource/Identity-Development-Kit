@@ -1,0 +1,10 @@
+description: Internal Server Error
+content:
+  application/problem+json:
+    schema:
+      $ref: 'Problem.yaml'
+    example:
+      type: 'https://open-education-api.github.io/specification/v5/schemas/ErrorInternalServerError.yaml'
+      title: 'Internal Server Error'
+      status: 500
+      detail: 'The server encountered an unexpected condition that prevented it from fulfilling the request.'

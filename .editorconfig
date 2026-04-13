@@ -1,0 +1,147 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+max_line_length = 200
+
+# Standard rules enabled, experimental disabled (experimental rules are newer/unstable,
+# e.g. multiline expression wrapping, blank line restrictions - can be enabled selectively later)
+ktlint_code_style = ktlint_official
+ktlint_experimental = disabled
+
+# Trailing commas conflict with detekt BracesOnIfStatements: ktlint inserts commas that end up
+# inside else braces when if/else expressions are used as function arguments.
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+
+# IntelliJ IDEA interop - prevents IDE formatting from conflicting with ktlint
+ij_kotlin_code_style_defaults = KOTLIN_OFFICIAL
+ij_kotlin_name_count_to_use_star_import = 2147483647
+ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
+ij_kotlin_packages_to_use_import_on_demand = unset
+
+# CDDL spec naming conventions (tstr, bstr, etc.)
+[**/CDDL.kt]
+ktlint_standard_class-naming = disabled
+
+# SCREAMING_CASE factory methods (intentional API pattern for error factories)
+[**/CborError.kt]
+ktlint_standard_function-naming = disabled
+
+[**/Error.kt]
+ktlint_standard_function-naming = disabled
+
+[**/ResultMonad.kt]
+ktlint_standard_function-naming = disabled
+
+[**/CborEncodedItem.kt]
+ktlint_standard_backing-property-naming = disabled
+
+[**/CborItem.kt]
+ktlint_standard_property-naming = disabled
+
+# JWK spec wire-format property key_ops is defined in KeyType interface
+[**/KeyPair.jvm.kt]
+ktlint_standard_property-naming = disabled
+
+
+[**/CoseLabel.kt]
+ktlint_standard_comment-wrapping = disabled
+
+[**/NumberLabel.kt]
+ktlint_standard_comment-wrapping = disabled
+
+# Crypto spec wire-format naming (COSE, JWK, JWS standards use non-standard casing)
+[**/CoseJoseMapping.kt]
+ktlint_standard_class-naming = disabled
+
+[**/CoseKeyType.kt]
+ktlint_standard_property-naming = disabled
+
+[**/Jwk.kt]
+ktlint_standard_property-naming = disabled
+ktlint_standard_function-naming = disabled
+
+[**/Key.kt]
+ktlint_standard_property-naming = disabled
+
+[**/Crv.kt]
+ktlint_standard_enum-entry-name-case = disabled
+
+[**/Kty.kt]
+ktlint_standard_enum-entry-name-case = disabled
+
+[**/Jwk.kt]
+ktlint_standard_enum-entry-name-case = disabled
+
+[**/IdentifierMethod.kt]
+ktlint_standard_enum-entry-name-case = disabled
+
+[**/CryptoLibsEcdsaKeySupport.kt]
+ktlint_standard_property-naming = disabled
+
+[**/CryptoLibsRSAKeySupport.kt]
+ktlint_standard_property-naming = disabled
+
+# Math constants for elliptic curve arithmetic
+[**/Curve25519Field.kt]
+ktlint_standard_property-naming = disabled
+
+# mDoc ISO 18013-5 spec naming conventions
+[**/mdoc/**/Oid4vp.kt]
+ktlint_standard_property-naming = disabled
+
+[**/mdoc/**/PIDDefinitions.kt]
+ktlint_standard_class-naming = disabled
+ktlint_standard_function-naming = disabled
+
+[**/mdoc/**/MdlDefinitions.kt]
+ktlint_standard_class-naming = disabled
+
+
+[**/mdoc/**/DeviceEngagement.kt]
+ktlint_standard_class-naming = disabled
+
+[**/mdoc/**/ReaderEngagement.kt]
+ktlint_standard_class-naming = disabled
+
+[**/mdoc/**/RestApiE2ETest.kt]
+ktlint_standard_function-naming = disabled
+
+# mDoc CBOR codec builder functions follow CBOR field naming
+[**/DeviceEngagementCborCodecImpl.kt]
+ktlint_standard_function-naming = disabled
+
+[**/ReaderEngagementCborCodecImpl.kt]
+ktlint_standard_function-naming = disabled
+
+[**/IssuerAuthValidationImpl.kt]
+ktlint_standard_property-naming = disabled
+
+# Compose @Composable functions use PascalCase by convention
+[**/compose/**/*.kt]
+ktlint_standard_function-naming = disabled
+
+# Test vector files with long base64 strings
+[**/JweRfcTestVectorsTest.kt]
+ktlint_standard_max-line-length = disabled
+
+[**/SerializationRoundTripTest.kt]
+ktlint_standard_max-line-length = disabled
+
+[**/JwsMockedErrorPathsTest.kt]
+ktlint_standard_max-line-length = disabled
+
+[**/ExclusiveC14NTest.kt]
+ktlint_standard_max-line-length = disabled
+
+
+[*.md]
+trim_trailing_whitespace = false

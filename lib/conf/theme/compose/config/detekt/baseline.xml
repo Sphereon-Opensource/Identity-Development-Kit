@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:MotionTokenMapper.kt$MotionTokenMapper$fun toMotionTokens(theme: ResolvedTheme): MotionTokens</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.05f</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.15f</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.1f</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.2f</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.3f</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.7f</ID>
+    <ID>MagicNumber:MotionTokenMapper.kt$0.8f</ID>
+    <ID>ReturnCount:LocalThemeTokens.kt$PaletteTokens.Companion$private fun extractScale( tokens: Map&lt;String, String>, role: String, ): com.sphereon.conf.theme.core.palette.PaletteScale?</ID>
+    <ID>ReturnCount:MotionTokenMapper.kt$MotionTokenMapper$internal fun String.parseEasing(): EasingSpec?</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongParameterList:JvmKeyGeneration.kt$( alias: String, keyType: KeyTypeMapping, algorithm: SignatureAlgorithm, keyUse: JwkUse, keyOperations: Array&lt;out KeyOperations>, overwriteAlias: Boolean, )</ID>
+  </CurrentIssues>
+</SmellBaseline>

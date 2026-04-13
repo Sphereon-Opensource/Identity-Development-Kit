@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:KvStoreJsonSupport.kt$KvStoreJsonSupport$val module: SerializersModule get() { ensureBaseTypesRegistered() return SerializersModule { include(JsonSupport.module) } }</ID>
+    <ID>ClassOrdering:KvStoreJsonSupport.kt$KvStoreJsonSupport$val serializer: Json get() = Json { ignoreUnknownKeys = true classDiscriminator = "type" serializersModule = module }</ID>
+  </CurrentIssues>
+</SmellBaseline>

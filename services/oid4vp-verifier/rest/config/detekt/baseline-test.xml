@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LargeClass:UniversalOid4vpE2ETest.kt$UniversalOid4vpE2ETest</ID>
+    <ID>LongMethod:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest$@Test fun `end-to-end flow - create session, serve request_uri, handle direct_post, retrieve by response_code`()</ID>
+    <ID>LongMethod:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest$@Test fun `end-to-end flow - direct_post_jwt verifies signed JARM and returns response_code`()</ID>
+    <ID>LongMethod:Oid4vpUniversalFlowE2ETest.kt$UniversalOid4vpE2ETest$@Test fun `universal oid4vp e2e - request_uri fetch, holder parses and resolves, direct_post returns response_code`()</ID>
+    <ID>LongMethod:Oid4vpUniversalFlowE2ETest.kt$UniversalOid4vpE2ETest$@Test fun `universal oid4vp e2e - request_uri fetch, holder resolves, direct_post_jwt (encrypted) returns response_code`()</ID>
+    <ID>LongMethod:Oid4vpUniversalFlowE2ETest.kt$UniversalOid4vpE2ETest$@Test fun `universal oid4vp e2e - request_uri fetch, holder resolves, direct_post_jwt (signed) returns response_code`()</ID>
+    <ID>LongMethod:Oid4vpUniversalFlowE2ETest.kt$UniversalOid4vpE2ETest.&lt;no name provided>$override fun createClient(options: HttpClientOptions): HttpClient</ID>
+    <ID>LongMethod:UniversalOid4vpE2ETest.kt$UniversalOid4vpE2ETest$@Test fun `create session with inline DCQL query and get status`()</ID>
+    <ID>LongMethod:UniversalOid4vpE2ETest.kt$UniversalOid4vpE2ETest$@Test fun `full e2e flow - create session, holder issues SD-JWT VC, creates VP, submits via direct_post`()</ID>
+    <ID>LongMethod:UniversalOid4vpE2ETest.kt$UniversalOid4vpE2ETest$@Test fun `full e2e flow with JARM encrypted response`()</ID>
+    <ID>LoopWithTooManyJumpStatements:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$for</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$entries[k(namespace, key)] = stored.copy(expiresAt = expiresAt)</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$if (stored.expiresAt &lt;= now) { entries.remove(fullKey) removed++ }</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$if (stored.expiresAt &lt;= now) { entries.remove(k(namespace, key)) return Ok(false) }</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$if (stored.expiresAt &lt;= now) { entries.remove(k(namespace, key)) return Ok(null) }</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$return Ok( KvEntry( value = value, metadata = KvEntryMetadata(createdAtEpochMillis = stored.createdAt, expiresAtEpochMillis = stored.expiresAt), ), )</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$return Ok(true)</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$val expiresAt = if (ttl.isInfinite()) { Long.MAX_VALUE } else { now + ttl.inWholeMilliseconds }</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$val stored = entries[fullKey] ?: continue</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$val stored = entries[k(namespace, key)] ?: return Ok(false)</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$val stored = entries[k(namespace, key)] ?: return Ok(null)</ID>
+    <ID>UnreachableCode:Oid4vpUniversalFlowE2ETest.kt$Oid4vpUniversalFlowWithMocksTest.TestKvStore$val value = namespace.codec.decode(stored.bytes)</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$entries[correlationId] = existing.copy(value = updated)</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$return Ok(StoredEntry(value = stored.value, createdAt = stored.createdAt, expiresAt = stored.expiresAt))</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$return Ok(session)</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$return Ok(updated)</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$val existing = entries[correlationId] ?: return Ok( AuthorizationSession( sessionId = correlationId, correlationId = correlationId, dcqlQuery = com.sphereon.openid.oid4vp.dcql .DcqlQuery(credentials = emptyList()), authorizationRequest = com.sphereon.oauth2.common.model.AuthorizationRequest( clientId = "test", redirectUri = "test", ), status = AuthorizationSessionStatus.ERROR, error = AuthorizationSessionError(code = "not_found", message = "not found"), createdAt = 0, updatedAt = 0, expiresAt = 0, ), )</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$val session = entries[correlationId]?.value ?: return Ok(null)</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$val stored = entries[key] ?: return Ok(null)</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$val updated = existing.value.copy( status = AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_RECEIVED, parsedResponse = parsedResponse, updatedAt = clock.now().toEpochMilliseconds(), )</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$val updated = existing.value.copy( status = if (validationResult.valid) { AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED } else { AuthorizationSessionStatus.ERROR }, validationResult = validationResult, updatedAt = clock.now().toEpochMilliseconds(), )</ID>
+    <ID>UnreachableCode:TestAuthorizationSessionStore.kt$TestAuthorizationSessionStore$val updated = existing.value.copy(status = status, error = error, updatedAt = clock.now().toEpochMilliseconds())</ID>
+    <ID>UnusedPrivateProperty:Oid4vpUniversalFlowE2ETest.kt$UniversalOid4vpE2ETest$val jarSigningKeyInfo = jarKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)</ID>
+    <ID>UseOrEmpty:Oid4vpUniversalFlowE2ETest.kt$UniversalOid4vpE2ETest.&lt;no name provided>$resp.body ?: ""</ID>
+  </CurrentIssues>
+</SmellBaseline>

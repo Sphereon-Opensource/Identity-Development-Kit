@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:BlobInfo.kt$ResolvedBlobInfo$Companion</ID>
+    <ID>ClassOrdering:BlobInfo.kt$ResolvedBlobInfo$override fun toBlobInfo(): BlobInfo</ID>
+    <ID>ClassOrdering:BlobStoreJsonSupport.kt$BlobStoreJsonSupport$val module: SerializersModule get() { ensureBaseTypesRegistered() val snapshot = synchronized(this) { localRegistrations.toList() } return SerializersModule { for (registration in snapshot) { registration() } } }</ID>
+    <ID>ClassOrdering:BlobStoreJsonSupport.kt$BlobStoreJsonSupport$val serializer: Json get() = Json { ignoreUnknownKeys = true classDiscriminator = "type" serializersModule = module }</ID>
+    <ID>ComplexInterface:BlobService.kt$BlobService</ID>
+    <ID>ComplexInterface:BlobStore.kt$BlobStore</ID>
+    <ID>UnusedParameter:BlobStoreJsonSupport.kt$BlobStoreJsonSupport$registrationId: String? = null</ID>
+  </CurrentIssues>
+</SmellBaseline>

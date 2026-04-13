@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$override suspend fun doExecute( args: HandleCredentialRequestArgs, applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
+    <ID>CyclomaticComplexMethod:JwtProofVerifier.kt$JwtProofVerifier$override suspend fun verify( proofValue: JsonElement, expectedAudience: String, ): IdkResult&lt;VerifiedProof, IdkError></ID>
+    <ID>LongMethod:CreateCredentialOfferCommandImpl.kt$CreateCredentialOfferCommandImpl$override suspend fun doExecute( args: CreateCredentialOfferArgs, applyDuring: (CreateCredentialOfferArgs) -> CreateCredentialOfferArgs, ): IdkResult&lt;CreatedCredentialOffer, IdkError></ID>
+    <ID>LongMethod:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$override suspend fun doExecute( args: HandleCredentialRequestArgs, applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
+    <ID>LongMethod:JwtProofVerifier.kt$JwtProofVerifier$override suspend fun verify( proofValue: JsonElement, expectedAudience: String, ): IdkResult&lt;VerifiedProof, IdkError></ID>
+    <ID>LongMethod:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$@Suppress("UNCHECKED_CAST") override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
+    <ID>LongParameterList:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$( execution: SessionExecution, private val asBridge: Oid4vciAuthorizationServerBridge, private val proofVerifiers: Set&lt;ProofVerifier>, private val nonceManager: NonceManager, private val formatHandlers: Set&lt;CredentialFormatHandler>, private val attributeContributor: CredentialAttributeContributor, private val sessionStore: CredentialIssuanceSessionStore, private val deferredStore: DeferredCredentialStore, private val encryptor: CredentialResponseEncryptor, private val issuerConfigProvider: Oid4vciIssuerConfigProvider, /** * Optional credential-design service. When present, design metadata is resolved * at issuance time to populate [IssuanceContext.sdPolicies] and * [IssuanceContext.mandatoryClaims]. Null-safe — deployments without the * credential-design module work unchanged. */ private val credentialDesignService: CredentialDesignService? = null, )</ID>
+    <ID>LongParameterList:Oid4vciIssuerServiceImpl.kt$Oid4vciIssuerServiceImpl$( private val createCredentialOfferCommand: CreateCredentialOfferCommand, private val buildIssuerMetadataCommand: BuildIssuerMetadataCommand, private val issueNonceCommand: IssueNonceCommand, private val handleCredentialRequestCommand: HandleCredentialRequestCommand, private val handleDeferredCredentialRequestCommand: HandleDeferredCredentialRequestCommand, private val handleNotificationCommand: HandleNotificationCommand, private val buildSignedIssuerMetadataCommand: BuildSignedIssuerMetadataCommand, )</ID>
+    <ID>LoopWithTooManyJumpStatements:DesignBackedOid4vciIssuerConfigProvider.kt$DesignBackedOid4vciIssuerConfigProvider$for</ID>
+    <ID>MagicNumber:CreateCredentialOfferCommandImpl.kt$CreateCredentialOfferCommandImpl$24</ID>
+    <ID>MagicNumber:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$24</ID>
+    <ID>MagicNumber:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$3600</ID>
+    <ID>MagicNumber:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$365</ID>
+    <ID>MagicNumber:NonceManager.kt$NonceManager$32</ID>
+    <ID>MagicNumber:SphereonAsBridge.kt$SphereonAsBridge$0xFF</ID>
+    <ID>MagicNumber:SphereonAsBridge.kt$SphereonAsBridge$10</ID>
+    <ID>MagicNumber:SphereonAsBridge.kt$SphereonAsBridge$32</ID>
+    <ID>MagicNumber:SphereonAsBridge.kt$SphereonAsBridge$6</ID>
+    <ID>ReturnCount:CreateCredentialOfferCommandImpl.kt$CreateCredentialOfferCommandImpl$override suspend fun doExecute( args: CreateCredentialOfferArgs, applyDuring: (CreateCredentialOfferArgs) -> CreateCredentialOfferArgs, ): IdkResult&lt;CreatedCredentialOffer, IdkError></ID>
+    <ID>ReturnCount:CredentialResponseEncryptor.kt$CredentialResponseEncryptor$suspend fun encryptIfRequested( response: CredentialResponse, encryption: RequestedCredentialResponseEncryption?, ): IdkResult&lt;CredentialResponse, IdkError></ID>
+    <ID>ReturnCount:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$override suspend fun doExecute( args: HandleCredentialRequestArgs, applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
+    <ID>ReturnCount:HandleDeferredCredentialRequestCommandImpl.kt$HandleDeferredCredentialRequestCommandImpl$override suspend fun doExecute( args: HandleDeferredCredentialRequestArgs, applyDuring: (HandleDeferredCredentialRequestArgs) -> HandleDeferredCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
+    <ID>ReturnCount:HandleNotificationCommandImpl.kt$HandleNotificationCommandImpl$override suspend fun doExecute( args: HandleNotificationArgs, applyDuring: (HandleNotificationArgs) -> HandleNotificationArgs, ): IdkResult&lt;Unit, IdkError></ID>
+    <ID>ReturnCount:JwtProofVerifier.kt$JwtProofVerifier$override suspend fun verify( proofValue: JsonElement, expectedAudience: String, ): IdkResult&lt;VerifiedProof, IdkError></ID>
+    <ID>ReturnCount:KvCredentialIssuanceSessionStore.kt$KvCredentialIssuanceSessionStore$override suspend fun create(session: IssuanceSession): IdkResult&lt;IssuanceSession, IdkError></ID>
+    <ID>ReturnCount:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$@Suppress("UNCHECKED_CAST") override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
+    <ID>ReturnCount:MsoMdocFormatHandler.kt$MsoMdocFormatHandler.Companion$fun jsonElementToNativeValue(element: JsonElement): Any</ID>
+    <ID>ReturnCount:NonceManager.kt$NonceManager$suspend fun consume(nonce: String): IdkResult&lt;NonceEntry?, IdkError></ID>
+    <ID>ReturnCount:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$private suspend fun resolveDidKid( keyAlias: String, method: String, ): JsonObject?</ID>
+    <ID>ReturnCount:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$private suspend fun resolveX5cHeader( keyAlias: String, certChainPath: String?, ): JsonObject?</ID>
+    <ID>ReturnCount:SphereonAsBridge.kt$SphereonAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
+    <ID>SpreadOperator:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$(*credentialDefinitionTypes.toTypedArray())</ID>
+    <ID>SpreadOperator:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$(proofTypeKey, *algValues.toTypedArray())</ID>
+    <ID>SpreadOperator:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$(NameSpace(namespace), *items.toTypedArray())</ID>
+    <ID>StringLiteralDuplication:JwtProofVerifier.kt$JwtProofVerifier$"invalid_proof"</ID>
+    <ID>UnusedParameter:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$certChainPath: String?</ID>
+  </CurrentIssues>
+</SmellBaseline>

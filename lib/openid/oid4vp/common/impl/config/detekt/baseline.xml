@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl$private suspend fun validateDecentralizedIdentifier(args: ValidateClientIdArgs): IdkResult&lt;ValidateClientIdResult, IdkError></ID>
+    <ID>CyclomaticComplexMethod:VerifyVerifierAttestationCommandImpl.kt$VerifyVerifierAttestationCommandImpl$override suspend fun doExecute( args: VerifyVerifierAttestationArgs, applyDuring: (VerifyVerifierAttestationArgs) -> VerifyVerifierAttestationArgs, ): IdkResult&lt;VerifyVerifierAttestationResult, IdkError></ID>
+    <ID>LargeClass:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl : TypedServiceCommandAdapterValidateClientIdCommandValidateClientIdCommandService</ID>
+    <ID>LongMethod:ParseTransactionDataCommandImpl.kt$ParseTransactionDataCommandImpl$override suspend fun doExecute( args: ParseTransactionDataArgs, applyDuring: (ParseTransactionDataArgs) -> ParseTransactionDataArgs, ): IdkResult&lt;ParseTransactionDataResult, IdkError></ID>
+    <ID>LongMethod:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl$private suspend fun validateDecentralizedIdentifier(args: ValidateClientIdArgs): IdkResult&lt;ValidateClientIdResult, IdkError></ID>
+    <ID>LongMethod:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl$private suspend fun validateVerifierAttestation(args: ValidateClientIdArgs): IdkResult&lt;ValidateClientIdResult, IdkError></ID>
+    <ID>LongMethod:VerifyTransactionDataCommandImpl.kt$VerifyTransactionDataCommandImpl$private fun verifyEntry( entry: TransactionDataEntry, index: Int, encoded: String, credentials: CredentialTransactionHashes, ): VerifyEntryResult</ID>
+    <ID>LongMethod:VerifyVerifierAttestationCommandImpl.kt$VerifyVerifierAttestationCommandImpl$override suspend fun doExecute( args: VerifyVerifierAttestationArgs, applyDuring: (VerifyVerifierAttestationArgs) -> VerifyVerifierAttestationArgs, ): IdkResult&lt;VerifyVerifierAttestationResult, IdkError></ID>
+    <ID>NestedBlockDepth:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl$private suspend fun validateVerifierAttestation(args: ValidateClientIdArgs): IdkResult&lt;ValidateClientIdResult, IdkError></ID>
+    <ID>ReturnCount:ParseTransactionDataCommandImpl.kt$ParseTransactionDataCommandImpl$override suspend fun doExecute( args: ParseTransactionDataArgs, applyDuring: (ParseTransactionDataArgs) -> ParseTransactionDataArgs, ): IdkResult&lt;ParseTransactionDataResult, IdkError></ID>
+    <ID>ReturnCount:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl$private suspend fun validateDecentralizedIdentifier(args: ValidateClientIdArgs): IdkResult&lt;ValidateClientIdResult, IdkError></ID>
+    <ID>ReturnCount:VerifyTransactionDataCommandImpl.kt$VerifyTransactionDataCommandImpl$private fun verifyEntry( entry: TransactionDataEntry, index: Int, encoded: String, credentials: CredentialTransactionHashes, ): VerifyEntryResult</ID>
+    <ID>ReturnCount:VerifyVerifierAttestationCommandImpl.kt$VerifyVerifierAttestationCommandImpl$override suspend fun doExecute( args: VerifyVerifierAttestationArgs, applyDuring: (VerifyVerifierAttestationArgs) -> VerifyVerifierAttestationArgs, ): IdkResult&lt;VerifyVerifierAttestationResult, IdkError></ID>
+    <ID>TooManyFunctions:ValidateClientIdCommandImpl.kt$ValidateClientIdCommandImpl : TypedServiceCommandAdapterValidateClientIdCommandValidateClientIdCommandService</ID>
+  </CurrentIssues>
+</SmellBaseline>

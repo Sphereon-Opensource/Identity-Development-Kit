@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongMethod:WalletMethodDriver.kt$WalletMethodDriver$override suspend fun callback(work: CallbackWork): IdkResult&lt;CallbackOutcome, com.sphereon.identity.idv.model.IdvError></ID>
+    <ID>ReturnCount:WalletMethodDriver.kt$WalletMethodDriver$override suspend fun callback(work: CallbackWork): IdkResult&lt;CallbackOutcome, com.sphereon.identity.idv.model.IdvError></ID>
+    <ID>ReturnCount:WalletMethodDriver.kt$WalletMethodDriver$override suspend fun dispatch(work: DispatchWork): IdkResult&lt;DispatchOutcome, com.sphereon.identity.idv.model.IdvError></ID>
+    <ID>ReturnCount:WalletMethodDriver.kt$WalletMethodDriver$private fun extractValue( attributePath: AttributePath, claims: Map&lt;String, JsonElement>, ): JsonElement?</ID>
+    <ID>StringLiteralDuplication:WalletMethodDriver.kt$WalletMethodDriver$"Wallet driver received unsupported method definition"</ID>
+  </CurrentIssues>
+</SmellBaseline>

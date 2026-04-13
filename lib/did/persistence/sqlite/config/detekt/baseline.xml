@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:DidQueries.kt$DidQueries.FindAllFilteredQuery$else</ID>
+    <ID>BracesOnIfStatements:DidQueries.kt$DidQueries.FindAllFilteredQuery$if</ID>
+    <ID>BracesOnIfStatements:DidQueries.kt$DidQueries.FindByAliasQuery$else</ID>
+    <ID>BracesOnIfStatements:DidQueries.kt$DidQueries.FindByAliasQuery$if</ID>
+    <ID>BracesOnIfStatements:SqliteDidRepositoryImpl.kt$SqliteDidRepositoryImpl$else</ID>
+    <ID>BracesOnIfStatements:SqliteDidRepositoryImpl.kt$SqliteDidRepositoryImpl$if</ID>
+    <ID>ClassNaming:Did_key_mapping.kt$Did_key_mapping</ID>
+    <ID>ClassNaming:Did_record.kt$Did_record</ID>
+    <ID>ConstructorParameterNaming:Did_key_mapping.kt$Did_key_mapping$public val did_record_id: String</ID>
+    <ID>ConstructorParameterNaming:Did_key_mapping.kt$Did_key_mapping$public val kms_key_alias: String</ID>
+    <ID>ConstructorParameterNaming:Did_key_mapping.kt$Did_key_mapping$public val kms_provider_id: String</ID>
+    <ID>ConstructorParameterNaming:Did_key_mapping.kt$Did_key_mapping$public val purposes_json: String</ID>
+    <ID>ConstructorParameterNaming:Did_key_mapping.kt$Did_key_mapping$public val verification_method_id: String</ID>
+    <ID>ConstructorParameterNaming:Did_record.kt$Did_record$public val created_at: String</ID>
+    <ID>ConstructorParameterNaming:Did_record.kt$Did_record$public val document_json: String?</ID>
+    <ID>ConstructorParameterNaming:Did_record.kt$Did_record$public val updated_at: String</ID>
+    <ID>LongParameterList:DidQueries.kt$DidQueries$( id: String, did: String, method: String, alias: String?, documentJson: String?, role: String, deactivated: Boolean, createdAt: String, updatedAt: String, )</ID>
+    <ID>LongParameterList:DidQueries.kt$DidQueries$( id: String, didRecordId: String, verificationMethodId: String, kmsKeyAlias: String, kmsProviderId: String, purposesJson: String, )</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$1_044_082_820</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$1_112_129_158</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$1_223_171_978</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$1_444_052_460</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$1_558_929_741</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$2_015_643_826</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$2_099_125_228</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$3</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$4</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$5</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$501_517_860</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$6</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$7</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$8</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$9</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries$965_947_456</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries.FindAllFilteredQuery$7</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries.FindByDidQuery$1_354_043_965</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries.FindByIdQuery$736_415_645</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries.FindKeyMappingByIdQuery$1_892_094_996</ID>
+    <ID>MagicNumber:DidQueries.kt$DidQueries.FindKeyMappingsByDidRecordIdQuery$549_741_605</ID>
+    <ID>MaxLineLength:DidQueries.kt$DidQueries.FindByAliasQuery$override</ID>
+    <ID>MaxLineLength:DidQueries.kt$DidQueries.FindByDidQuery$override</ID>
+    <ID>MaxLineLength:DidQueries.kt$DidQueries.FindByIdQuery$override</ID>
+    <ID>MaxLineLength:DidQueries.kt$DidQueries.FindKeyMappingByIdQuery$override</ID>
+    <ID>MaxLineLength:DidQueries.kt$DidQueries.FindKeyMappingsByDidRecordIdQuery$override</ID>
+    <ID>StringLiteralDuplication:DidQueries.kt$DidQueries$"did_key_mapping"</ID>
+    <ID>StringLiteralDuplication:DidQueries.kt$DidQueries$"did_record"</ID>
+    <ID>TooManyFunctions:DidQueries.kt$DidQueries : TransacterImpl</ID>
+  </CurrentIssues>
+</SmellBaseline>

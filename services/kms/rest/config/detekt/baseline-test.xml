@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>RedundantSuspendModifier:MultiTenantKmsIsolationTest.kt$MultiTenantKmsIsolationTest$suspend</ID>
+    <ID>RedundantSuspendModifier:SignatureControllerTest.kt$SignatureControllerTest$suspend</ID>
+    <ID>ThrowsCount:KmsServiceCommandsTransportE2ETest.kt$KmsServiceCommandsTransportE2ETest$@Test fun serviceCommandMetadataShouldMatchRestEndpoints()</ID>
+  </CurrentIssues>
+</SmellBaseline>

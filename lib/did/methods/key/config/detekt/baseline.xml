@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:EcPointDecompression.kt$EcPointDecompression$fun decompress( curve: Curve, compressed: ByteArray, ): Pair&lt;ByteArray, ByteArray></ID>
+    <ID>ClassOrdering:EcPointDecompression.kt$EcPointDecompression$private fun curveParams(curve: Curve): CurveParams</ID>
+    <ID>ClassOrdering:MulticodecPrefix.kt$MulticodecPrefix$fun toVarintBytes(): ByteArray</ID>
+    <ID>CyclomaticComplexMethod:Curve25519Field.kt$Curve25519Field$fun mul( a: ULongArray, b: ULongArray, ): ULongArray</ID>
+    <ID>CyclomaticComplexMethod:KeyDidProviderImpl.kt$KeyDidProviderImpl$@OptIn(ExperimentalEncodingApi::class) private fun jwkToMulticodecBytes(jwk: Jwk): IdkResult&lt;ByteArray, IdkError></ID>
+    <ID>CyclomaticComplexMethod:KeyDidResolverImpl.kt$KeyDidResolverImpl$@OptIn(ExperimentalEncodingApi::class) private suspend fun buildJwk( codecPrefix: MulticodecPrefix, rawKeyBytes: ByteArray, ): Jwk</ID>
+    <ID>LongMethod:Curve25519Field.kt$Curve25519Field$fun mul( a: ULongArray, b: ULongArray, ): ULongArray</ID>
+    <ID>LongMethod:KeyDidProviderImpl.kt$KeyDidProviderImpl$@OptIn(ExperimentalEncodingApi::class) private fun jwkToMulticodecBytes(jwk: Jwk): IdkResult&lt;ByteArray, IdkError></ID>
+    <ID>LongMethod:KeyDidResolverImpl.kt$KeyDidResolverImpl$@OptIn(ExperimentalEncodingApi::class) private suspend fun buildDidDocument( did: String, multibaseKey: String, codecPrefix: MulticodecPrefix, rawKeyBytes: ByteArray, ): DidDocument</ID>
+    <ID>MagicNumber:Curve25519Field.kt$Curve25519Field$3</ID>
+    <ID>MagicNumber:Curve25519Field.kt$Curve25519Field$4</ID>
+    <ID>ReturnCount:KeyDidProviderImpl.kt$KeyDidProviderImpl$@OptIn(ExperimentalEncodingApi::class) private fun jwkToMulticodecBytes(jwk: Jwk): IdkResult&lt;ByteArray, IdkError></ID>
+    <ID>ReturnCount:KeyDidResolverImpl.kt$KeyDidResolverImpl$override suspend fun dereference( didUrl: String, options: DidDereferenceOptions, ): IdkResult&lt;DidDereferenceResult, IdkError></ID>
+    <ID>ReturnCount:KeyDidResolverImpl.kt$KeyDidResolverImpl$override suspend fun resolve( did: String, options: DidResolutionOptions, ): IdkResult&lt;DidResolutionResult, IdkError></ID>
+    <ID>StringLiteralDuplication:KeyDidProviderImpl.kt$KeyDidProviderImpl$"UNSUPPORTED_OPERATION"</ID>
+    <ID>StringLiteralDuplication:KeyDidProviderImpl.kt$KeyDidProviderImpl$"did:key:$multibaseKey"</ID>
+    <ID>StringLiteralDuplication:KeyDidResolverImpl.kt$KeyDidResolverImpl$"application/did+ld+json"</ID>
+    <ID>UnusedPrivateMember:EcPointDecompression.kt$BigUIntOps$private fun cmpWide( a: UIntArray, b: UIntArray, bShift: Int, ): Int</ID>
+    <ID>UnusedPrivateProperty:KeyDidProviderImpl.kt$KeyDidProviderImpl$private val resolverRegistry: DidResolverRegistry</ID>
+    <ID>UnusedPrivateProperty:MulticodecPrefix.kt$private const val HEX_RADIX = 16</ID>
+    <ID>UseDataClass:EcPointDecompression.kt$EcPointDecompression$CurveParams</ID>
+  </CurrentIssues>
+</SmellBaseline>

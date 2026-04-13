@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:ClaimPath.kt$ClaimPath.Companion$/** * Empty path (root) */ val EMPTY = ClaimPath(emptyList())</ID>
+    <ID>ClassOrdering:IssuerMetadata.kt$WellKnownIssuerMetadataResolver$Companion</ID>
+    <ID>ClassOrdering:SdJwtPayload.kt$SdJwtPayload$/** * Returns the set of claim names that are NOT selectively disclosable. * * These claims will appear directly in the JWT payload without being * hidden behind digests. */ val plainClaims: Set&lt;String> get() = claims.keys - sdClaims</ID>
+    <ID>ClassOrdering:SdJwtTypes.kt$SdMap$fun containsKey(key: String): Boolean</ID>
+    <ID>ClassOrdering:SdJwtTypes.kt$SdMap$operator fun get(key: String): SdField?</ID>
+    <ID>MagicNumber:IssuerMetadata.kt$WellKnownIssuerMetadataResolver$404</ID>
+    <ID>MagicNumber:SdJwtCodec.kt$SdJwtCodec$3</ID>
+    <ID>MagicNumber:TypeMetadata.kt$UrlTypeMetadataResolver$404</ID>
+    <ID>MatchingDeclarationName:SdJwtDsl.kt$SdJwtDslMarker</ID>
+    <ID>MethodOverloading:SdJwtPayloadBuilder.kt$SdJwtPayloadBuilder</ID>
+    <ID>NestedBlockDepth:ClaimPath.kt$fun validateClaimRequirements( credential: JsonObject, metadata: SdJwtVcTypeMetadata, disclosures: Map&lt;String, Disclosure> = emptyMap(), ): List&lt;ClaimValidationError></ID>
+    <ID>NestedBlockDepth:DisclosureDigest.kt$DisclosureDigestUtil$private fun extractDigestsRecursive( obj: JsonObject, digests: MutableSet&lt;String>, )</ID>
+    <ID>ReturnCount:IssuerMetadata.kt$WellKnownIssuerMetadataResolver$override suspend fun resolve(issuer: String): IssuerMetadataResolutionResult</ID>
+    <ID>ReturnCount:TypeMetadata.kt$UrlTypeMetadataResolver$override suspend fun resolve(vct: String): TypeMetadataResolutionResult</ID>
+    <ID>ReturnCount:TypeMetadata.kt$suspend fun validateTypeExtendsChain( vct: String, resolver: TypeMetadataResolver, visited: MutableSet&lt;String> = mutableSetOf(), ): TypeMetadataResolutionResult?</ID>
+    <ID>ThrowsCount:SdJwtCodec.kt$SdJwtCodec$private fun parseInternal( sdJwtString: String, hashAlgorithm: DigestAlg, ): SdJwtCompact</ID>
+    <ID>TooManyFunctions:SdJwtPayloadBuilder.kt$SdJwtPayloadBuilder</ID>
+    <ID>UnusedPrivateProperty:DisclosureDigest.kt$DisclosureDigestUtil$val expectedDisclosure = remainingDisclosures.remove(digest) ?: return false</ID>
+  </CurrentIssues>
+</SmellBaseline>

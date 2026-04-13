@@ -1,0 +1,44 @@
+kms:
+  providers:
+    testsoftware:
+      type: software
+      id: testsoftware
+      enabled: true
+      cryptographyProvider: Default
+      autoCreateCertificate: true
+      persistKeysDuringGeneration: true
+      exposePrivateKeysDuringGeneration: true
+      keyStore:
+        type: memory
+        id: test-keystore
+        keyVisibility: PUBLIC_ONLY
+        overwriteAlias: true
+        scopeBinding: TENANT
+    tenantasoftware:
+      type: software
+      id: tenantasoftware
+      enabled: true
+      cryptographyProvider: Default
+      autoCreateCertificate: true
+      persistKeysDuringGeneration: true
+      exposePrivateKeysDuringGeneration: true
+      keyStore:
+        type: memory
+        id: tenant-a-keystore
+        keyVisibility: PUBLIC_ONLY
+        overwriteAlias: false
+        scopeBinding: TENANT
+    tenantbsoftware:
+      type: software
+      id: tenantbsoftware
+      enabled: true
+      cryptographyProvider: Default
+      autoCreateCertificate: true
+      persistKeysDuringGeneration: true
+      exposePrivateKeysDuringGeneration: true
+      keyStore:
+        type: memory
+        id: tenant-b-keystore
+        keyVisibility: PUBLIC_ONLY
+        overwriteAlias: false
+        scopeBinding: TENANT

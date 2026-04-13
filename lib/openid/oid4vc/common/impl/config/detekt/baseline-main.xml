@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$0xFF</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$16</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$24</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$25</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$3</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$40</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$6</ID>
+    <ID>MagicNumber:JvmQrCodeService.kt$JvmQrCodeService$8</ID>
+  </CurrentIssues>
+</SmellBaseline>

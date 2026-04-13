@@ -1,0 +1,128 @@
+openapi: "3.0.3"
+info:
+  version: "0.9.1"
+  title: OKD - Open Education API
+  description: |
+    OpenAPI specification for the Open Education API, used in the OKD.
+    <br/>
+    NOTE: This is a subset of the OOAPI that is used in the "MBO-OKD" project (sponsored by npuls/mbo-digitaal in the netherlands). This project uses the "nl-okd" consumer 
+    <br/>
+    <figure>
+    	<a target="_blank" href="OOAPIv5_model.png">
+      <img src="OOAPIv5_model.png" alt="OOAPI informatiemodel dat de OOAPI specificatie voedt" width="70%" class="img-responsive">
+      </a>
+      <figcaption> OOAPI informatiemodel dat de OOAPI specificatie voedt (klik om te vergroten)</figcaption>
+    </figure>
+
+    Het model geeft een overzicht van hoe de objecten waarop de API is gespecificeerd zijn gerelateerd. Het overkoepelende concept educations wordt niet gevonden in de endpoints van de API. De kleinere concepten van programOffering, courseOffering en conceptOffering worden allemaal gevonden in het offering endpoint. De verschillende types van associatie kunnen allemaal worden gevonden in het association endpoint.
+    
+    Het originele bestand voor dit model kan <a target="_blank" href="OOAPIv5_model_v0.5.drawio">hier</a> worden gevonden
+
+    Het program relations object wordt niet gevonden als een apart endpoint, maar relaties tussen programma's kunnen worden gevonden binnen het program endpoint door dat endpoint uit te breiden.
+
+    Informatie over eerdere bijeenkomsten en presentaties kan <a target="_blank" href="https://github.com/open-education-api/notulen">hier</a> worden gevonden
+
+    Informatie over het EDU-API model, dat ook werd gebruikt voor deze api, wordt <a target="_blank" href="eduapi.png">hier</a> getoond
+
+  contact: 
+    name: Kees van Ginkel
+    email: kees.van.ginkel@topicus.nl
+  x-logo:
+    url: ../logo.png
+
+servers:
+  - url: http://okd.eduapi.nl/v5
+    description: OKD demo implementation
+
+tags:
+  - name: service metadata
+    description: | 
+      The service API provides additional metadata needed to make the OOAPI fit for this organization.
+
+          Voor de OKD: De service API biedt aanvullende metadata die nodig is om te zien welke versie van de ooapi en OKD ondersteund wordt.
+
+  - name: documents
+    description: |
+      The documents API provides access to the documents in a binary format
+
+          Voor de OKD: De documenten API biedt toegang tot de documenten in een binaire vorm en de mogelijkheid om de inhoud van documenten te updaten. Het aanbieden van documenten gaat via andere endpoints.
+
+  - name: associations
+    description: |
+      De associations API biedt informatie over de inschrijvingen van personen bij programma's, cursussen en componenten.
+          
+          Voor de OKD: In het Nederlandse onderwijssysteem zijn dit de inschrijving-verbintenis en de inschrijving voor BPV of examens
+
+  - name: persons
+    description: |
+      The persons API provides information about persons related to an organization.
+
+          Voor de OKD: De personen API geeft de mogelijkheid om een bestand aan te bieden die aan de persoon gelinkt is.
+
+          Ook kan er additionele informatie van een persoon opgehaald worden. (zoeken op studentnummer of id)
+
+  - name: offerings
+    description: |
+      The offerings API provides information about offerings which have a global timeframe, e.g. a period to which students can enroll.
+
+          Voor de OKD: De offerings API biedt informatie over de onderwijsaanbod die een instelling aanbiedt. een onderdeel zijn componentOfferings, die in de OKD als examens of toetsen worden gebruikt.
+
+
+components:
+  securitySchemes:
+    oAuthFlows:
+      type: oauth2
+      description: |
+        This API uses oauth Cleint credentials for server to server #/components/schemas/EducationSpecification
+      flows: 
+        clientCredentials:
+          tokenUrl: https://example.nl/oauth2/token
+          scopes:
+            okd:alldocuments: flow 1,2,3,4,x,y,z
+            okd:examdocuments: flow 2,x,y,z
+            okd:bpvdocuments: flow 3,x,y,z
+            okd:graduationdocuments: flow 4,x,y,z
+            okd:enrollmentderollment: flow 1,5
+            okd:destroyednotification: flow 6
+            okd:studentinfo: flow 7
+  # schemas:
+  #   Service:
+  #     $ref: 'schemas/Service.yaml'
+  #   Component:
+  #     $ref: 'schemas/Component.yaml'
+  #   ComponentOffering:
+  #     $ref: 'schemas/ComponentOffering.yaml'
+  #   Course:
+  #     $ref: 'schemas/Course.yaml'
+  #   CourseOffering:
+  #     $ref: 'schemas/CourseOffering.yaml'
+  #   Person:
+  #     $ref: 'schemas/Person.yaml'
+  #   Program:
+  #     $ref: 'schemas/Program.yaml'
+  #   ProgramOffering:
+  #     $ref: 'schemas/ProgramOffering.yaml'
+  #   Association:
+  #     $ref: 'schemas/AssociationFull.yaml'
+
+paths:
+  /:
+    $ref: paths/Service.yaml
+
+  /persons:
+    $ref: paths/PersonCollection.yaml
+  /persons/{personId}:
+    $ref: paths/PersonInstance.yaml
+
+  /offerings/{offeringId}:
+    $ref: paths/OfferingInstance.yaml
+
+  /documents/{documentId}:
+    $ref: paths/DocumentInstance.yaml
+    
+  /documents/{documentId}/metadata:
+    $ref: paths/DocumentInstanceMetadata.yaml
+
+  /associations/{associationId}:
+    $ref: paths/AssociationInstance.yaml
+

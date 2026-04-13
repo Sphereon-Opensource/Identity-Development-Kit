@@ -1,0 +1,10 @@
+description: Method not allowed
+content:
+  application/problem+json:
+    schema:
+      $ref: 'Problem.yaml'
+    example:
+      type: 'https://open-education-api.github.io/specification/v5/schemas/ErrorMethodNotAllowed.yaml'
+      title: 'Method not allowed'
+      status: 405
+      detail: 'The request method is not supported for the requested resource.'

@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:WalletMetadata.kt$16</ID>
+    <ID>MagicNumber:WalletMetadata.kt$WalletMetadataBuilder$35</ID>
+    <ID>MagicNumber:WalletMetadata.kt$WalletMetadataBuilder$36</ID>
+    <ID>MagicNumber:WalletMetadata.kt$WalletMetadataBuilder$7</ID>
+    <ID>MethodOverloading:Oid4vpAuthorizationResponse.kt$Oid4vpAuthorizationResponseBuilder</ID>
+    <ID>MethodOverloading:VpToken.kt$com.sphereon.openid.oid4vp.common.VpToken.kt</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$"ES256"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$"ES384"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$"Ed25519Signature2018"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$"JsonWebSignature2020"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$"RS256"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$"[A-Z][A-Z0-9-]*"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"authorization_encrypted_response_alg"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"authorization_encrypted_response_enc"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"authorization_signed_response_alg"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"client_purpose"</ID>
+    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"vp_formats"</ID>
+    <ID>StringLiteralDuplication:Oid4vpAuthorizationRequest.kt$"vp_token"</ID>
+    <ID>StringLiteralDuplication:WalletMetadata.kt$"[A-Z0-9-]+"</ID>
+    <ID>StringLiteralDuplication:WalletMetadata.kt$WalletMetadataBuilder$"ES256"</ID>
+    <ID>StringLiteralDuplication:WalletMetadata.kt$WalletMetadataBuilder$"ES384"</ID>
+    <ID>TooManyFunctions:Oid4vpAuthorizationRequest.kt$Oid4vpAuthorizationRequestBuilder</ID>
+  </CurrentIssues>
+</SmellBaseline>

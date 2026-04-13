@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>InjectDispatcher:AndroidMobileLogService.kt$AbstractAndroidMobileLogService$Default</ID>
+    <ID>UnreachableCode:AndroidMobileLogService.kt$AbstractAndroidMobileLogService$message.tag ?: config.tag.takeIf { it.isNotEmpty() } ?: DEFAULT_TAG</ID>
+    <ID>UnusedPrivateProperty:AndroidMobileLogService.kt$AbstractAndroidMobileLogService$// Pre-computed values for performance optimization private val asyncCoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)</ID>
+  </CurrentIssues>
+</SmellBaseline>

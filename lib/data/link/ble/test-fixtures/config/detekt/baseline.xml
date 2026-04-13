@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:FakeBlePlatformClient.kt$FakeBlePlatformClient$23</ID>
+    <ID>ReturnCount:FakeBlePlatformClient.kt$FakeBlePlatformClient$override suspend fun readCharacteristic( service: HasUuidId, characteristic: HasUuidId, ): IdkResult&lt;GattCharacteristic, CharacteristicReadError></ID>
+    <ID>StringLiteralDuplication:FakeBlePlatformClient.kt$FakeBlePlatformClient$"Not connected"</ID>
+    <ID>StringLiteralDuplication:FakeBlePlatformClient.kt$FakeBlePlatformClient$"mock-device"</ID>
+    <ID>TooManyFunctions:FakeBlePlatformClient.kt$FakeBlePlatformClient : BlePlatformClient</ID>
+    <ID>TooManyFunctions:FakeBlePlatformPeripheral.kt$FakeBlePlatformPeripheral : AbstractBlePlatformPeripheral</ID>
+    <ID>UnusedPrivateProperty:FakeBlePlatformClient.kt$FakeBlePlatformClient$private val log = logManager.withTag("FakeBlePlatformClient")</ID>
+  </CurrentIssues>
+</SmellBaseline>

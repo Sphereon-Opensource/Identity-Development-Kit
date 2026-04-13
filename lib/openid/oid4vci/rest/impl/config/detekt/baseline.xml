@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongMethod:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$override suspend fun doExecute( args: CreateCredentialOfferInput, applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput, ): IdkResult&lt;CreateCredentialOfferOutput, IdkError></ID>
+    <ID>MagicNumber:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$0xFF</ID>
+    <ID>MagicNumber:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$16</ID>
+    <ID>MagicNumber:KvCredentialOfferSessionStore.kt$KvCredentialOfferSessionStore$1000</ID>
+    <ID>ReturnCount:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$override suspend fun doExecute( args: CreateCredentialOfferInput, applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput, ): IdkResult&lt;CreateCredentialOfferOutput, IdkError></ID>
+    <ID>ReturnCount:GetCredentialOfferStatusServiceCommandImpl.kt$GetCredentialOfferStatusServiceCommandImpl$private suspend fun buildIssuanceData(session: CredentialOfferSession): IssuanceData?</ID>
+    <ID>ReturnCount:GetCredentialOfferStatusServiceCommandImpl.kt$GetCredentialOfferStatusServiceCommandImpl$private suspend fun resolveCurrentStatus(session: CredentialOfferSession): CredentialOfferSessionStatus</ID>
+    <ID>StringLiteralDuplication:KvCredentialOfferSessionStore.kt$KvCredentialOfferSessionStore$"OID4VCI_SESSION_STORE_ERROR"</ID>
+    <ID>UnusedPrivateProperty:KvCredentialOfferSessionStore.kt$KvCredentialOfferSessionStore$private val log = appLogManager.withTag("KvCredentialOfferSessionStore")</ID>
+  </CurrentIssues>
+</SmellBaseline>

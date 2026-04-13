@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:MatchingIdentityResolverImpl.kt$MatchingIdentityResolverImpl$100</ID>
+    <ID>ReturnCount:ResolveIdentityCommandImpl.kt$ResolveIdentityCommandImpl$override suspend fun doExecute( args: ResolveIdentityArgs, applyDuring: (ResolveIdentityArgs) -> ResolveIdentityArgs, ): IdkResult&lt;IdentityResolutionResult, IdkError></ID>
+  </CurrentIssues>
+</SmellBaseline>

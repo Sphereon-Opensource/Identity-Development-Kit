@@ -1,0 +1,17 @@
+type: array
+description: The additional consumer elements that can be provided, see the [documentation on support for specific consumers](https://open-education-api.github.io/specification/#/consumers) for more information about this mechanism.
+items:
+ anyOf:
+  - $ref: '../schemas/Consumer.yaml'
+  - $ref: '../consumers/NL-OKD/V1/nl-okd-document.yaml'
+  - $ref: '../consumers/NL-OKD/V1/nl-okd-additional-studentinfo.yaml'
+example:
+  - consumerKey: 'nl-okd'
+    documentType: 'enrollment'
+    documentSubtype: 'dyslexieverklaring'
+    documentId: 'acd3e12a-ed8b-4488-ac34-26fd4f64f40b'
+    documentName: 'dyslexieverklaring-100245.pdf'
+    retentionPeriodSuggestion: '7Y'
+    studentNumber: '100245'
+    receivedDate: "2026-01-13"
+    registrationDate: "2026-01-16"

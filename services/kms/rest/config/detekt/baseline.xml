@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CommandBackedResolversHttpAdapter.kt$CommandBackedResolversHttpAdapter$/** * Endpoint commands for this adapter. * * Commands are injected via constructor following the standard IDK DI pattern. * This allows: * - Individual command testing * - Command replacement via DI bindings * - Proper lifecycle management */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( listResolversCommand, getResolverCommand, resolvePublicKeyCommand, )</ID>
+    <ID>ClassOrdering:KeysHttpAdapter.kt$KeysHttpAdapter$Companion</ID>
+    <ID>ClassOrdering:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$Companion</ID>
+    <ID>ClassOrdering:ResolversHttpAdapter.kt$ResolversHttpAdapter$Companion</ID>
+    <ID>ClassOrdering:SignaturesHttpAdapter.kt$SignaturesHttpAdapter$Companion</ID>
+    <ID>ExplicitItLambdaParameter:ProvidersRestServiceImpl.kt$ProvidersRestServiceImpl${ it -> kms.getProviderById(it) }</ID>
+    <ID>ExplicitItLambdaParameter:ResolversRestServiceImpl.kt$ResolversRestServiceImpl${ it -> kms.getResolverById(it) }</ID>
+    <ID>LongMethod:KmsHttpAdapterDescriptors.kt$ProvidersHttpAdapterDescriptorProvider$override fun describe(): HttpAdapterDescription</ID>
+    <ID>MagicNumber:KeysHttpAdapter.kt$KeysHttpAdapter$200</ID>
+    <ID>MagicNumber:KeysHttpAdapter.kt$KeysHttpAdapter$400</ID>
+    <ID>MagicNumber:KeysHttpAdapter.kt$KeysHttpAdapter$500</ID>
+    <ID>MagicNumber:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$200</ID>
+    <ID>MagicNumber:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$400</ID>
+    <ID>MagicNumber:ResolversEndpointCommands.kt$GetResolverEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:ResolversEndpointCommands.kt$ListResolversEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:ResolversEndpointCommands.kt$ResolvePublicKeyEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:ResolversHttpAdapter.kt$ResolversHttpAdapter$200</ID>
+    <ID>MagicNumber:ResolversHttpAdapter.kt$ResolversHttpAdapter$400</ID>
+    <ID>MagicNumber:SignaturesHttpAdapter.kt$SignaturesHttpAdapter$200</ID>
+    <ID>MagicNumber:SignaturesHttpAdapter.kt$SignaturesHttpAdapter$201</ID>
+    <ID>MagicNumber:SignaturesHttpAdapter.kt$SignaturesHttpAdapter$400</ID>
+    <ID>ReturnCount:KeysHttpAdapter.kt$KeysHttpAdapter$private suspend fun handleGenerateKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:KeysHttpAdapter.kt$KeysHttpAdapter$private suspend fun handleRegisterKeyReference(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:KeysHttpAdapter.kt$KeysHttpAdapter$private suspend fun handleStoreKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$private suspend fun handleDeleteKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$private suspend fun handleGenerateKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$private suspend fun handleGetKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$private suspend fun handleStoreKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:ResolversHttpAdapter.kt$ResolversHttpAdapter$private suspend fun handleResolveKey(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>StringLiteralDuplication:KeysHttpAdapter.kt$KeysHttpAdapter$"Invalid request body: ${expected.message}"</ID>
+    <ID>StringLiteralDuplication:KeysHttpAdapter.kt$KeysHttpAdapter$"Missing request body"</ID>
+    <ID>StringLiteralDuplication:KeysHttpAdapter.kt$KeysHttpAdapter$"providerId"</ID>
+    <ID>StringLiteralDuplication:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$"Missing path parameter: providerId"</ID>
+    <ID>StringLiteralDuplication:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$"providerId"</ID>
+    <ID>StringLiteralDuplication:ResolversEndpointCommands.kt$ListResolversEndpointCommand.Companion$"resolvers"</ID>
+    <ID>UnusedParameter:ProvidersHttpAdapter.kt$ProvidersHttpAdapter$request: GenericHttpRequest</ID>
+    <ID>UnusedParameter:ResolversHttpAdapter.kt$ResolversHttpAdapter$request: GenericHttpRequest</ID>
+    <ID>UseRequire:KmsRestServiceImpl.kt$KmsRestServiceImpl$throw IllegalArgumentException( "Either an alias or kid needs to be provided.", )</ID>
+  </CurrentIssues>
+</SmellBaseline>

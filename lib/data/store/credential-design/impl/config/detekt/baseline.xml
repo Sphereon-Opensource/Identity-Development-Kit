@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$if</ID>
+    <ID>ComplexInterface:CredentialDesignCommandDescriptors.kt$CredentialDesignCommandDescriptors</ID>
+    <ID>CyclomaticComplexMethod:JsonSchemaDesignMapper.kt$JsonSchemaDesignMapper$private fun deriveValueKind( type: String?, format: String?, contentMediaType: String?, contentEncoding: String?, ): ClaimValueKind</ID>
+    <ID>CyclomaticComplexMethod:JsonSchemaDesignMapper.kt$JsonSchemaDesignMapper$private fun deriveWidgetHint( valueKind: ClaimValueKind, prop: JsonObject, ): ClaimWidgetHint</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:DesignResolutionEngine.kt$DesignResolutionEngine$val (displays, renderVariants, appliedLayers, lockedFields) = resolveEntity( baseDisplays = baseDesign.displays, localeOf = { it.locale }, ) { provider, priority -> val layerResult = provider.resolveIssuerLayer(tenantId, input) ?: return@resolveEntity null EntityLayerResult( displays = layerResult.displays, renderVariants = layerResult.renderVariants, providedFields = layerResult.providedFields, sourceType = provider.sourceType, priority = priority, authoritative = provider.authoritative, ) }</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:DesignResolutionEngine.kt$DesignResolutionEngine$val (displays, renderVariants, appliedLayers, lockedFields) = resolveEntity( baseDisplays = baseDesign.displays, localeOf = { it.locale }, ) { provider, priority -> val layerResult = provider.resolveVerifierLayer(tenantId, input) ?: return@resolveEntity null EntityLayerResult( displays = layerResult.displays, renderVariants = layerResult.renderVariants, providedFields = layerResult.providedFields, sourceType = provider.sourceType, priority = priority, authoritative = provider.authoritative, ) }</ID>
+    <ID>LargeClass:DefaultCredentialDesignService.kt$DefaultCredentialDesignService : CredentialDesignService</ID>
+    <ID>LongParameterList:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$( private val credentialDesignRepository: CredentialDesignRepository, private val issuerDesignRepository: IssuerDesignRepository, private val verifierDesignRepository: VerifierDesignRepository, private val renderVariantRepository: RenderVariantRepository, private val sourceSnapshotRepository: SourceSnapshotRepository, private val derivedRenderHintsRepository: DerivedRenderHintsRepository, private val blobService: BlobService, private val externalFetcher: DesignExternalFetcher, )</ID>
+    <ID>LoopWithTooManyJumpStatements:BlobStoreCredentialDesignRepository.kt$BlobStoreCredentialDesignRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:BlobStoreIssuerDesignRepository.kt$BlobStoreIssuerDesignRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:BlobStoreRenderVariantRepository.kt$BlobStoreRenderVariantRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:BlobStoreSourceSnapshotRepository.kt$BlobStoreSourceSnapshotRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:BlobStoreVerifierDesignRepository.kt$BlobStoreVerifierDesignRepository$for</ID>
+    <ID>ReturnCount:BlobStoreCredentialDesignRepository.kt$BlobStoreCredentialDesignRepository$private fun matchesFilter( record: CredentialDesignRecord, filter: DesignFilter, ): Boolean</ID>
+    <ID>ReturnCount:BlobStoreIssuerDesignRepository.kt$BlobStoreIssuerDesignRepository$private fun matchesFilter( record: IssuerDesignRecord, filter: DesignFilter, ): Boolean</ID>
+    <ID>ReturnCount:BlobStoreVerifierDesignRepository.kt$BlobStoreVerifierDesignRepository$private fun matchesFilter( record: VerifierDesignRecord, filter: DesignFilter, ): Boolean</ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun refreshCredentialDesign( tenantId: String, designId: Uuid, ): IdkResult&lt;CredentialDesignRecord, IdkError></ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun refreshIssuerDesign( tenantId: String, designId: Uuid, ): IdkResult&lt;IssuerDesignRecord, IdkError></ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun refreshSourceSnapshot( tenantId: String, snapshotId: Uuid, ): IdkResult&lt;SourceSnapshotRecord, IdkError></ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun refreshVerifierDesign( tenantId: String, designId: Uuid, ): IdkResult&lt;VerifierDesignRecord, IdkError></ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun resolveCredentialDesign( tenantId: String, input: ResolveCredentialDesignInput, ): IdkResult&lt;ResolvedCredentialDesign, IdkError></ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun resolveIssuerDesign( tenantId: String, input: ResolveEntityDesignInput, ): IdkResult&lt;ResolvedIssuerDesign, IdkError></ID>
+    <ID>ReturnCount:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$override suspend fun resolveVerifierDesign( tenantId: String, input: ResolveEntityDesignInput, ): IdkResult&lt;ResolvedVerifierDesign, IdkError></ID>
+    <ID>ReturnCount:JsonSchemaDesignMapper.kt$JsonSchemaDesignMapper$private fun deriveValueKind( type: String?, format: String?, contentMediaType: String?, contentEncoding: String?, ): ClaimValueKind</ID>
+    <ID>ReturnCount:Oid4vciIssuerMetadataDesignProvider.kt$Oid4vciIssuerMetadataDesignProvider$override suspend fun resolveIssuerLayer( tenantId: String, input: ResolveEntityDesignInput, ): IssuerDesignLayerResult?</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Credential design not found: $id"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Design is not a cached external design"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Either designId, binding, or bindingKey+bindingValue must be provided"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Imported"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Issuer design not found: $id"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Render variant not found: $id"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Source snapshot has no source URL"</ID>
+    <ID>StringLiteralDuplication:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$"Verifier design not found: $id"</ID>
+    <ID>StringLiteralDuplication:ImportRefreshCommandImpls.kt$ImportCredentialDesignServiceCommandImpl$"Validation failed: ${validation.errors.joinToString { "${it.dataPath}: ${it.message}" }}"</ID>
+    <ID>SwallowedException:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$e: Exception</ID>
+    <ID>TooManyFunctions:CredentialDesignCommandDescriptors.kt$CredentialDesignCommandDescriptors</ID>
+    <ID>TooManyFunctions:DefaultCredentialDesignService.kt$DefaultCredentialDesignService : CredentialDesignService</ID>
+    <ID>UnusedParameter:Oid4vciDesignMapper.kt$Oid4vciDesignMapper$configId: String</ID>
+    <ID>UnusedPrivateProperty:DefaultCredentialDesignService.kt$DefaultCredentialDesignService$private val derivedRenderHintsRepository: DerivedRenderHintsRepository</ID>
+    <ID>UnusedPrivateProperty:JsonLdContextDesignProvider.kt$JsonLdContextDesignProvider$val terms = mapper.deriveContextTerms(context)</ID>
+  </CurrentIssues>
+</SmellBaseline>

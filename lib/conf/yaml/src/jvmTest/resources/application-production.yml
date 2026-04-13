@@ -1,0 +1,3 @@
+database:
+  host: prod-db.example.com
+  pool-size: 50

@@ -1,0 +1,16 @@
+FROM eclipse-temurin:21-jre
+
+ARG JAR_FILE
+
+RUN groupadd --gid 10001 appuser && \
+    useradd --uid 10001 --gid appuser --shell /bin/false --create-home appuser
+
+WORKDIR /app
+
+COPY ${JAR_FILE} ./app.jar
+
+USER 10001
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "app.jar"]

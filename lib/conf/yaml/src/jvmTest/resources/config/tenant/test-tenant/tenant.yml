@@ -1,0 +1,5 @@
+branding:
+  logo: tenant-logo.png
+  primary-color: "#336699"
+feature:
+  max-users: 100

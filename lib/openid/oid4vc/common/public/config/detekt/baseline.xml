@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CredentialFormat.kt$CredentialFormat.Companion$private val JWT_PATTERN = Regex("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*$")</ID>
+    <ID>MagicNumber:CredentialFormat.kt$CredentialFormat.Companion$20</ID>
+  </CurrentIssues>
+</SmellBaseline>

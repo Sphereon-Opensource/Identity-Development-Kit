@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:KotlinInjectPluginTest.kt$TestHttpAdapter$Companion</ID>
+    <ID>RedundantSuspendModifier:KotlinInjectPluginTest.kt$TestHttpAdapter$suspend</ID>
+    <ID>UnusedParameter:KotlinInjectPluginTest.kt$TestHttpAdapter$request: GenericHttpRequest</ID>
+  </CurrentIssues>
+</SmellBaseline>

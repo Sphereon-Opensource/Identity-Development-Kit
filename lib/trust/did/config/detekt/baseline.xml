@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:ValidateDidTrustCommandImpl.kt$ValidateDidTrustCommand$Companion</ID>
+    <ID>LongMethod:DidTrustValidationService.kt$DidTrustValidationService$override suspend fun validate(request: TrustValidationRequest): TrustValidationResult</ID>
+    <ID>ReturnCount:DidTrustValidationService.kt$DidTrustValidationService$override suspend fun validate(request: TrustValidationRequest): TrustValidationResult</ID>
+  </CurrentIssues>
+</SmellBaseline>

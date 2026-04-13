@@ -1,0 +1,437 @@
+get:
+  summary: GET /associations/{associationId}
+  description: | 
+    Get a single association (OKD: inschrijving/verbintenis)
+  
+    note:
+    - This endpoint should be implemented by the SIS component, so that the DMS can retrieve a persons verbintenis information
+
+  operationId: listAssociationById
+  security:
+    - oAuthFlows:
+      - okd:studentinfo
+  tags:
+    - associations
+  parameters:
+    - name: associationId
+      in: path
+      description: Association ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: expand
+      in: query
+      explode: false
+      description: Optional properties to expand, separated by a comma
+      required: false
+      schema:
+        type: array
+        items:
+          type: string
+          enum:
+            - person
+            - offering
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/AssociationFull.yaml'
+          example:
+            associationId: "123e4567-e89b-12d3-a456-426614174000"
+            associationType: "programOfferingAssociation"
+            role: "student"
+            state: "associated"
+            consumers:
+              - consumerKey: "nl-okd"
+                enrollmentStartDate: "2021-09-01"
+                enrollmentExpectedEndDate: "2025-07-31"
+                enrollmentFinalEndDate: null
+                sequenceCode: "1.2"
+            person:
+              personId: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+              primaryCode:
+                codeType: "studentNumber"
+                code: "1234567"
+              givenName: "Maartje"
+              surnamePrefix: "van"
+              surname: "Damme"
+              displayName: "Maartje van Damme"
+              initials: "MCW"
+              dateOfBirth: "2000-01-15"
+              gender: "F"
+              activeEnrollment: true
+              affiliations:
+                - "student"
+              mail: "vandamme.mcw@student.roc.nl"
+              languageOfChoice:
+                - "nl-NL"
+              otherCodes: []
+            offering:
+              offeringId: "5ffc6127-debe-48ce-90ae-75ea80756475"
+              primaryCode:
+                codeType: "identifier"
+                code: "25190BOL"
+              offeringType: "program"
+              name: "Netwerk- en mediabeheerder BOL (25190)"
+              program:
+                programId: "123e4567-e89b-12d3-a456-426614174000"
+                primaryCode:
+                  codeType: "identifier"
+                  code: "C12063128"
+                programType: "program"
+                name:
+                  - language: "nl-NL"
+                    value: "Netwerk- en mediabeheerder"
+                abbreviation: "N&M"
+                description:
+                  - language: "nl-NL"
+                    value: "In deze MBO-opleiding word je opgeleid voor het officieel erkende diploma 'MBO Netwerkbeheerder, niveau 4'. Met dit diploma ben je breed opgeleid en kun je het netwerk van een organisatie beheren. Dit is hét diploma voor de professionele netwerkbeheerder op het hoogste MBO-niveau. Je legt een uitstekende basis voor een mooie carrière als netwerkbeheerder. Bovendien is dit een diploma waarmee je eventueel probleemloos kunt doorstuderen naar een HBO-opleiding"
+                teachingLanguage: "nld"
+                modeOfStudy: "full-time"
+                levelOfQualification: "4"
+              organization:
+                organizationID: "38bdbeb1-12b2-48fd-84f8-653e7adfaf99"
+                primaryCode:
+                  codeType: "identifier"
+                  code: "ICTE"
+                organizationType: "department"
+                name:
+                  - language: "nl-NL"
+                    value: "ICT-academie"
+                shortname: "ICTA"
+                parent:
+                  organizationID: "650e1627-9f3d-4176-ab5a-e82eef0d219d"
+                  primaryCode:
+                    codeType: "identifier"
+                    code: "CICT"
+                  name:
+                    - language: "nl-NL"
+                      value: "Cluster ICT en EIS"
+
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'
+
+
+
+
+patch:
+  summary: PATCH /associations/{associationId}
+  operationId: partialUpdateAssociationById
+  description: |
+    Update the status or result of an enrollment. Other elements of the association object COULD 
+    also be PATCHED. But are not likely and have therefor not been included in this endpoint.
+    Implementation of the PATCH activity is based on use PATCH with JSON Merge Patch standard, 
+    a specialized media type `application/merge-patch+json` for partial resource representation 
+    to update parts of resource objects.
+
+        Voor OKD: Update de status of het resultaat van een inschrijving. Eigenlijk word alleen het veld "state" verandert om aan te geven dat de verbintenis beëindigd is.
+        hoewel de ooapi meer states kent gebruiken we alleen "associated", "finished".
+
+    Note:
+      - This endpoint should be implemented by the DMS component, so that the Uitschrijven component can update a persons verbintenis information (flow 5)
+
+  security:
+    - oAuthFlows:
+      - okd:enrollmentderollment
+  tags:
+    - associations
+  parameters:
+    - name: associationId
+      in: path
+      description: The id of the association to update
+      required: true
+      schema:
+        type: string
+        format: uuid
+  requestBody:
+    required: true
+    content:
+      application/merge-patch+json:
+        schema:
+          allOf:
+          - $ref: '../schemas/AssociationPatch.yaml'
+        example:
+          associationId: "123e4567-e89b-12d3-a456-426614174000"
+          associationType: "programOfferingAssociation"
+          role: "student"
+          state: "finished"
+          primaryCode:
+            codeType: "opleidingsblad"
+            code: "1.1"
+          otherCodes:
+            - codeType: "opleidingscode"
+              code: "23089"
+          person: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+          offering: "5ffc6127-debe-48ce-90ae-75ea80756475"
+
+  responses:
+    # '200':
+    #   description: OK
+    #   content:
+    #     application/json:
+    #       schema:
+    #         allOf:
+    #           - $ref: '../schemas/AssociationId.yaml'
+    #           - $ref: '../schemas/PostResponse.yaml'
+    #           - properties:
+    #               state:
+    #                 $ref: '../enumerations/associationState.yaml'
+    '204':
+      description: No Content. The association has been updated successfully.
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '422':
+      $ref: '../schemas/ErrorUnprocessableContent.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'
+
+
+
+post:
+  summary: POST /associations/{associationId}
+  description: |
+    POST a document with the association (inschrijving) metadata. 
+
+        For the OKD: Add a document to a association/verbintenis.
+
+    note:
+    - This endpoint should be implemented by the DMS component, so that the components can upload documents for a association/verbintenis.
+    - The call is a multipart/form-data call with 2 parts: metadata (json) and file (binary).
+    - Although the ooapi has more states we only use "associated", "finished".
+
+  operationId: postFileOnAssociationById
+  security:
+    - oAuthFlows:
+      - okd:alldocuments
+      - okd:enrollmentderollment
+  tags:
+    - associations
+  parameters:
+    - name: associationId
+      in: path
+      description: Association ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          type: object
+          properties:
+            metadata:
+              $ref: '../schemas/AssociationFull.yaml'
+            file:
+              type: string
+              format: binary
+              description: File to upload
+          required:
+            - metadata
+            - file
+        examples:
+          enrollmentDocument:
+            summary: Inschrijfdocument (flow 1)
+            value:
+              metadata:
+                associationId: "123e4567-e89b-12d3-a456-426614174000"
+                associationType: "programOfferingAssociation"
+                role: "student"
+                state: "associated"
+                consumers:
+                  - consumerKey: "nl-okd"
+                    documentType: "enrollment"
+                    documentSubtype: "inschrijfbewijs"
+                    documentId: "dbd3e12a-ed8b-4488-ac34-26fd4f64f40b"
+                    documentName: "inschrijving-100245.pdf"
+                    retentionPeriodSuggestion: "3Y"
+                    enrollmentStartDate: "2021-09-01"
+                    enrollmentExpectedEndDate: "2025-07-31"
+                    enrollmentFinalEndDate: null
+                    sequenceCode: "1.2"
+                    receivedDate: "2023-09-01"
+                    registrationDate: "2023-09-01"
+                person:
+                  personId: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+                  primaryCode:
+                    codeType: "studentNumber"
+                    code: "1234567"
+                  givenName: "Maartje"
+                  surnamePrefix: "van"
+                  surname: "Damme"
+                  displayName: "Maartje van Damme"
+                  initials: "MCW"
+                  dateOfBirth: "2003-09-30"
+                  gender: "F"
+                  activeEnrollment: true
+                  affiliations:
+                    - "student"
+                  mail: "vandamme.mcw@student.roc.nl"
+                  languageOfChoice:
+                    - "nl-NL"
+                  otherCodes: []
+                offering:
+                  offeringId: "5ffc6127-debe-48ce-90ae-75ea80756475"
+                  primaryCode:
+                    codeType: "identifier"
+                    code: "25190BOL"
+                  offeringType: "program"
+                  name: "Netwerk- en mediabeheerder BOL (25190)"
+                  program:
+                    programId: "123e4567-e89b-12d3-a456-426614174000"
+                    primaryCode:
+                      codeType: "identifier"
+                      code: "C12063128"
+                    programType: "program"
+                    name:
+                      - language: "nl-NL"
+                        value: "Netwerk- en mediabeheerder"
+                    abbreviation: "N&M"
+                    description:
+                      - language: "nl-NL"
+                        value: "In deze MBO-opleiding word je opgeleid voor het officieel erkende diploma 'MBO Netwerkbeheerder, niveau 4'. Met dit diploma ben je breed opgeleid en kun je het netwerk van een organisatie beheren. Dit is het diploma voor de professionele netwerkbeheerder op het hoogste MBO-niveau. Je legt een uitstekende basis voor een mooie carriere als netwerkbeheerder. Bovendien is dit een diploma waarmee je eventueel probleemloos kunt doorstuderen naar een HBO-opleiding"
+                    teachingLanguage: "nld"
+                    otherCodes:
+                      - codeType: "opleidingsCode"
+                        code: "25480BOL"
+                    modeOfStudy: "full-time"
+                    levelOfQualification: "4"
+                  organization:
+                    organizationID: "38bdbeb1-12b2-48fd-84f8-653e7adfaf99"
+                    primaryCode:
+                      codeType: "identifier"
+                      code: "ICTE"
+                    organizationType: "department"
+                    name:
+                      - language: "nl-NL"
+                        value: "ICT-academie"
+                    shortname: "ICTA"
+                    parent:
+                      organizationID: "650e1627-9f3d-4176-ab5a-e82eef0d219d"
+                      primaryCode:
+                        codeType: "identifier"
+                        code: "CICT"
+                      name:
+                        - language: "nl-NL"
+                          value: "Cluster ICT en EIS"
+              file: "(binary)"
+          examResultDocument:
+            summary: Examenresultaat (flow 2)
+            value:
+              metadata:
+                associationId: "123e4567-e89b-12d3-a456-426614174000"
+                associationType: "programOfferingAssociation"
+                role: "student"
+                state: "associated"
+                consumers:
+                  - consumerKey: "nl-okd"
+                    studentNumber: "1234567"
+                    documentType: "examination"
+                    documentSubtype: "examenbeoordeling"
+                    documentId: "dbd3e12a-ed8b-4488-ac34-26fd4f64f40b"
+                    documentName: "beoordeling-100245.pdf"
+                    retentionPeriodSuggestion: "3Y"
+                    receivedDate: "2023-09-01"
+                    registrationDate: "2023-09-01"
+                    examDateTime: "2021-12-15T11:05:04Z"
+                    examComponentOffering: "c9c3875b-0c6b-435a-a8a4-211bf66620b5"
+                    examCode: "MEDIAK3-W1"
+                    examName: "Examen Mediabeheer K3-W1"
+                person: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+                offering: "5ffc6127-debe-48ce-90ae-75ea80756475"
+              file: "(binary)"
+          bpvDocument:
+            summary: BPV (praktijkovereenkomst) document (flow 3)
+            value:
+              metadata:
+                associationId: "123e4567-e89b-12d3-a456-426614174000"
+                associationType: "programOfferingAssociation"
+                consumers:
+                  - consumerKey: "nl-okd"
+                    studentNumber: "1234567"
+                    documentType: "bpv"
+                    documentSubtype: "praktijkovereenkomst"
+                    documentId: "65f64c44-e3c4-4579-8e05-a729d4b89d06"
+                    documentName: "praktijkovereenkomst.pdf"
+                    retentionPeriodSuggestion: "3Y"
+                    enrollmentStartDate: "2021-09-01"
+                    enrollmentExpectedEndDate: "2025-07-31"
+                    enrollmentFinalEndDate: null
+                    sequenceCode: "1.2"
+                    receivedDate: "2023-09-01"
+                    registrationDate: "2023-09-01"
+                person: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+                offering: "5ffc6127-debe-48ce-90ae-75ea80756475"
+              file: "(binary)"
+          graduationDocument:
+            summary: Diplomering document (flow 4)
+            value:
+              metadata:
+                associationId: "123e4567-e89b-12d3-a456-426614174000"
+                associationType: "programOfferingAssociation"
+                consumers:
+                  - consumerKey: "nl-okd"
+                    studentNumber: "1234567"
+                    documentType: "graduation"
+                    documentSubtype: "diploma"
+                    documentId: "65f64c44-e3c4-4579-8e05-a729d4b89d06"
+                    documentName: "diploma-MBO.pdf"
+                    retentionPeriodSuggestion: "3Y"
+                    enrollmentStartDate: "2021-09-01"
+                    enrollmentExpectedEndDate: "2025-07-31"
+                    enrollmentFinalEndDate: null
+                    sequenceCode: "1.2"
+                    receivedDate: "2023-09-01"
+                    registrationDate: "2023-09-01"
+                person: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+                offering: "5ffc6127-debe-48ce-90ae-75ea80756475"
+              file: "(binary)"
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/DocumentUploadResponse.yaml'
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '422':
+      $ref: '../schemas/ErrorUnprocessableContent.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'

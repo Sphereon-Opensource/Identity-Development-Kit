@@ -1,0 +1,68 @@
+/*
+ * Copyright (c) 2026 Sphereon International B.V.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package com.sphereon.core.events
+
+import com.sphereon.core.api.context.IdkScope
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.SingleIn
+
+/**
+ * Session-scoped event service marker interface.
+ *
+ * Use this for emitting events at the session scope level,
+ * where full context (session, tenant, principal) is available.
+ *
+ * Events emitted from SessionEventService will have complete [EventContext]
+ * populated from the [SessionContext].
+ *
+ * This is the most common event service to use in command implementations.
+ *
+ * Injection:
+ * ```kotlin
+ * @Inject
+ * class MyCommand(
+ *     execution: SessionExecution,
+ *     private val eventService: SessionEventService
+ * ) : ExecutionScopedCommandAdapter<...>(...) {
+ *
+ *     override suspend fun doExecute(...) {
+ *         // Emit custom event
+ *         eventService.emit(
+ *             eventService.eventBuilder()
+ *                 .type(EventTypes.custom("my.operation.completed"))
+ *                 .subsystem(EventSubsystems.CUSTOM)
+ *                 .category(EventCategories.OPERATION)
+ *                 .payload(buildJsonObject { put("result", "success") })
+ *                 .build()
+ *         )
+ *     }
+ * }
+ * ```
+ */
+interface SessionEventService : EventService {
+    override val scope: IdkScope get() = IdkScope.SESSION
+
+    /**
+     * Parent user-scoped event service.
+     */
+    val parent: UserEventService
+
+    /**
+     * The session context this service is scoped to.
+     */
+    val sessionContext: SessionContext
+
+    /**
+     * Graph interface for DI contribution.
+     */
+    @SingleIn(SessionScope::class)
+    @ContributesTo(SessionScope::class)
+    interface Graph {
+        val sessionEventService: SessionEventService
+    }
+}

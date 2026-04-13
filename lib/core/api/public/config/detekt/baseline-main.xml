@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>InjectDispatcher:ByteReadChannel.jvm.kt$IO</ID>
+    <ID>UnnecessarySafeCall:ClasspathResource.jvm.kt$classLoader?.getResource(name)</ID>
+  </CurrentIssues>
+</SmellBaseline>

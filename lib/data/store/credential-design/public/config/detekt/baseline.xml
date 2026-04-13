@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexInterface:CredentialDesignService.kt$CredentialDesignService</ID>
+    <ID>MatchingDeclarationName:ClaimPathModel.kt$ClaimPathSegment</ID>
+    <ID>StringLiteralDuplication:CredentialDesignValidators.kt$"at least one binding is required"</ID>
+    <ID>StringLiteralDuplication:CredentialDesignValidators.kt$"at least one locale display is required"</ID>
+    <ID>StringLiteralDuplication:CredentialDesignValidators.kt$"must be > 0"</ID>
+    <ID>TooManyFunctions:CredentialDesignService.kt$CredentialDesignService</ID>
+    <ID>UnusedParameter:CredentialDesignValidators.kt$config: CredentialDesignValidationConfig</ID>
+  </CurrentIssues>
+</SmellBaseline>

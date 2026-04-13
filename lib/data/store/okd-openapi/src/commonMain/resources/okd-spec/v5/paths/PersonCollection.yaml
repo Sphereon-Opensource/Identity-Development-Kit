@@ -1,0 +1,76 @@
+get:
+  summary: GET /persons
+  operationId: listPersons
+  security:
+    - oAuthFlows:  
+      - okd:studentinfo
+  description: | 
+    Get a list of persons, select by primaryCode/Student nummer
+  
+    note:
+    - This endpoint should be implemented by the SIS component, so that the DMS can retrieve person information (flow-7)
+  tags:
+    - persons
+  parameters:
+    - $ref: '../parameters/primaryCode.yaml'
+    - name: affiliations
+      in: query
+      description: Filter by affiliations
+      required: false
+      schema:
+        $ref: '../enumerations/personAffiliations.yaml'
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '../schemas/Pagination.yaml'
+                example:
+                  pageSize: 10
+                  pageNumber: 1
+                  hasPreviousPage: false
+                  hasNextPage: false
+                  totalPages: 1
+              - type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '../schemas/Person.yaml'  
+                    example:
+                      - personId: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+                        primaryCode:
+                          codeType: "studentNumber"
+                          code: "1234567"
+                        givenName: "Maartje"
+                        surnamePrefix: "van"
+                        surname: "Damme"
+                        displayName: "Maartje van Damme"
+                        initials: "MCW"
+                        dateOfBirth: "2000-01-15"
+                        gender: "F"
+                        activeEnrollment: true
+                        affiliations:
+                          - "student"
+                        mail: "vandamme.mcw@student.roc.nl"
+                        languageOfChoice:
+                          - "nl-NL"
+                        otherCodes: []
+                  ext:
+                    $ref: '../schemas/Ext.yaml'
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'

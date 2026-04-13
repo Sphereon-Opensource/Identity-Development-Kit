@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$override suspend fun doExecute( args: ParseAuthorizationRequestArgs, applyDuring: (ParseAuthorizationRequestArgs) -> ParseAuthorizationRequestArgs, ): IdkResult&lt;AuthorizationRequest, IdkError></ID>
+    <ID>CyclomaticComplexMethod:ResolveAuthorizationRequestCommandImpl.kt$ResolveAuthorizationRequestCommandImpl$override suspend fun doExecute( args: AuthorizationRequest, applyDuring: (AuthorizationRequest) -> AuthorizationRequest, ): IdkResult&lt;ResolvedOid4vpRequest, IdkError></ID>
+    <ID>CyclomaticComplexMethod:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPost( resolvedRequest: ResolvedOid4vpRequest, response: AuthorizationResponse, ): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>CyclomaticComplexMethod:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPostJwt(args: SubmitAuthorizationResponseArgs): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>LongMethod:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$override suspend fun doExecute( args: ParseAuthorizationRequestArgs, applyDuring: (ParseAuthorizationRequestArgs) -> ParseAuthorizationRequestArgs, ): IdkResult&lt;AuthorizationRequest, IdkError></ID>
+    <ID>LongMethod:ResolveAuthorizationRequestCommandImpl.kt$ResolveAuthorizationRequestCommandImpl$override suspend fun doExecute( args: AuthorizationRequest, applyDuring: (AuthorizationRequest) -> AuthorizationRequest, ): IdkResult&lt;ResolvedOid4vpRequest, IdkError></ID>
+    <ID>LongMethod:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPost( resolvedRequest: ResolvedOid4vpRequest, response: AuthorizationResponse, ): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>LongMethod:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPostJwt(args: SubmitAuthorizationResponseArgs): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>NestedBlockDepth:ResolveAuthorizationRequestCommandImpl.kt$ResolveAuthorizationRequestCommandImpl$override suspend fun doExecute( args: AuthorizationRequest, applyDuring: (AuthorizationRequest) -> AuthorizationRequest, ): IdkResult&lt;ResolvedOid4vpRequest, IdkError></ID>
+    <ID>NestedBlockDepth:ResolveClientMetadataCommandImpl.kt$ResolveClientMetadataCommandImpl$override suspend fun doExecute( args: AuthorizationRequest, applyDuring: (AuthorizationRequest) -> AuthorizationRequest, ): IdkResult&lt;ResolvedClientMetadata, IdkError></ID>
+    <ID>NestedBlockDepth:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPost( resolvedRequest: ResolvedOid4vpRequest, response: AuthorizationResponse, ): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>NestedBlockDepth:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPostJwt(args: SubmitAuthorizationResponseArgs): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>ReturnCount:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$override suspend fun doExecute( args: ParseAuthorizationRequestArgs, applyDuring: (ParseAuthorizationRequestArgs) -> ParseAuthorizationRequestArgs, ): IdkResult&lt;AuthorizationRequest, IdkError></ID>
+    <ID>ReturnCount:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$private suspend fun resolveClientMetadataFromQuery(queryParameters: io.ktor.http.Parameters): IdkResult&lt;ClientMetadata?, IdkError></ID>
+    <ID>ReturnCount:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$private suspend fun resolveJarVerificationKey( clientMetadata: ClientMetadata?, requestedKid: String?, ): IdkResult&lt;KeyInfoType&lt;*>, IdkError></ID>
+    <ID>ReturnCount:ResolveAuthorizationRequestCommandImpl.kt$ResolveAuthorizationRequestCommandImpl$override suspend fun doExecute( args: AuthorizationRequest, applyDuring: (AuthorizationRequest) -> AuthorizationRequest, ): IdkResult&lt;ResolvedOid4vpRequest, IdkError></ID>
+    <ID>ReturnCount:ResolveClientMetadataCommandImpl.kt$ResolveClientMetadataCommandImpl$override suspend fun doExecute( args: AuthorizationRequest, applyDuring: (AuthorizationRequest) -> AuthorizationRequest, ): IdkResult&lt;ResolvedClientMetadata, IdkError></ID>
+    <ID>ReturnCount:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private fun buildRedirectResponse( resolvedRequest: ResolvedOid4vpRequest, response: AuthorizationResponse, separator: String, ): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>ReturnCount:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private fun validateUri(uri: String): IdkError?</ID>
+    <ID>ReturnCount:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun resolveEncryptionRecipient( resolvedRequest: ResolvedOid4vpRequest, jarmConfig: JarmConfig, ): IdkResult&lt;ManagedOptsKeyInfo, IdkError></ID>
+    <ID>ReturnCount:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPost( resolvedRequest: ResolvedOid4vpRequest, response: AuthorizationResponse, ): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>ReturnCount:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$private suspend fun submitDirectPostJwt(args: SubmitAuthorizationResponseArgs): IdkResult&lt;SubmissionResult, IdkError></ID>
+    <ID>StringLiteralDuplication:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$"client_id"</ID>
+    <ID>StringLiteralDuplication:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$"redirect_uri"</ID>
+    <ID>StringLiteralDuplication:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$"request"</ID>
+    <ID>StringLiteralDuplication:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$"request_uri"</ID>
+    <ID>StringLiteralDuplication:ParseAuthorizationRequestCommandImpl.kt$ParseAuthorizationRequestCommandImpl$"response_mode"</ID>
+    <ID>StringLiteralDuplication:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$"presentation_submission"</ID>
+    <ID>StringLiteralDuplication:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$"vp_token is required in authorization response"</ID>
+    <ID>StringLiteralDuplication:SubmitAuthorizationResponseCommandImpl.kt$SubmitAuthorizationResponseCommandImpl$"vp_token"</ID>
+  </CurrentIssues>
+</SmellBaseline>

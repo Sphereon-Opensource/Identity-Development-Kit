@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:LoTEXml.kt$LoTEXml$private fun parseListAndSchemeInformation(reader: XmlReader): ListAndSchemeInformation</ID>
+    <ID>CyclomaticComplexMethod:LoTEXml.kt$LoTEXml$private fun parseServiceInformation(reader: XmlReader): LoTEServiceInformation</ID>
+    <ID>LargeClass:LoTEXml.kt$LoTEXml</ID>
+    <ID>LongMethod:LoTEXml.kt$LoTEXml$private fun parseListAndSchemeInformation(reader: XmlReader): ListAndSchemeInformation</ID>
+    <ID>MatchingDeclarationName:ServiceInformation.kt$LoTEServiceInformation</ID>
+    <ID>NestedBlockDepth:LoTEXml.kt$LoTEXml$private fun parseNextUpdate(reader: XmlReader): Instant</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"DistributionPoints"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"ListAndSchemeInformation"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"ListOfTrustedEntities"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"LoTEQualifier"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"LoTEQualifiers"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"LoTEType"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"NextUpdate"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"OtherLoTEPointer"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"PointersToOtherLoTE"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"PolicyOrLegalNotice"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"PostalAddress"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"PostalAddresses"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"SchemeOperatorName"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"SchemeTerritory"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"SchemeTypeCommunityRules"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"ServiceDigitalIdentities"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"ServiceDigitalIdentity"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"ServiceHistory"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"ServiceSupplyPoints"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"TrustedEntitiesList"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"TrustedEntity"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"TrustedEntityInformation"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"TrustedEntityService"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"TrustedEntityServices"</ID>
+    <ID>StringLiteralDuplication:LoTEXml.kt$LoTEXml$"http://www.w3.org/XML/1998/namespace"</ID>
+    <ID>TooManyFunctions:LoTEXml.kt$LoTEXml</ID>
+  </CurrentIssues>
+</SmellBaseline>

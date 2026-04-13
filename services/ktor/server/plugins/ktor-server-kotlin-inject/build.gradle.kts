@@ -1,0 +1,134 @@
+import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import org.gradle.api.publish.maven.tasks.GenerateMavenPom
+import org.gradle.api.publish.maven.tasks.PublishToMavenLocal
+import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
+import org.gradle.api.publish.plugins.PublishingPlugin
+
+plugins {
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.com.vanniktech.maven.publish)
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
+    alias(sphereonplug.plugins.dev.zacsweers.metro)
+    alias(sphereonplug.plugins.io.ktor.plugin)
+}
+metro {
+}
+
+kotlin {
+    kotlin.applyDefaultHierarchyTemplate()
+
+    jvm()
+    run {
+        val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
+        if ("all" in kmpTargets || "js" in kmpTargets) {
+            js {
+                nodejs {
+                    useEsModules()
+                    binaries.library()
+                    generateTypeScriptDefinitions()
+                }
+            }
+        }
+    }
+    // configureIosTargetsIfEnabled()
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                // Core IDK
+                api(projects.libCoreApiPublic)
+
+                // kotlin-inject dependencies
+                api(libs.bundles.app.platform.di)
+
+                // Ktor Server (multiplatform)
+                api(sphereonlib.io.ktor.server.core)
+
+                // Kotlin reflection (multiplatform)
+                implementation(sphereonlib.org.jetbrains.kotlin.reflect)
+
+                // Coroutines (multiplatform)
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
+
+                // UUID support (multiplatform)
+                implementation(sphereonlib.org.jetbrains.kotlin.stdlib)
+            }
+        }
+
+        val commonTest by getting {
+            dependencies {
+                implementation(sphereonlib.org.jetbrains.kotlin.test)
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                implementation(projects.libCoreApiPublic)
+                implementation(projects.libCoreApiDefault)
+                implementation(projects.libCryptoCoreImpl)
+                implementation(projects.libCryptoKeyPersistenceImpl)
+                implementation(projects.libDataLinkHttpClientImpl)
+
+                // Ktor testing (multiplatform core only)
+                implementation(sphereonlib.io.ktor.server.test.host)
+            }
+        }
+
+        val jvmMain by getting {
+            dependencies {
+                // JVM-specific ktor extensions (auth support — transitive so consumers get it)
+                api(sphereonlib.io.ktor.server.auth)
+                api(sphereonlib.io.ktor.server.auth.jwt)
+
+                // YAML property source (standalone module)
+                implementation(projects.libConfYaml)
+            }
+        }
+
+        val jvmTest by getting {
+            dependencies {
+                // JVM-specific test dependencies
+                implementation(sphereonlib.io.ktor.server.cio)
+                implementation(sphereonlib.io.ktor.server.auth)
+                implementation(sphereonlib.io.ktor.client.content.negotiation)
+
+                // IDK test dependencies (JVM only as they may not have JS/Native targets)
+                implementation(projects.libCoreApiPublic)
+                implementation(projects.libCoreApiDefault)
+                implementation(projects.libCryptoCore)
+                implementation(projects.libCryptoKmsProviderSoftware)
+                // Required for HttpClientFactory (used by JwksUrlExternalIdentifierResolutionService)
+                implementation(projects.libDataLinkHttpClientImpl)
+            }
+        }
+
+        findByName("jsMain")?.dependencies {
+            // JS-specific dependencies
+            implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21-RC")
+        }
+
+        findByName("jsTest")?.dependencies {
+            // JS-specific test dependencies
+            implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test.js)
+            // Note: ktor-server-cio is not available for JS
+            // JS tests use the test-host engine which is multiplatform
+            implementation(sphereonlib.io.ktor.server.cio)
+            implementation(sphereonlib.io.ktor.server.auth)
+            implementation(sphereonlib.io.ktor.client.content.negotiation)
+
+            // IDK test dependencies (JVM only as they may not have JS/Native targets)
+
+            implementation(projects.libCoreApiPublic)
+            implementation(projects.libCoreApiDefault)
+            implementation(projects.libCryptoCore)
+            implementation(projects.libCryptoKmsProviderSoftware)
+        }
+    }
+}
+
+// Disable configuration cache for publishing tasks due to vanniktech plugin limitations
+tasks.withType<GenerateMavenPom>().configureEach {
+    notCompatibleWithConfigurationCache("POM generation is not compatible with configuration cache due to vanniktech maven publish plugin")
+}
+tasks.withType<PublishToMavenRepository>().configureEach {
+    notCompatibleWithConfigurationCache("Publishing tasks are not compatible with configuration cache due to vanniktech maven publish plugin")
+}
+tasks.withType<PublishToMavenLocal>().configureEach {
+    notCompatibleWithConfigurationCache("Publishing tasks are not compatible with configuration cache due to vanniktech maven publish plugin")
+}

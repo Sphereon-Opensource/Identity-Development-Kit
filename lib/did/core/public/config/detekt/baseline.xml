@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:DidDocument.kt$DidDocument$Companion</ID>
+    <ID>ClassOrdering:KeyManagementCapabilities.kt$KeyManagementCapabilities$Companion</ID>
+    <ID>ClassOrdering:LifecycleCapabilities.kt$LifecycleCapabilities$fun isMutable(): Boolean</ID>
+    <ID>ClassOrdering:ParsedDid.kt$ParsedDid$Companion</ID>
+    <ID>ClassOrdering:RepresentationCapabilities.kt$RepresentationCapabilities$Companion</ID>
+    <ID>ClassOrdering:ServiceManagementCapabilities.kt$ServiceManagementCapabilities$fun supportsServiceManagement(): Boolean</ID>
+    <ID>ClassOrdering:VerificationMethodOrReference.kt$VerificationMethodOrReference$Companion</ID>
+    <ID>MagicNumber:ParsedDid.kt$ParsedDid.Companion$3</ID>
+    <ID>MagicNumber:ParsedDid.kt$ParsedDid.Companion$4</ID>
+    <ID>MagicNumber:ParsedDid.kt$ParsedDid.Companion$5</ID>
+    <ID>UseRequire:VerificationMethodOrReference.kt$VerificationMethodOrReferenceSerializer$throw IllegalArgumentException("Expected string reference, got: $element")</ID>
+  </CurrentIssues>
+</SmellBaseline>

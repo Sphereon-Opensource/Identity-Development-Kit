@@ -1,0 +1,70 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:OAuth2Handlers.kt$OAuth2Handlers$else</ID>
+    <ID>BracesOnIfStatements:OAuth2Handlers.kt$OAuth2Handlers$if</ID>
+    <ID>BracesOnIfStatements:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$else</ID>
+    <ID>BracesOnIfStatements:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$if</ID>
+    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$Companion</ID>
+    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun GenericHttpRequest.forwardedScheme(): String</ID>
+    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun GenericHttpRequest.hostHeader(): String</ID>
+    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun GenericHttpRequest.resolveBaseUrl(tenantPath: String? = null): String</ID>
+    <ID>CyclomaticComplexMethod:OAuth2Handlers.kt$OAuth2Handlers$private fun extractClientAuthentication( headers: Map&lt;String, String>, body: Map&lt;String, String>, ): ClientAuthenticationConfig</ID>
+    <ID>CyclomaticComplexMethod:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handleTokenRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, httpUrl: String, ): IdkResult&lt;TokenResponse, IdkError></ID>
+    <ID>CyclomaticComplexMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun mapErrorToResponse(error: IdkError): GenericHttpResponse</ID>
+    <ID>CyclomaticComplexMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCompleteOutcome( provider: FederatedUserAuthenticationProvider, sessionId: String, ): GenericHttpResponse</ID>
+    <ID>CyclomaticComplexMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleWalletAuthorization( session: AuthorizationSession, loginHint: String, ): GenericHttpResponse</ID>
+    <ID>LargeClass:OAuth2HttpAdapter.kt$OAuth2HttpAdapter : RoutedHttpAdapter</ID>
+    <ID>LongMethod:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handleTokenRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, httpUrl: String, ): IdkResult&lt;TokenResponse, IdkError></ID>
+    <ID>LongMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCompleteOutcome( provider: FederatedUserAuthenticationProvider, sessionId: String, ): GenericHttpResponse</ID>
+    <ID>LongMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleIaeEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>LongMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleWalletAuthorization( session: AuthorizationSession, loginHint: String, ): GenericHttpResponse</ID>
+    <ID>LongMethod:OAuth2HttpAdapterDescriptorProvider.kt$OAuth2HttpAdapterDescriptorProvider$override fun describe(): HttpAdapterDescription</ID>
+    <ID>LongParameterList:OAuth2Handlers.kt$OAuth2Handlers$( session: AuthorizationSession, userId: String, consent: ConsentDecision, userClaims: Map&lt;String, Any> = emptyMap(), acr: String? = null, amr: List&lt;String>? = null, )</ID>
+    <ID>LongParameterList:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$( private val authorizationServerService: AuthorizationServerService, private val configProvider: OAuth2ServersConfigProvider, private val userAuthProvider: UserAuthenticationProvider, private val scopeClaimsMapper: OidcScopeClaimsMapper, private val handleIaeInitialRequestCommand: HandleIaeInitialRequestCommand, private val handleIaeFollowUpCommand: HandleIaeFollowUpCommand, private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage, )</ID>
+    <ID>MagicNumber:OAuth2Handlers.kt$OAuth2Handlers$0xFF</ID>
+    <ID>MagicNumber:OAuth2Handlers.kt$OAuth2Handlers$12</ID>
+    <ID>MagicNumber:OAuth2Handlers.kt$OAuth2Handlers$16</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$16</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$3</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$4</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$400</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$401</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$403</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$404</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$500</ID>
+    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$503</ID>
+    <ID>NestedBlockDepth:OAuth2Handlers.kt$OAuth2Handlers$private fun extractClientAuthentication( headers: Map&lt;String, String>, body: Map&lt;String, String>, ): ClientAuthenticationConfig</ID>
+    <ID>ReturnCount:OAuth2Handlers.kt$OAuth2Handlers$private fun extractClientAuthentication( headers: Map&lt;String, String>, body: Map&lt;String, String>, ): ClientAuthenticationConfig</ID>
+    <ID>ReturnCount:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handlePushedAuthorizationRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, ): IdkResult&lt;PushedAuthorizationResponse, IdkError></ID>
+    <ID>ReturnCount:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handleTokenRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, httpUrl: String, ): IdkResult&lt;TokenResponse, IdkError></ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$@OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class) private suspend fun handleRegisterPreAuthCode(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleAuthorizationCallback(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCallbackEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCompleteOutcome( provider: FederatedUserAuthenticationProvider, sessionId: String, ): GenericHttpResponse</ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleIaeEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleReconciliationAuthorizeEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
+    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleWalletAuthorization( session: AuthorizationSession, loginHint: String, ): GenericHttpResponse</ID>
+    <ID>StringLiteralDuplication:OAuth2Handlers.kt$OAuth2Handlers$"Bearer"</ID>
+    <ID>StringLiteralDuplication:OAuth2Handlers.kt$OAuth2Handlers$"client_id"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"$errorUri&amp;state=${urlEncode(state)}"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"${redirectUri}${separator}error=server_error&amp;error_description=${urlEncode(approvalResult.error.message.defaultMessage ?: "Authorization approval failed")}"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Content-Type"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Federation is not configured"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Location"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Missing or invalid request body"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"application/json"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"error"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"error_description"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"invalid_client"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"no-store"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"not_found"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"server_error"</ID>
+    <ID>TooManyFunctions:OAuth2HttpAdapter.kt$OAuth2HttpAdapter : RoutedHttpAdapter</ID>
+    <ID>UnusedParameter:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$request: GenericHttpRequest</ID>
+    <ID>UnusedPrivateProperty:OAuth2Handlers.kt$OAuth2Handlers$val verifiedAuth = commands.verifyClientAuthentication .execute( VerifyClientAuthenticationArgs( clientAuthentication = tokenRequest.clientAuthentication, clientId = tokenRequest.clientId, tokenEndpointUrl = httpUrl, ), ).getOrElse { error -> return Err(error) }</ID>
+  </CurrentIssues>
+</SmellBaseline>

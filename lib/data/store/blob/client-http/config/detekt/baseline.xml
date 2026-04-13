@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:HttpBlobServiceClient.kt$HttpBlobServiceClient$@OptIn(ExperimentalEncodingApi::class) override suspend fun getBlob(info: BlobInfoType): IdkResult&lt;ResolvedBlobInfo, IdkError></ID>
+    <ID>ReturnCount:HttpBlobServiceClient.kt$HttpBlobServiceClient$override suspend fun copyBlob( source: BlobInfoType, destination: BlobInfo, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>ReturnCount:HttpBlobServiceClient.kt$HttpBlobServiceClient$override suspend fun deleteBlob(info: BlobInfoType): IdkResult&lt;Boolean, IdkError></ID>
+    <ID>ReturnCount:HttpBlobServiceClient.kt$HttpBlobServiceClient$override suspend fun moveBlob( source: BlobInfoType, destination: BlobInfo, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>StringLiteralDuplication:HttpBlobServiceClient.kt$HttpBlobServiceClient$"default"</ID>
+    <ID>ThrowsCount:HttpBlobStoreFactoryImpl.kt$HttpBlobStoreFactoryImpl$private fun createHttpClient(config: HttpBlobServiceClientConfig): HttpClient</ID>
+    <ID>TooManyFunctions:HttpBlobServiceClient.kt$HttpBlobServiceClient : BlobService</ID>
+  </CurrentIssues>
+</SmellBaseline>

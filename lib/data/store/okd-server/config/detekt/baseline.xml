@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongParameterList:OkdHttpAdapter.kt$OkdHttpAdapter$( execution: SessionExecution, private val getDocumentCommand: OkdGetDocumentCommand, private val updateDocumentCommand: OkdUpdateDocumentCommand, private val deleteDocumentCommand: OkdDeleteDocumentCommand, private val uploadDocumentCommand: OkdUploadDocumentCommand, private val getDocumentMetadataCommand: OkdGetDocumentMetadataCommand, private val listPersonsCommand: OkdListPersonsCommand, private val getPersonCommand: OkdGetPersonCommand, private val serviceMetadataCommand: OkdServiceMetadataCommand, )</ID>
+    <ID>MagicNumber:OkdEndpointCommands.kt$OkdGetDocumentMetadataCommandImpl$200</ID>
+    <ID>MagicNumber:OkdEndpointCommands.kt$OkdGetPersonCommandImpl$200</ID>
+    <ID>MagicNumber:OkdEndpointCommands.kt$OkdListPersonsCommandImpl$200</ID>
+    <ID>MagicNumber:OkdEndpointCommands.kt$OkdServiceMetadataCommandImpl$200</ID>
+    <ID>MagicNumber:OkdEndpointCommands.kt$OkdUploadDocumentCommandImpl$200</ID>
+    <ID>ReturnCount:OkdEndpointCommands.kt$OkdDeleteDocumentCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:OkdEndpointCommands.kt$OkdGetDocumentCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:OkdEndpointCommands.kt$OkdGetDocumentMetadataCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:OkdEndpointCommands.kt$OkdGetPersonCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:OkdEndpointCommands.kt$OkdUpdateDocumentCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:OkdEndpointCommands.kt$OkdUploadDocumentCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>StringLiteralDuplication:OkdEndpointCommands.kt$OkdGetDocumentCommand.Companion$"/documents/{documentId}"</ID>
+    <ID>StringLiteralDuplication:OkdEndpointCommands.kt$OkdGetDocumentCommand.Companion$"documents"</ID>
+    <ID>StringLiteralDuplication:OkdEndpointCommands.kt$OkdGetDocumentCommandImpl$"documentId"</ID>
+    <ID>StringLiteralDuplication:OkdEndpointCommands.kt$OkdListPersonsCommandImpl$"okd.personId"</ID>
+  </CurrentIssues>
+</SmellBaseline>

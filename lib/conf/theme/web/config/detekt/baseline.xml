@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CssTokenMapper.kt$CssTokenMapper$private val UNIT_PATTERN = Regex("""(\d+(?:\.\d+)?)\s*(?:sp|dp)""")</ID>
+    <ID>CyclomaticComplexMethod:CssLegacyAliases.kt$CssLegacyAliases$fun generateAliases(tokens: Map&lt;String, String>): Map&lt;String, String></ID>
+    <ID>MagicNumber:CssLegacyAliases.kt$CssLegacyAliases$0.1</ID>
+    <ID>MagicNumber:CssTokenMapper.kt$CssTokenMapper$16</ID>
+    <ID>MagicNumber:CssTokenMapper.kt$CssTokenMapper$4</ID>
+    <ID>MagicNumber:CssTokenMapper.kt$CssTokenMapper$6</ID>
+  </CurrentIssues>
+</SmellBaseline>

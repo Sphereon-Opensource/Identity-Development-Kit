@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>InjectDispatcher:MultiplatformSettings.android.kt$Unconfined</ID>
+    <ID>UseCheckOrError:MultiplatformSettings.android.kt$MultiplatformSettings$throw IllegalStateException("App context not initialized")</ID>
+    <ID>VarCouldBeVal:MultiplatformSettings.android.kt$private var scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)</ID>
+  </CurrentIssues>
+</SmellBaseline>

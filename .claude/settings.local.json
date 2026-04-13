@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew :ktor:server:plugins:ktor-server-kotlin-inject:compileKotlinJvm:*)",
+      "Bash(./gradlew:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "WebSearch",
+      "Bash(xxd:*)",
+      "Bash(dir /s /b \"%USERPROFILE%\\\\.m2\\\\repository\\\\com\\\\sphereon\\\\*spring*\")",
+      "Bash(cmd.exe /c \"echo %TEMP%\")",
+      "Bash(printenv:*)",
+      "Bash(cmd.exe /c \"echo %TEMP% && echo %TMP%\")",
+      "Bash(powershell.exe:*)",
+      "Bash(echo:*)",
+      "Bash(mkdir:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(ls:*)",
+      "Bash(xargs -I{} git show:*)",
+      "Bash(npm install)",
+      "Bash(npm test)",
+      "Bash(npm install:*)",
+      "Bash(npm ls:*)"
+    ]
+  }
+}

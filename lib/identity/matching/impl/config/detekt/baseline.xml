@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$Companion</ID>
+    <ID>ClassOrdering:KmsBackedReconciliationCryptoService.kt$KmsBackedReconciliationCryptoService$Companion</ID>
+    <ID>LongParameterList:KmsBackedReconciliationCryptoService.kt$KmsBackedReconciliationCryptoService$( private val generateMacCommand: GenerateMacCommand, private val keyManagerService: KeyManagerService, private val holderKeyAlias: String = DEFAULT_HOLDER_KEY_ALIAS, private val institutionKeyAlias: String = DEFAULT_INSTITUTION_KEY_ALIAS, private val encryptionKeyAlias: String = DEFAULT_ENCRYPTION_KEY_ALIAS, private val holderKeyVersion: String = "v1", private val institutionKeyVersion: String = "v1", private val encryptionKeyVersion: String = "v1", private val previousHolderKeyAlias: String? = null, private val previousInstitutionKeyAlias: String? = null, private val previousEncryptionKeyAlias: String? = null, private val previousHolderKeyVersion: String? = null, private val previousInstitutionKeyVersion: String? = null, private val previousEncryptionKeyVersion: String? = null, private val providerId: String = "software", )</ID>
+    <ID>MagicNumber:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$200</ID>
+    <ID>MagicNumber:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$201</ID>
+    <ID>MagicNumber:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$400</ID>
+    <ID>MagicNumber:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$404</ID>
+    <ID>MagicNumber:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$409</ID>
+    <ID>MagicNumber:IdentityMatchingHttpAdapter.kt$IdentityMatchingHttpAdapter$500</ID>
+    <ID>MagicNumber:KmsBackedReconciliationCryptoService.kt$KmsBackedReconciliationCryptoService$12</ID>
+    <ID>MagicNumber:KmsBackedReconciliationCryptoService.kt$KmsBackedReconciliationCryptoService$28</ID>
+    <ID>NestedBlockDepth:KottageIdentityMatchStore.kt$KottageIdentityMatchStore$override suspend fun update(match: IdentityMatch): IdentityMatch</ID>
+  </CurrentIssues>
+</SmellBaseline>

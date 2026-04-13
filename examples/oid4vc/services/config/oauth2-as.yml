@@ -1,0 +1,36 @@
+server:
+  rest:
+    port: 8080
+    auth:
+      enabled: false
+      anonymous:
+        allowed: true
+
+kms:
+  providers:
+    software:
+      type: software
+      enabled: true
+      keystore:
+        type: pkcs12
+        id: software
+        password: "${env:KEYSTORE_PASSWORD}"
+        path: /app/keystore/keystore.p12
+
+oauth2:
+  servers:
+    default:
+      mode: HOSTED
+      issuer: "${env:EXTERNAL_BASE_URL}/auth"
+      oidc: SUPPORTED
+      pkce: REQUIRED
+      token-format: JWT
+      access-token-lifetime-seconds: 3600
+      authorization-code-lifetime-seconds: 600
+      grant-types-enabled: "authorization_code,urn:ietf:params:oauth:grant-type:pre-authorized_code,client_credentials,refresh_token"
+      public-clients:
+        allow-any: true
+      internal-clients:
+        issuer:
+          client-id: issuer-service
+          client-secret: "${env:INTERNAL_CLIENT_SECRET}"

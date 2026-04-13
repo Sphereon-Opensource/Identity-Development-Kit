@@ -1,0 +1,415 @@
+/*
+ * Sphereon Custom Dokka Theme
+ * Brand colors based on https://sphereon.com and https://docs.sphereon.com
+ */
+
+/* ============================================
+   CSS VARIABLES
+   ============================================ */
+
+:root {
+    /* Sphereon Brand Colors */
+    --sphereon-navy: #21313c;
+    --sphereon-navy-light: #2d4251;
+    --sphereon-cyan: #98d4ff;
+    --sphereon-cyan-dark: #5eb8f7;
+    --sphereon-red: #dd0d0d;
+    --sphereon-red-hover: #b30a0a;
+    --sphereon-white: #ffffff;
+    --sphereon-gray-light: #fafafa;
+    --sphereon-gray: #f5f5f5;
+    --sphereon-gray-medium: #e0e0e0;
+    --sphereon-gray-dark: #666666;
+    --sphereon-text: #21313c;
+    --sphereon-text-light: #4a5568;
+}
+
+/* Dark mode color overrides */
+.theme-dark {
+    --sphereon-navy: #1a2730;
+    --sphereon-text: #e2e8f0;
+    --sphereon-text-light: #a0aec0;
+    --sphereon-gray-light: #1a202c;
+    --sphereon-gray: #2d3748;
+    --sphereon-gray-medium: #4a5568;
+}
+
+/* ============================================
+   MAIN CONTENT BACKGROUND - docs.sphereon.com style
+   ============================================ */
+
+/* Dark mode main content area - lighter gray like docs site */
+.theme-dark .main-content,
+.theme-dark #main,
+.theme-dark .cover,
+.theme-dark #content {
+    background-color: #27272a !important;
+}
+
+.theme-dark .root {
+    background-color: #27272a !important;
+}
+
+/* Light mode - white background */
+:root:not(.theme-dark) .main-content,
+:root:not(.theme-dark) #main,
+:root:not(.theme-dark) .cover,
+:root:not(.theme-dark) #content {
+    background-color: #ffffff !important;
+}
+
+/* Container styling */
+#container {
+    display: flex;
+}
+
+#main {
+    flex: 1;
+    padding: 24px 32px !important;
+}
+
+/* ============================================
+   HEADINGS
+   ============================================ */
+
+/* Light mode headings - navy color */
+h1, h2, h3, h4, h5, h6 {
+    color: #21313c !important;
+    -webkit-text-fill-color: #21313c !important;
+    background: none !important;
+    background-image: none !important;
+    background-clip: unset !important;
+    -webkit-background-clip: unset !important;
+    text-shadow: none !important;
+    font-weight: 600 !important;
+}
+
+/* Dark mode headings - cyan color */
+.theme-dark h1,
+.theme-dark h2,
+.theme-dark h3,
+.theme-dark h4,
+.theme-dark h5,
+.theme-dark h6,
+.theme-dark .cover h1,
+.theme-dark .cover h2,
+.theme-dark .main-content h1,
+.theme-dark .main-content h2 {
+    color: #98d4ff !important;
+    -webkit-text-fill-color: #98d4ff !important;
+    background: none !important;
+    background-image: none !important;
+}
+
+/* H1 styling */
+h1 {
+    border-bottom: 2px solid #21313c;
+    padding-bottom: 0.5rem;
+}
+
+.theme-dark h1 {
+    border-bottom: 2px solid #98d4ff;
+}
+
+/* H2 styling */
+h2 {
+    font-size: 1.5rem;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+/* ============================================
+   HEADER & NAVIGATION - docs.sphereon.com style
+   ============================================ */
+
+/* Main navigation bar - dark gray like docs site */
+.navigation,
+nav.navigation {
+    background-color: #1f1f23 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    height: 56px !important;
+    padding: 0 16px !important;
+}
+
+/* Library name / logo area */
+.library-name,
+.library-name--link {
+    color: #ffffff !important;
+    font-weight: 400 !important;
+    font-size: 18px !important;
+    letter-spacing: 0.5px;
+}
+
+.library-name a,
+.library-name--link {
+    color: #ffffff !important;
+}
+
+/* Version badge */
+.library-version {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    padding: 4px 10px !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+}
+
+/* Navigation controls (theme toggle, search) */
+.navigation-controls--btn {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.navigation-controls--btn:hover {
+    color: #ffffff !important;
+}
+
+/* ============================================
+   SIDEBAR - docs.sphereon.com style
+   ============================================ */
+
+/* Sidebar background - matches docs site dark gray */
+.sidebar,
+#leftColumn,
+.toc {
+    background-color: #1f1f23 !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding-top: 8px !important;
+}
+
+.theme-dark .sidebar,
+.theme-dark #leftColumn,
+.theme-dark .toc {
+    background-color: #1f1f23 !important;
+}
+
+/* Light mode sidebar - keep dark for consistency with docs site */
+:root:not(.theme-dark) .sidebar,
+:root:not(.theme-dark) #leftColumn {
+    background-color: #1f1f23 !important;
+}
+
+/* Sidebar links */
+.sidebar a,
+#sideMenu a,
+.toc a {
+    color: rgba(255, 255, 255, 0.7) !important;
+    font-size: 14px !important;
+    padding: 6px 12px !important;
+    display: block;
+    transition: color 0.15s ease, background-color 0.15s ease !important;
+}
+
+.sidebar a:hover,
+#sideMenu a:hover,
+.toc a:hover {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Sidebar icons/arrows */
+.sidebar .sideMenuPart,
+#sideMenu .sideMenuPart {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Sidebar active/current item */
+.sidebar .current > a,
+#sideMenu .current > a,
+.sideMenuPart[data-active] > a {
+    color: #3b82f6 !important;
+    background-color: rgba(59, 130, 246, 0.1) !important;
+    font-weight: 500;
+}
+
+/* Sidebar section headers */
+.sideMenuPart > a {
+    font-weight: 500 !important;
+}
+
+/* Nested items indentation */
+.sideMenuPart .sideMenuPart a {
+    padding-left: 24px !important;
+}
+
+/* ============================================
+   LINKS
+   ============================================ */
+
+/* Light mode links - use red/dark colors */
+a {
+    color: #0066cc !important;
+}
+
+a:hover {
+    color: #004499 !important;
+}
+
+/* Dark mode links - use cyan */
+.theme-dark a {
+    color: #98d4ff !important;
+}
+
+.theme-dark a:hover {
+    color: #ffffff !important;
+}
+
+/* Module/package list links - light mode */
+.table a,
+.main-subrow a,
+.main-content a {
+    color: #0066cc !important;
+}
+
+.table a:hover,
+.main-subrow a:hover,
+.main-content a:hover {
+    color: #004499 !important;
+}
+
+/* Module/package list links - dark mode */
+.theme-dark .table a,
+.theme-dark .main-subrow a,
+.theme-dark .main-content a {
+    color: #98d4ff !important;
+}
+
+.theme-dark .table a:hover,
+.theme-dark .main-subrow a:hover,
+.theme-dark .main-content a:hover {
+    color: #ffffff !important;
+}
+
+/* ============================================
+   TABLES & MODULE LIST
+   ============================================ */
+
+.table-row {
+    border-bottom: 1px solid var(--sphereon-gray-medium);
+}
+
+.theme-dark .table-row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.table-row:hover {
+    background-color: rgba(152, 212, 255, 0.1);
+}
+
+/* ============================================
+   CODE BLOCKS
+   ============================================ */
+
+code,
+pre,
+.symbol {
+    background-color: var(--sphereon-gray);
+    border-radius: 4px;
+}
+
+.theme-dark code,
+.theme-dark pre,
+.theme-dark .symbol {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+:not(pre) > code {
+    padding: 0.2em 0.4em;
+    font-size: 0.9em;
+}
+
+/* ============================================
+   FOOTER - docs.sphereon.com style
+   ============================================ */
+
+.footer,
+footer {
+    background-color: #1f1f23 !important;
+    color: rgba(255, 255, 255, 0.6) !important;
+    padding: 16px 24px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+    font-size: 13px !important;
+}
+
+.footer a,
+footer a {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.footer a:hover,
+footer a:hover {
+    color: #ffffff !important;
+}
+
+/* ============================================
+   PLATFORM TAGS
+   ============================================ */
+
+.platform-tag {
+    border-radius: 4px;
+    padding: 0.2em 0.5em;
+    font-size: 0.8em;
+    font-weight: 500;
+}
+
+/* ============================================
+   CONTENT PARAGRAPHS
+   ============================================ */
+
+.paragraph,
+p {
+    line-height: 1.6;
+}
+
+.theme-dark .paragraph,
+.theme-dark p {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Strong/bold text */
+strong {
+    font-weight: 600;
+}
+
+.theme-dark strong {
+    color: #ffffff;
+}
+
+/* ============================================
+   BREADCRUMBS
+   ============================================ */
+
+.breadcrumbs {
+    padding: 0.5rem 0;
+    margin-bottom: 1rem;
+}
+
+.breadcrumbs a {
+    color: var(--sphereon-cyan) !important;
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--sphereon-gray);
+}
+
+.theme-dark::-webkit-scrollbar-track {
+    background: #1a202c;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--sphereon-cyan-dark);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--sphereon-cyan);
+}

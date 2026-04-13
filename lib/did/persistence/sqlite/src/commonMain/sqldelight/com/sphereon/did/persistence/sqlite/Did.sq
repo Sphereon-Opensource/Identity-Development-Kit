@@ -1,0 +1,107 @@
+-- DID Database Schema (SQLite Version)
+-- Stores managed DID records and their key mappings.
+-- Uses TEXT for timestamps (ISO8601 format)
+
+import kotlin.Boolean;
+
+-- DID record table
+CREATE TABLE IF NOT EXISTS did_record (
+    id TEXT NOT NULL PRIMARY KEY,
+    did TEXT NOT NULL UNIQUE,
+    method TEXT NOT NULL,
+    alias TEXT,
+    document_json TEXT,
+    role TEXT NOT NULL,
+    deactivated INTEGER AS Boolean NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_did_record_method ON did_record(method);
+CREATE INDEX IF NOT EXISTS idx_did_record_alias ON did_record(alias);
+CREATE INDEX IF NOT EXISTS idx_did_record_did ON did_record(did);
+
+-- DID key mapping table - maps verification methods to KMS keys
+CREATE TABLE IF NOT EXISTS did_key_mapping (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    verification_method_id TEXT NOT NULL,
+    kms_key_alias TEXT NOT NULL,
+    kms_provider_id TEXT NOT NULL,
+    purposes_json TEXT NOT NULL,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_did_key_mapping_did ON did_key_mapping(did_record_id);
+
+-- =====================
+-- DID Record Queries
+-- =====================
+
+findById:
+SELECT * FROM did_record WHERE id = :id;
+
+findByDid:
+SELECT * FROM did_record WHERE did = :did;
+
+findByAlias:
+SELECT * FROM did_record WHERE alias = :alias;
+
+findAll:
+SELECT * FROM did_record
+ORDER BY created_at DESC;
+
+findAllFiltered:
+SELECT * FROM did_record
+WHERE (:method IS NULL OR method = :method)
+  AND (:alias IS NULL OR alias = :alias)
+  AND (:role IS NULL OR role = :role)
+  AND (:includeDeactivated = 1 OR deactivated = 0)
+ORDER BY created_at DESC;
+
+countAll:
+SELECT COUNT(*) FROM did_record;
+
+insertRecord:
+INSERT INTO did_record(
+    id, did, method, alias, document_json, role, deactivated, created_at, updated_at
+) VALUES (
+    :id, :did, :method, :alias, :documentJson, :role, :deactivated, :createdAt, :updatedAt
+);
+
+updateRecord:
+UPDATE did_record SET
+    alias = :alias,
+    document_json = :documentJson,
+    deactivated = :deactivated,
+    updated_at = :updatedAt
+WHERE id = :id;
+
+deleteRecord:
+DELETE FROM did_record WHERE did = :did;
+
+deleteRecordById:
+DELETE FROM did_record WHERE id = :id;
+
+-- =====================
+-- Key Mapping Queries
+-- =====================
+
+findKeyMappingsByDidRecordId:
+SELECT * FROM did_key_mapping WHERE did_record_id = :didRecordId;
+
+findKeyMappingById:
+SELECT * FROM did_key_mapping WHERE id = :id;
+
+insertKeyMapping:
+INSERT INTO did_key_mapping(
+    id, did_record_id, verification_method_id, kms_key_alias, kms_provider_id, purposes_json
+) VALUES (
+    :id, :didRecordId, :verificationMethodId, :kmsKeyAlias, :kmsProviderId, :purposesJson
+);
+
+deleteKeyMapping:
+DELETE FROM did_key_mapping WHERE id = :id;
+
+deleteKeyMappingsByDidRecordId:
+DELETE FROM did_key_mapping WHERE did_record_id = :didRecordId;

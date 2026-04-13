@@ -1,0 +1,21 @@
+type: array
+description: The additional consumer elements that can be provided, see the [documentation on support for specific consumers](https://open-education-api.github.io/specification/#/consumers) for more information about this mechanism.
+items:
+ anyOf:
+  - $ref: '../schemas/Consumer.yaml'
+  - $ref: '../consumers/NL-OKD/V1/nl-okd-association.yaml'
+  - $ref: '../consumers/NL-OKD/V1/nl-okd-document.yaml'
+  - $ref: '../consumers/NL-OKD/V1/nl-okd-additional-studentinfo.yaml'
+  - $ref: '../consumers/NL-OKD/V1/nl-okd-examen.yaml'
+example:
+  - consumerKey: 'nl-okd'
+    documentType: 'enrollment'
+    documentSubtype: 'vrijstelling aanvraag'
+    documentId: 'dbd3e12a-ed8b-4488-ac34-26fd4f64f40b'
+    documentName: 'inschrijving-100245.pdf'
+    retentionPeriodSuggestion: '3Y'
+    enrollmentStartDate: '2021-09-01'
+    enrollmentExpectedEndDate: '2025-07-31'
+    enrollmentFinalEndDate: null
+    receivedDate: "2026-01-13"
+    registrationDate: "2026-01-16"

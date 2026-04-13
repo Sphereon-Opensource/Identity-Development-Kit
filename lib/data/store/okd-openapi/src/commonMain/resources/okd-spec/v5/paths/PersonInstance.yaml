@@ -1,0 +1,144 @@
+get:
+  summary: GET /persons/{personId}
+  operationId: listPersonById
+  description: | 
+    Get a single person
+  
+    note:
+    - This endpoint should be implemented by the SIS component, so that the DMS can retrieve person information (flow-7)
+  security:
+    - oAuthFlows:
+      - okd:studentinfo
+  tags:
+    - persons
+  parameters:
+    - name: personId
+      in: path
+      description: User ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/Person.yaml'
+          example:
+            personId: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+            primaryCode:
+              codeType: "studentNumber"
+              code: "1234567"
+            givenName: "Maartje"
+            surnamePrefix: "van"
+            surname: "Damme"
+            displayName: "Maartje van Damme"
+            initials: "MCW"
+            dateOfBirth: "2000-01-15"
+            gender: "F"
+            activeEnrollment: true
+            affiliations:
+              - "student"
+            mail: "vandamme.mcw@student.roc.nl"
+            languageOfChoice:
+              - "nl-NL"
+            otherCodes: []
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'
+
+
+
+post:
+  summary: POST /persons/{personId}
+  description: | 
+    POST a document for a person
+  
+    note:
+    - This endpoint should be implemented by the DMS component, so that the components can upload documents for a person (flow 1,2,3,4)
+    - the call is a multipart/form-data call with 2 parts: metadata (json) and file (binary).
+
+  operationId: postDocumentOnPersonById
+  security:
+    - oAuthFlows:
+      - okd:alldocuments
+  tags:
+    - persons
+  parameters:
+    - name: personId
+      in: path
+      description: Person ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          type: object
+          properties:
+            metadata:
+              $ref: '../schemas/Person.yaml'
+            file:
+              type: string
+              format: binary
+              description: File to upload
+          required:
+            - metadata
+            - file
+        example:
+          metadata:
+            personId: "123e4567-e89b-12d3-a456-426614174000"
+            primaryCode:
+              codeType: "studentNumber"
+              code: "1234567"
+            consumers:
+              - consumerKey: "nl-okd"
+                documentType: "other"
+                documentSubtype: "DYS"
+                documentId: "65f64c44-e3c4-4579-8e05-a729d4b89d06"
+                documentName: "Dyslexieverklaring-1234567.pdf"
+                retentionPeriodSuggestion: "3Y"
+                receivedDate: "2026-01-13"
+                registrationDate: "2026-01-16"
+          file: "file content.jpg"
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/DocumentUploadResponse.yaml'
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '422':
+      $ref: '../schemas/ErrorUnprocessableContent.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'
+
+

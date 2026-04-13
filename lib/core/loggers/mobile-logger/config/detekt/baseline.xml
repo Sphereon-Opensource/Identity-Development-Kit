@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:DefaultMobileLogManager.kt$MobileLogManager$/** * Gets logs as a flow for real-time updates * This is useful for implementing live log viewers in mobile apps */ val logsFlow: StateFlow&lt;List&lt;MobileLogEntry>></ID>
+    <ID>ClassOrdering:DefaultMobileLogManager.kt$MobileLogManagerImpl$override val logsFlow: StateFlow&lt;List&lt;MobileLogEntry>> = repository.logsFlow</ID>
+    <ID>ClassOrdering:MobileLogRepository.kt$MobileLogRepository$/** * Gets logs as a flow for real-time updates */ val logsFlow: StateFlow&lt;List&lt;MobileLogEntry>></ID>
+    <ID>ClassOrdering:MobileLogRepositoryImpl.kt$MobileLogRepositoryImpl$override val logsFlow: StateFlow&lt;List&lt;MobileLogEntry>> = buffer.logsFlow</ID>
+    <ID>ComplexInterface:DefaultMobileLogManager.kt$MobileLogManager</ID>
+    <ID>ComplexInterface:MobileLogRepository.kt$MobileLogRepository</ID>
+    <ID>CyclomaticComplexMethod:DefaultMobileLogManager.kt$MobileLogManagerImpl$private fun exportAsCsv( logs: List&lt;MobileLogEntry>, options: MobileLogExportOptions, ): String</ID>
+    <ID>TooManyFunctions:DefaultMobileLogManager.kt$MobileLogManager</ID>
+    <ID>TooManyFunctions:DefaultMobileLogManager.kt$MobileLogManagerImpl : MobileLogManager</ID>
+  </CurrentIssues>
+</SmellBaseline>

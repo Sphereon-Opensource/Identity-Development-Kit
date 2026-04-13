@@ -1,0 +1,112 @@
+-- Key Reference Database Schema (SQLite)
+-- Stores tenant-aware key reference metadata only — no key material.
+-- Uses TEXT for timestamps (ISO8601 format)
+
+CREATE TABLE IF NOT EXISTS key_reference (
+    id TEXT NOT NULL PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    kid TEXT,
+    provider_id TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'managed',
+    key_type TEXT,
+    signature_algorithm TEXT,
+    key_visibility TEXT,
+    key_encoding TEXT,
+    created_at TEXT NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by_id TEXT,
+    deleted_at TEXT,
+    deleted_by_id TEXT
+);
+
+-- Unique constraints (partial indexes excluding soft-deleted rows)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_key_ref_tenant_alias_provider
+    ON key_reference(tenant_id, alias, provider_id)
+    WHERE deleted_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_key_ref_tenant_kid_provider
+    ON key_reference(tenant_id, kid, provider_id)
+    WHERE deleted_at IS NULL AND kid IS NOT NULL;
+
+-- Lookup indexes
+CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_id ON key_reference(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_kid ON key_reference(tenant_id, kid);
+CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_provider ON key_reference(tenant_id, provider_id);
+CREATE INDEX IF NOT EXISTS idx_key_ref_origin ON key_reference(origin);
+
+-- =====================
+-- Queries
+-- =====================
+
+findById:
+SELECT * FROM key_reference WHERE id = :id AND deleted_at IS NULL;
+
+findByKid:
+SELECT * FROM key_reference
+WHERE tenant_id = :tenantId AND kid = :kid AND deleted_at IS NULL
+  AND (:providerId IS NULL OR provider_id = :providerId);
+
+findByAlias:
+SELECT * FROM key_reference
+WHERE tenant_id = :tenantId AND alias = :alias AND deleted_at IS NULL
+  AND (:providerId IS NULL OR provider_id = :providerId);
+
+findAll:
+SELECT * FROM key_reference
+WHERE tenant_id = :tenantId AND deleted_at IS NULL
+ORDER BY created_at DESC;
+
+findAllFiltered:
+SELECT * FROM key_reference
+WHERE tenant_id = :tenantId AND deleted_at IS NULL
+  AND (:providerId IS NULL OR provider_id = :providerId)
+  AND (:alias IS NULL OR alias = :alias)
+  AND (:kid IS NULL OR kid = :kid)
+  AND (:origin IS NULL OR origin = :origin)
+  AND (:keyType IS NULL OR key_type = :keyType)
+ORDER BY created_at DESC;
+
+existsByAliasAndProvider:
+SELECT COUNT(*) FROM key_reference
+WHERE tenant_id = :tenantId AND alias = :alias AND provider_id = :providerId
+  AND deleted_at IS NULL;
+
+insertRecord:
+INSERT INTO key_reference(
+    id, tenant_id, alias, kid, provider_id, origin,
+    key_type, signature_algorithm, key_visibility, key_encoding,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :tenantId, :alias, :kid, :providerId, :origin,
+    :keyType, :signatureAlgorithm, :keyVisibility, :keyEncoding,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+updateRecord:
+UPDATE key_reference SET
+    kid = :kid,
+    origin = :origin,
+    key_type = :keyType,
+    signature_algorithm = :signatureAlgorithm,
+    key_visibility = :keyVisibility,
+    key_encoding = :keyEncoding,
+    updated_at = :updatedAt,
+    updated_by_id = :updatedById
+WHERE id = :id AND deleted_at IS NULL;
+
+-- Soft delete
+softDelete:
+UPDATE key_reference SET
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById
+WHERE tenant_id = :tenantId AND alias = :alias AND provider_id = :providerId
+  AND deleted_at IS NULL;
+
+softDeleteByKid:
+UPDATE key_reference SET
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById
+WHERE tenant_id = :tenantId AND kid = :kid AND deleted_at IS NULL
+  AND (:providerId IS NULL OR provider_id = :providerId);

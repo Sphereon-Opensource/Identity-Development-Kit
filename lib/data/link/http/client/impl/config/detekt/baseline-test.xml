@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:HttpClientProviderIntegrationTest.kt$HttpClientProviderIntegrationTest$@Test @Disabled("mTLS test requires further integration work with new DI-based KMS infrastructure") fun `full mTLS handshake using KMS key should succeed`()</ID>
+    <ID>LongMethod:HttpClientProviderIntegrationTest.kt$HttpClientProviderIntegrationTest$@Test @Disabled("mTLS test requires further integration work with new DI-based KMS infrastructure") fun `full mTLS handshake using KMS key should succeed`()</ID>
+    <ID>LongMethod:HttpClientProviderIntegrationTest.kt$HttpClientProviderIntegrationTest$@Test fun `mTLS handshake should fail when client certificate is missing`()</ID>
+    <ID>LongParameterList:TestCertificateGenerator.kt$TestCertificateGenerator$( subjectDNStr: String, subjectPublicKey: PublicKey, issuerCert: X509Certificate, // Issuer's certificate issuerPrivateKey: PrivateKey, // Issuer's private key daysValidity: Int = 365, isCA: Boolean = false, sigAlgName: String = "SHA256withECDSA", // Ensure this matches issuer's key type )</ID>
+    <ID>MissingPackageDeclaration:TestCertificateGenerator.kt$.TestCertificateGenerator.kt</ID>
+  </CurrentIssues>
+</SmellBaseline>

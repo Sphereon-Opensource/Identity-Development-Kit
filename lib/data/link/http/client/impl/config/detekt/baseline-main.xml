@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>RedundantSuspendModifier:HttpClientFactoryJvmImpl.kt$HttpClientFactoryJvmImpl$suspend</ID>
+    <ID>UnusedPrivateMember:HttpClientFactoryJvmImpl.kt$HttpClientFactoryJvmImpl$private fun createCioEngine(sslOptions: LegacyJvmSslProviderImpl? = null): HttpClientEngine</ID>
+  </CurrentIssues>
+</SmellBaseline>

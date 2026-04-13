@@ -1,0 +1,130 @@
+server:
+  rest:
+    port: 8080
+    auth:
+      enabled: false
+      anonymous:
+        allowed: true
+
+kms:
+  providers:
+    software:
+      type: software
+      enabled: true
+      keystore:
+        type: pkcs12
+        id: software
+        password: "${env:KEYSTORE_PASSWORD}"
+        path: /app/keystore/keystore.p12
+
+oid4vci:
+  issuer:
+    identifier: "${env:EXTERNAL_BASE_URL}/oid4vci"
+    authorization-servers: "${env:EXTERNAL_BASE_URL}/auth"
+    # Key alias in the issuer KMS used to sign issuer metadata (OID4VCI §13.2.4).
+    # Reuses the TestCredential signing key for the demo; production should use a dedicated key.
+    signing-key-alias: TestCredential
+    credential-configuration-ids: TestCredential,EuPid,AgeOver18
+    as-bridge:
+      internal-url: "${env:OAUTH2_AS_INTERNAL_URL}"
+      client-id: issuer-service
+      client-secret: "${env:INTERNAL_CLIENT_SECRET}"
+    # Credential configuration IDs use bracket notation as map keys, e.g. "[TestCredential]"
+    # This ensures they are parsed as explicit map keys rather than YAML tags or anchors.
+    credentials:
+      "[TestCredential]":
+        format: "dc+sd-jwt"
+        vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential"
+        scope: test_credential
+        signing-key-alias: TestCredential
+        signing-key-mode: "did:jwk"
+        signing-algorithms: ES256
+        # Emits an `exp` claim on issued credentials. Omit to issue with no
+        # expiration (both SD-JWT VC §3.2.2 and RFC 7519 §4.1.4 treat exp as OPTIONAL).
+        expiration-in-days: 365
+        binding-methods: jwk,did:jwk,did:key
+        proof-types:
+          jwt:
+            signing-algorithms: ES256
+        claims:
+          given_name:
+            mandatory: false
+          family_name:
+            mandatory: false
+          email:
+            mandatory: true
+        display:
+          name: Test Credential
+          locale: en-US
+          description: A test SD-JWT verifiable credential for E2E testing
+      "[EuPid]":
+        format: "dc+sd-jwt"
+        vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/EuPid"
+        scope: eu_pid
+        signing-key-alias: PID
+        signing-key-mode: "did:jwk"
+        signing-algorithms: ES256
+        binding-methods: jwk,did:jwk,did:key
+        proof-types:
+          jwt:
+            signing-algorithms: ES256
+        claims:
+          family_name:
+            mandatory: true
+          given_name:
+            mandatory: true
+          birth_date:
+            mandatory: true
+          age_over_18:
+            mandatory: false
+          nationality:
+            mandatory: true
+          resident_country:
+            mandatory: false
+          resident_city:
+            mandatory: false
+          resident_postal_code:
+            mandatory: false
+          resident_street:
+            mandatory: false
+          issuing_authority:
+            mandatory: true
+          issuing_country:
+            mandatory: true
+          document_number:
+            mandatory: false
+          gender:
+            mandatory: false
+          birth_place:
+            mandatory: false
+        display:
+          name: EU Personal ID
+          locale: en-US
+          description: Personal identification data per EU Digital Identity Wallet ARF
+      "[AgeOver18]":
+        format: "mso_mdoc"
+        doctype: "eu.europa.ec.av.1"
+        scope: age_verification
+        signing-key-alias: AgeOver18
+        signing-algorithms: ES256
+        # MSO validity window (ISO 18013-5 §9.1.2.4). validFrom and signed are shifted
+        # backward by the global oid4vci.issuer.issuance-clock-skew-in-seconds so
+        # wallets with clocks slightly ahead still see the MSO as valid on receipt.
+        expiration-in-days: 365
+        binding-methods: cose_key
+        proof-types:
+          jwt:
+            signing-algorithms: ES256
+        claims:
+          age_over_18:
+            mandatory: true
+        display:
+          name: EU Age Verification
+          locale: en-US
+          description: Age over 18 attestation per EU Digital Identity Wallet
+    display:
+      name: IDK Example Issuer
+      locale: en-US
+
+  rest:
+    external-base-url: "${env:EXTERNAL_BASE_URL}"

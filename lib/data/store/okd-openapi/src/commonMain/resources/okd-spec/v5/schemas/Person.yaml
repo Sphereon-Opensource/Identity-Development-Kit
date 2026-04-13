@@ -1,0 +1,30 @@
+allOf:
+  - $ref: '../schemas/PersonId.yaml'
+  - $ref: '../schemas/PersonProperties.yaml'
+
+example:
+    personId: "5ab399b8-c499-4da8-af6d-b55e66251f31"
+    primaryCode:
+      codeType: "studentNumber"
+      code: "1234567"
+    givenName: "Maartje"
+    surnamePrefix: "van"
+    surname: "Damme"
+    displayName: "Maartje van Damme"
+    initials: "MCW"
+    dateOfBirth: "2000-01-15"
+    gender: "F"
+    activeEnrollment: true
+    affiliations:
+      - "student"
+    mail: "vandamme.mcw@student.roc.nl"
+    languageOfChoice:
+      - "nl-NL"
+    otherCodes: []
+    consumers: 
+      - consumerKey: 'nl-okd'
+        documentType: 'enrollment'
+        documentSubtype: 'dyslexieverklaring'
+        documentId: 'acd3e12a-ed8b-4488-ac34-26fd4f64f40b'
+        documentName: 'dyslexieverklaring-100245.pdf'
+        retentionPeriodSuggestion: '7Y'

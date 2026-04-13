@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:JwkDidProviderImpl.kt$JwkDidProviderImpl$override suspend fun create(options: DidCreateOptions): IdkResult&lt;DidCreateResult, IdkError></ID>
+    <ID>ReturnCount:JwkDidResolverImpl.kt$JwkDidResolverImpl$override suspend fun dereference( didUrl: String, options: DidDereferenceOptions, ): IdkResult&lt;DidDereferenceResult, IdkError></ID>
+    <ID>ReturnCount:JwkDidResolverImpl.kt$JwkDidResolverImpl$override suspend fun resolve( did: String, options: DidResolutionOptions, ): IdkResult&lt;DidResolutionResult, IdkError></ID>
+    <ID>StringLiteralDuplication:JwkDidProviderImpl.kt$JwkDidProviderImpl$"UNSUPPORTED_OPERATION"</ID>
+    <ID>StringLiteralDuplication:JwkDidResolverImpl.kt$JwkDidResolverImpl$"application/did+ld+json"</ID>
+  </CurrentIssues>
+</SmellBaseline>

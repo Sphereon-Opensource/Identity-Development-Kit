@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:MobileKmsProvider.kt$MobileKmsProviderImpl$else</ID>
+    <ID>BracesOnIfStatements:MobileKmsProvider.kt$MobileKmsProviderImpl$if</ID>
+    <ID>ClassOrdering:MobileKmsProvider.kt$MobileKmsProviderImpl$override val settings: KeyProviderSettings? = null</ID>
+    <ID>CyclomaticComplexMethod:MobileKmsProvider.kt$MobileKmsProviderImpl$override suspend fun generateKeyAsync( alias: String?, use: JwkUse?, keyOperations: Array&lt;out KeyOperations>?, alg: SignatureAlgorithm?, certificateOptions: CertificateOptions?, ): ManagedKeyPair</ID>
+    <ID>LongMethod:MobileKmsProvider.kt$MobileKmsProviderImpl$override fun getCapabilities(): KmsProviderCapabilities</ID>
+    <ID>LongMethod:MobileKmsProvider.kt$MobileKmsProviderImpl$override suspend fun generateKeyAsync( alias: String?, use: JwkUse?, keyOperations: Array&lt;out KeyOperations>?, alg: SignatureAlgorithm?, certificateOptions: CertificateOptions?, ): ManagedKeyPair</ID>
+    <ID>MagicNumber:MobileKmsProvider.kt$MobileKmsProviderImpl$2048</ID>
+    <ID>MagicNumber:MobileKmsProvider.kt$MobileKmsProviderImpl$3072</ID>
+    <ID>MagicNumber:MobileKmsProvider.kt$MobileKmsProviderImpl$4096</ID>
+    <ID>StringLiteralDuplication:MobileKmsProvider.kt$MobileKmsProviderImpl$"No key found for $keyInfo"</ID>
+    <ID>StringLiteralDuplication:MobileKmsProvider.kt$MobileKmsProviderImpl$"Not supported by mobile KMS provider"</ID>
+    <ID>TooManyFunctions:MobileKmsProvider.kt$MobileKmsProviderImpl : MobileKmsProvider</ID>
+    <ID>UnusedPrivateMember:MobileKmsProvider.kt$MobileKmsProviderImpl$private suspend fun keyInfoToBytesWithKeystoreLookup(keyInfo: KeyInfoType&lt;*>): DerKmpKeyInfoContext</ID>
+    <ID>UnusedPrivateProperty:MobileKmsProvider.kt$MobileKmsProviderImpl$@Assisted private val execution: SessionExecution</ID>
+    <ID>UnusedPrivateProperty:MobileKmsProvider.kt$MobileKmsProviderImpl$val keyOpsMapping = keyOperations ?: arrayOf(KeyOperations.SIGN)</ID>
+    <ID>UnusedPrivateProperty:MobileKmsProvider.kt$MobileKmsProviderImpl$val keyUse = use ?: JwkUse.sig</ID>
+  </CurrentIssues>
+</SmellBaseline>

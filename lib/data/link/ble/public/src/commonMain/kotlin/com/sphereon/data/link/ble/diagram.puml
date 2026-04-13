@@ -1,0 +1,93 @@
+@startuml
+skinparam componentStyle rectangle
+title BLE KMP Architecture (Client + Peripheral)
+
+package "Shared Abstractions" {
+  interface BleCommand {
+    +execute(): Result<BleResponse, BleError>
+  }
+
+  interface BleEventListener {
+    +onScanStarted()
+    +onScanStopped()
+    +onDeviceFound(device)
+    +onConnected(deviceId)
+    +onDisconnected(deviceId)
+    +onError(error)
+  }
+
+  class BleEventPublisher {
+    +addListener(listener)
+    +removeListener(listener)
+    +emitXXX()
+  }
+
+  interface BleStateGuard {
+    +requireBleAvailable(): Result<Unit, BleError>
+    +requireAdvertisingSupported(): Result<Unit, BleError>
+  }
+}
+
+package "Client Side" {
+  interface IBleClientBridge {
+    +connect(deviceId)
+    +setMtu(mtu)
+    +scan()
+    +readCharacteristic(...)
+    +writeCharacteristic(...)
+    +discoverServices()
+  }
+
+  abstract class BaseBleCommand
+  class ScanDevicesCommand
+  class ConnectCommand
+  class SetMtuCommand
+  class ReadCharacteristicCommand
+  class WriteCharacteristicCommand
+  class DiscoverServicesCommand
+
+  BleCommand <|-- BaseBleCommand
+  BaseBleCommand <|-- ScanDevicesCommand
+  BaseBleCommand <|-- ConnectCommand
+  BaseBleCommand <|-- SetMtuCommand
+  BaseBleCommand <|-- ReadCharacteristicCommand
+  BaseBleCommand <|-- WriteCharacteristicCommand
+  BaseBleCommand <|-- DiscoverServicesCommand
+
+  IBleClientBridge --> BaseBleCommand
+}
+
+package "Peripheral Side" {
+  interface IBlePeripheralBridge {
+    +startAdvertising()
+    +stopAdvertising()
+    +notifyCharacteristic(service, characteristic, value)
+  }
+
+  abstract class BasePeripheralCommand
+  class StartAdvertisingCommand
+  class StopAdvertisingCommand
+  class NotifyCharacteristicCommand
+
+  interface PeripheralStateManager {
+    +start()
+    +stop()
+    +notify(service, characteristic, value)
+    +state: Flow<PeripheralState>
+  }
+
+  BleCommand <|-- BasePeripheralCommand
+  BasePeripheralCommand <|-- StartAdvertisingCommand
+  BasePeripheralCommand <|-- StopAdvertisingCommand
+  BasePeripheralCommand <|-- NotifyCharacteristicCommand
+
+  IBlePeripheralBridge --> BasePeripheralCommand
+  PeripheralStateManager --> IBlePeripheralBridge
+}
+
+BleEventPublisher --> BleEventListener
+BleCommand --> BleEventPublisher
+BleCommand --> BleStateGuard
+PeripheralStateManager --> BleStateGuard
+
+@enduml

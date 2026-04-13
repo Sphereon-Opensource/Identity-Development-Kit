@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MaxLineLength:RestProviderConfigTest.kt$RestProviderConfigTest$"""{"id":"test-rest","restProviderId":"test-rest","type":"rest","url":"http://localhost:8080/kms/v1","enabled":false,"exposePrivateKeysDuringGeneration":true,"order":10,"autoCreateCertificate":true}"""</ID>
+    <ID>MaxLineLength:RestProviderConfigTest.kt$RestProviderConfigTest$"""{"id":"test-rest","restProviderId":"test-rest","url":"http://localhost:8080/kms/v1","enabled":false,"order":10,"httpClientOptions":{"engine":"CIO"},"authConfig":{},"autoCreateCertificate":false,"exposePrivateKeysDuringGeneration":false}"""</ID>
+  </CurrentIssues>
+</SmellBaseline>

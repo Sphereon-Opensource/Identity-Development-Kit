@@ -1,0 +1,10 @@
+description: Forbidden
+content:
+  application/problem+json:
+    schema:
+      $ref: 'Problem.yaml'
+    example:
+      type: 'https://open-education-api.github.io/specification/v5/schemas/ErrorForbidden.yaml'
+      title: 'Forbidden'
+      status: 403
+      detail: 'The request was valid, but the server is refusing action. The client might not have the necessary permissions for the resource.'

@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>Deprecation:IsolatedKbJwtSignatureTest.kt$IsolatedKbJwtSignatureTest$generateKeyAsync</ID>
+    <ID>LongMethod:IsolatedKbJwtSignatureTest.kt$IsolatedKbJwtSignatureTest$@Test fun step1_GenerateAndSignKbJwt()</ID>
+    <ID>UnnecessarySafeCall:IsolatedKbJwtSignatureTest.kt$IsolatedKbJwtSignatureTest$kbResult.error?.message</ID>
+    <ID>UnnecessarySafeCall:IsolatedKbJwtSignatureTest.kt$IsolatedKbJwtSignatureTest$verifyResult.error?.message</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>StringLiteralDuplication:Oid4vpAuthEndpointCommands.kt$CreateOid4vpAuthSessionCommand.Companion$"oid4vp-auth"</ID>
+    <ID>StringLiteralDuplication:Oid4vpAuthErrors.kt$Oid4vpAuthErrors$"reason"</ID>
+    <ID>StringLiteralDuplication:Oid4vpAuthErrors.kt$Oid4vpAuthErrors$"sessionId"</ID>
+    <ID>TooManyFunctions:Oid4vpAuthErrors.kt$Oid4vpAuthErrors</ID>
+  </CurrentIssues>
+</SmellBaseline>

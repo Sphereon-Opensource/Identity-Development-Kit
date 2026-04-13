@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongMethod:OidcMethodDriver.kt$OidcMethodDriver$override suspend fun callback(work: CallbackWork): IdkResult&lt;CallbackOutcome, com.sphereon.identity.idv.model.IdvError></ID>
+    <ID>LongParameterList:OidcMethodDriver.kt$OidcMethodDriver$( definition: OidcMethodDefinition, authorizationEndpoint: String, clientId: String, redirectUri: String, state: String, nonce: String, codeChallenge: String, codeChallengeMethod: String, )</ID>
+    <ID>LongParameterList:OidcMethodDriver.kt$OidcMethodDriver$( private val principalConfigService: PrincipalConfigService, private val createPkceCommand: CreatePkceCommand, private val exchangeTokenCommand: ExchangeTokenCommand, private val fetchUserInfoCommand: FetchUserInfoCommand, private val oidcDiscoveryService: OidcDiscoveryService, private val identifierService: IdentifierService, private val stateStore: OidcDriverStateStore, )</ID>
+    <ID>ReturnCount:OidcMethodDriver.kt$OidcMethodDriver$override suspend fun callback(work: CallbackWork): IdkResult&lt;CallbackOutcome, com.sphereon.identity.idv.model.IdvError></ID>
+    <ID>ReturnCount:OidcMethodDriver.kt$OidcMethodDriver$override suspend fun dispatch(work: DispatchWork): IdkResult&lt;DispatchOutcome, com.sphereon.identity.idv.model.IdvError></ID>
+    <ID>ReturnCount:OidcMethodDriver.kt$OidcMethodDriver$private fun extractValue( attributePath: AttributePath, claims: Map&lt;String, JsonElement>, ): JsonElement?</ID>
+    <ID>StringLiteralDuplication:OidcMethodDriver.kt$OidcMethodDriver$"OIDC driver received unsupported method definition"</ID>
+    <ID>TooManyFunctions:OidcMethodDriver.kt$OidcMethodDriver : IdvMethodDriver</ID>
+  </CurrentIssues>
+</SmellBaseline>

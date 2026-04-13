@@ -1,0 +1,15 @@
+database:
+  host: localhost
+  port: 5432
+  pool-size: 10
+kms:
+  providers:
+    default:
+      type: software
+credentials:
+  "[TestCredential]":
+    format: dc+sd-jwt
+    scope: test_credential
+  "[PID]":
+    format: dc+sd-jwt
+    scope: eu_pid

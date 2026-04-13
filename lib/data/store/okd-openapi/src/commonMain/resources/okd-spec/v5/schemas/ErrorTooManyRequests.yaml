@@ -1,0 +1,10 @@
+description: Too many requests
+content:
+  application/problem+json:
+    schema:
+      $ref: 'Problem.yaml'
+    example:
+      type: 'https://open-education-api.github.io/specification/v5/schemas/ErrorTooManyRequests.yaml'
+      title: 'Too many requests'
+      status: 429
+      detail: 'The user has sent too many requests in a given amount of time.'

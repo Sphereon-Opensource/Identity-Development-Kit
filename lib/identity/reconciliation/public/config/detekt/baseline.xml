@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CanonicalAttributeRulesConfigBinder.kt$CanonicalAttributeRulesConfigBinder$Companion</ID>
+    <ID>MatchingDeclarationName:CanonicalAttributeFunctions.kt$RequiredAttributeViolation</ID>
+    <ID>StringLiteralDuplication:CanonicalAttributeRulesConfigBinder.kt$CanonicalAttributeRulesConfigBinder$"false"</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CorrelationIdentifierFetchOptions.kt$CorrelationIdentifierFetchOptions$Companion</ID>
+    <ID>ClassOrdering:CorrelationIdentifierFilter.kt$CorrelationIdentifierFilter$Companion</ID>
+    <ID>ClassOrdering:CorrelationIdentifierResult.kt$CorrelationIdentifierResult$fun toCorrelationIdentifier()</ID>
+    <ID>ClassOrdering:IdentifierType.kt$IdentifierType$override fun toString(): String</ID>
+    <ID>ClassOrdering:IdentityFetchOptions.kt$IdentityFetchOptions$Companion</ID>
+    <ID>ClassOrdering:IdentityFilter.kt$IdentityFilter$Companion</ID>
+    <ID>ClassOrdering:IdentityResult.kt$IdentityResult$fun toIdentity()</ID>
+    <ID>ClassOrdering:IdentityRole.kt$IdentityRole$override fun toString(): String</ID>
+    <ID>ClassOrdering:PageRequest.kt$Page$fun &lt;R> map(transform: (T) -> R)</ID>
+    <ID>ClassOrdering:PageRequest.kt$PageRequest$Companion</ID>
+    <ID>ClassOrdering:PartyFetchOptions.kt$PartyFetchOptions$Companion</ID>
+    <ID>ClassOrdering:PartyFilter.kt$PartyFilter$Companion</ID>
+    <ID>ClassOrdering:PartyResult.kt$PartyResult$fun toParty()</ID>
+    <ID>ClassOrdering:PartyType.kt$PartyType$override fun toString(): String</ID>
+    <ID>ClassOrdering:TenantFetchOptions.kt$TenantFetchOptions$Companion</ID>
+    <ID>ClassOrdering:TenantFilter.kt$TenantFilter$Companion</ID>
+    <ID>ClassOrdering:TenantResult.kt$TenantResult$fun toTenant()</ID>
+    <ID>ClassOrdering:TenantType.kt$TenantType$override fun toString(): String</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>NestedBlockDepth:OkdBlobStore.kt$OkdBlobStore$private fun io.ktor.client.request.HttpRequestBuilder.applyAuth()</ID>
+    <ID>ThrowsCount:OkdBlobStoreFactoryImpl.kt$OkdBlobStoreFactoryImpl$private fun createHttpClient(config: OkdBlobStoreConfig): HttpClient</ID>
+  </CurrentIssues>
+</SmellBaseline>

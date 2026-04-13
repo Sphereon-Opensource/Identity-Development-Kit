@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongParameterList:YamlPropertySourceImpl.kt$YamlPropertySourceImpl$( name: String, sourceLevel: ConfigLevel, configLocation: Path, profile: String = DEFAULT_PROFILE, filePrefix: String = "application", subPath: String? = null, keyParser: ProtectionKeyParser = DefaultProtectionKeyParser, )</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$JwtVcJsonMeta$val alg_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$JwtVcJsonMeta$val type_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$LdpVcMeta$val proof_type_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$LdpVcMeta$val type_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$MdocMeta$val doctype_value: String? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$MdocMeta$val namespace_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$SdJwtVcMeta$val kb_jwt_alg_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$SdJwtVcMeta$val sd_jwt_alg_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlFormatMeta.kt$SdJwtVcMeta$val vct_values: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlQuery.kt$DcqlClaimQuery$val intent_to_retain: Boolean? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlQuery.kt$DcqlCredentialQuery$@SerialName("trusted_authorities") val trusted_authorities: List&lt;DcqlTrustedAuthority>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlQuery.kt$DcqlCredentialQuery$val claim_sets: List&lt;DcqlClaimSet>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlQuery.kt$DcqlCredentialQuery$val require_cryptographic_holder_binding: Boolean = true</ID>
+    <ID>ConstructorParameterNaming:DcqlQuery.kt$DcqlCredentialSetOption$val credential_ids: List&lt;String></ID>
+    <ID>ConstructorParameterNaming:DcqlQuery.kt$DcqlQuery$val credential_sets: List&lt;DcqlCredentialSetQuery>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlResponse.kt$DcqlCredentialMatch$val claims_satisfied: List&lt;String>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlResponse.kt$DcqlCredentialMatch$val credential_id: String</ID>
+    <ID>ConstructorParameterNaming:DcqlResponse.kt$DcqlCredentialSetMatch$val credential_id: String</ID>
+    <ID>ConstructorParameterNaming:DcqlResponse.kt$DcqlCredentialSetMatch$val credential_set_id: String</ID>
+    <ID>ConstructorParameterNaming:DcqlResponse.kt$DcqlResponse$val credential_matches: List&lt;DcqlCredentialMatch>? = null</ID>
+    <ID>ConstructorParameterNaming:DcqlResponse.kt$DcqlResponse$val credential_set_matches: List&lt;DcqlCredentialSetMatch>? = null</ID>
+    <ID>MethodOverloading:DcqlQueryBuilder.kt$DcqlClaimQueryScope</ID>
+    <ID>MethodOverloading:DcqlQueryBuilder.kt$DcqlCredentialQueryScope</ID>
+    <ID>StringLiteralDuplication:DcqlValidator.kt$"Credential ID cannot be empty"</ID>
+    <ID>StringLiteralDuplication:DcqlValidator.kt$"cannot be empty if present"</ID>
+  </CurrentIssues>
+</SmellBaseline>

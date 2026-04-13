@@ -1,0 +1,30 @@
+services:
+  oid4vp-verifier:
+    image: sphereon/idk-oid4vp-verifier:latest
+    build:
+      context: ../../..
+      dockerfile: services/oid4vp-verifier/container/Dockerfile
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          cpus: '0.5'
+          memory: 768M
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - idk_network
+
+networks:
+  idk_network:
+    driver: bridge

@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:WebDidResolverImpl.kt$WebDidResolverImpl$contentType != null &amp;&amp; "application/json" !in contentType &amp;&amp; "application/did+ld+json" !in contentType &amp;&amp; "application/did+json" !in contentType</ID>
+    <ID>CyclomaticComplexMethod:WebDidProviderImpl.kt$WebDidProviderImpl$override suspend fun addKey( did: String, options: AddKeyOptions, ): IdkResult&lt;DidUpdateResult, IdkError></ID>
+    <ID>CyclomaticComplexMethod:WebDidProviderImpl.kt$WebDidProviderImpl$override suspend fun create(options: DidCreateOptions): IdkResult&lt;DidCreateResult, IdkError></ID>
+    <ID>LongMethod:WebDidProviderImpl.kt$WebDidProviderImpl$override suspend fun addKey( did: String, options: AddKeyOptions, ): IdkResult&lt;DidUpdateResult, IdkError></ID>
+    <ID>LongMethod:WebDidProviderImpl.kt$WebDidProviderImpl$override suspend fun create(options: DidCreateOptions): IdkResult&lt;DidCreateResult, IdkError></ID>
+    <ID>LongMethod:WebDidResolverImpl.kt$WebDidResolverImpl$override suspend fun dereference( didUrl: String, options: DidDereferenceOptions, ): IdkResult&lt;DidDereferenceResult, IdkError></ID>
+    <ID>LongMethod:WebDidResolverImpl.kt$WebDidResolverImpl$override suspend fun resolve( did: String, options: DidResolutionOptions, ): IdkResult&lt;DidResolutionResult, IdkError></ID>
+    <ID>NestedBlockDepth:WebDidProviderImpl.kt$WebDidProviderImpl$override suspend fun create(options: DidCreateOptions): IdkResult&lt;DidCreateResult, IdkError></ID>
+    <ID>ReturnCount:WebDidResolverImpl.kt$WebDidResolverImpl$override suspend fun dereference( didUrl: String, options: DidDereferenceOptions, ): IdkResult&lt;DidDereferenceResult, IdkError></ID>
+    <ID>ReturnCount:WebDidResolverImpl.kt$WebDidResolverImpl$override suspend fun resolve( did: String, options: DidResolutionOptions, ): IdkResult&lt;DidResolutionResult, IdkError></ID>
+    <ID>ReturnCount:WebDidUrlBuilder.kt$WebDidUrlBuilder$fun isValidDidWeb(did: String): Boolean</ID>
+    <ID>StringLiteralDuplication:WebDidProviderImpl.kt$WebDidProviderImpl$"DID must be a did:web: $did"</ID>
+    <ID>StringLiteralDuplication:WebDidProviderImpl.kt$WebDidProviderImpl$"did:web:"</ID>
+    <ID>StringLiteralDuplication:WebDidResolverImpl.kt$WebDidResolverImpl$"application/did+ld+json"</ID>
+    <ID>StringLiteralDuplication:WebDidUrlBuilder.kt$WebDidUrlBuilder$"DID must start with 'did:web:': $did"</ID>
+    <ID>StringLiteralDuplication:WebDidUrlBuilder.kt$WebDidUrlBuilder$"did:web:"</ID>
+  </CurrentIssues>
+</SmellBaseline>

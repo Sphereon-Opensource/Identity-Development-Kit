@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CastToNullableType:MultiplatformSettingsPropertySource.kt$AbstractMultiplatformSettingsPropertySourceImpl$as</ID>
+    <ID>ClassOrdering:MultiplatformSettingsPropertySource.kt$AbstractMultiplatformSettingsPropertySourceImpl$override val isPlatformSupported: Boolean = getSource().isPlatformSupported</ID>
+  </CurrentIssues>
+</SmellBaseline>

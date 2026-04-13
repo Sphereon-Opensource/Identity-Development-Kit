@@ -1,0 +1,67 @@
+server:
+  rest:
+    port: 8080
+    auth:
+      enabled: false
+      anonymous:
+        allowed: true
+
+oid4vp:
+  universal:
+    external-base-url: "${env:EXTERNAL_BASE_URL}"
+    response-uri: "${env:EXTERNAL_BASE_URL}/oid4vp/auth/response"
+  verifier:
+    request-object:
+      signing:
+        enabled: true
+        key-alias: oid4vp-verifier-signing
+        # Signer binding per OID4VP 1.0 §5.9.3 (Client Identifier Prefixes).
+        # Drives (a) the outer client_id prefix, (b) the JAR JOSE header identifier,
+        # and (c) the JAR payload `iss`. Supported values:
+        #
+        #   did:<method>    - client_id = "decentralized_identifier:<did>",
+        #                     header `kid` = DID verification-method URL.
+        #                     (did:jwk works out of the box from the signing key.)
+        #   x509_san_dns    - client_id = "x509_san_dns:<sanDnsName>",
+        #                     header `x5c` = chain from the KMS key's x5c field.
+        #                     Requires `san-dns-name` below matching a dNSName SAN
+        #                     entry in the leaf certificate.
+        #   x509_hash       - client_id = "x509_hash:<certHash>",
+        #                     header `x5c` = chain from the KMS key's x5c field.
+        #                     Requires `cert-hash` below (base64url SHA-256 of the
+        #                     DER-encoded leaf certificate — pinned trust anchor).
+        mode: "did:jwk"
+        # For DID modes, the verification-method URL used as the JOSE `kid`. Priority:
+        #   1. verification-method-id   — full DID URL (e.g. did:jwk:abc#0 or did:web:x#key-2)
+        #   2. verification-method-fragment — fragment only; appended to the derived DID
+        #      (e.g. `0` → `<did>#0` for did:jwk, which canonically uses fragment "0")
+        #   3. auto: first authentication-purpose VM the DID provider returns
+        # No `#0` default — if none of the above yields a VM URL we fail startup rather
+        # than fabricate one (only did:jwk uses #0; did:key, did:web etc. don't).
+        # verification-method-id: "did:jwk:...#0"
+        # verification-method-fragment: "0"
+        # Only used when mode is x509_san_dns:
+        # san-dns-name: verifier.example.com
+        # Only used when mode is x509_hash:
+        # cert-hash: Uvo3HtuIxuhC92rShpgqcT3YXwrqRxWEviRiA0OZszk
+        # Whether the signed Request Object emits a JWT `iss` claim. Defaults to false.
+        # OID4VP §5.10 / RFC 9101 §3 list `iss` as SHOULD (not MUST) and the §5.9.3
+        # non-normative example omits it. Wallets that strictly follow the spec work
+        # fine with `iss` absent; some older verifiers still require it — flip this on
+        # for those. When true the verifier emits `iss = <bare identifier>` (DID, DNS
+        # name, cert hash) rather than the prefixed client_id, so wallet cross-checks
+        # against the JOSE header still pass.
+        include-iss: false
+        audience: "https://self-issued.me/v2"
+        expiration-seconds: 300
+
+kms:
+  providers:
+    software:
+      type: software
+      enabled: true
+      keystore:
+        type: pkcs12
+        id: software
+        password: "${env:KEYSTORE_PASSWORD}"
+        path: /app/keystore/keystore.p12

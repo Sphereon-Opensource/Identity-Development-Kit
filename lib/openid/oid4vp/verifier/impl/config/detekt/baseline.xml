@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:TestRequestUriSigningConfig.kt$TestRequestUriSigningConfig$override suspend fun resolveSigningKey()</ID>
+    <ID>MagicNumber:TestRequestUriSigningConfig.kt$TestRequestUriSigningConfig$60</ID>
+    <ID>MatchingDeclarationName:Oid4vpRpWasmJsTestAppGraph.wasmJs.kt$Oid4vpRpWasmJsTestAppGraph : AbstractAppGraph</ID>
+  </CurrentIssues>
+</SmellBaseline>

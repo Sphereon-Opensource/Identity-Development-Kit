@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexInterface:BlobCommandDescriptors.kt$BlobCommandDescriptors</ID>
+    <ID>MagicNumber:DefaultContentAddressableBlobStore.kt$DefaultContentAddressableBlobStore$0xFF</ID>
+    <ID>MagicNumber:DefaultContentAddressableBlobStore.kt$DefaultContentAddressableBlobStore$16</ID>
+    <ID>ReturnCount:DefaultBlobService.kt$DefaultBlobService$override suspend fun copyBlob( source: BlobInfoType, destination: BlobInfo, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>ReturnCount:DefaultBlobService.kt$DefaultBlobService$override suspend fun deleteBlob(info: BlobInfoType): IdkResult&lt;Boolean, IdkError></ID>
+    <ID>ReturnCount:DefaultBlobService.kt$DefaultBlobService$override suspend fun getBlobInfo(info: BlobInfoType): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>ReturnCount:DefaultBlobService.kt$DefaultBlobService$override suspend fun moveBlob( source: BlobInfoType, destination: BlobInfo, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>ReturnCount:DefaultContentAddressableBlobStore.kt$DefaultContentAddressableBlobStore$override suspend fun store( data: ByteArray, algorithm: DigestAlg, metadata: BlobMetadata, ): IdkResult&lt;ContentAddressDescriptor, IdkError></ID>
+    <ID>ReturnCount:KvBlobMetadataIndex.kt$KvBlobMetadataIndex$private fun matchesQuery( descriptor: BlobDescriptor, query: MetadataSearchQuery, ): Boolean</ID>
+    <ID>StringLiteralDuplication:DefaultBlobService.kt$DefaultBlobService$"Failed to index metadata for ${emitInfoString(scopedDest)}: ${indexResult.error}"</ID>
+    <ID>StringLiteralDuplication:DefaultBlobService.kt$DefaultBlobService$"default"</ID>
+    <ID>TooManyFunctions:DefaultBlobService.kt$DefaultBlobService : BlobService</ID>
+    <ID>UnusedParameter:BlobStoreSupport.kt$BlobStoreConfigBinderImpl$configService: ConfigService</ID>
+    <ID>UnusedPrivateProperty:DefaultBlobInfoResolver.kt$DefaultBlobInfoResolver$private val defaultTenantId: String = "default"</ID>
+    <ID>UseRequire:BlobStoreSupport.kt$BlobStoreConfigBinderImpl$throw IllegalArgumentException( "Failed to bind blob store config for '$storeId' under prefix '$prefix': ${configResult.error.message.defaultMessage}", )</ID>
+  </CurrentIssues>
+</SmellBaseline>

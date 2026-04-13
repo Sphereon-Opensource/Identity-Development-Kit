@@ -1,0 +1,119 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./vct/resolved:/srv/vct:ro
+      - ./assets:/srv/assets:ro
+      - ./well-known:/srv/well-known:ro
+    depends_on:
+      oauth2-as:
+        condition: service_healthy
+      oid4vci-issuer:
+        condition: service_healthy
+      oid4vp-verifier:
+        condition: service_healthy
+      webapp:
+        condition: service_healthy
+    networks:
+      - idk_e2e_network
+
+  webapp:
+    image: sphereon/idk-oid4vc-webapp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        JAR_FILE: jars/webapp.jar
+    environment:
+      - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
+      - ISSUER_URL=http://oid4vci-issuer:8080
+      - VERIFIER_URL=http://oid4vp-verifier:8080
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    networks:
+      - idk_e2e_network
+
+  oauth2-as:
+    image: sphereon/idk-oauth2-as:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        JAR_FILE: jars/oauth2-as.jar
+    environment:
+      - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
+      - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
+      - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
+    volumes:
+      - ./config/oauth2-as.yml:/app/config/application.yml:ro
+      - ./keystores/oauth2-as:/app/keystore
+    healthcheck:
+      # Hits AS discovery metadata in addition to /health — verifies config, JWKS key
+      # resolution, and issuer URL construction are working end-to-end.
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health", "http://localhost:8080/.well-known/oauth-authorization-server"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks:
+      - idk_e2e_network
+
+  oid4vci-issuer:
+    image: sphereon/idk-oid4vci-issuer:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        JAR_FILE: jars/oid4vci-issuer.jar
+    environment:
+      - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
+      - OAUTH2_AS_INTERNAL_URL=http://oauth2-as:8080
+      - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
+      - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
+    volumes:
+      - ./config/oid4vci-issuer.yml:/app/config/application.yml:ro
+      - ./keystores/oid4vci-issuer:/app/keystore
+    healthcheck:
+      # Hits the full metadata endpoint instead of bare /health: this verifies the
+      # service is up AND the config provider, DI graph, and signed_metadata pipeline
+      # all work end-to-end. A regression in signing-key resolution fails the probe.
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health", "http://localhost:8080/.well-known/openid-credential-issuer"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks:
+      - idk_e2e_network
+
+  oid4vp-verifier:
+    image: sphereon/idk-oid4vp-verifier:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        JAR_FILE: jars/oid4vp-verifier.jar
+    environment:
+      - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
+      - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
+    volumes:
+      - ./config/oid4vp-verifier.yml:/app/config/application.yml:ro
+      - ./keystores/oid4vp-verifier:/app/keystore
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks:
+      - idk_e2e_network
+
+networks:
+  idk_e2e_network:
+    driver: bridge

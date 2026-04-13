@@ -1,0 +1,210 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sphereon.oauth2.server.authorization.impl.command.par
+
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
+import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
+import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
+import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
+
+/**
+ * Implementation of VerifyPushedAuthorizationRequestCommand
+ *
+ * Verifies Pushed Authorization Requests (PAR) according to RFC 9126.
+ *
+ * Verification steps:
+ * 1. Verify client is authenticated (client authentication handled separately)
+ * 2. Retrieve client registration
+ * 3. Verify client is authorized to use authorization_code grant
+ * 4. Verify redirect_uri matches registered URIs
+ * 5. Verify PKCE is used if required for client
+ * 6. Validate requested scope
+ * 7. Return verified request data
+ *
+ * Key differences from regular authorization request verification:
+ * - Client MUST be authenticated (RFC 9126 Section 2.1)
+ * - Request parameters are protected from tampering
+ * - Request can contain large amounts of data
+ *
+ * Security considerations:
+ * - Client authentication is REQUIRED (confidential or public with client authentication)
+ * - Request integrity is guaranteed (parameters stored server-side)
+ * - Request confidentiality is maintained (parameters not in redirect URL)
+ */
+@Inject
+@SingleIn(SessionScope::class)
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifyPushedAuthorizationRequestCommandImpl", exact = true)
+class VerifyPushedAuthorizationRequestCommandImpl(
+    execution: SessionExecution,
+    private val clientRegistry: ClientRegistry,
+) : TypedServiceCommandAdapter<VerifyPushedAuthorizationRequestArgs, VerifiedAuthorizationRequest>(
+        commandId = VerifyPushedAuthorizationRequestCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<VerifyPushedAuthorizationRequestArgs>(),
+        outputTypeToken = typeToken<VerifiedAuthorizationRequest>(),
+    ),
+    VerifyPushedAuthorizationRequestCommand {
+    override val commandId: String get() = VerifyPushedAuthorizationRequestCommand.COMMAND_ID
+
+    override suspend fun supports(args: Any): Boolean = args is VerifyPushedAuthorizationRequestArgs
+
+    override suspend fun doExecute(
+        args: VerifyPushedAuthorizationRequestArgs,
+        applyDuring: (VerifyPushedAuthorizationRequestArgs) -> VerifyPushedAuthorizationRequestArgs,
+    ): IdkResult<VerifiedAuthorizationRequest, IdkError> {
+        val applied = applyDuring(args)
+        return executeInternal(applied.request, applied.clientId).mapError { IdkError.fromDTO(it) }
+    }
+
+    private suspend fun executeInternal(
+        request: AuthorizationRequestData,
+        authenticatedClientId: String,
+    ): IdkResult<VerifiedAuthorizationRequest, AuthorizationServerError> {
+        // Verify client_id in request matches authenticated client
+        if (request.clientId != authenticatedClientId) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "client_id in request does not match authenticated client",
+                ),
+            )
+        }
+
+        // Retrieve client registration
+        val client =
+            clientRegistry
+                .getClient(request.clientId)
+                .mapError { error ->
+                    AuthorizationServerError.ServerError(
+                        details = "Failed to retrieve client registration: $error",
+                    )
+                }.getOrElse { return Err(it) }
+
+        if (client == null) {
+            return Err(
+                AuthorizationServerError.UnauthorizedClient(
+                    clientId = request.clientId,
+                ),
+            )
+        }
+
+        // Verify client is authorized to use authorization_code grant
+        if (GrantType.AUTHORIZATION_CODE !in client.grantTypes) {
+            return Err(
+                AuthorizationServerError.UnauthorizedClient(
+                    clientId = request.clientId,
+                ),
+            )
+        }
+
+        // Verify redirect_uri (RFC 6749 Section 3.1.2.3)
+        val redirectUri = request.redirectUri
+
+        if (redirectUri.isNullOrBlank()) {
+            // redirect_uri is optional if client has exactly ONE registered URI
+            if (client.redirectUris.size != 1) {
+                return Err(
+                    AuthorizationServerError.InvalidRequest(
+                        details = "redirect_uri is required when client has multiple registered redirect URIs",
+                    ),
+                )
+            }
+        } else {
+            // Verify redirect_uri matches one of the registered URIs
+            // RFC 6749 Section 3.1.2.3: The authorization server MUST require exact string matching
+            if (redirectUri !in client.redirectUris) {
+                return Err(
+                    AuthorizationServerError.InvalidRequest(
+                        details = "redirect_uri does not match any registered redirect URI for this client",
+                    ),
+                )
+            }
+        }
+
+        // Determine final redirect_uri
+        val finalRedirectUri = redirectUri ?: client.redirectUris.first()
+
+        // Verify PKCE is used if required
+        // Public clients MUST use PKCE (RFC 8252)
+        if (client.requirePkce && request.codeChallenge == null) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "PKCE (code_challenge) is required for this client",
+                ),
+            )
+        }
+
+        if (client.clientType == ClientType.PUBLIC && request.codeChallenge == null) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "Public clients MUST use PKCE (RFC 8252)",
+                ),
+            )
+        }
+
+        // Validate requested scope
+        // If client has allowedScopes configured, validate that all requested scopes are permitted
+        val requestedScope = request.scope
+        val grantedScopes =
+            if (requestedScope != null && requestedScope.isNotBlank()) {
+                val requestedScopes = requestedScope.split(" ").map { it.trim() }.filter { it.isNotEmpty() }
+                val allowedScopes = client.allowedScopes
+                if (allowedScopes != null) {
+                    val disallowed = requestedScopes.filter { it !in allowedScopes }
+                    if (disallowed.isNotEmpty()) {
+                        return Err(
+                            AuthorizationServerError.InvalidScope(
+                                scope = disallowed.joinToString(" "),
+                                allowedScopes = allowedScopes,
+                            ),
+                        )
+                    }
+                }
+                requestedScopes
+            } else {
+                emptyList()
+            }
+
+        // Return verified request
+        return Ok(
+            VerifiedAuthorizationRequest(
+                request = request,
+                clientId = request.clientId,
+                redirectUri = finalRedirectUri,
+                grantedScopes = grantedScopes,
+                pkceRequired = client.requirePkce || client.clientType == ClientType.PUBLIC,
+                parRequired = false, // Will be determined by client configuration
+            ),
+        )
+    }
+}

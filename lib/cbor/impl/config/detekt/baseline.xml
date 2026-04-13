@@ -1,0 +1,72 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$internal fun decodeWithState( encodedCbor: ByteArray, offset: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>CyclomaticComplexMethod:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeLength( encodedCbor: ByteArray, offset: Int, ): IdkResult&lt;Pair&lt;Int, ULong>, IdkError></ID>
+    <ID>CyclomaticComplexMethod:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeSpecial( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>CyclomaticComplexMethod:CborRuntimeImpl.kt$CborRuntimeImpl$@Suppress("DEPRECATION") private fun toDiagnostics( sb: StringBuilder, indent: Int, item: CborItem&lt;*>, tagNumberOfParent: Int?, options: Set&lt;DiagnosticOption>, )</ID>
+    <ID>CyclomaticComplexMethod:CborRuntimeImpl.kt$CborRuntimeImpl$private fun encodeItem( builder: ByteStringBuilder, item: CborItem&lt;*>, )</ID>
+    <ID>LongMethod:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$internal fun decodeWithState( encodedCbor: ByteArray, offset: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>LongMethod:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeMap( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>LongMethod:CborRuntimeImpl.kt$CborRuntimeImpl$@Suppress("DEPRECATION") private fun toDiagnostics( sb: StringBuilder, indent: Int, item: CborItem&lt;*>, tagNumberOfParent: Int?, options: Set&lt;DiagnosticOption>, )</ID>
+    <ID>LongMethod:CborRuntimeImpl.kt$CborRuntimeImpl$private fun encodeItem( builder: ByteStringBuilder, item: CborItem&lt;*>, )</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$0x07</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$0x3ff</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$0x8000</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$0xff</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$10</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$1024</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$19</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$20</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$21</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$22</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$23</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$24</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$25</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$26</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$27</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$3</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$31</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$32</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$4</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$5</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$8</ID>
+    <ID>MagicNumber:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$9</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$0x3ff</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$0x8000</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$0xff</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$10</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$1024</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$16</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$24</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$25</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$26</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$27</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$3</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$31</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$32</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$4</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$40</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$48</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$5</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$56</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$8</ID>
+    <ID>MagicNumber:CborRuntimeImpl.kt$CborRuntimeImpl$9</ID>
+    <ID>NestedBlockDepth:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeArray( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>NestedBlockDepth:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeMap( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>NestedBlockDepth:CborRuntimeImpl.kt$CborRuntimeImpl$@Suppress("DEPRECATION") private fun toDiagnostics( sb: StringBuilder, indent: Int, item: CborItem&lt;*>, tagNumberOfParent: Int?, options: Set&lt;DiagnosticOption>, )</ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$internal fun decodeWithState( encodedCbor: ByteArray, offset: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeArray( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeIndefiniteByteString( encodedCbor: ByteArray, offset: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeIndefiniteString( encodedCbor: ByteArray, offset: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeLength( encodedCbor: ByteArray, offset: Int, ): IdkResult&lt;Pair&lt;Int, ULong>, IdkError></ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeMap( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, state: CborDecodeRuntimeState, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>ReturnCount:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$private fun decodeSpecial( encodedCbor: ByteArray, offset: Int, additionalInformation: Int, ): IdkResult&lt;Pair&lt;Int, CborItem&lt;*>>, IdkError></ID>
+    <ID>TooManyFunctions:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl</ID>
+    <ID>TooManyFunctions:CborRuntimeImpl.kt$CborRuntimeImpl</ID>
+    <ID>UnusedPrivateMember:CborRuntimeImpl.kt$CborRuntimeImpl$private fun fromRawHalfFloat(raw: Int): Float</ID>
+    <ID>UnusedPrivateProperty:CborDecoderRuntimeImpl.kt$CborDecoderRuntimeImpl$i</ID>
+    <ID>UnusedPrivateProperty:CborRuntimeImpl.kt$CborRuntimeImpl$n</ID>
+  </CurrentIssues>
+</SmellBaseline>

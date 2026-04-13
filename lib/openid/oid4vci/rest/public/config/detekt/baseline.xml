@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CredentialOfferSessionStore.kt$CredentialOfferSessionStore$Companion</ID>
+    <ID>ClassOrdering:TypedOid4vciRestCommands.kt$CreateCredentialOfferServiceCommand$Companion</ID>
+    <ID>ClassOrdering:TypedOid4vciRestCommands.kt$DeleteCredentialOfferServiceCommand$Companion</ID>
+    <ID>ClassOrdering:TypedOid4vciRestCommands.kt$GetCredentialOfferStatusServiceCommand$Companion</ID>
+    <ID>StringLiteralDuplication:Oid4vciRestCommands.kt$CreateCredentialOfferEndpointCommand.Companion$"credential-offers"</ID>
+    <ID>StringLiteralDuplication:Oid4vciRestCommands.kt$CreateCredentialOfferEndpointCommand.Companion$"oid4vci-rest"</ID>
+  </CurrentIssues>
+</SmellBaseline>

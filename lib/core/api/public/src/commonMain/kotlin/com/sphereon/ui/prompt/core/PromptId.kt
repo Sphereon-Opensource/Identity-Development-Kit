@@ -1,0 +1,53 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+package com.sphereon.ui.prompt.core
+
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmInline
+import kotlin.native.ObjCName
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+
+/**
+ * Type-safe wrapper for prompt identifiers.
+ * Uses Kotlin's experimental UUID API for generating unique identifiers.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("PromptId", exact = true)
+@JvmInline
+value class PromptId
+    @OptIn(ExperimentalUuidApi::class)
+    constructor(
+        val value: String,
+    ) {
+        override fun toString(): String = value
+
+        companion object {
+            /**
+             * Creates a new random PromptId.
+             */
+            @OptIn(ExperimentalUuidApi::class)
+            fun random(): PromptId = PromptId(Uuid.random().toString())
+
+            /**
+             * Creates a PromptId from an existing string value.
+             */
+            fun fromString(value: String): PromptId = PromptId(value)
+        }
+    }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MatchingDeclarationName:WasmJsOauth2CommonTestAppGraph.wasmJs.kt$WasmJsOauth2CommonTestAppGraph : AbstractAppGraph</ID>
+  </CurrentIssues>
+</SmellBaseline>

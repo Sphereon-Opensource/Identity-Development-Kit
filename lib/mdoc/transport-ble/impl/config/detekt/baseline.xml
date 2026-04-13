@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$// Event collection job (started via startEventCollection) private var eventCollectionJob: Job? = null</ID>
+    <ID>ClassOrdering:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$Companion</ID>
+    <ID>ClassOrdering:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$fun setBleEventDispatcher(dispatcher: BleEventDispatcher?)</ID>
+    <ID>ClassOrdering:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$override fun setEventDispatcher(dispatcher: DataChannelEventDispatcher?)</ID>
+    <ID>ClassOrdering:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$// Event collection job (started via startEventCollection) private var eventCollectionJob: Job? = null</ID>
+    <ID>ClassOrdering:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$Companion</ID>
+    <ID>ClassOrdering:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$fun setEventDispatcher(dispatcher: BleEventDispatcher?)</ID>
+    <ID>CyclomaticComplexMethod:BleHandoverMapperImpl.kt$BleHandoverMapperImpl$override fun toNdef( connectionMethod: ConnectionMethod, alternativeCarrierReferences: List&lt;String>, role: MdocRole, skipUuids: Boolean, ): NdefConversionResult?</ID>
+    <ID>CyclomaticComplexMethod:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$private fun startPeripheralEventCollection()</ID>
+    <ID>CyclomaticComplexMethod:BleTransportFactory.kt$BleTransportFactory$override fun createTransfer( connectionMethod: ConnectionMethod, execution: SessionExecution, role: MdocRole, engagementData: EngagementData?, ): MdocTransport&lt;*></ID>
+    <ID>LongMethod:BleCentralClientTransport.kt$BleCentralClientTransport$override suspend fun open( senderKey: CoseKeyType, id: Uuid, engagementData: EngagementData?, ): IdkResult&lt;Uuid, BleError></ID>
+    <ID>LongMethod:BleCentralServiceImpl.kt$BleCentralServiceImpl$override suspend fun awaitConnected( senderKey: CoseKeyType, peripheral: BleDevice, ): IdkResult&lt;GattService, BleError></ID>
+    <ID>LongMethod:BleHandoverMapperImpl.kt$BleHandoverMapperImpl$override fun toNdef( connectionMethod: ConnectionMethod, alternativeCarrierReferences: List&lt;String>, role: MdocRole, skipUuids: Boolean, ): NdefConversionResult?</ID>
+    <ID>LongMethod:BlePeripheralServerTransport.kt$BlePeripheralServerTransport$override suspend fun open( senderKey: CoseKeyType, id: Uuid, engagementData: EngagementData?, ): IdkResult&lt;Uuid, BleError></ID>
+    <ID>LongMethod:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$private fun startPeripheralEventCollection()</ID>
+    <ID>LongMethod:BleTransportFactory.kt$BleTransportFactory$override fun createTransfer( connectionMethod: ConnectionMethod, execution: SessionExecution, role: MdocRole, engagementData: EngagementData?, ): MdocTransport&lt;*></ID>
+    <ID>LongParameterList:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$( logManager: LogManager, private val role: MdocRole, private val instanceId: Uuid, private val incomingCharacteristicId: Uuid, private var eventDispatcher: BleEventDispatcher? = null, private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec, private val sessionDataCborCodec: SessionDataCborCodec, )</ID>
+    <ID>LongParameterList:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$( logManager: LogManager, private val role: MdocRole, private val instanceId: Uuid, private val characteristicWriter: BleCharacteristicWriter, private val outgoingCharacteristicId: Uuid, private val stateCharacteristicId: Uuid, private val serviceUuid: Uuid, private var eventDispatcher: BleEventDispatcher? = null, private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec, private val sessionDataCborCodec: SessionDataCborCodec, )</ID>
+    <ID>LongParameterList:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$( private val blePlatformPeripheral: BlePlatformPeripheral, private val logManager: LogManager, override val role: MdocRole, private val characteristics: MdocBleServiceCharacteristics, private val serviceUuid: Uuid, private val incomingDataChannelImpl: BleIncomingDataChannel, private val outgoingDataChannelImpl: BleOutgoingDataChannel, private val coseKeyCborCodec: CoseKeyCborCodec, private val hkdfProvider: HkdfProvider, )</ID>
+    <ID>LoopWithTooManyJumpStatements:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$for</ID>
+    <ID>MagicNumber:BleCentralServiceImpl.kt$BleCentralServiceImpl$515</ID>
+    <ID>MagicNumber:BleHandoverMapperImpl.kt$BleHandoverMapperImpl$0x100</ID>
+    <ID>MagicNumber:BleHandoverMapperImpl.kt$BleHandoverMapperImpl$6</ID>
+    <ID>MagicNumber:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$2000</ID>
+    <ID>MagicNumber:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$3</ID>
+    <ID>MagicNumber:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$16</ID>
+    <ID>MagicNumber:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$3</ID>
+    <ID>MagicNumber:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$100</ID>
+    <ID>MagicNumber:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$16</ID>
+    <ID>MagicNumber:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$30000</ID>
+    <ID>MagicNumber:BlePeripheralServiceImpl.kt$BlePeripheralServiceImpl$500</ID>
+    <ID>ReturnCount:BleCentralClientTransport.kt$BleCentralClientTransport$override suspend fun open( senderKey: CoseKeyType, id: Uuid, engagementData: EngagementData?, ): IdkResult&lt;Uuid, BleError></ID>
+    <ID>ReturnCount:BleCentralServiceImpl.kt$BleCentralServiceImpl$override suspend fun awaitConnected( senderKey: CoseKeyType, peripheral: BleDevice, ): IdkResult&lt;GattService, BleError></ID>
+    <ID>ReturnCount:BlePeripheralServerTransport.kt$BlePeripheralServerTransport$override suspend fun open( senderKey: CoseKeyType, id: Uuid, engagementData: EngagementData?, ): IdkResult&lt;Uuid, BleError></ID>
+    <ID>TooGenericExceptionCaught:BleCentralClientTransport.kt$BleCentralClientTransport$closeError: Throwable</ID>
+    <ID>TooGenericExceptionCaught:BleCentralClientTransport.kt$BleCentralClientTransport$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:BlePeripheralServerTransport.kt$BlePeripheralServerTransport$closeError: Throwable</ID>
+    <ID>TooGenericExceptionCaught:BlePeripheralServerTransport.kt$BlePeripheralServerTransport$e: Throwable</ID>
+    <ID>TooGenericExceptionThrown:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$throw Error("Invalid first byte $start in BLE message")</ID>
+    <ID>TooGenericExceptionThrown:BleIncomingDataChannelImpl.kt$BleIncomingDataChannelImpl$throw Error("Invalid termination request size: ${chunk.size}")</ID>
+    <ID>UnusedPrivateProperty:BleOutgoingDataChannelImpl.kt$BleOutgoingDataChannelImpl$private val role: MdocRole</ID>
+  </CurrentIssues>
+</SmellBaseline>

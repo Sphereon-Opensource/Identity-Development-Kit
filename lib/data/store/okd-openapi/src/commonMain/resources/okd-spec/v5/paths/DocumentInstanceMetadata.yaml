@@ -1,0 +1,56 @@
+get:
+  summary: GET /documents/{documentId}/metadata
+  operationId: getDocumentMetadataById
+  description: |
+    Get the metadata of a document stored in the DMS.
+    
+    note:
+    - This endpoint should be implemented by the DMS component, so that the components can retrieve documents. (flow-x)
+    - The documentId is the ID returned by the DMS when the document was uploaded.
+  security:
+    - oAuthFlows:
+      - okd:alldocuments
+      - okd:examdocuments
+      - okd:bpvdocuments
+      - okd:graduationdocuments
+      - okd:enrollmentderollment
+  tags:
+    - documents
+  parameters:
+    - name: documentId
+      in: path
+      description: Document ID to retrieve. This is the ID returned by the DMS when the document was uploaded.
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/DocumentMetadata.yaml'
+          example:
+            dmsDocumentId: "e68ee6c0-d503-4e56-8dce-d7fbf3e5b52d"
+            title: "ExamenBeoordeling van Jan"
+            documentTempDownloadUrl: "http://api.djuma.nl/download/5ffc6127-debe-48ce-90ae-75ea80756475&tempaccess=#556633ga6dr53g3"
+            creationdate: "2025-09-30T14:48:00Z"
+            format: "application/pdf"
+            documentname: "beoordeling-jan.pdf"
+            documentsize: 234567
+      description: OK
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'

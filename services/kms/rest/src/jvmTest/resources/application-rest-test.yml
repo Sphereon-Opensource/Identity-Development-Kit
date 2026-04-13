@@ -1,0 +1,84 @@
+# APP-LEVEL PROVIDERS (Current Implementation)
+#
+# KMS providers are currently defined at app level for the following architectural reason:
+# Tenant-scoped property sources (SpringBootTenantPropertySourceImpl) are @SingleIn(UserScope),
+# which makes them lazy. They're only created when explicitly requested. However, KeyManagerServiceImpl
+# loads providers during construction, which happens before tenant property sources are initialized.
+#
+# keystore-LEVEL TENANT ISOLATION (Working):
+# Each provider has a unique keystoreId and scopeBinding=TENANT, which ensures complete data isolation.
+# Keys from different tenants are stored in separate partitions and cannot be accessed across tenants.
+#
+# FUTURE WORK FOR TRUE PROVIDER-LEVEL ISOLATION:
+# To enable tenant-specific provider configurations (e.g., tenant-a uses AWS KMS, tenant-b uses Azure):
+# 1. Make property source initializer eager by hooking into UserContext creation lifecycle
+# 2. Or refactor KeyManagerServiceImpl to delay provider loading until first use
+# 3. Or create a Spring-specific provider factory that ensures property sources exist before loading
+kms:
+  providers:
+    tenantasoftware:
+      type: software
+      id: tenantasoftware
+      enabled: true
+      cryptographyProvider: Default
+      autoCreateCertificate: true
+      persistKeysDuringGeneration: true
+      exposePrivateKeysDuringGeneration: true
+      keyStore:
+        type: memory
+        id: tenant-a-keystore  # Unique per tenant
+        keyVisibility: PUBLIC_ONLY
+        overwriteAlias: true
+        scopeBinding: TENANT  # Keys partitioned by tenant
+    tenantbsoftware:
+      type: software
+      id: tenantbsoftware
+      enabled: true
+      cryptographyProvider: Default
+      autoCreateCertificate: true
+      persistKeysDuringGeneration: true
+      exposePrivateKeysDuringGeneration: true
+      keyStore:
+        type: memory
+        id: tenant-b-keystore  # Unique per tenant
+        keyVisibility: PUBLIC_ONLY
+        overwriteAlias: true
+        scopeBinding: TENANT  # Keys partitioned by tenant
+
+# TENANT-SCOPED CONFIGURATION (For future use when property source initialization is fixed)
+# This configuration structure is correct but currently not loaded due to lazy property source creation
+tenant:
+  tenant-a:
+    kms:
+      providers:
+        tenantasoftware:
+          type: software
+          id: tenantasoftware
+          enabled: true
+          cryptographyProvider: Default
+          autoCreateCertificate: true
+          persistKeysDuringGeneration: true
+          exposePrivateKeysDuringGeneration: true
+          keyStore:
+            type: memory
+            id: tenant-a-keystore
+            keyVisibility: PUBLIC_ONLY
+            overwriteAlias: true
+            scopeBinding: TENANT
+  tenant-b:
+    kms:
+      providers:
+        tenantbsoftware:
+          type: software
+          id: tenantbsoftware
+          enabled: true
+          cryptographyProvider: Default
+          autoCreateCertificate: true
+          persistKeysDuringGeneration: true
+          exposePrivateKeysDuringGeneration: true
+          keyStore:
+            type: memory
+            id: tenant-b-keystore
+            keyVisibility: PUBLIC_ONLY
+            overwriteAlias: true
+            scopeBinding: TENANT

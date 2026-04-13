@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:AuthorizationRequestValidator.kt$8</ID>
+    <ID>UnusedPrivateProperty:AuthorizationRequestValidator.kt$val hasDcqlQuery = req.additionalParameters?.containsKey("dcql_query") == true</ID>
+  </CurrentIssues>
+</SmellBaseline>

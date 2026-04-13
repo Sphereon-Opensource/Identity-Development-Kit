@@ -1,0 +1,56 @@
+type: object
+description: nl-okd add-on attributes to the Document 
+required:
+ - consumerKey
+properties:
+  consumerKey:
+    type: string
+    example: nl-okd
+  documentType:
+      description: |
+        identifies the kind of document; supported values: "enrollment", "examination", "graduation", "bpv","other"
+      type: string
+      enum:
+        - enrollment
+        - examination
+        - graduation
+        - bpv
+        - other
+      example: enrollment
+  documentSubtype:
+    type: string
+    description: |
+      identifies the subtype of the document; supported values depend on the school.
+      - vrijstellingsaanvraag
+      - bla bla 1
+      - bla bla 2
+      - other
+    example: "vrijstellingsaanvraag"
+  documentId:
+    type: string
+    description: |
+      identifies the unique identifier of the document.
+    example: "dbd3e12a-ed8b-4488-ac34-26fd4f64f40b"
+  documentName: 
+    type: string
+    description: |
+      identifies the name of the document.
+    example: "inschrijving-100245.pdf"
+  retentionPeriodSuggestion:
+    type: string
+    description: |
+      identifies the suggested retention period for the document, e.g. "3Y" (3 years), "5Y" (5 years), "10Y" (10 years), "24H" (24 hours), "6D" (6 days).
+      The DMS may choose to ignore this suggestion.
+    example: "3Y"
+  receivedDate:
+    type: string
+    format: date
+    description: |
+      identifies the date the document was received.
+    example: "2023-09-01"
+  registrationDate:
+    type: string
+    format: date
+    description: |
+      identifies the date the document was registered.
+    example: "2023-09-02"

@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private val _retrievalEventListeners = mutableSetOf&lt;com.sphereon.mdoc.transfer.MdocRetrievalEvent.Listener>()</ID>
+    <ID>ComplexInterface:MdocReaderEngagementManager.kt$MdocReaderEngagementManager : AutoCloseable</ID>
+    <ID>DataClassShouldBeImmutable:ReaderEngagementInstanceImpl.kt$ReaderEngagementInstanceImpl$var readerEphemeralKey: ResolvedKeyInfoType&lt;CoseKeyType>? = null</ID>
+    <ID>LongMethod:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$override suspend fun sendRequest(deviceRequest: DeviceRequest): IdkResult&lt;Unit, IdkError></ID>
+    <ID>LongMethod:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private suspend fun sendRequestReverseEngagement(deviceRequest: DeviceRequest): IdkResult&lt;Unit, IdkError></ID>
+    <ID>LongParameterList:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$( private val kms: KeyManagerService, private val logService: SessionLogService, private val engagementFactory: MdocEngagementFactory, private val transferFactory: MdocTransferFactory, private val transportRegistry: MdocTransportRegistry, // Transport registry for modular transports private val deviceRequestCborCodec: DeviceRequestCborCodec, private val deviceResponseCborCodec: DeviceResponseCborCodec, private val deviceEngagementCborCodec: DeviceEngagementCborCodec, private val sessionDataCborCodec: SessionDataCborCodec, private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec, private val sessionTranscriptCborCodec: SessionTranscriptCborCodec, private val coseKeyCborCodec: CoseKeyCborCodec, private val execution: com.sphereon.core.api.context.SessionExecution, // Session execution context private val cryptoProvider: CryptographyProvider = CryptographyProvider.Default, scopeScoped: CoroutineScopeScoped? = null, )</ID>
+    <ID>MagicNumber:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$5</ID>
+    <ID>ReturnCount:ForwardReaderConnection.kt$ForwardReaderConnection$override suspend fun establish(): IdkResult&lt;Unit, IdkError></ID>
+    <ID>ReturnCount:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$override suspend fun sendRequest(deviceRequest: DeviceRequest): IdkResult&lt;Unit, IdkError></ID>
+    <ID>ReturnCount:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private suspend fun sendRequestReverseEngagement(deviceRequest: DeviceRequest): IdkResult&lt;Unit, IdkError></ID>
+    <ID>StringLiteralDuplication:ForwardReaderConnection.kt$ForwardReaderConnection$"Connection not established. Call establish() first."</ID>
+    <ID>StringLiteralDuplication:ReverseReaderConnection.kt$ReverseReaderConnection$"Connection not established. Call establish() first."</ID>
+    <ID>ThrowsCount:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private suspend fun sendRequestReverseEngagement(deviceRequest: DeviceRequest): IdkResult&lt;Unit, IdkError></ID>
+    <ID>TooManyFunctions:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl : MdocReaderEngagementManagerHandlersDispatcher</ID>
+    <ID>UnusedParameter:ReaderTransportHelper.kt$ReaderTransportHelper$readerId: Uuid</ID>
+    <ID>UnusedPrivateMember:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private fun extractConnectionMethod(deviceEngagement: DeviceEngagement): ConnectionMethod?</ID>
+    <ID>UnusedPrivateMember:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private suspend fun resolveEphemeralKey(alias: String): ResolvedKeyInfoType&lt;CoseKeyType></ID>
+    <ID>UnusedPrivateProperty:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private val scope: CoroutineScope = scopeScoped?.createChild() ?: CoroutineScope(SupervisorJob() + Dispatchers.IO)</ID>
+    <ID>UnusedPrivateProperty:MdocReaderEngagementManagerImpl.kt$MdocReaderEngagementManagerImpl$private val transferFactory: MdocTransferFactory</ID>
+  </CurrentIssues>
+</SmellBaseline>

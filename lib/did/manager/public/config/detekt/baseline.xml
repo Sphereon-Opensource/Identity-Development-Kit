@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexInterface:DidManager.kt$DidManager</ID>
+    <ID>UnusedParameter:DidCreateDsl.kt$DidCreateBuilder$block: (KeyConfig.ExistingJwk.() -> Unit)? = null</ID>
+  </CurrentIssues>
+</SmellBaseline>

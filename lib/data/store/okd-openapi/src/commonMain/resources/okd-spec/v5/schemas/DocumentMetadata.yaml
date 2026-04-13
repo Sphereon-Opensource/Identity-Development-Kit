@@ -1,0 +1,36 @@
+type: object
+description: metadata for a document
+required:
+  - dmsDocumentId
+properties:
+  dmsDocumentId:
+    description: id van het document
+    type: string
+    example: e68ee6c0-d503-4e56-8dce-d7fbf3e5b52d
+  title:
+    description: titel van het document
+    type: string
+    example: ExamenBeoordeling van Jan
+  documentTempDownloadUrl:
+    description: tijdelijke download-URL voor het document
+    type: string
+    format: uri
+    example: http://api.djuma.nl/download/5ffc6127-debe-48ce-90ae-75ea80756475&tempaccess=#556633ga6dr53g3
+  creationdate:
+    description: creatiedatum van het document
+    type: string
+    format: date-time
+    example: "2025-09-30T14:48:00Z"
+  format:
+    description: bestandsformaat (mimetype)
+    type: string
+    example: application/pdf
+  documentname:
+    description: bestandsnaam van het document
+    type: string
+    example: beoordeling-jan.pdf
+  documentsize:
+    description: grootte van het document in bytes
+    type: integer
+    format: int64
+    example: 234567

@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:UserContextInterceptor.kt$UserContextInterceptor$Companion</ID>
+    <ID>MatchingDeclarationName:UniversalHttpAdapter.kt$UniversalHttpAdapterConfig</ID>
+    <ID>StringLiteralDuplication:CallExtensions.kt$"Unknown"</ID>
+    <ID>UseCheckOrError:KotlinInjectPlugin.kt$KotlinInjectPlugin$throw IllegalStateException("AppGraph is required. Please provide it in the configuration.")</ID>
+  </CurrentIssues>
+</SmellBaseline>

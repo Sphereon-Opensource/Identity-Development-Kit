@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>InjectDispatcher:DualReadHashRotationTest.kt$DualReadHashRotationTest$Default</ID>
+    <ID>InjectDispatcher:KottageIdentityLinkBindingStoreCrudTest.kt$KottageIdentityLinkBindingStoreCrudTest$Default</ID>
+    <ID>InjectDispatcher:KottageIdentityLinkBindingStoreJvmTest.kt$KottageIdentityLinkBindingStoreJvmTest$Default</ID>
+    <ID>InjectDispatcher:KottageIdentityMatchStoreIndexRepairTest.kt$KottageIdentityMatchStoreIndexRepairTest$Default</ID>
+    <ID>InjectDispatcher:KottageIdentityMatchStoreJvmTest.kt$KottageIdentityMatchStoreJvmTest$Default</ID>
+    <ID>LongParameterList:KottageIdentityLinkBindingStoreCrudTest.kt$KottageIdentityLinkBindingStoreCrudTest$( id: String = "binding-1", tenantId: String = "tenant-1", matchId: String = "match-1", holderIdentifierHash: String = "holder-hash-abc", holderHashKeyVersion: String = "A-v1", institutionIdentifierHash: String? = "inst-hash-def", institutionHashKeyVersion: String? = "B-v1", providerId: String = "surf", institutionId: String? = "kw1c", persistedAttributesEnvelope: PersistedAttributesEnvelope = PersistedAttributesEnvelope( encrypted = EncryptedPayload( ciphertext = "ciphertext", keyVersion = "C-v1", ), canonicalSchemaVersion = "1", materialProfileVersion = "profile-v1", selectorRuleVersion = "rules-v1", attributeNames = setOf("sub"), updatedAt = Clock.System.now(), ), )</ID>
+    <ID>LongParameterList:KottageIdentityMatchStoreIndexRepairTest.kt$KottageIdentityMatchStoreIndexRepairTest$( id: String = "match-1", identifierHash: String = "hash1", identifierType: IdentifierType = IdentifierType.KEY, internalIdentityId: String = "identity1", tenantId: String = "tenant-1", hashKeyVersion: String? = "v1", )</ID>
+    <ID>LongParameterList:KottageIdentityMatchStoreJvmTest.kt$KottageIdentityMatchStoreJvmTest$( id: String = "match-1", identifierHash: String = "hash-abc", identifierType: IdentifierType = IdentifierType.DID, internalIdentityId: String = "identity-1", tenantId: String = "tenant-1", metadata: Map&lt;String, String> = emptyMap(), hashKeyVersion: String? = "v1", )</ID>
+    <ID>LongParameterList:ReconciliationCryptoServiceTest.kt$ReconciliationCryptoServiceTest$( holderKey: ByteArray = generateKey(), institutionKey: ByteArray = generateKey(), encryptionKey: ByteArray = generateKey(), holderKeyVersion: String = "A-v1", institutionKeyVersion: String = "B-v1", encryptionKeyVersion: String = "C-v1", previousHolderKey: ByteArray? = null, previousHolderKeyVersion: String? = null, previousInstitutionKey: ByteArray? = null, previousInstitutionKeyVersion: String? = null, )</ID>
+    <ID>LongParameterList:ReconciliationCryptoServiceTest.kt$ReconciliationCryptoServiceTest.JvmReconciliationCryptoService$( private val holderKey: ByteArray, private val institutionKey: ByteArray, private val encryptionKey: ByteArray, private val holderKeyVersion: String = "A-v1", private val institutionKeyVersion: String = "B-v1", private val encryptionKeyVersion: String = "C-v1", private val previousHolderKey: ByteArray? = null, private val previousHolderKeyVersion: String? = null, private val previousInstitutionKey: ByteArray? = null, private val previousInstitutionKeyVersion: String? = null, )</ID>
+    <ID>UnnecessarySafeCall:KottageIdentityLinkBindingStoreCrudTest.kt$KottageIdentityLinkBindingStoreCrudTest$found.persistedAttributesEnvelope?.attributeNames</ID>
+    <ID>UnnecessarySafeCall:KottageIdentityLinkBindingStoreCrudTest.kt$KottageIdentityLinkBindingStoreCrudTest$found.persistedAttributesEnvelope?.encrypted</ID>
+    <ID>UnnecessarySafeCall:KottageIdentityLinkBindingStoreCrudTest.kt$KottageIdentityLinkBindingStoreCrudTest$found.persistedAttributesEnvelope?.materialFingerprints</ID>
+    <ID>UnnecessarySafeCall:KottageIdentityLinkBindingStoreCrudTest.kt$KottageIdentityLinkBindingStoreCrudTest$found.persistedAttributesEnvelope?.materialProfileVersion</ID>
+    <ID>UnnecessarySafeCall:KottageIdentityLinkBindingStoreJvmTest.kt$KottageIdentityLinkBindingStoreJvmTest$found.persistedAttributesEnvelope?.materialProfileVersion</ID>
+  </CurrentIssues>
+</SmellBaseline>

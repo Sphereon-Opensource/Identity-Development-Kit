@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CastToNullableType:LegacyHttpClientFactory.wasmJs.kt$LegacyHttpClientFactory$as</ID>
+    <ID>ClassOrdering:LegacyHttpClientFactory.wasmJs.kt$LegacyHttpClientFactory$private fun createCioEngine(config: WasmJsSslProviderImpl?): HttpClientEngine</ID>
+    <ID>MatchingDeclarationName:LegacyHttpClientFactory.wasmJs.kt$LegacyHttpClientFactory</ID>
+    <ID>MatchingDeclarationName:LegacySslProvider.wasmJs.kt$WasmJsSslProviderImpl : LegacySslProvider</ID>
+    <ID>UnusedParameter:LegacyHttpClientFactory.wasmJs.kt$LegacyHttpClientFactory$config: WasmJsSslProviderImpl?</ID>
+  </CurrentIssues>
+</SmellBaseline>

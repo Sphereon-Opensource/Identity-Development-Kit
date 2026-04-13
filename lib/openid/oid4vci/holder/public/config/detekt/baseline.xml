@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexInterface:Oid4vciHolderService.kt$Oid4vciHolder$Commands</ID>
+    <ID>ComplexInterface:Oid4vciHolderService.kt$Oid4vciHolderService</ID>
+    <ID>LongParameterList:Oid4vciHolderService.kt$Oid4vciHolderService$( authorizationEndpoint: String, clientId: String, redirectUri: String, credentialConfigurationIds: List&lt;String>, scope: String? = null, issuerState: String? = null, usePar: Boolean = false, parEndpoint: String? = null, credentialIdentifiers: Map&lt;String, List&lt;String>>? = null, locations: List&lt;String>? = null, )</ID>
+    <ID>LongParameterList:Oid4vciHolderService.kt$Oid4vciHolderService$( credentialEndpoint: String, accessToken: String, credentialConfigurationId: String? = null, credentialIdentifier: String? = null, proofs: CredentialRequestProofs? = null, credentialResponseEncryption: RequestedCredentialResponseEncryption? = null, requestEncryptionJwk: JsonObject? = null, requestEncryptionAlg: String? = null, requestEncryptionEnc: String? = null, decryptionKeyId: String? = null, )</ID>
+    <ID>LongParameterList:Oid4vciHolderService.kt$Oid4vciHolderService$( deferredCredentialEndpoint: String, accessToken: String, transactionId: String, credentialResponseEncryption: RequestedCredentialResponseEncryption? = null, requestEncryptionJwk: JsonObject? = null, requestEncryptionAlg: String? = null, requestEncryptionEnc: String? = null, decryptionKeyId: String? = null, )</ID>
+    <ID>LongParameterList:Oid4vciHolderService.kt$Oid4vciHolderService$( issuerUrl: String, cNonce: String? = null, signingKeyId: String, signingAlgorithm: String = "ES256", clientId: String? = null, count: Int = 1, )</ID>
+    <ID>MagicNumber:Oid4vciHolderConfig.kt$Oid4vciHolderConfig$5</ID>
+    <ID>MagicNumber:Oid4vciHolderConfig.kt$Oid4vciHolderConfig$60</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$Companion</ID>
+    <ID>ClassOrdering:NfcHelperState.kt$NfcHelperState$Companion</ID>
+    <ID>ClassOrdering:NfcHelperState.kt$NfcSessionState$// Convenience constructors for backwards compatibility constructor( captureTimeMs: Long, staticHandoverState: StaticHandoverState, negotiatedHandoverState: NegotiatedHandoverState, selectedFileId: Int, selectedFilePayload: ByteString, ndefApplicationSelected: Boolean, pendingStaticHandover: CborItem&lt;*>?, handoverCompleteCalled: Boolean, expectedReadSize: Int, totalBytesRead: Int, ) : this( captureTimeMs = captureTimeMs, helperState = NfcHelperState( negotiatedHandoverState = negotiatedHandoverState, staticHandoverState = staticHandoverState, selectedFileId = selectedFileId, selectedFilePayload = selectedFilePayload, ndefApplicationSelected = ndefApplicationSelected, pendingStaticHandover = pendingStaticHandover, handoverCompleteCalled = handoverCompleteCalled, expectedReadSize = expectedReadSize, totalBytesRead = totalBytesRead, ), )</ID>
+    <ID>ClassOrdering:NfcServiceConfig.kt$NfcServiceConfig$fun validate(): NfcServiceConfig</ID>
+    <ID>LongMethod:HandoverSelectMessageBuilder.kt$HandoverSelectMessageBuilder$fun build( engagementInstance: EngagementInstance, skipUuids: Boolean, ): HandoverSelectBuildResult</ID>
+    <ID>LongMethod:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$private suspend fun processSelectFile(command: CommandApdu): ResponseApdu</ID>
+    <ID>LongParameterList:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$( val instance: EngagementInstance, val onHandoverComplete: suspend ( engagementInstance: EngagementInstance, handover: CborItem&lt;*>, ) -> Unit, val onError: (error: Throwable) -> Unit, val negotiatedHandoverPicker: ((connectionMethods: List&lt;ConnectionMethod>) -> ConnectionMethod)? = null, val sessionGraph: SessionGraph, val handoverCborCodec: HandoverCborCodec, val bleHandoverMapper: BleHandoverMapper? = null, )</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$0x04</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$0x06</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$0x100</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$0x20</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$0x7f</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$0xff</ID>
+    <ID>MagicNumber:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$16</ID>
+    <ID>MagicNumber:NfcHelperState.kt$NfcHelperState$16</ID>
+    <ID>MagicNumber:NfcServiceMetrics.kt$NfcServiceMetrics$0.1</ID>
+    <ID>MagicNumber:NfcServiceMetrics.kt$NfcServiceMetrics$0.9</ID>
+    <ID>MagicNumber:ServiceHealth.kt$ServiceHealth.CRITICAL$3</ID>
+    <ID>NestedBlockDepth:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$private suspend fun processReadBinary(command: CommandApdu): ResponseApdu</ID>
+    <ID>ReturnCount:UpdateBinaryHandler.kt$UpdateBinaryHandler$private fun handleLengthConfirmation(declaredLength: Int): UpdateBinaryResult</ID>
+    <ID>SpreadOperator:HandoverSelectMessageBuilder.kt$HandoverSelectMessageBuilder$( handoverSelectRecord.generateNdefRecord(), deviceEngagementRecord, *carrierConfigurationRecords.toTypedArray(), )</ID>
+    <ID>TooGenericExceptionCaught:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$error: Throwable</ID>
+    <ID>TooGenericExceptionThrown:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$throw Error("Handover Request Record not the first in message")</ID>
+    <ID>TooGenericExceptionThrown:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$throw Error("Negotiated Handover is complete")</ID>
+    <ID>TooGenericExceptionThrown:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$throw Error("No supported connection methods found in Handover Request method")</ID>
+    <ID>TooGenericExceptionThrown:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$throw Error("Service Select record not found")</ID>
+    <ID>TooGenericExceptionThrown:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper$throw Error("Unexpected message - Negotiated Handover not started")</ID>
+    <ID>TooManyFunctions:MdocNfcEngagementHelper.kt$MdocNfcEngagementHelper</ID>
+  </CurrentIssues>
+</SmellBaseline>

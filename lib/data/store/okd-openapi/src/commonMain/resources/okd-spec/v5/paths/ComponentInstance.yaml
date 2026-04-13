@@ -1,0 +1,92 @@
+get:
+  summary: GET /components/{componentId}
+  operationId: listComponentById
+  description: Get a single component.
+  security:
+    - oAuthFlows:
+      - nl-test-admin-flow-0
+  tags:
+    - components
+  parameters:
+    - name: componentId
+      in: path
+      description: component ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: expand
+      in: query
+      explode: false
+      description: Optional properties to expand, separated by a comma
+      required: false
+      schema:
+        type: array
+        items:
+          type: string
+          enum:
+            - course
+            - organization
+  responses:
+    '200':
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/Component.yaml'
+          examples:
+            Request details of one test (Flow 0.2):
+              value:
+                componentId: "c5fca27e-ccc1-430d-9888-90e005ad6a86"
+                primaryCode: 
+                  codeType: testId
+                  code: "5"
+                componentType: test
+                name:
+                - language: "nl-NL"
+                  value: "Rekenen 2F voor technische opleidingen"
+                abbreviation: "REK2F-TECH"
+                modeOfDelivery: ["situated"]
+                duration: "PT60M"
+                description:
+                - language: "nl-NL"
+                  value: "Rekentest MBO op niveau 2F toegespitst op technische opleidingen zoals procestechniek/machinebouw"
+                teachingLanguage: "nld"
+                assessment:
+                - language: "nl-NL"
+                  value: "Digitale toetsing"
+                organization: "452c1a86-a0af-475b-b03f-724878b0f387"
+            Request details of one test (Flow 0.2 minimal):
+              value:
+                componentId: "c5fca27e-ccc1-430d-9888-90e005ad6a86"
+                primaryCode: 
+                  codeType: testId
+                  code: "5"
+                componentType: test
+                name:
+                - language: "nl-NL"
+                  value: "Rekenen 2F voor technische opleidingen"
+                abbreviation: "REK2F-TECH"
+                modeOfDelivery: ["situated"]
+                duration: "PT60M"
+                description:
+                - language: "nl-NL"
+                  value: "Rekentest MBO op niveau 2F toegespitst op technische opleidingen zoals procestechniek/machinebouw"
+                teachingLanguage: "nld"
+                assessment:
+                - language: "nl-NL"
+                  value: "Digitale toetsing"
+    '400':
+      $ref: '../schemas/ErrorBadRequest.yaml'
+    '401':
+      $ref: '../schemas/ErrorUnauthorized.yaml'
+    '403':
+      $ref: '../schemas/ErrorForbidden.yaml'
+    '404':
+      $ref: '../schemas/ErrorNotFound.yaml'
+    '405':
+      $ref: '../schemas/ErrorMethodNotAllowed.yaml'
+    '429':
+      $ref: '../schemas/ErrorTooManyRequests.yaml'
+    '500':
+      $ref: '../schemas/ErrorInternalServerError.yaml'

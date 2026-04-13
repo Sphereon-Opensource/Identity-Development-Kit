@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>AvoidReferentialEquality:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$config.keyVisibility === KeyVisibility.PUBLIC.keyVisibility</ID>
+    <ID>CyclomaticComplexMethod:KeyStoreLoader.jvm.kt$PathPlaceholderInterpreter$fun resolve(path: String): File?</ID>
+    <ID>CyclomaticComplexMethod:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$actual override suspend fun storeKey( keyInfo: ResolvedKeyInfoType&lt;*>, providerId: String, alias: String, certChain: Array&lt;Certificate>?, ): ManagedKeyInfoType&lt;*></ID>
+    <ID>CyclomaticComplexMethod:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$private suspend fun matchKey(keyInfo: KeyInfoType&lt;*>): KeyInfoType&lt;*></ID>
+    <ID>ExplicitItLambdaParameter:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService${ it -> certificateJwkEncode(it.der) }</ID>
+    <ID>ExplicitItLambdaParameter:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService${ it -> javaX509CertificateFromDer(it.der) }</ID>
+    <ID>ExplicitItLambdaParameter:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService${ it -> val derBytes = certificateJwkDecode(it) javaX509CertificateFromDer(derBytes) }</ID>
+    <ID>InjectDispatcher:KeyStoreLoader.jvm.kt$BaseKeyStoreLoader$IO</ID>
+    <ID>InjectDispatcher:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$Default</ID>
+    <ID>InjectDispatcher:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$IO</ID>
+    <ID>LargeClass:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService : KeyStoreService</ID>
+    <ID>LongMethod:KeyStoreLoader.jvm.kt$PathPlaceholderInterpreter$fun resolve(path: String): File?</ID>
+    <ID>LongMethod:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$actual override suspend fun storeKey( keyInfo: ResolvedKeyInfoType&lt;*>, providerId: String, alias: String, certChain: Array&lt;Certificate>?, ): ManagedKeyInfoType&lt;*></ID>
+    <ID>NestedBlockDepth:KeyStoreLoader.jvm.kt$BaseKeyStoreLoader$override suspend fun load(opts: KeyStoreLoaderOpts): KeyStore</ID>
+    <ID>NoNameShadowing:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$certChain</ID>
+    <ID>ReturnCount:KeyStoreLoader.jvm.kt$PathPlaceholderInterpreter$fun resolve(path: String): File?</ID>
+    <ID>ReturnCount:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$private suspend fun matchKey(keyInfo: KeyInfoType&lt;*>): KeyInfoType&lt;*></ID>
+    <ID>StringLiteralDuplication:JvmAdapters.kt$"Ed25519"</ID>
+    <ID>ThrowsCount:JvmAdapters.kt$fun convertToJavaPrivateKey(keyInfo: Any): PrivateKey</ID>
+    <ID>ThrowsCount:KeyStoreLoader.jvm.kt$BaseKeyStoreLoader$private fun validateWritableFileLocation(file: File)</ID>
+    <ID>TooManyFunctions:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService : KeyStoreService</ID>
+    <ID>UnnecessaryAbstractClass:KeyStoreLoader.jvm.kt$BaseKeyStoreLoader$BaseKeyStoreLoader</ID>
+    <ID>UnnecessaryNotNullOperator:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$jwk.alg!!.value!!</ID>
+    <ID>UnsafeCallOnNullableType:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$jwk.alg!!</ID>
+    <ID>UnsafeCallOnNullableType:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$keyInfo.x5c!!</ID>
+    <ID>UnusedPrivateMember:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$private suspend fun persistKeyStore()</ID>
+    <ID>UseRequire:SoftwareKeyStoreService.jvm.kt$SoftwareKeyStoreService$throw IllegalArgumentException("Either certChain or keyInfo.x5c must be present and contain at least one certificate")</ID>
+  </CurrentIssues>
+</SmellBaseline>

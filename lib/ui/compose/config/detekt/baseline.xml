@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:ComponentTokenMapper.kt$ComponentTokenMapper$fun toBlobExplorerTokens(tokens: Map&lt;String, String>): BlobExplorerTokens</ID>
+    <ID>CyclomaticComplexMethod:ComponentTokenMapper.kt$ComponentTokenMapper$fun toButtonTokens(tokens: Map&lt;String, String>): ButtonTokens</ID>
+    <ID>CyclomaticComplexMethod:ComponentTokenMapper.kt$ComponentTokenMapper$fun toToastTokens(tokens: Map&lt;String, String>): ToastTokens</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$ButtonTokens$"#6750A4"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$ButtonTokens$"#79747E"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$ButtonTokens$"#E8DEF8"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$ButtonTokens$"#FFFFFF"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$CardTokens$"#CAC4D0"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$CardTokens$"#F7F2FA"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$InputTokens$"#1C1B1F"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$InputTokens$"#49454F"</ID>
+    <ID>StringLiteralDuplication:ComponentTokens.kt$InputTokens$"#FFFBFE"</ID>
+  </CurrentIssues>
+</SmellBaseline>

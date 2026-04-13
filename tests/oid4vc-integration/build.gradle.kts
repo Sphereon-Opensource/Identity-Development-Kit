@@ -1,0 +1,131 @@
+plugins {
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
+    alias(sphereonplug.plugins.dev.zacsweers.metro)
+}
+metro {
+}
+
+kotlin {
+    jvm {
+        testRuns.named("test") {
+            executionTask.configure {
+                useJUnitPlatform()
+            }
+        }
+    }
+
+    sourceSets {
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
+
+                // OID4VCI common (models, serializers, Oid4vciJson)
+                implementation(projects.libOpenidOid4vciCommonPublic)
+                implementation(projects.libOpenidOid4vciCommonImpl)
+
+                // OID4VCI issuer (offer creation, metadata, credential issuance models)
+                implementation(projects.libOpenidOid4vciIssuerPublic)
+                implementation(projects.libOpenidOid4vciIssuerImpl)
+
+                // OID4VCI holder (offer parsing, token exchange, credential request models)
+                implementation(projects.libOpenidOid4vciHolderPublic)
+                implementation(projects.libOpenidOid4vciHolderImpl)
+
+                // OID4VC common (DisplayProperties, shared VC types)
+                implementation(projects.libOpenidOid4vcCommonPublic)
+
+                // OAuth2 common models (GrantType, TokenResponse)
+                implementation(projects.libOauth2CommonPublic)
+                implementation(projects.libOauth2CommonImpl)
+
+                // OAuth2 AS (pre-auth code verification, token exchange)
+                implementation(projects.libOauth2ServerAuthorizationPublic)
+                implementation(projects.libOauth2ServerAuthorizationImpl)
+
+                // OAuth2 client (holder-side token exchange)
+                implementation(projects.libOauth2ClientPublic)
+                implementation(projects.libOauth2ClientImpl)
+
+                // Core API
+                implementation(projects.libCoreApiPublic)
+                implementation(projects.libCoreApiDefault)
+                implementation(projects.libCoreTest)
+
+                // Crypto core (ManagedIdentifierOpts, JWS/JWE types used in command args)
+                implementation(projects.libCryptoCorePublic)
+                implementation(projects.libCryptoCoreImpl)
+                implementation(projects.libCryptoCore)
+                implementation(projects.libCryptoKmsProviderSoftware)
+
+                // HTTP client (used by holder metadata resolution)
+                implementation(projects.libDataLinkHttpClientPublic)
+                implementation(projects.libDataLinkHttpClientImpl)
+
+                // KV store (in-memory, used by OAuth2 AS session storage)
+                implementation(projects.libDataStoreKvPublic)
+                implementation(projects.libDataStoreKvImpl)
+                implementation(projects.libDataStoreKvImplMemory)
+
+                // SD-JWT (format handler dependency)
+                implementation(projects.libSdjwtPublic)
+                implementation(projects.libSdjwtImpl)
+
+                // OID4VP verifier
+                implementation(projects.libOpenidOid4vpCommonPublic)
+                implementation(projects.libOpenidOid4vpCommonImpl)
+                implementation(projects.libOpenidOid4vpVerifierPublic)
+                implementation(projects.libOpenidOid4vpVerifierImpl)
+                implementation(projects.libOpenidOid4vpDcql)
+
+                // OID4VP holder
+                implementation(projects.libOpenidOid4vpHolderPublic)
+                implementation(projects.libOpenidOid4vpHolderImpl)
+
+                // OID4VP universal (shared between holder/verifier)
+                implementation(projects.libOpenidOid4vpUniversalPublic)
+                implementation(projects.libOpenidOid4vpUniversalImpl)
+
+                // OAuth2 AS REST (HTTP adapter for E2E)
+                implementation(projects.servicesOauth2AsRest)
+
+                // OID4VCI REST (backend credential offer API + HTTP adapters for E2E)
+                implementation(projects.libOpenidOid4vciRestPublic)
+                implementation(projects.libOpenidOid4vciRestImpl)
+                implementation(projects.servicesOid4vciIssuerRest)
+                implementation(projects.servicesOid4vciHolderRest)
+
+                // OID4VP verifier REST (HTTP adapters for wallet presentation E2E)
+                implementation(projects.servicesOid4vpVerifierRest)
+
+                // mDoc
+                implementation(projects.libMdocCorePublic)
+                implementation(projects.libMdocCoreImpl)
+
+                // CBOR (CborParser binding)
+                implementation(projects.libCborPublic)
+                implementation(projects.libCborImpl)
+
+                // DID manager (DidProviderRegistry needed by SdJwtDcFormatHandler)
+                implementation(projects.libDidManagerPublic)
+                implementation(projects.libDidManagerImpl)
+                implementation(projects.libDidMethodsJwk)
+                implementation(projects.libDidMethodsWeb)
+                implementation(projects.libDidResolverPublic)
+                implementation(projects.libDidResolverImpl)
+                implementation(projects.libDidPersistenceMemory)
+
+                // Ktor client (mock engine for in-process HTTP E2E tests)
+                implementation(sphereonlib.io.ktor.client.core)
+                implementation(sphereonlib.io.ktor.client.mock)
+
+                // DI
+                implementation(libs.bundles.app.platform.di)
+                implementation(sphereonlib.software.amazon.app.platform.metro.public)
+                implementation(sphereonlib.software.amazon.app.platform.metro.impl)
+            }
+        }
+    }
+}

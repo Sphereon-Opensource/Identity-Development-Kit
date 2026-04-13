@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:Oid4vpPresentationE2ETest.kt$Oid4vpPresentationE2ETest$else</ID>
+    <ID>BracesOnIfStatements:Oid4vpPresentationE2ETest.kt$Oid4vpPresentationE2ETest$if</ID>
+    <ID>LongMethod:Oid4vciIssuanceE2ETest.kt$Oid4vciIssuanceE2ETest$@Test fun fullIssuanceFlowWithAccessTokenAndCredentialRequest()</ID>
+    <ID>LongMethod:Oid4vciIssuanceE2ETest.kt$Oid4vciIssuanceE2ETest$@Test fun preAuthCodeFlowThroughRealServices()</ID>
+    <ID>LongMethod:WalletClientE2ETest.kt$WalletClientE2ETest$@Test fun fullPreAuthIssuanceFlowViaHolderClientCommands()</ID>
+    <ID>LongMethod:WalletIssuanceHttpE2ETest.kt$WalletIssuanceHttpE2ETest$@Test fun fullPreAuthIssuanceFlowViaHttp()</ID>
+    <ID>UnusedPrivateMember:WalletPresentationHttpE2ETest.kt$WalletPresentationHttpE2ETest$private fun universalAdapter(): UniversalOid4vpHttpAdapter</ID>
+    <ID>UnusedPrivateProperty:WalletClientE2ETest.kt$InProcessHttpClientFactory$private val hostToAdapterOverrides: Map&lt;String, (GenericHttpRequest) -> suspend () -> GenericHttpResponse> = emptyMap()</ID>
+    <ID>UseOrEmpty:WalletClientE2ETest.kt$InProcessHttpClientFactory$resp.body ?: ""</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,13 @@
+type: object
+description: nl-okd add-on attributes to the Document 
+required:
+ - consumerKey
+properties:
+  consumerKey:
+    type: string
+    example: nl-okd
+  studentNumber:
+    type: string
+    description: |
+      identifies the student number of the person related to the document.
+    example: "1234567"

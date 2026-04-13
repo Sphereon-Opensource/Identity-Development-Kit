@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:DidDereferenceTypes.kt$DidDereferenceResult$Companion</ID>
+    <ID>ClassOrdering:DidDereferenceTypes.kt$DidDereferencingMetadata$fun isSuccess(): Boolean</ID>
+    <ID>ClassOrdering:DidResolutionTypes.kt$DidResolutionMetadata$fun isSuccess(): Boolean</ID>
+    <ID>ClassOrdering:DidResolutionTypes.kt$DidResolutionResult$Companion</ID>
+    <ID>ClassOrdering:ResolverCommands.kt$DereferenceDidCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>ClassOrdering:ResolverCommands.kt$ResolveDidCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>ClassOrdering:ResolverCommands.kt$ResolveVerificationMethodCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>ClassOrdering:ResolverCommands.kt$ResolveVerificationMethodsByPurposeCommand$override val commandId: String get() = COMMAND_ID</ID>
+    <ID>StringLiteralDuplication:DidDereferenceTypes.kt$DidDereferencingMetadata.Companion$"application/did+json"</ID>
+  </CurrentIssues>
+</SmellBaseline>

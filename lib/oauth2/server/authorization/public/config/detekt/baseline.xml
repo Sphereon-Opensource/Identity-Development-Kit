@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:AuthorizationServerService.kt$AuthorizationServerService$/** * Access to all authorization server commands */ val commands: Commands</ID>
+    <ID>ComplexInterface:AuthorizationServerService.kt$AuthorizationServerService</ID>
+    <ID>ComplexInterface:AuthorizationServerService.kt$AuthorizationServerService$Commands</ID>
+    <ID>ComplexInterface:OAuth2AuthServerCommandBindings.kt$OAuth2AuthServerCommandBindings</ID>
+    <ID>ComplexInterface:SessionStorage.kt$SessionStorage</ID>
+    <ID>ComplexInterface:TokenStorage.kt$TokenStorage</ID>
+    <ID>TooManyFunctions:AuthorizationServerService.kt$AuthorizationServerService</ID>
+    <ID>TooManyFunctions:OAuth2AuthServerCommandBindings.kt$OAuth2AuthServerCommandBindings</ID>
+  </CurrentIssues>
+</SmellBaseline>

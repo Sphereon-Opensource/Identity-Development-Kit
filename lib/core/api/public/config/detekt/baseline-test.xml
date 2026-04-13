@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LargeClass:CoreApiDiIntegrationTest.kt$CoreApiDiIntegrationTest</ID>
+    <ID>UnreachableCode:PropertiesFileTest.kt$PropertiesFilePropertySourceTest$return Path(resource.path)</ID>
+    <ID>UnreachableCode:PropertiesFileTest.kt$PropertiesFilePropertySourceTest$val resource = this::class.java.classLoader.getResource(name) ?: throw IllegalArgumentException("Resource not found: $name")</ID>
+    <ID>UnreachableCode:PropertiesFileTest.kt$PropertiesFileTest$return Path(resource.path)</ID>
+    <ID>UnreachableCode:PropertiesFileTest.kt$PropertiesFileTest$val resource = this::class.java.classLoader.getResource(name) ?: throw IllegalArgumentException("Resource not found: $name")</ID>
+    <ID>UnusedPrivateProperty:CoreApiDiIntegrationTest.kt$CoreApiDiIntegrationTest$val anonymous = app.userContextManager.getAnonymous()</ID>
+  </CurrentIssues>
+</SmellBaseline>

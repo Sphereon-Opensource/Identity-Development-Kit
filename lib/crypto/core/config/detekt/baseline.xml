@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MaxLineLength:CryptoCoreInfo.kt$CryptoCoreInfo$"This package has been replaced by com.sphereon.idk:lib-crypto-core-public and -impl. You can use this as a meta dependency on both, although -impl also already exposes -public as api. Use -public for public API and -impl for implementation details"</ID>
+  </CurrentIssues>
+</SmellBaseline>

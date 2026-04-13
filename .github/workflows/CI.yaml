@@ -1,0 +1,216 @@
+name: Build & Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full_build:
+        description: 'Run full multiplatform build (not just JVM)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dkotlin.native.ignoreDisabledTargets=true -Dfile.encoding=UTF-8"
+
+# Pipeline:
+#   push        → jvm only (~5 min)
+#   PR/develop  → jvm → multiplatform (sequential targets, shared build cache on one runner)
+#   develop/main→ jvm → multiplatform → publish
+
+jobs:
+  # ─── JVM: every push (~5 min) ───
+  jvm:
+    name: JVM Build & Test
+    runs-on: linux-x64
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: chmod +x ./gradlew
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            build-cache-1
+
+#      - name: Clear stale Sphereon SNAPSHOT cache
+#        run: |
+#          find ~/.gradle/caches -path "*com.sphereon*" -type f -delete 2>/dev/null || true
+#          find ~/.gradle/caches -path "*com/sphereon*" -type f -delete 2>/dev/null || true
+
+      - name: Build & test (JVM only)
+        run: >-
+          ./gradlew build --build-cache
+          -Dkmp.targets=jvm
+          -x koverVerify
+          -x :lib-crypto-kms-provider-aws:jvmTest
+          -x :lib-crypto-kms-provider-azure:jvmTest
+          -x :lib-data-link-http-client:jvmTest
+
+      - name: Print test failures
+        if: failure()
+        run: |
+          find . -path "*/build/reports/tests/jvmTest/*.html" -name "index.html" \
+            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
+
+  # ─── Multiplatform: single runner, sequential targets, shared build cache ───
+  # Running on one runner means each target reuses commonMain metadata, KSP output,
+  # and dependency resolution from the JVM build. This avoids 10min cold starts per target.
+  multiplatform:
+    name: Multiplatform Build
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.ref == 'refs/heads/main' ||
+      github.ref == 'refs/heads/develop' ||
+      (github.event_name == 'workflow_dispatch' && inputs.full_build)
+    runs-on: linux-x64
+    timeout-minutes: 40
+    needs: jvm
+    steps:
+      - uses: actions/checkout@v4
+      - run: chmod +x ./gradlew
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            build-cache-1
+
+#      - name: Clear stale Sphereon SNAPSHOT cache
+#        run: |
+#          find ~/.gradle/caches -path "*com.sphereon*" -type f -delete 2>/dev/null || true
+#          find ~/.gradle/caches -path "*com/sphereon*" -type f -delete 2>/dev/null || true
+
+      # ── Android ──
+      - name: Cache Android SDK
+        id: android-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/android-sdk
+          key: android-sdk-${{ runner.os }}-cmdline-9477386-platforms-35-buildtools-35.0.0
+
+      - name: Install Android SDK
+        if: steps.android-sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          SDK_ROOT="$HOME/android-sdk"
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          cd /tmp
+          curl -fSL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o cmdline-tools.zip
+          unzip -q cmdline-tools.zip -d "$SDK_ROOT/cmdline-tools"
+          mkdir -p "$SDK_ROOT/cmdline-tools/latest"
+          mv "$SDK_ROOT/cmdline-tools/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/" || true
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
+          (yes || true) | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        shell: bash
+
+      - name: Set Android SDK location
+        run: echo "sdk.dir=$HOME/android-sdk" > local.properties
+
+      - name: Build (Android)
+        run: >-
+          ./gradlew compileAndroidMain
+          --build-cache -Dkmp.targets=jvm,android
+
+      # ── JS ──
+      - name: Cache Kotlin/JS store
+        uses: actions/cache@v4
+        with:
+          path: |
+            kotlin-js-store
+            ~/.npm
+          key: kotlin-js-${{ runner.os }}-${{ hashFiles('kotlin-js-store/package-lock.json', 'kotlin-js-store/wasm/package-lock.json') }}
+          restore-keys: kotlin-js-${{ runner.os }}-
+
+      - name: Upgrade JS/wasmJs lock files
+        run: ./gradlew kotlinUpgradePackageLock kotlinWasmUpgradePackageLock --stacktrace
+
+      - name: Build (JS)
+        run: >-
+          ./gradlew compileKotlinJs compileProductionLibraryKotlinJs
+          --build-cache -Dkmp.targets=jvm,js
+          -x jsTest -x jsBrowserTest -x jsNodeTest
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      # ── wasmJs ──
+      - name: Build (wasmJs)
+        run: >-
+          ./gradlew compileKotlinWasmJs
+          --build-cache -Dkmp.targets=jvm,wasmJs
+          -x assembleWasmJsPackage -x packWasmJsPackage
+
+      # ── Native (temporarily disabled — test setup needs Metro DI migration) ──
+      # - name: Cache Kotlin/Native distribution
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ~/.konan
+      #     key: konan-${{ runner.os }}-${{ hashFiles('gradle.properties') }}
+      #     restore-keys: konan-${{ runner.os }}-
+      #
+      # - name: Build & test (native)
+      #   run: >-
+      #     ./gradlew compileKotlinLinuxX64 linuxX64Test
+      #     --build-cache -Dkmp.targets=jvm,native
+      #     -x :lib-data-store-blob-impl-fs:linuxX64Test
+
+      - name: Print test failures
+        if: failure()
+        run: |
+          find . -name "index.html" -path "*/build/reports/tests/*" \
+            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
+
+  # ─── Publish: after multiplatform passes (wasmJs is never published) ───
+  publish:
+    name: Publish
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: linux-x64
+    timeout-minutes: 25
+    needs: multiplatform
+    steps:
+      - uses: actions/checkout@v4
+      - run: chmod +x ./gradlew
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            build-cache-1
+
+      - name: Set Android SDK location
+        run: echo "sdk.dir=$HOME/android-sdk" > local.properties
+
+      - name: Publish
+        run: ./gradlew publish --build-cache
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}

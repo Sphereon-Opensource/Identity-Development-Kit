@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:KvBlobStoreConfig.kt$KvBlobStoreConfig$10</ID>
+    <ID>MagicNumber:KvBlobStoreConfig.kt$KvBlobStoreConfig$1024</ID>
+    <ID>ReturnCount:KvBlobStore.kt$KvBlobStore$@OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class) override suspend fun copy( source: BlobInfo, destination: BlobInfo, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>ReturnCount:KvBlobStore.kt$KvBlobStore$@OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class) override suspend fun get(info: BlobInfo): IdkResult&lt;ResolvedBlobInfo, IdkError></ID>
+    <ID>ReturnCount:KvBlobStore.kt$KvBlobStore$@OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class) override suspend fun move( source: BlobInfo, destination: BlobInfo, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+    <ID>ReturnCount:KvBlobStore.kt$KvBlobStore$override suspend fun put( target: BlobInfo, data: ByteArray, options: PutOptions, ): IdkResult&lt;BlobDescriptor, IdkError></ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongParameterList:ManagedKeyReferenceRegistrar.kt$ManagedKeyReferenceRegistrar$( providerId: String, alias: String, kid: String? = null, keyType: com.sphereon.crypto.core.generic.KeyTypeMapping? = null, signatureAlgorithm: com.sphereon.crypto.core.generic.SignatureAlgorithm? = null, keyVisibility: com.sphereon.crypto.core.KeyVisibility? = null, keyEncoding: com.sphereon.crypto.core.KeyEncoding? = null, )</ID>
+  </CurrentIssues>
+</SmellBaseline>

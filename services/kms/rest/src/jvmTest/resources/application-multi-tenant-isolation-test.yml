@@ -1,0 +1,56 @@
+kms:
+  providers:
+    # Shared provider accessible to all tenants
+    kmsshared:
+      type: software
+      id: kmsshared
+      enabled: true
+      cryptographyProvider: Default
+      autoCreateCertificate: true
+      persistKeysDuringGeneration: true
+      exposePrivateKeysDuringGeneration: true
+      keyStore:
+        type: memory
+        id: keystore-shared
+        keyVisibility: PUBLIC_ONLY
+        overwriteAlias: false
+        scopeBinding: TENANT  # Keys partitioned by tenant within this shared provider
+
+# TENANT-SPECIFIC PROVIDERS
+# Each tenant gets its own unique provider that other tenants cannot access
+tenant:
+  tenant-a:
+    kms:
+      providers:
+        kmstenanta:
+          type: software
+          id: kmstenanta
+          enabled: true
+          cryptographyProvider: Default
+          autoCreateCertificate: true
+          persistKeysDuringGeneration: true
+          exposePrivateKeysDuringGeneration: true
+          keyStore:
+            type: memory
+            id: keystore-tenant-a
+            keyVisibility: PUBLIC_ONLY
+            overwriteAlias: false
+            scopeBinding: TENANT
+
+  tenant-b:
+    kms:
+      providers:
+        kmstenantb:
+          type: software
+          id: kmstenantb
+          enabled: true
+          cryptographyProvider: Default
+          autoCreateCertificate: true
+          persistKeysDuringGeneration: true
+          exposePrivateKeysDuringGeneration: true
+          keyStore:
+            type: memory
+            id: keystore-tenant-b
+            keyVisibility: PUBLIC_ONLY
+            overwriteAlias: false
+            scopeBinding: TENANT

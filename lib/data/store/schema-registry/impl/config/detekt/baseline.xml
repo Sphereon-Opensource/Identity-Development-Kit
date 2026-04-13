@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexInterface:SchemaRegistryCommandDescriptors.kt$SchemaRegistryCommandDescriptors</ID>
+    <ID>LoopWithTooManyJumpStatements:BlobStoreSchemaRecordRepository.kt$BlobStoreSchemaRecordRepository$for</ID>
+    <ID>ReturnCount:BlobStoreSchemaRecordRepository.kt$BlobStoreSchemaRecordRepository$private fun matchesFilter( record: SchemaRecord, filter: SchemaRecordFilter, ): Boolean</ID>
+    <ID>ReturnCount:DefaultSchemaRegistryService.kt$DefaultSchemaRegistryService$override suspend fun createSchema( tenantId: String, input: CreateSchemaInput, ): IdkResult&lt;SchemaRecord, IdkError></ID>
+    <ID>ReturnCount:DefaultSchemaRegistryService.kt$DefaultSchemaRegistryService$override suspend fun importExternal( tenantId: String, input: ImportExternalInput, ): IdkResult&lt;SchemaRecord, IdkError></ID>
+    <ID>ReturnCount:DefaultSchemaRegistryService.kt$DefaultSchemaRegistryService$override suspend fun refreshCached( tenantId: String, schemaId: Uuid, ): IdkResult&lt;SchemaRecord, IdkError></ID>
+    <ID>StringLiteralDuplication:DefaultSchemaRegistryService.kt$DefaultSchemaRegistryService$"Schema not found: $schemaId"</ID>
+  </CurrentIssues>
+</SmellBaseline>

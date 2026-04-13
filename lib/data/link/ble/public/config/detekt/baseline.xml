@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:BleErrors.kt$BleErrors$override fun toString(): String</ID>
+    <ID>ClassOrdering:Filter.kt$Filter.ManufacturerData$init { require(id >= 0) { "Company identifier cannot be negative, was $id" } require(id &lt;= 65535) { "Company identifier cannot be more than 16-bits (65535), was $id" } require(data == null || data.isNotEmpty()) { "If data is present (non-null), it must be non-empty" } if (dataMask != null) { requireNotNull(data) { "Data is null but must be non-null when dataMask is non-null" } requireDataAndMaskHaveSameLength(data, dataMask) } }</ID>
+    <ID>ClassOrdering:PeripheralStateManager.kt$PeripheralStateManager$val state: Flow&lt;PeripheralState></ID>
+    <ID>ComplexInterface:BlePlatformClient.kt$BlePlatformClient : AutoCloseable</ID>
+    <ID>MagicNumber:Filter.kt$0xFF</ID>
+    <ID>MagicNumber:Filter.kt$8</ID>
+    <ID>MagicNumber:Filter.kt$Filter.ManufacturerData$65535</ID>
+    <ID>MagicNumber:GattCharacteristic.kt$CharacteristicWriteMode.WRITE_TYPE_SIGNED$0x04</ID>
+    <ID>ReturnCount:Filter.kt$private fun ByteArray.matches( data: ByteArray?, mask: ByteArray?, ): Boolean</ID>
+    <ID>StringLiteralDuplication:AllGattDescriptors.kt$"Manufacturer Name String"</ID>
+    <ID>StringLiteralDuplication:BleEvent.kt$BleEvent.CharacteristicRead$"characteristicId"</ID>
+    <ID>StringLiteralDuplication:BleEvent.kt$BleEvent.CharacteristicRead$"serviceId"</ID>
+    <ID>StringLiteralDuplication:BleEvent.kt$BleEvent.CharacteristicRead$"valueSize"</ID>
+    <ID>StringLiteralDuplication:BleEvent.kt$BleEvent.ConnectionStateChanged$"status"</ID>
+    <ID>StringLiteralDuplication:BleEvent.kt$BleEvent.ScanStarted$"deviceAddress"</ID>
+    <ID>StringLiteralDuplication:BleEvent.kt$BleEvent.ScanStarted$"requestId"</ID>
+  </CurrentIssues>
+</SmellBaseline>

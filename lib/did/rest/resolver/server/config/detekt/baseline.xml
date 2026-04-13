@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:UniversalResolverHttpAdapter.kt$UniversalResolverHttpAdapter$/** * Endpoint commands for this adapter. * * Commands are injected via constructor following the standard IDK DI pattern. */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( resolveDidCommand, getMethodsCommand, getPropertiesCommand, )</ID>
+    <ID>MagicNumber:UniversalResolverEndpointCommands.kt$GetResolverMethodsEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:UniversalResolverEndpointCommands.kt$GetResolverPropertiesEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:UniversalResolverEndpointCommands.kt$ResolveDidEndpointCommandImpl$200</ID>
+    <ID>ReturnCount:UniversalResolverEndpointCommands.kt$ResolveDidEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>StringLiteralDuplication:UniversalResolverEndpointCommands.kt$ResolveDidEndpointCommand.Companion$"universal-resolver"</ID>
+  </CurrentIssues>
+</SmellBaseline>

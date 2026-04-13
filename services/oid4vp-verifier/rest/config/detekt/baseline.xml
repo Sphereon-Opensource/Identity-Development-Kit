@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$if</ID>
+    <ID>ClassOrdering:Oid4vpVerifierHttpAdapter.kt$Oid4vpVerifierHttpAdapter$/** * Endpoint commands for OID4VP request_uri handling. * * Commands are injected via constructor following the standard IDK DI pattern. */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( getRequestObjectCommand, postRequestObjectCommand, directPostResponseCommand, )</ID>
+    <ID>ClassOrdering:UniversalOid4vpHttpAdapter.kt$UniversalOid4vpHttpAdapter$/** * Endpoint commands for Universal OID4VP. */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( createCommand, getStatusCommand, deleteCommand, )</ID>
+    <ID>LoopWithTooManyJumpStatements:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$for</ID>
+    <ID>MagicNumber:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$16</ID>
+    <ID>MagicNumber:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$3</ID>
+    <ID>ReturnCount:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$private fun parseRequestUriPostBody(body: String?): Pair&lt;String?, String?></ID>
+  </CurrentIssues>
+</SmellBaseline>

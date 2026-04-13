@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UnusedParameter:KvStoreSupport.kt$KvStoreConfigBinderImpl$configService: ConfigService</ID>
+    <ID>UseRequire:KvStoreSupport.kt$KvStoreConfigBinderImpl$throw IllegalArgumentException( "Failed to bind KV store config for '$storeId' under prefix '$prefix': ${configResult.error.message.defaultMessage}", )</ID>
+    <ID>UseRequire:KvStoreSupport.kt$KvStoreConfigBinderImpl$throw IllegalArgumentException( "Failed to bind KV store configs for prefix '$prefix': ${configsResult.error.message.defaultMessage}", )</ID>
+    <ID>UseRequire:KvStoreSupport.kt$KvStoreManagerImpl$throw IllegalArgumentException("No KvStoreFactory implementations found. Add at least one KV backend module (memory, kottage, etc).")</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,18 @@
+[versions]
+app-platform = "0.0.10-SNAPSHOT"
+
+[libraries]
+amz-metro-public = { module = "software.amazon.app.platform:metro-public", version.ref = "app-platform"}
+amz-metro-impl = { module = "software.amazon.app.platform:metro-impl", version.ref = "app-platform"}
+amz-kotlin-scope-public = { module = "software.amazon.app.platform:scope-public", version.ref = "app-platform"}
+amz-di-common-public = { module = "software.amazon.app.platform:di-common-public", version.ref = "app-platform"}
+
+[bundles]
+app-platform-di = [
+    "amz-metro-public",
+    "amz-metro-impl",
+    "amz-di-common-public",
+    "amz-kotlin-scope-public"
+]
+
+[plugins]

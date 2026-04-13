@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:GraphServiceResolver.jvm.kt$GraphServiceResolver$private fun &lt;T : Any> findServiceInClass( graph: Any, javaClass: Class&lt;*>, serviceType: KClass&lt;T>, ): T?</ID>
+    <ID>InstanceOfCheckForException:GraphServiceResolver.jvm.kt$GraphServiceResolver$expected is java.lang.reflect.InvocationTargetException</ID>
+    <ID>LoopWithTooManyJumpStatements:GraphServiceResolver.jvm.kt$GraphServiceResolver$for</ID>
+    <ID>NestedBlockDepth:GraphServiceResolver.jvm.kt$GraphServiceResolver$private fun &lt;T : Any> findServiceInClass( graph: Any, javaClass: Class&lt;*>, serviceType: KClass&lt;T>, ): T?</ID>
+    <ID>PrintStackTrace:GraphServiceResolver.jvm.kt$GraphServiceResolver$expected</ID>
+    <ID>RedundantSuspendModifier:KtorHttpExtensions.kt$suspend</ID>
+    <ID>ReturnCount:GraphServiceResolver.jvm.kt$GraphServiceResolver$private fun &lt;T : Any> findServiceInClass( graph: Any, javaClass: Class&lt;*>, serviceType: KClass&lt;T>, ): T?</ID>
+    <ID>UseOrEmpty:GraphServiceResolver.jvm.kt$GraphServiceResolver$serviceType.simpleName ?: ""</ID>
+  </CurrentIssues>
+</SmellBaseline>

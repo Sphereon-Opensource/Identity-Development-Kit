@@ -1,0 +1,3 @@
+database:
+  host: staging-db.example.com
+  pool-size: 25

@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LargeClass:JwsMockedErrorPathsTest.kt$JwsMockedErrorPathsTest</ID>
+    <ID>LargeClass:MemoryKeyStoreTest.kt$MemoryKeyStoreTest</ID>
+    <ID>LongMethod:JwsMockedErrorPathsTest.kt$JwsMockedErrorPathsTest$@Test fun testCreateJwsJsonGeneral_SignatureCreationThrows()</ID>
+    <ID>LongMethod:JwsMockedErrorPathsTest.kt$JwsMockedErrorPathsTest$@Test fun testCreateJwsJsonGeneral_WithExistingSignatures()</ID>
+    <ID>UnusedPrivateProperty:ExternalIdentifierResolutionTest.kt$ExternalIdentifierResolutionTest$val forgedContext = createAnonymousSessionContext("external-identifier-forged-supports")</ID>
+    <ID>UnusedPrivateProperty:ExternalIdentifierResolutionTest.kt$ExternalIdentifierResolutionTest$val forgedContext = createAnonymousSessionContext("external-identifier-forged-unsupported")</ID>
+    <ID>UnusedPrivateProperty:JweMockedErrorPathsTest.kt$JweMockedErrorPathsTest$private val mockSessionContext = createAnonymousSessionContext("mock-test-session")</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val executionContext = session.sessionExecution.sessionContext</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val forgedContext = createAnonymousSessionContext("kms-query-capabilities-supports-forged")</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val forgedContext = createAnonymousSessionContext("kms-query-provider-exec-forged")</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val forgedContext = createAnonymousSessionContext("kms-query-provider-null-query-forged")</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val forgedContext = createAnonymousSessionContext("kms-query-provider-supports-forged")</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val forgedContext = createAnonymousSessionContext("kms-query-providers-null-query-forged")</ID>
+    <ID>UnusedPrivateProperty:KmsQueryFunctionalityTest.kt$KmsQueryFunctionalityTest$val forgedContext = createAnonymousSessionContext("kms-query-providers-supports-forged")</ID>
+    <ID>UnusedPrivateProperty:MemoryKeyStoreTest.kt$MemoryKeyStoreTest$val lookupKeyInfo = com.sphereon.crypto.core.KeyInfo( kid = storedKey.kid, key = null, alias = null, )</ID>
+    <ID>UnusedPrivateProperty:MultiIdentifierResolutionMockedTest.kt$MultiIdentifierResolutionMockedTest$val forgedContext = createAnonymousSessionContext("multi-identifier-forged-context")</ID>
+    <ID>UnusedPrivateProperty:MultiIdentifierResolutionMockedTest.kt$MultiIdentifierResolutionMockedTest$val forgedContext = createAnonymousSessionContext("multi-identifier-forged-supports")</ID>
+  </CurrentIssues>
+</SmellBaseline>

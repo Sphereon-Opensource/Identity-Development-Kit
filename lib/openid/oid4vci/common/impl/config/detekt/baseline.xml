@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:Oid4vciIssuerExternalIdentifierResolutionServiceImpl.kt$Oid4vciIssuerExternalIdentifierResolutionServiceImpl$override suspend fun doExecute( args: ExternalIdentifierOptsOrResult, applyDuring: (ExternalIdentifierOptsOrResult) -> ExternalIdentifierOptsOrResult, ): IdkResult&lt;Oid4vciIssuerExternalIdentifierResult, IdkErrorType></ID>
+    <ID>LongMethod:Oid4vciIssuerExternalIdentifierResolutionServiceImpl.kt$Oid4vciIssuerExternalIdentifierResolutionServiceImpl$override suspend fun doExecute( args: ExternalIdentifierOptsOrResult, applyDuring: (ExternalIdentifierOptsOrResult) -> ExternalIdentifierOptsOrResult, ): IdkResult&lt;Oid4vciIssuerExternalIdentifierResult, IdkErrorType></ID>
+    <ID>NestedBlockDepth:Oid4vciIssuerExternalIdentifierResolutionServiceImpl.kt$Oid4vciIssuerExternalIdentifierResolutionServiceImpl$override suspend fun doExecute( args: ExternalIdentifierOptsOrResult, applyDuring: (ExternalIdentifierOptsOrResult) -> ExternalIdentifierOptsOrResult, ): IdkResult&lt;Oid4vciIssuerExternalIdentifierResult, IdkErrorType></ID>
+    <ID>ReturnCount:Oid4vciIssuerExternalIdentifierResolutionServiceImpl.kt$Oid4vciIssuerExternalIdentifierResolutionServiceImpl$override suspend fun doExecute( args: ExternalIdentifierOptsOrResult, applyDuring: (ExternalIdentifierOptsOrResult) -> ExternalIdentifierOptsOrResult, ): IdkResult&lt;Oid4vciIssuerExternalIdentifierResult, IdkErrorType></ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:Oid4vpAuthTestGraphs.kt$TestRequestUriSigningConfig$override suspend fun resolveSigningKey()</ID>
+    <ID>ReturnCount:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$override suspend fun completeAuthentication(sessionId: String): IdkResult&lt;Oid4vpAuthResult, IdkError></ID>
+    <ID>SleepInsteadOfDelay:InMemoryOid4vpAuthSessionStoreTest.kt$InMemoryOid4vpAuthSessionStoreTest$sleep(10)</ID>
+    <ID>UnnecessaryNotNullOperator:InMemoryOid4vpAuthSessionStoreTest.kt$InMemoryOid4vpAuthSessionStoreTest$result.value!!</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$if (session.status != Oid4vpAuthSessionStatus.VERIFIED) { return com.sphereon.core.api .Err(Oid4vpAuthErrors.sessionNotVerified(sessionId)) }</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$if (session.status == Oid4vpAuthSessionStatus.COMPLETED) { return com.sphereon.core.api .Err(Oid4vpAuthErrors.sessionAlreadyCompleted(sessionId)) }</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$return Ok( Oid4vpAuthResult( userId = "user-$sessionId", claims = mapOf( "sub" to kotlinx.serialization.json.JsonPrimitive("user-$sessionId"), "name" to kotlinx.serialization.json.JsonPrimitive("Test User"), "email" to kotlinx.serialization.json.JsonPrimitive("test@example.com"), ), jwtClaims = null, isNewUser = false, authenticatedAt = Clock.System.now(), acr = Oid4vpAuthResult.DEFAULT_ACR, amr = Oid4vpAuthResult.DEFAULT_AMR, ), )</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$return Ok(Oid4vpAuthStatusResponse.from(session))</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$sessions[sessionId] = completedSession</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$val completedSession = session.copy( status = Oid4vpAuthSessionStatus.COMPLETED, updatedAt = Clock.System.now(), )</ID>
+    <ID>UnreachableCode:Oid4vpAuthHttpAdapterTest.kt$MockOid4vpAuthBridge$val session = sessions[sessionId] ?: return com.sphereon.core.api .Err(Oid4vpAuthErrors.sessionNotFound(sessionId))</ID>
+    <ID>UnusedPrivateMember:Oid4vpAuthHttpAdapterTest.kt$Oid4vpAuthHttpAdapterTest$private fun createSampleSession( sessionId: String, correlationId: String = "corr-$sessionId", status: Oid4vpAuthSessionStatus = Oid4vpAuthSessionStatus.PENDING, ): Oid4vpAuthSession</ID>
+  </CurrentIssues>
+</SmellBaseline>

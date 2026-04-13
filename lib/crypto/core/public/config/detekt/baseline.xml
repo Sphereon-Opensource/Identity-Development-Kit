@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:SoftwareKeyStoreService.wasmJs.kt$BrowserKeyStoreBackend$if</ID>
+    <ID>BracesOnIfStatements:SoftwareKeyStoreService.wasmJs.kt$NodeJsKeyStoreBackend$if</ID>
+    <ID>BracesOnIfStatements:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService$else</ID>
+    <ID>BracesOnIfStatements:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService$if</ID>
+    <ID>BracesOnIfStatements:SoftwareKeyStoreService.wasmJs.kt$if</ID>
+    <ID>CyclomaticComplexMethod:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService$private suspend fun matchKey(keyInfo: KeyInfoType&lt;*>): KeyInfoType&lt;*></ID>
+    <ID>ReturnCount:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService$private suspend fun matchKey(keyInfo: KeyInfoType&lt;*>): KeyInfoType&lt;*></ID>
+    <ID>StringLiteralDuplication:SoftwareKeyStoreService.wasmJs.kt$BrowserKeyStoreBackend$"sphereon-keystore"</ID>
+    <ID>StringLiteralDuplication:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService$"Could not find certificate for alias $alias"</ID>
+    <ID>StringLiteralDuplication:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService$"certificate"</ID>
+    <ID>TooManyFunctions:SoftwareKeyStoreService.wasmJs.kt$SoftwareKeyStoreService : KeyStore</ID>
+    <ID>TooManyFunctions:SoftwareKeyStoreService.wasmJs.kt$com.sphereon.crypto.kms.keystore.software.SoftwareKeyStoreService.wasmJs.kt</ID>
+  </CurrentIssues>
+</SmellBaseline>

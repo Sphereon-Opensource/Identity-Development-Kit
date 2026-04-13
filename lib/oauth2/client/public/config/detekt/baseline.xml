@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:IntrospectionService.kt$IntrospectionService$/** * Provides access to the underlying commands for advanced usage scenarios */ val commands: Commands</ID>
+    <ID>ClassOrdering:JarService.kt$JarService$/** * Provides access to the underlying commands for advanced usage scenarios */ val commands: Commands</ID>
+    <ID>ClassOrdering:PkceService.kt$PkceService$/** * Provides access to the underlying commands for advanced usage scenarios */ val commands: Commands</ID>
+    <ID>ComplexInterface:OAuth2Client.kt$OAuth2Client</ID>
+    <ID>ComplexInterface:OAuth2ClientCommandBindings.kt$OAuth2ClientCommandBindings</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientAuthentication: ClientAuthenticationConfig, authorizationCode: String, redirectUri: String, pkceData: PkceData? = null, resource: List&lt;String>? = null, dpopContext: DpopContext? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientAuthentication: ClientAuthenticationConfig, preAuthorizedCode: String, txCode: String? = null, resource: List&lt;String>? = null, dpopContext: DpopContext? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientAuthentication: ClientAuthenticationConfig, refreshToken: String, scope: String? = null, resource: List&lt;String>? = null, dpopContext: DpopContext? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientId: String, redirectUri: String, scope: String? = null, state: String? = null, resource: List&lt;String>? = null, clientAuthentication: ClientAuthenticationConfig? = null, dpopContext: DpopContext? = null, additionalParameters: Map&lt;String, String> = emptyMap(), )</ID>
+    <ID>MagicNumber:AuthorizationRequestValidator.kt$8</ID>
+    <ID>MagicNumber:PkceValidator.kt$128</ID>
+    <ID>MagicNumber:PkceValidator.kt$43</ID>
+    <ID>MagicNumber:TokenValidators.kt$128</ID>
+    <ID>MagicNumber:TokenValidators.kt$43</ID>
+  </CurrentIssues>
+</SmellBaseline>

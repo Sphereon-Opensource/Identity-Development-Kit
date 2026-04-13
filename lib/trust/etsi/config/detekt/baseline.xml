@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:TestResources.kt$else</ID>
+    <ID>BracesOnIfStatements:TestResources.kt$if</ID>
+    <ID>BracesOnIfStatements:XmlTestUtil.wasmJs.kt$if</ID>
+    <ID>MagicNumber:TestResources.kt$15</ID>
+    <ID>MatchingDeclarationName:EtsiTestSetup.wasmJs.kt$WasmJsEtsiTestAppGraph : AbstractAppGraph</ID>
+    <ID>UnusedParameter:TestResources.kt$base: JsString</ID>
+    <ID>UnusedParameter:TestResources.kt$name: JsString</ID>
+    <ID>UnusedParameter:TestResources.kt$path: JsString</ID>
+    <ID>UnusedParameter:TestResources.kt$relative: JsString</ID>
+    <ID>UnusedParameter:XmlTestUtil.wasmJs.kt$dom: JsAny</ID>
+    <ID>UnusedParameter:XmlTestUtil.wasmJs.kt$window: JsAny</ID>
+    <ID>UnusedPrivateProperty:TestResources.kt$i</ID>
+  </CurrentIssues>
+</SmellBaseline>

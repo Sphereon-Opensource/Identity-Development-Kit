@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:CreateSessionEndpointCommand.kt$CreateSessionEndpointCommandImpl$@OptIn(ExperimentalUuidApi::class) override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ClassOrdering:Oid4vciHolderHttpAdapter.kt$Oid4vciHolderHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( // Stateless resolveOfferCommand, exchangePreAuthCodeCommand, requestNonceCommand, requestCredentialCommand, requestDeferredCommand, sendNotificationCommand, initiateIaeCommand, buildAuthRequestCommand, exchangeAuthCodeCommand, // Session createSessionCommand, getSessionCommand, sessionTokenCommand, sessionCredentialCommand, sessionDeferredPollCommand, sessionNotifyCommand, sessionIaeInitiateCommand, sessionIaeFollowUpCommand, sessionBuildAuthRequestCommand, sessionExchangeAuthCodeCommand, )</ID>
+    <ID>LongMethod:SessionCredentialEndpointCommand.kt$SessionCredentialEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongParameterList:Oid4vciHolderHttpAdapter.kt$Oid4vciHolderHttpAdapter$( execution: SessionExecution, // Stateless endpoints private val resolveOfferCommand: ResolveOfferEndpointCommand, private val exchangePreAuthCodeCommand: ExchangePreAuthCodeEndpointCommand, private val requestNonceCommand: RequestNonceEndpointCommand, private val requestCredentialCommand: RequestCredentialEndpointCommand, private val requestDeferredCommand: RequestDeferredEndpointCommand, private val sendNotificationCommand: SendNotificationEndpointCommand, private val initiateIaeCommand: InitiateIaeEndpointCommand, private val buildAuthRequestCommand: BuildAuthRequestEndpointCommand, private val exchangeAuthCodeCommand: ExchangeAuthCodeEndpointCommand, // Session endpoints private val createSessionCommand: CreateSessionEndpointCommand, private val getSessionCommand: GetSessionEndpointCommand, private val sessionTokenCommand: SessionTokenEndpointCommand, private val sessionCredentialCommand: SessionCredentialEndpointCommand, private val sessionDeferredPollCommand: SessionDeferredPollEndpointCommand, private val sessionNotifyCommand: SessionNotifyEndpointCommand, private val sessionIaeInitiateCommand: SessionIaeInitiateEndpointCommand, private val sessionIaeFollowUpCommand: SessionIaeFollowUpEndpointCommand, private val sessionBuildAuthRequestCommand: SessionBuildAuthRequestEndpointCommand, private val sessionExchangeAuthCodeCommand: SessionExchangeAuthCodeEndpointCommand, )</ID>
+    <ID>MagicNumber:BuildAuthRequestEndpointCommand.kt$BuildAuthRequestEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:CreateSessionEndpointCommand.kt$CreateSessionEndpointCommandImpl$201</ID>
+    <ID>MagicNumber:ExchangeAuthCodeEndpointCommand.kt$ExchangeAuthCodeEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:ExchangePreAuthCodeEndpointCommand.kt$ExchangePreAuthCodeEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:GetSessionEndpointCommand.kt$GetSessionEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:InitiateIaeEndpointCommand.kt$InitiateIaeEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:RequestCredentialEndpointCommand.kt$RequestCredentialEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:RequestDeferredEndpointCommand.kt$RequestDeferredEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:RequestNonceEndpointCommand.kt$RequestNonceEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:ResolveOfferEndpointCommand.kt$ResolveOfferEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionBuildAuthRequestEndpointCommand.kt$SessionBuildAuthRequestEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionCredentialEndpointCommand.kt$SessionCredentialEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionDeferredPollEndpointCommand.kt$SessionDeferredPollEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionExchangeAuthCodeEndpointCommand.kt$SessionExchangeAuthCodeEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionIaeFollowUpEndpointCommand.kt$SessionIaeFollowUpEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionIaeInitiateEndpointCommand.kt$SessionIaeInitiateEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:SessionTokenEndpointCommand.kt$SessionTokenEndpointCommandImpl$200</ID>
+    <ID>ReturnCount:CreateSessionEndpointCommand.kt$CreateSessionEndpointCommandImpl$@OptIn(ExperimentalUuidApi::class) override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:GetSessionEndpointCommand.kt$GetSessionEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionBuildAuthRequestEndpointCommand.kt$SessionBuildAuthRequestEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionCredentialEndpointCommand.kt$SessionCredentialEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionDeferredPollEndpointCommand.kt$SessionDeferredPollEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionExchangeAuthCodeEndpointCommand.kt$SessionExchangeAuthCodeEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionIaeFollowUpEndpointCommand.kt$SessionIaeFollowUpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionIaeInitiateEndpointCommand.kt$SessionIaeInitiateEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionNotifyEndpointCommand.kt$SessionNotifyEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:SessionTokenEndpointCommand.kt$SessionTokenEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$AbstractPropertiesFilePropertySourceTest$return Path( java.nio.file.Paths .get(resource.toURI()) .toString(), )</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$AbstractPropertiesFilePropertySourceTest$val resource = this::class.java.classLoader.getResource(name) ?: throw IllegalArgumentException("Resource not found: $name")</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$LoadPropertiesTest$return Path( java.nio.file.Paths .get(resource.toURI()) .toString(), )</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$LoadPropertiesTest$val resource = this::class.java.classLoader.getResource(name) ?: throw IllegalArgumentException("Resource not found: $name")</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$PropertiesFilePropertySourceEdgeCasesTest$return Path(resource.path)</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$PropertiesFilePropertySourceEdgeCasesTest$val resource = this::class.java.classLoader.getResource(name) ?: throw IllegalArgumentException("Resource not found: $name")</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$ProtectedPropertiesFilePropertySourceTest$return Path( java.nio.file.Paths .get(resource.toURI()) .toString(), )</ID>
+    <ID>UnreachableCode:PropertiesFilePropertySourceTest.kt$ProtectedPropertiesFilePropertySourceTest$val resource = this::class.java.classLoader.getResource(name) ?: throw IllegalArgumentException("Resource not found: $name")</ID>
+    <ID>UnusedPrivateProperty:JvmTest.jvm.kt$JvmTest$val contextComp1Extended = contextInstance.asCoreApiContextGraph()</ID>
+    <ID>UnusedPrivateProperty:JvmTest.jvm.kt$JvmTest$val sessionContext1 = sessionContextGraph.sessionContext</ID>
+    <ID>UnusedPrivateProperty:JvmTest.jvm.kt$JvmTest$val sessionContext2Comp = contextComp2Extended.createExecutionContextGraph(appGraph.userContextManager.getActive().context, "testAction")</ID>
+  </CurrentIssues>
+</SmellBaseline>

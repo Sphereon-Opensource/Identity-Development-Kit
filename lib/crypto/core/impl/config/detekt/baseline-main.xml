@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongMethod:KeyPair.jvm.kt$PrivatePlatformKey$@Suppress("MagicNumber") override fun toPublicKey(): PlatformKey</ID>
+    <ID>UnusedPrivateProperty:KeyPair.jvm.kt$PrivatePlatformKey$val reimported = keyFactory.generatePrivate(pkcs8Spec) as ECPrivateKey</ID>
+  </CurrentIssues>
+</SmellBaseline>

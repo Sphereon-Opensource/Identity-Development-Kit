@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ClassOrdering:TrustCommandContracts.kt$ValidateTrustContract$override suspend fun plan( args: ValidateTrustArgs, context: PlanningContext, ): CommandPlan</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.AA_COMPROMISE$10</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.AFFILIATION_CHANGED$3</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.CERTIFICATE_HOLD$6</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.CESSATION_OF_OPERATION$5</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.PRIVILEGE_WITHDRAWN$9</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.REMOVE_FROM_CRL$8</ID>
+    <ID>MagicNumber:RevocationChecker.kt$RevocationReason.SUPERSEDED$4</ID>
+  </CurrentIssues>
+</SmellBaseline>

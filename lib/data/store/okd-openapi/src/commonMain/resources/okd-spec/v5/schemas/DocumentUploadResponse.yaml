@@ -1,0 +1,9 @@
+type: object
+description: A system message as a response to a Document upload POST message 
+required:
+  - dmsDocumentId
+properties:
+  dmsDocumentId: 
+    description: DMS document id van het zojuist geuploade document
+    type: string
+    example: e68ee6c0-d503-4e56-8dce-d7fbf3e5b52d
