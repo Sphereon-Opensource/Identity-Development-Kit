@@ -1,0 +1,44 @@
+package com.sphereon.oauth2.client
+
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.DependencyGraph
+import dev.zacsweers.metro.Named
+import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.createGraphFactory
+import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.di.app.AbstractAppComponent
+import com.sphereon.di.app.RootScopeProvider
+
+/**
+ * JS test implementation for [AbstractAppComponent].
+ */
+@DependencyGraph(AppScope::class)
+abstract class JsOauth2TestAppComponent : AbstractAppComponent() {
+    @DependencyGraph.Factory
+    fun interface Factory {
+        fun create(
+            @Provides application: Any,
+            @Provides @Named("appId") appId: String,
+            @Provides @Named("profile") profile: String,
+            @Provides @Named("version") version: String,
+            @Provides rootScopeProvider: RootScopeProvider,
+        ): JsOauth2TestAppComponent
+    }
+}
+
+fun createJsOauth2TestAppComponent(
+    application: Any,
+    appId: String = "oauth2-client-test",
+    profile: String = "console-log-profile",
+    version: String = "test-version",
+): JsOauth2TestAppComponent {
+    val component = createGraphFactory<JsOauth2TestAppComponent.Factory>().create(
+        application = application,
+        appId = appId,
+        profile = profile,
+        version = version,
+        rootScopeProvider = DefaultRootScopeProvider()
+    )
+    component.initRootScopeProvider()
+    return component
+}

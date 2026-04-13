@@ -1,0 +1,186 @@
+package com.sphereon.data.store.blob.memory
+
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.data.store.blob.BlobDescriptor
+import com.sphereon.data.store.blob.BlobInfo
+import com.sphereon.data.store.blob.BlobMetadata
+import com.sphereon.data.store.blob.BlobStore
+import com.sphereon.data.store.blob.BlobStoreCapabilities
+import com.sphereon.data.store.blob.BlobStoreError
+import com.sphereon.data.store.blob.BlobStoreSchemes
+import com.sphereon.data.store.blob.ListOptions
+import com.sphereon.data.store.blob.ListResult
+import com.sphereon.data.store.blob.PutOptions
+import com.sphereon.data.store.blob.ResolvedBlobInfo
+import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+
+internal class InMemoryBlobStore(
+    private val partition: InMemoryBlobPartition,
+    private val maxEntries: Int = 0,
+) : BlobStore {
+
+    override val storeId: String = BlobStoreSchemes.MEMORY
+
+    override val capabilities: BlobStoreCapabilities = BlobStoreCapabilities.SIMPLE
+
+    @OptIn(ExperimentalUuidApi::class)
+    override suspend fun put(
+        target: BlobInfo,
+        data: ByteArray,
+        options: PutOptions,
+    ): IdkResult<BlobDescriptor, IdkError> = partition.mutex.withLock {
+        try {
+            val path = target.path ?: Uuid.random().toString()
+            if (maxEntries > 0 && partition.blobs.size >= maxEntries && !partition.blobs.containsKey(path)) {
+                return@withLock Err(BlobStoreError.QuotaExceeded("Max entries ($maxEntries) reached").toIdkError())
+            }
+            val existing = partition.blobs[path]
+            if (!options.overwrite && existing != null) {
+                return@withLock Err(BlobStoreError.AlreadyExists(path).toIdkError())
+            }
+            if (options.ifNoneMatch != null && existing != null) {
+                return@withLock Err(BlobStoreError.PreconditionFailed("ifNoneMatch condition failed for $path").toIdkError())
+            }
+
+            val metadata = target.toBlobMetadata()
+            val now = Clock.System.now().toEpochMilliseconds()
+            partition.blobs[path] = InMemoryStoredBlob(
+                data = data.copyOf(),
+                metadata = metadata,
+                createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
+                lastModifiedAtEpochMillis = now,
+            )
+
+            Ok(toDescriptor(path, data.size.toLong(), metadata, existing?.createdAtEpochMillis ?: now, now))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to put blob '${target.path}': ${e.message}", exception = e, code = "BLOB_PUT_FAILED"))
+        }
+    }
+
+    override suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError> = partition.mutex.withLock {
+        try {
+            val path = info.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val stored = partition.blobs[path]
+                ?: return@withLock Err(BlobStoreError.NotFound(path).toIdkError())
+            val descriptor = toDescriptor(path, stored.data.size.toLong(), stored.metadata, stored.createdAtEpochMillis, stored.lastModifiedAtEpochMillis)
+            Ok(ResolvedBlobInfo.fromContent(info, stored.data.copyOf(), descriptor))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to get blob '${info.path}': ${e.message}", exception = e, code = "BLOB_GET_FAILED"))
+        }
+    }
+
+    override suspend fun delete(info: BlobInfo): IdkResult<Boolean, IdkError> = partition.mutex.withLock {
+        try {
+            val path = info.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            Ok(partition.blobs.remove(path) != null)
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to delete blob '${info.path}': ${e.message}", exception = e, code = "BLOB_DELETE_FAILED"))
+        }
+    }
+
+    override suspend fun exists(info: BlobInfo): IdkResult<Boolean, IdkError> = partition.mutex.withLock {
+        try {
+            val path = info.path ?: return@withLock Ok(false)
+            Ok(partition.blobs.containsKey(path))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to check existence of blob '${info.path}': ${e.message}", exception = e, code = "BLOB_EXISTS_FAILED"))
+        }
+    }
+
+    override suspend fun stat(info: BlobInfo): IdkResult<BlobDescriptor, IdkError> = partition.mutex.withLock {
+        try {
+            val path = info.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val stored = partition.blobs[path]
+                ?: return@withLock Err(BlobStoreError.NotFound(path).toIdkError())
+            Ok(toDescriptor(path, stored.data.size.toLong(), stored.metadata, stored.createdAtEpochMillis, stored.lastModifiedAtEpochMillis))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to stat blob '${info.path}': ${e.message}", exception = e, code = "BLOB_STAT_FAILED"))
+        }
+    }
+
+    override suspend fun list(info: BlobInfo, options: ListOptions): IdkResult<ListResult, IdkError> = partition.mutex.withLock {
+        try {
+            val prefix = options.prefix ?: info.path ?: ""
+            val entries = partition.blobs.entries
+                .filter { (path, _) -> path.startsWith(prefix) }
+                .sortedBy { it.key }
+
+            val descriptors = entries
+                .take(options.maxResults)
+                .map { (path, stored) ->
+                    toDescriptor(path, stored.data.size.toLong(), stored.metadata, stored.createdAtEpochMillis, stored.lastModifiedAtEpochMillis)
+                }
+
+            val nextPageToken = if (entries.size > options.maxResults) entries[options.maxResults].key else null
+
+            Ok(ListResult(descriptors = descriptors, nextPageToken = nextPageToken))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to list blobs: ${e.message}", exception = e, code = "BLOB_LIST_FAILED"))
+        }
+    }
+
+    override suspend fun deletePrefix(info: BlobInfo): IdkResult<Int, IdkError> = partition.mutex.withLock {
+        try {
+            val prefix = info.path ?: return@withLock Err(
+                IdkError.fromString(message = "deletePrefix requires a path", code = "BLOB_DELETE_PREFIX_FAILED")
+            )
+            val keysToRemove = partition.blobs.keys.filter { it.startsWith(prefix) }
+            keysToRemove.forEach { partition.blobs.remove(it) }
+            Ok(keysToRemove.size)
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to delete prefix '${info.path}': ${e.message}", exception = e, code = "BLOB_DELETE_PREFIX_FAILED"))
+        }
+    }
+
+    override suspend fun copy(source: BlobInfo, destination: BlobInfo): IdkResult<BlobDescriptor, IdkError> = partition.mutex.withLock {
+        try {
+            val sourcePath = source.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val destPath = destination.path ?: error("Destination path is required for copy")
+            val stored = partition.blobs[sourcePath]
+                ?: return@withLock Err(BlobStoreError.NotFound(sourcePath).toIdkError())
+            val now = Clock.System.now().toEpochMilliseconds()
+            partition.blobs[destPath] = stored.copy(
+                data = stored.data.copyOf(),
+                lastModifiedAtEpochMillis = now,
+            )
+            Ok(toDescriptor(destPath, stored.data.size.toLong(), stored.metadata, now, now))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to copy blob: ${e.message}", exception = e, code = "BLOB_COPY_FAILED"))
+        }
+    }
+
+    override suspend fun move(source: BlobInfo, destination: BlobInfo): IdkResult<BlobDescriptor, IdkError> = partition.mutex.withLock {
+        try {
+            val sourcePath = source.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val destPath = destination.path ?: error("Destination path is required for move")
+            val stored = partition.blobs.remove(sourcePath)
+                ?: return@withLock Err(BlobStoreError.NotFound(sourcePath).toIdkError())
+            val now = Clock.System.now().toEpochMilliseconds()
+            partition.blobs[destPath] = stored.copy(lastModifiedAtEpochMillis = now)
+            Ok(toDescriptor(destPath, stored.data.size.toLong(), stored.metadata, now, now))
+        } catch (e: Exception) {
+            Err(IdkError.fromString(message = "Failed to move blob: ${e.message}", exception = e, code = "BLOB_MOVE_FAILED"))
+        }
+    }
+
+    private fun toDescriptor(path: String, sizeBytes: Long, metadata: BlobMetadata, createdAtMillis: Long, lastModifiedMillis: Long): BlobDescriptor {
+        return BlobDescriptor(
+            path = path,
+            storeId = storeId,
+            sizeBytes = sizeBytes,
+            contentType = metadata.contentType,
+            filename = path.substringAfterLast('/'),
+            createdAt = Instant.fromEpochMilliseconds(createdAtMillis),
+            lastModified = Instant.fromEpochMilliseconds(lastModifiedMillis),
+            metadata = metadata,
+            contentHash = metadata.contentHash,
+        )
+    }
+}

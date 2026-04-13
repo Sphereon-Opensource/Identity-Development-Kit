@@ -1,0 +1,212 @@
+/*
+ * © 2025 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+package com.sphereon.crypto.core.x509
+
+import at.asitplus.signum.indispensable.asn1.Asn1Element
+import at.asitplus.signum.indispensable.asn1.Asn1EncapsulatingOctetString
+import at.asitplus.signum.indispensable.asn1.Asn1Primitive
+import at.asitplus.signum.indispensable.asn1.Asn1Sequence
+import at.asitplus.signum.indispensable.asn1.encoding.parse
+import at.asitplus.signum.indispensable.pki.X509CertificateExtension
+
+/**
+ * Internal utility functions for parsing Subject Alternative Name (SAN) extension.
+ * 
+ * These functions use the signum library internally and should not be exposed outside
+ * the crypto/core module. Other modules should use the [Certificate] abstraction
+ * which includes the parsed [SubjectAlternativeName].
+ */
+
+/**
+ * Extracts the Subject Alternative Name extension from a list of X.509 extensions.
+ * 
+ * @param extensions The list of certificate extensions
+ * @return The parsed SubjectAlternativeName, or null if not present
+ */
+internal fun getSubjectAlternativeName(extensions: List<X509CertificateExtension>?): SubjectAlternativeName? {
+    if (extensions == null) return null
+    
+    val sanExtension = extensions.firstOrNull { 
+        it.oid.toString() == X509ExtensionOids.SUBJECT_ALTERNATIVE_NAME 
+    } ?: return null
+    
+    return parseSubjectAlternativeNameExtension(sanExtension.value)
+}
+
+/**
+ * Parses the Subject Alternative Name extension value.
+ * 
+ * The SAN extension is encoded as:
+ * SubjectAltName ::= GeneralNames
+ * GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
+ * 
+ * @param extensionValue The ASN.1 element containing the SAN extension value
+ * @return The parsed SubjectAlternativeName
+ */
+internal fun parseSubjectAlternativeNameExtension(extensionValue: Asn1Element): SubjectAlternativeName {
+    val names = mutableListOf<GeneralName>()
+    
+    // The extension value is typically wrapped in an OCTET STRING
+    val content = when (extensionValue) {
+        is Asn1EncapsulatingOctetString -> {
+            // Parse the content of the OCTET STRING as ASN.1
+            try {
+                Asn1Element.parse(extensionValue.content)
+            } catch (e: Exception) {
+                return SubjectAlternativeName.EMPTY
+            }
+        }
+        is Asn1Sequence -> extensionValue
+        else -> return SubjectAlternativeName.EMPTY
+    }
+    
+    // The content should be a SEQUENCE of GeneralName
+    val sequence = content as? Asn1Sequence ?: return SubjectAlternativeName.EMPTY
+    
+    for (child in sequence.children) {
+        val generalName = parseGeneralName(child)
+        if (generalName != null) {
+            names.add(generalName)
+        }
+    }
+    
+    return SubjectAlternativeName(names)
+}
+
+/**
+ * Parses a single GeneralName from an ASN.1 element.
+ * 
+ * GeneralName is a CHOICE type with context-specific tags [0] through [8].
+ * 
+ * @param element The ASN.1 element representing a GeneralName
+ * @return The parsed GeneralName, or null if parsing fails
+ */
+internal fun parseGeneralName(element: Asn1Element): GeneralName? {
+    // GeneralName uses implicit tagging with context-specific tags
+    val primitive = element as? Asn1Primitive ?: return null
+    
+    // The tag class should be context-specific (0x80 base for context tags)
+    // For implicit tagging, the tag value indicates the GeneralName type
+    val tagValue = primitive.tag.tagValue.toInt()
+    
+    // Context-specific tags are in the range 0x80-0xBF
+    // We need to extract the actual type number (0-8)
+    val typeTag = when {
+        // Primitive context-specific: tag is 0x80 + type
+        tagValue in 0x80..0x88 -> tagValue - 0x80
+        // Constructed context-specific: tag is 0xA0 + type  
+        tagValue in 0xA0..0xA8 -> tagValue - 0xA0
+        // Some implementations use direct tag values
+        tagValue in 0..8 -> tagValue
+        else -> return null
+    }
+    
+    val generalNameType = GeneralNameType.fromTag(typeTag) ?: return null
+    
+    // Parse the value based on the type
+    val value = when (generalNameType) {
+        GeneralNameType.DNS_NAME,
+        GeneralNameType.RFC822_NAME,
+        GeneralNameType.URI -> {
+            // These are IA5String (ASCII), stored directly in content
+            primitive.content.decodeToString()
+        }
+        GeneralNameType.IP_ADDRESS -> {
+            // IP address is stored as OCTET STRING
+            parseIpAddress(primitive.content)
+        }
+        GeneralNameType.REGISTERED_ID -> {
+            // OID - parse as dotted string
+            parseOid(primitive.content)
+        }
+        else -> {
+            // For other types (otherName, directoryName, etc.), 
+            // return the hex-encoded content for now
+            primitive.content.toHexString()
+        }
+    }
+    
+    return GeneralName(generalNameType, value)
+}
+
+/**
+ * Parses an IP address from raw bytes.
+ * 
+ * @param bytes The raw IP address bytes (4 bytes for IPv4, 16 bytes for IPv6)
+ * @return The IP address as a string
+ */
+internal fun parseIpAddress(bytes: ByteArray): String {
+    return when (bytes.size) {
+        4 -> {
+            // IPv4: a.b.c.d
+            bytes.joinToString(".") { (it.toInt() and 0xFF).toString() }
+        }
+        16 -> {
+            // IPv6: simplified representation
+            val parts = mutableListOf<String>()
+            for (i in 0 until 16 step 2) {
+                val value = ((bytes[i].toInt() and 0xFF) shl 8) or (bytes[i + 1].toInt() and 0xFF)
+                parts.add(value.toString(16))
+            }
+            parts.joinToString(":")
+        }
+        else -> {
+            // Unknown format, return hex
+            bytes.toHexString()
+        }
+    }
+}
+
+/**
+ * Parses an OID from raw bytes.
+ * 
+ * @param bytes The raw OID bytes
+ * @return The OID as a dotted string
+ */
+internal fun parseOid(bytes: ByteArray): String {
+    if (bytes.isEmpty()) return ""
+    
+    val arcs = mutableListOf<Int>()
+    
+    // First byte encodes first two arcs: first = byte / 40, second = byte % 40
+    val first = bytes[0].toInt() and 0xFF
+    arcs.add(first / 40)
+    arcs.add(first % 40)
+    
+    // Remaining bytes encode subsequent arcs using base-128 encoding
+    var value = 0
+    for (i in 1 until bytes.size) {
+        val b = bytes[i].toInt() and 0xFF
+        value = (value shl 7) or (b and 0x7F)
+        if (b and 0x80 == 0) {
+            arcs.add(value)
+            value = 0
+        }
+    }
+    
+    return arcs.joinToString(".")
+}
+
+/**
+ * Converts a ByteArray to an uppercase hexadecimal string.
+ */
+private fun ByteArray.toHexString(): String = 
+    joinToString("") { byte -> 
+        val hex = (byte.toInt() and 0xFF).toString(16).uppercase()
+        if (hex.length == 1) "0$hex" else hex
+    }

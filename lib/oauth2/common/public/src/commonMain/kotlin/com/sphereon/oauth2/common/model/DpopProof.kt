@@ -1,0 +1,122 @@
+package com.sphereon.oauth2.common.model
+
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import kotlinx.serialization.Serializable
+
+/**
+ * DPoP Proof JWT Header (RFC 9449 Section 4.2)
+ *
+ * The DPoP proof JWT must include:
+ * - typ: "dpop+jwt" (REQUIRED)
+ * - alg: A signature algorithm identifier (REQUIRED)
+ * - jwk: The public key used to sign the proof (REQUIRED)
+ */
+@Serializable
+data class DpopJwtHeader(
+    val typ: String = "dpop+jwt",
+    val alg: String,
+    val jwk: Jwk
+)
+
+/**
+ * DPoP Proof JWT Payload (RFC 9449 Section 4.2)
+ *
+ * The DPoP proof JWT payload must include:
+ * - jti: Unique identifier for the JWT (REQUIRED)
+ * - htm: HTTP method of the request (REQUIRED)
+ * - htu: HTTP URL of the request (without query and fragment) (REQUIRED)
+ * - iat: Creation timestamp (REQUIRED)
+ * - ath: Hash of the access token (REQUIRED when presenting access token)
+ * - nonce: Server-provided nonce (OPTIONAL but REQUIRED when server returns one)
+ */
+@Serializable
+data class DpopJwtPayload(
+    val jti: String,
+    val htm: String,
+    val htu: String,
+    val iat: Long,
+    val ath: String? = null,
+    val nonce: String? = null
+)
+
+/**
+ * Options for creating a DPoP proof JWT
+ *
+ * @property issuer The managed identifier (key) to use for signing the DPoP proof
+ * @property httpMethod The HTTP method (e.g., "POST", "GET")
+ * @property httpUrl The HTTP URL (without query parameters and fragment)
+ * @property nonce Server-provided nonce (optional, but required if server sends one)
+ * @property accessToken The access token to bind (optional, required when using DPoP-bound tokens)
+ * @property issuedAt The creation time (optional, defaults to current time)
+ * @property additionalClaims Additional claims to include in the payload
+ */
+data class CreateDpopProofOptions(
+    val issuer: ManagedIdentifierOptsOrResult,
+    val httpMethod: String,
+    val httpUrl: String,
+    val nonce: String? = null,
+    val accessToken: String? = null,
+    val issuedAt: Long? = null,
+    val additionalClaims: Map<String, Any>? = null
+)
+
+/**
+ * Result of creating a DPoP proof
+ *
+ * @property dpopProof The compact JWT string
+ * @property jwkThumbprint The thumbprint of the public key (for cnf claim)
+ */
+data class DpopProofResult(
+    val dpopProof: String,
+    val jwkThumbprint: String
+)
+
+/**
+ * Options for verifying a DPoP proof JWT
+ *
+ * @property dpopProof The compact JWT string to verify
+ * @property httpMethod Expected HTTP method
+ * @property httpUrl Expected HTTP URL (without query and fragment)
+ * @property expectedNonce Expected nonce value (if server sent one)
+ * @property accessToken Access token to verify binding (if present)
+ * @property expectedJwkThumbprint Expected JWK thumbprint from access token cnf claim
+ * @property allowedSigningAlgs Allowed signing algorithms (optional)
+ * @property now Current timestamp for validation (optional, defaults to current time)
+ */
+data class VerifyDpopProofOptions(
+    val dpopProof: String,
+    val httpMethod: String,
+    val httpUrl: String,
+    val expectedNonce: String? = null,
+    val accessToken: String? = null,
+    val expectedJwkThumbprint: String? = null,
+    val allowedSigningAlgs: List<String>? = null,
+    val now: Long? = null
+)
+
+/**
+ * Result of verifying a DPoP proof
+ *
+ * @property header The verified header
+ * @property payload The verified payload
+ * @property jwkThumbprint The thumbprint of the public key
+ */
+data class VerifyDpopProofResult(
+    val header: DpopJwtHeader,
+    val payload: DpopJwtPayload,
+    val jwkThumbprint: String
+)
+
+/**
+ * HTTP methods supported by DPoP
+ */
+object HttpMethod {
+    const val GET = "GET"
+    const val POST = "POST"
+    const val PUT = "PUT"
+    const val DELETE = "DELETE"
+    const val PATCH = "PATCH"
+    const val HEAD = "HEAD"
+    const val OPTIONS = "OPTIONS"
+}

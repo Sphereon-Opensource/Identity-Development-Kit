@@ -1,0 +1,214 @@
+/*
+ * © 2025 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sphereon.openid.oid4vp.holder
+
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.oauth2.common.jarm.JarmConfig
+import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.oauth2.common.model.AuthorizationResponse
+import com.sphereon.openid.oid4vp.common.ResponseMode
+import kotlin.experimental.ExperimentalObjCName
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
+import kotlin.native.ObjCName
+
+// ============================================================================
+// Command Interfaces
+// ============================================================================
+
+/**
+ * Arguments for parsing an OpenID4VP authorization request
+ *
+ * @property requestUri The authorization request URI (can be openid4vp://, openid://, or haip://)
+ * @property walletConfig Optional wallet configuration for JWT validation
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ParseAuthorizationRequestArgs", exact = true)
+@JsExportCompat
+data class ParseAuthorizationRequestArgs(
+    val requestUri: String,
+    val walletConfig: WalletConfig? = null
+)
+
+/**
+ * Wallet configuration for request object validation
+ *
+ * Per OpenID4VP 1.0 Final and RFC 9101:
+ * - audience: The wallet's identifier (used for JWT `aud` claim validation)
+ * - decryptionKey: Optional key for decrypting encrypted request objects (JWE)
+ *
+ * @property audience The wallet's identifier (e.g., wallet endpoint URL or DID)
+ * @property decryptionKey Optional private key for decrypting encrypted request objects
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("WalletConfig", exact = true)
+@JsExportCompat
+data class WalletConfig(
+    val audience: String? = null,
+    val decryptionKey: KeyInfoType<*>? = null
+)
+
+/**
+ * Command for parsing an OpenID4VP authorization request URI
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ParseAuthorizationRequestCommand", exact = true)
+@JsExportCompat
+interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRequestArgs, AuthorizationRequest> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vp.holder.parserequest"
+    }
+}
+
+/**
+ * Command service interface for parsing authorization requests
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ParseAuthorizationRequestCommandService", exact = true)
+interface ParseAuthorizationRequestCommandService {
+    suspend fun parseAuthorizationRequest(requestUri: String, walletConfig: WalletConfig? = null): IdkResult<AuthorizationRequest, IdkError>
+}
+
+/**
+ * Command for resolving an authorization request (fetching client metadata, validating)
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ResolveAuthorizationRequestCommand", exact = true)
+@JsExportCompat
+interface ResolveAuthorizationRequestCommand : ServiceCommand<AuthorizationRequest, ResolvedOid4vpRequest> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vp.holder.resolverequest"
+    }
+}
+
+/**
+ * Command service interface for resolving authorization requests
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ResolveAuthorizationRequestCommandService", exact = true)
+interface ResolveAuthorizationRequestCommandService {
+    suspend fun resolveAuthorizationRequest(request: AuthorizationRequest): IdkResult<ResolvedOid4vpRequest, IdkError>
+}
+
+/**
+ * Arguments for creating an authorization response
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("CreateAuthorizationResponseArgs", exact = true)
+@JsExportCompat
+data class CreateAuthorizationResponseArgs(
+    val request: ResolvedOid4vpRequest,
+    val selectedCredentials: List<SelectedCredential>
+)
+
+/**
+ * Command for creating an authorization response with VP tokens
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("CreateAuthorizationResponseCommand", exact = true)
+@JsExportCompat
+interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizationResponseArgs, AuthorizationResponse> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vp.holder.createresponse"
+    }
+}
+
+/**
+ * Command service interface for creating authorization responses
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("CreateAuthorizationResponseCommandService", exact = true)
+interface CreateAuthorizationResponseCommandService {
+    suspend fun createAuthorizationResponse(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>
+    ): IdkResult<AuthorizationResponse, IdkError>
+}
+
+/**
+ * JARM (JWT Secured Authorization Response Mode) options for submitting authorization responses.
+ *
+ * Required when response_mode is "direct_post.jwt" per OpenID4VP 1.0 Section 8.4.
+ *
+ * @property signingKey The wallet's signing key for JARM JWS (required for SIGNED or SIGNED_ENCRYPTED mode)
+ * @property issuer The wallet's identifier (becomes JWT "iss" claim)
+ * @property jarmConfig Optional explicit JARM configuration. If not provided, will be derived from client_metadata.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("JarmOptions", exact = true)
+@JsExportCompat
+data class JarmOptions(
+    @kotlinx.serialization.Transient
+    val signingKey: ManagedIdentifierOptsOrResult? = null,
+    val issuer: String,
+    val jarmConfig: JarmConfig? = null
+)
+
+/**
+ * Arguments for submitting an authorization response
+ *
+ * @property resolvedRequest The resolved authorization request (contains response_uri/redirect_uri)
+ * @property response The authorization response containing vp_token
+ * @property responseMode The response mode to use (defaults to request's response_mode or DIRECT_POST)
+ * @property jarmOptions JARM options for direct_post.jwt mode (required when using JARM)
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SubmitAuthorizationResponseArgs", exact = true)
+@JsExportCompat
+data class SubmitAuthorizationResponseArgs(
+    val resolvedRequest: ResolvedOid4vpRequest,
+    val response: AuthorizationResponse,
+    val responseMode: ResponseMode? = null,
+    val jarmOptions: JarmOptions? = null
+)
+
+/**
+ * Command for submitting an authorization response to the verifier
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SubmitAuthorizationResponseCommand", exact = true)
+@JsExportCompat
+interface SubmitAuthorizationResponseCommand : ServiceCommand<SubmitAuthorizationResponseArgs, SubmissionResult> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vp.holder.submit"
+    }
+}
+
+/**
+ * Command service interface for submitting authorization responses
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SubmitAuthorizationResponseCommandService", exact = true)
+interface SubmitAuthorizationResponseCommandService {
+    suspend fun submitAuthorizationResponse(
+        resolvedRequest: ResolvedOid4vpRequest,
+        response: AuthorizationResponse,
+        responseMode: ResponseMode? = null
+    ): IdkResult<SubmissionResult, IdkError>
+}

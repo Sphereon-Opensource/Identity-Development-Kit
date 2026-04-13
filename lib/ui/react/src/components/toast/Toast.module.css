@@ -1,0 +1,104 @@
+.container {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--comp-toast-padding);
+  border-radius: var(--comp-toast-radius);
+  box-shadow: var(--comp-toast-shadow);
+  min-width: 280px;
+  max-width: 420px;
+  pointer-events: auto;
+  animation: slideIn 200ms ease-out;
+}
+
+.default {
+  background: var(--comp-toast-background);
+  color: var(--comp-toast-foreground);
+}
+
+.success {
+  background: var(--comp-toast-success-background);
+  color: var(--comp-toast-success-foreground);
+}
+
+.error {
+  background: var(--comp-toast-error-background);
+  color: var(--comp-toast-error-foreground);
+}
+
+.warning {
+  background: var(--comp-toast-warning-background);
+  color: var(--comp-toast-warning-foreground);
+}
+
+.info {
+  background: var(--comp-toast-info-background);
+  color: var(--comp-toast-info-foreground);
+}
+
+.message {
+  flex: 1;
+  font-size: 0.875rem;
+}
+
+.dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1.25rem;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.dismiss:hover {
+  opacity: 1;
+}
+
+.dismiss:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-state-focus, 0 0 0 3px rgba(66, 133, 244, 0.5));
+  border-radius: 2px;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .toast {
+    border: 1px solid ButtonText;
+  }
+  .dismiss:focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+}

@@ -1,0 +1,71 @@
+# Multi-stage Docker build for GraalVM Native Image
+# Using Oracle GraalVM (alternative)
+# 
+# IMPORTANT: This Dockerfile must be run from the PROJECT ROOT directory:
+#   docker build -f ktor/server/plugins/ktor-server-kotlin-inject/examples/graalvm/Dockerfile.oracle -t graalvm-example .
+#
+# NOT from the examples/graalvm directory!
+
+# Stage 1: Build with Oracle GraalVM
+FROM container-registry.oracle.com/graalvm/native-image:22 AS build
+
+# Install required tools
+RUN microdnf install -y git
+
+WORKDIR /build
+
+# Copy gradle wrapper and build configuration first (for better caching)
+COPY gradlew gradlew.bat gradle.properties settings.gradle.kts ./
+COPY gradle/ gradle/
+
+# Fix line endings and make executable (important for Windows hosts!)
+RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
+
+# Copy build files
+COPY build.gradle.kts ./
+
+# Copy only the necessary source directories
+COPY libraries/ libraries/
+COPY ktor/ ktor/
+
+# Initialize git to prevent gradle version detection errors
+# Your build.gradle.kts uses git commands - this provides a minimal git repo
+RUN git config --global user.email "docker@build.local" && \
+    git config --global user.name "Docker Build" && \
+    git config --global init.defaultBranch main && \
+    git init && \
+    git add -A && \
+    git commit -m "Docker build snapshot" || echo "Git init completed"
+
+# Build native image from root project
+RUN ./gradlew :ktor:server:plugins:ktor-server-kotlin-inject:examples:graalvm:nativeCompile --no-daemon --stacktrace
+
+# Stage 2: Minimal runtime image
+FROM debian:stable-slim
+
+# Install minimal dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy native executable
+COPY --from=build /build/ktor/server/plugins/ktor-server-kotlin-inject/examples/graalvm/build/native/nativeCompile/graalvm-example /app/app
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run the application
+CMD ["/app/app"]

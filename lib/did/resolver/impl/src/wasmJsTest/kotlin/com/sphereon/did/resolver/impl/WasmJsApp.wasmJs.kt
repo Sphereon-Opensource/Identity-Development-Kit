@@ -1,0 +1,44 @@
+package com.sphereon.did.resolver.impl
+
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.DependencyGraph
+import dev.zacsweers.metro.Named
+import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.createGraphFactory
+import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.di.app.AbstractAppComponent
+import com.sphereon.di.app.RootScopeProvider
+
+/**
+ * wasmJs test implementation for [AbstractAppComponent].
+ */
+@DependencyGraph(AppScope::class)
+abstract class WasmJsDidResolverTestAppComponent : AbstractAppComponent() {
+    @DependencyGraph.Factory
+    fun interface Factory {
+        fun create(
+            @Provides application: Any,
+            @Provides @Named("appId") appId: String,
+            @Provides @Named("profile") profile: String,
+            @Provides @Named("version") version: String,
+            @Provides rootScopeProvider: RootScopeProvider,
+        ): WasmJsDidResolverTestAppComponent
+    }
+}
+
+fun createWasmJsDidResolverTestAppComponent(
+    application: Any,
+    appId: String = "did-resolver-test",
+    profile: String = "console-log-profile",
+    version: String = "0.13.0-test",
+): WasmJsDidResolverTestAppComponent {
+    val component = createGraphFactory<WasmJsDidResolverTestAppComponent.Factory>().create(
+        application = application,
+        appId = appId,
+        profile = profile,
+        version = version,
+        rootScopeProvider = DefaultRootScopeProvider()
+    )
+    component.initRootScopeProvider()
+    return component
+}

@@ -1,0 +1,28 @@
+services:
+  kms-rest-server:
+    image: kms-rest-server
+    build:
+      context: ../..
+      dockerfile: ./.docker/kms-rest-server/Dockerfile
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          cpus: '0.5'
+          memory: 768M
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - idk_network
+
+networks:
+  idk_network:
+    driver: bridge

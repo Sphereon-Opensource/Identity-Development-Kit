@@ -1,0 +1,17 @@
+[
+  {
+    "name": "io.netty.channel.socket.nio.NioServerSocketChannel"
+  },
+  {
+    "name": "io.netty.channel.socket.nio.NioSocketChannel"
+  },
+  {
+    "name": "io.netty.util.internal.NativeLibraryLoader",
+    "methods": [
+      {
+        "name": "load",
+        "parameterTypes": []
+      }
+    ]
+  }
+]

@@ -1,0 +1,108 @@
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dkotlin.native.ignoreDisabledTargets=true"
+
+jobs:
+  build:
+    runs-on: linux-x64
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+      - name: Configure JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache Kotlin/Native distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle.properties') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Android SDK
+        id: android-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/android-sdk
+          key: android-sdk-${{ runner.os }}-cmdline-9477386-platforms-35-buildtools-35.0.0
+
+      - name: Install Android SDK command-line tools and platforms
+        if: steps.android-sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          SDK_ROOT="$HOME/android-sdk"
+          PROJECT_DIR="$(pwd)"
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          cd /tmp
+          curl -fSL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o cmdline-tools.zip
+          unzip -q cmdline-tools.zip -d "$SDK_ROOT/cmdline-tools"
+          mkdir -p "$SDK_ROOT/cmdline-tools/latest"
+          # move the downloaded cmdline-tools into the canonical latest folder
+          mv "$SDK_ROOT/cmdline-tools/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/" || true
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
+          # install platform-tools, API 35 platform and build-tools 35.0.0
+          (yes || true) | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        shell: bash
+
+      - name: Set Android SDK location
+        run: echo "sdk.dir=$HOME/android-sdk" > local.properties
+
+      - name: Cache npm packages (Kotlin/JS and WASM)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('kotlin-js-store/package-lock.json', 'kotlin-js-store/wasm/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Build and test
+        run: >-
+          ./gradlew kotlinUpgradePackageLock kotlinWasmUpgradePackageLock build
+          --stacktrace --info
+          -Dkotlin.mpp.enabledTargets=jvm,js,android
+          -x koverVerify
+          -x jsTest -x jsBrowserTest -x jsNodeTest
+          -x :lib-data-link-http-client:check
+          -x :lib-data-link-http-client:jvmTest
+          -x :lib-data-link-http-client:jsNodeTest
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_REGION: eu-central-1
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AZURE_KEYVAULT_URL: https://sphereondemo.vault.azure.net/
+          AZURE_KEYVAULT_TENANT_ID: e2a42b2f-7460-4499-afc2-425315ef058a
+          AZURE_KEYVAULT_CLIENT_ID: ${{ secrets.AZURE_KEYVAULT_CLIENT_ID }}
+          AZURE_KEYVAULT_CLIENT_SECRET: ${{ secrets.AZURE_KEYVAULT_CLIENT_SECRET }}
+
+      - name: Print test failures & problems report
+        if: failure()
+        run: |
+          if [ -f build/reports/problems/problems-report.html ]; then
+            echo "=== Gradle Problems Report ==="
+            sed -n '1,200p' build/reports/problems/problems-report.html || true
+          fi
+          find . -name "*.html" -path "*/build/reports/tests/*" -exec echo "=== {} ===" \; -exec sed -n '1,200p' {} \;
+
+      - name: Publish
+        run: ./gradlew publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}

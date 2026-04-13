@@ -1,0 +1,171 @@
+///*
+// * © 2025 Sphereon International B.V.
+// *
+// * Licensed under the Apache License, Version 2.0 (the "License");
+// * you may not use this file except in compliance with the License.
+// * You may obtain a copy of the License at
+// *
+// *     http://www.apache.org/licenses/LICENSE-2.0
+// *
+// * Unless required by applicable law or agreed to in writing, software
+// * distributed under the License is distributed on an "AS IS" BASIS,
+// * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// * See the License for the specific language governing permissions and
+// * limitations under the License.
+// */
+//
+//package com.sphereon.openid.oid4vp.common
+//
+//import com.sphereon.core.api.IdkResult
+//import com.sphereon.core.api.error.IdkError
+//import com.sphereon.core.api.session.Command
+//import io.ktor.http.Parameters
+//import kotlin.experimental.ExperimentalObjCName
+//import kotlin.js.JsExport
+//import kotlin.native.ObjCName
+//
+///**
+// * Result of parsing a URI containing scheme, base path, and query parameters.
+// *
+// * Uses Ktor's [Parameters] interface for query parameter access, providing:
+// * - Multiple values per key support (e.g., `foo=bar&foo=baz`)
+// * - Convenient accessor methods ([getFirst], [getAll], [contains])
+// * - Iteration over parameter names and entries
+// * - Immutable, thread-safe API
+// *
+// * Examples:
+// * ```kotlin
+// * val clientId = parsedUri.parameters["client_id"]  // Get first value
+// * val scopes = parsedUri.parameters.getAll("scope") // Get all values
+// * if ("nonce" in parsedUri.parameters) { ... }      // Check existence
+// * ```
+// */
+//@OptIn(ExperimentalObjCName::class)
+//@ObjCName("ParsedUri", exact = true)
+//@JsExport
+//data class ParsedUri(
+//    /**
+//     * URI scheme (e.g., "openid4vp", "https"), or null if no scheme present
+//     */
+//    val scheme: String?,
+//
+//    /**
+//     * Base path before query string (everything between scheme and ?)
+//     */
+//    val basePath: String,
+//
+//    /**
+//     * Query parameters using Ktor's Parameters interface.
+//     *
+//     * Provides convenient access methods:
+//     * - `parameters["key"]` - Get first value or null
+//     * - `parameters.getAll("key")` - Get all values as list
+//     * - `"key" in parameters` - Check if key exists
+//     * - `parameters.names()` - Get all parameter names
+//     * - `parameters.entries()` - Get all entries
+//     *
+//     * Examples:
+//     * - `foo=bar` → `parameters["foo"]` returns `"bar"`
+//     * - `foo=bar&foo=baz` → `parameters.getAll("foo")` returns `["bar", "baz"]`
+//     * - `foo=` → `parameters["foo"]` returns `""`
+//     */
+//    val parameters: Parameters
+//) {
+//    /**
+//     * Get first value for a query parameter, or null if not present.
+//     *
+//     * Convenience method that delegates to `parameters[key]`.
+//     */
+//    fun getFirst(key: String): String? = parameters[key]
+//
+//    /**
+//     * Get first value for a required query parameter.
+//     *
+//     * Returns an error if the parameter is missing or empty.
+//     *
+//     * Example:
+//     * ```
+//     * val clientId = parsedUri.getFirstRequired("client_id").getOrReturn()
+//     * ```
+//     */
+//    fun getFirstRequired(key: String): IdkResult<String, IdkError> {
+//        val value = getFirst(key)
+//        return if (value.isNullOrBlank()) {
+//            com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing required parameter: $key"))
+//        } else {
+//            com.sphereon.core.api.Ok(value)
+//        }
+//    }
+//
+//    /**
+//     * Get all values for a query parameter, or empty list if not present.
+//     *
+//     * Convenience method that delegates to `parameters.getAll(key)`.
+//     */
+//    fun getAll(key: String): List<String> = parameters.getAll(key) ?: emptyList()
+//
+//    /**
+//     * Get all values for a required query parameter.
+//     *
+//     * Returns an error if the parameter is missing or has no values.
+//     *
+//     * Example:
+//     * ```
+//     * val scopes = parsedUri.getAllRequired("scope").getOrReturn()
+//     * ```
+//     */
+//    fun getAllRequired(key: String): IdkResult<List<String>, IdkError> {
+//        val values = getAll(key)
+//        return if (values.isEmpty()) {
+//            com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing required parameter: $key"))
+//        } else {
+//            com.sphereon.core.api.Ok(values)
+//        }
+//    }
+//}
+//
+///**
+// * Command for parsing a URI into its components.
+// *
+// * Uses Ktor's built-in query string parsing to properly handle:
+// * - URL decoding
+// * - Multiple values per key
+// * - Empty values
+// * - Special characters
+// *
+// * Example:
+// * ```
+// * Input: "openid4vp://?client_id=foo&state=bar&scope=a&scope=b"
+// * Output: ParsedUri(
+// *   scheme = "openid4vp",
+// *   basePath = "//",
+// *   queryParameters = {
+// *     "client_id" -> ["foo"],
+// *     "state" -> ["bar"],
+// *     "scope" -> ["a", "b"]
+// *   }
+// * )
+// * ```
+// *//*
+//
+//@OptIn(ExperimentalObjCName::class)
+//@ObjCName("ParseUriQueryCommand", exact = true)
+//@JsExport
+//interface ParseUriQueryCommand : Command<String, ParsedUri, IdkError> {
+//    companion object {
+//        const val COMMAND_ID = "com.sphereon.openid.oid4vp.common.parse-uri-query"
+//    }
+//}
+//
+//*/
+///**
+// * Command service interface for parsing URIs
+// *//*
+//
+//@OptIn(ExperimentalObjCName::class)
+//@ObjCName("ParseUriQueryCommandService", exact = true)
+//@JsExport.Ignore
+//interface ParseUriQueryCommandService {
+//    suspend fun parseUriQuery(uri: String): IdkResult<ParsedUri, IdkError>
+//}
+//*/

@@ -1,0 +1,232 @@
+#
+# There is insufficient memory for the Java Runtime Environment to continue.
+# Native memory allocation (malloc) failed to allocate 1048576 bytes. Error detail: AllocateHeap
+# Possible reasons:
+#   The system is out of physical RAM or swap space
+#   This process is running with CompressedOops enabled, and the Java Heap may be blocking the growth of the native heap
+# Possible solutions:
+#   Reduce memory load on the system
+#   Increase physical memory or swap space
+#   Check if swap backing store is full
+#   Decrease Java heap size (-Xmx/-Xms)
+#   Decrease number of Java threads
+#   Decrease Java thread stack sizes (-Xss)
+#   Set larger code cache with -XX:ReservedCodeCacheSize=
+#   JVM is running with Unscaled Compressed Oops mode in which the Java heap is
+#     placed in the first 4GB address space. The Java Heap base address is the
+#     maximum limit for the native heap growth. Please use -XX:HeapBaseMinAddress
+#     to set the Java Heap base and to place the Java Heap above 4GB virtual address.
+# This output file may be truncated or incomplete.
+#
+#  Out of Memory Error (allocation.cpp:44), pid=190764, tid=190028
+#
+# JRE version:  (17.0.13+11) (build )
+# Java VM: OpenJDK 64-Bit Server VM (17.0.13+11, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, windows-amd64)
+# No core dump will be written. Minidumps are not enabled by default on client versions of Windows
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Dorg.gradle.internal.worker.tmpdir=D:\git\identity-development-kit\.claude\worktrees\metro\lib\data\link\ble\public\build\tmp\jvmTest\work -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -ea worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 52'
+
+Host: AMD Ryzen 9 7950X3D 16-Core Processor          , 32 cores, 127G,  Windows 11 , 64 bit Build 26100 (10.0.26100.7920)
+Time: Fri Mar 20 04:52:48 2026 W. Europe Standard Time elapsed time: 1.059311 seconds (0d 0h 0m 1s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x000002519ba0f0e0):  JavaThread "Unknown thread" [_thread_in_vm, id=190028, stack(0x0000005648600000,0x0000005648700000)]
+
+Stack: [0x0000005648600000,0x0000005648700000]
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [jvm.dll+0x682a19]
+V  [jvm.dll+0x839538]
+V  [jvm.dll+0x83afe3]
+V  [jvm.dll+0x83b653]
+V  [jvm.dll+0x24704f]
+V  [jvm.dll+0xa7543]
+V  [jvm.dll+0x2e5222]
+V  [jvm.dll+0x2dcd4b]
+V  [jvm.dll+0x80b44b]
+V  [jvm.dll+0x36b491]
+V  [jvm.dll+0x7e9e3f]
+V  [jvm.dll+0x3f1d7f]
+V  [jvm.dll+0x3f38b1]
+C  [jli.dll+0x5278]
+C  [ucrtbase.dll+0x37b0]
+C  [KERNEL32.DLL+0x2e8d7]
+C  [ntdll.dll+0x8c48c]
+
+
+---------------  P R O C E S S  ---------------
+
+Threads class SMR info:
+_java_thread_list=0x00007ff98ebe7f58, length=0, elements={
+}
+
+Java Threads: ( => current thread )
+
+Other Threads:
+  0x000002519ba41ec0 GCTaskThread "GC Thread#0" [stack: 0x0000005648700000,0x0000005648800000] [id=40968]
+
+[error occurred during error reporting (printing all threads), id 0xc0000005, EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007ff98e399f00]
+
+VM state: not at safepoint (not fully initialized)
+
+VM Mutex/Monitor currently owned by a thread:  ([mutex/lock_event])
+[0x000002519ba0afa0] Heap_lock - owner thread: 0x000002519ba0f0e0
+
+Heap address: 0x00000000e0000000, size: 512 MB, Compressed Oops mode: 32-bit
+
+CDS archive(s) mapped at: [0x0000000000000000-0x0000000000000000-0x0000000000000000), size 0, SharedBaseAddress: 0x0000000800000000, ArchiveRelocationMode: 1.
+Narrow klass base: 0x0000000000000000, Narrow klass shift: 0, Narrow klass range: 0x0
+
+GC Precious Log:
+<Empty>
+
+Heap:
+ garbage-first heap   total 0K, used 0K [0x00000000e0000000, 0x0000000100000000)
+  region size 1024K, 0 young (0K), 0 survivors (0K)
+
+[error occurred during error reporting (printing heap information), id 0xc0000005, EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007ff98e78c179]
+
+GC Heap History (0 events):
+No events
+
+Dll operation events (1 events):
+Event: 0.009 Loaded shared library C:\Users\nklom\.jdks\temurin-17.0.13\bin\java.dll
+
+Deoptimization events (0 events):
+No events
+
+Classes loaded (0 events):
+No events
+
+Classes unloaded (0 events):
+No events
+
+Classes redefined (0 events):
+No events
+
+Internal exceptions (0 events):
+No events
+
+VM Operations (0 events):
+No events
+
+Memory protections (0 events):
+No events
+
+Nmethod flushes (0 events):
+No events
+
+Events (0 events):
+No events
+
+
+Dynamic libraries:
+0x00007ff670770000 - 0x00007ff67077e000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\java.exe
+0x00007ffa55940000 - 0x00007ffa55ba7000 	C:\windows\SYSTEM32\ntdll.dll
+0x00007ffa541c0000 - 0x00007ffa54289000 	C:\windows\System32\KERNEL32.DLL
+0x00007ffa53170000 - 0x00007ffa53561000 	C:\windows\System32\KERNELBASE.dll
+0x00007ffa52350000 - 0x00007ffa5249b000 	C:\windows\System32\ucrtbase.dll
+0x00007ffa20d70000 - 0x00007ffa20d87000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\jli.dll
+0x00007ffa53f20000 - 0x00007ffa540e5000 	C:\windows\System32\USER32.dll
+0x00007ffa20c80000 - 0x00007ffa20c9e000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\VCRUNTIME140.dll
+0x00007ffa526a0000 - 0x00007ffa526c7000 	C:\windows\System32\win32u.dll
+0x00007ffa54ed0000 - 0x00007ffa54efb000 	C:\windows\System32\GDI32.dll
+0x00007ffa52220000 - 0x00007ffa5234b000 	C:\windows\System32\gdi32full.dll
+0x00007ffa53570000 - 0x00007ffa53613000 	C:\windows\System32\msvcp_win.dll
+0x00007ffa37bb0000 - 0x00007ffa37e43000 	C:\windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.8037_none_3e092faae333b53b\COMCTL32.dll
+0x00007ffa53d50000 - 0x00007ffa53df9000 	C:\windows\System32\msvcrt.dll
+0x00007ffa53ee0000 - 0x00007ffa53f11000 	C:\windows\System32\IMM32.DLL
+0x00007ffa2a140000 - 0x00007ffa2a14c000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\vcruntime140_1.dll
+0x00007ffa06ab0000 - 0x00007ffa06b3d000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\msvcp140.dll
+0x00007ff98e0b0000 - 0x00007ff98ed1b000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\server\jvm.dll
+0x00007ffa54800000 - 0x00007ffa548bb000 	C:\windows\System32\ADVAPI32.dll
+0x00007ffa53b10000 - 0x00007ffa53bb7000 	C:\windows\System32\sechost.dll
+0x00007ffa53bc0000 - 0x00007ffa53cd8000 	C:\windows\System32\RPCRT4.dll
+0x00007ffa536e0000 - 0x00007ffa53754000 	C:\windows\System32\WS2_32.dll
+0x00007ffa51ed0000 - 0x00007ffa51f2e000 	C:\windows\SYSTEM32\POWRPROF.dll
+0x00007ffa45e50000 - 0x00007ffa45e85000 	C:\windows\SYSTEM32\WINMM.dll
+0x00007ffa4c920000 - 0x00007ffa4c92b000 	C:\windows\SYSTEM32\VERSION.dll
+0x00007ffa51eb0000 - 0x00007ffa51ec4000 	C:\windows\SYSTEM32\UMPDC.dll
+0x00007ffa50f70000 - 0x00007ffa50f8b000 	C:\windows\SYSTEM32\kernel.appcore.dll
+0x00007ffa2a100000 - 0x00007ffa2a10a000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\jimage.dll
+0x00007ffa44770000 - 0x00007ffa449b2000 	C:\windows\SYSTEM32\DBGHELP.DLL
+0x00007ffa54470000 - 0x00007ffa547f2000 	C:\windows\System32\combase.dll
+0x00007ffa53e00000 - 0x00007ffa53ed7000 	C:\windows\System32\OLEAUT32.dll
+0x00007ffa33fa0000 - 0x00007ffa33fdb000 	C:\windows\SYSTEM32\dbgcore.DLL
+0x00007ffa52f40000 - 0x00007ffa52fe5000 	C:\windows\System32\bcryptPrimitives.dll
+0x00007ffa1e510000 - 0x00007ffa1e535000 	C:\Users\nklom\.jdks\temurin-17.0.13\bin\java.dll
+
+dbghelp: loaded successfully - version: 4.0.5 - missing functions: none
+symbol engine: initialized successfully - sym options: 0x614 - pdb path: .;C:\Users\nklom\.jdks\temurin-17.0.13\bin;C:\windows\SYSTEM32;C:\windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.8037_none_3e092faae333b53b;C:\Users\nklom\.jdks\temurin-17.0.13\bin\server
+
+VM Arguments:
+jvm_args: -Dorg.gradle.internal.worker.tmpdir=D:\git\identity-development-kit\.claude\worktrees\metro\lib\data\link\ble\public\build\tmp\jvmTest\work -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -ea 
+java_command: worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 52'
+java_class_path (initial): C:\\Users\\nklom\\.gradle\\caches\\9.3.1\\workerMain\\gradle-worker.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\data\\link\\ble\\public\\build\\classes\\kotlin\\jvm\\test;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\data\\link\\ble\\public\\build\\classes\\kotlin\\jvm\\main;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\crypto\\kms\\provider\\software\\build\\libs\\lib-crypto-kms-provider-software-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\crypto\\core\\build\\libs\\lib-crypto-core-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\crypto\\core\\impl\\build\\libs\\lib-crypto-core-impl-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\crypto\\core\\public\\build\\libs\\lib-crypto-core-public-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\cbor\\public\\build\\libs\\lib-cbor-public-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\core\\api\\default\\build\\libs\\lib-core-api-default-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\core\\api\\public\\build\\libs\\lib-core-api-public-jvm-0.25.0-SNAPSHOT.jar;D:\\git\\identity-development-kit\\.claude\\worktrees\\metro\\lib\\core\\compat\\build\\libs\\lib-core-compat-jvm-0.25.0-SNAPSHOT.jar;C:\\Users\\nklom\\.gradle\\caches\\modules-2\\files-2.1\\io.ktor\\ktor-server-test-host-jvm\\3.3.3\\b597f2da186824746b2cead4fbc21d58abd8c109\\ktor-server-test-host-jvm-3.3.3.jar;C:\\Users\\nklom\\.gradle\\caches\\modules-2\\files-2.1\\software.amazon.app.platform\\metro-impl-desktop\\0.0.10-SNAPSHOT\\55d509c3359bbbd29aa9b209c345ef69b5ddac96\\metro-impl-desktop-0.0.10-SNAPSHOT.jar;C:\\Users\\nklom\\.gradle\\caches\\modules-2\\files-2.1\\software.amazon.app.platform\\metro-public-desktop\\0
+Launcher Type: SUN_STANDARD
+
+[Global flags]
+     intx CICompilerCount                          = 15                                        {product} {ergonomic}
+     uint ConcGCThreads                            = 6                                         {product} {ergonomic}
+     uint G1ConcRefinementThreads                  = 23                                        {product} {ergonomic}
+   size_t G1HeapRegionSize                         = 1048576                                   {product} {ergonomic}
+    uintx GCDrainStackTargetSize                   = 64                                        {product} {ergonomic}
+   size_t InitialHeapSize                          = 536870912                                 {product} {ergonomic}
+   size_t MarkStackSize                            = 4194304                                   {product} {ergonomic}
+   size_t MaxHeapSize                              = 536870912                                 {product} {command line}
+   size_t MinHeapDeltaBytes                        = 1048576                                   {product} {ergonomic}
+   size_t MinHeapSize                              = 8388608                                   {product} {ergonomic}
+    uintx NonNMethodCodeHeapSize                   = 8192380                                {pd product} {ergonomic}
+    uintx NonProfiledCodeHeapSize                  = 121732930                              {pd product} {ergonomic}
+    uintx ProfiledCodeHeapSize                     = 121732930                              {pd product} {ergonomic}
+    uintx ReservedCodeCacheSize                    = 251658240                              {pd product} {ergonomic}
+     bool SegmentedCodeCache                       = true                                      {product} {ergonomic}
+   size_t SoftMaxHeapSize                          = 536870912                              {manageable} {ergonomic}
+     bool UseCompressedClassPointers               = true                           {product lp64_product} {ergonomic}
+     bool UseCompressedOops                        = true                           {product lp64_product} {ergonomic}
+     bool UseG1GC                                  = true                                      {product} {ergonomic}
+     bool UseLargePagesIndividualAllocation        = false                                  {pd product} {ergonomic}
+
+Logging:
+Log output configuration:
+ #0: stdout all=warning uptime,level,tags
+ #1: stderr all=off uptime,level,tags
+
+Environment Variables:
+JAVA_HOME=C:\Users\nklom\.jdks\corretto-21.0.7
+PATH=C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\nklom\bin;C:\Python313\Scripts;C:\Python313;C:\Python312\Scripts;C:\Python312;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0;C:\windows\System32\OpenSSH;C:\Program Files\dotnet;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit;C:\Program Files (x86)\Windows Kits\10\Microsoft Application Virtualization\Sequencer;C:\Program Files\Crucial\Crucial Storage Executive;C:\Program Files\GitHub CLI;C:\Program Files\nodejs;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\nklom\.local\bin;C:\Program Files\Tailscale;C:\Program Files\Docker\Docker\resources\bin;C:\Users\nklom\.cargo\bin;C:\Users\nklom\AppData\Local\pnpm;C:\Users\nklom\AppData\Local\Microsoft\WindowsApps;C:\Program Files\JetBrains\IntelliJ IDEA 2024.3.1\bin;C:\Users\nklom\AppData\Local\JetBrains\Toolbox\scripts;C:\Program Files\JetBrains\IntelliJ IDEA 2025.1.1.1\bin;C:\Users\nklom\AppData\Roaming\Python\Python312\Scripts;C:\Users\nklom\.jdks\corretto-21.0.7\bin;C:\Users\nklom\AppData\Local\Android\Sdk\platform-tools;C:\dev\watchman\bin;C:\Users\nklom\AppData\Roaming\npm;C:\Users\nklom\AppData\Local\GitHubDesktop\bin;C:\Users\nklom\AppData\Local\Microsoft\WinGet\Links;C:\Users\nklom\.local\bin
+USERNAME=nklom
+SHELL=C:\Program Files\Git\usr\bin\bash.exe
+TERM=xterm-256color
+OS=Windows_NT
+PROCESSOR_IDENTIFIER=AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD
+TMP=C:\Users\nklom\AppData\Local\Temp
+TEMP=C:\Users\nklom\AppData\Local\Temp
+
+
+
+Periodic native trim disabled
+
+
+---------------  S Y S T E M  ---------------
+
+OS:
+ Windows 11 , 64 bit Build 26100 (10.0.26100.7920)
+OS uptime: 8 days 18:55 hours
+Hyper-V role detected
+
+CPU: total 32 (initial active 32) (32 cores per cpu, 2 threads per core) family 25 model 97 stepping 2 microcode 0xa60120c, cx8, cmov, fxsr, ht, mmx, 3dnowpref, sse, sse2, sse3, ssse3, sse4a, sse4.1, sse4.2, popcnt, lzcnt, tsc, tscinvbit, avx, avx2, aes, erms, clmul, bmi1, bmi2, adx, avx512f, avx512dq, avx512cd, avx512bw, avx512vl, sha, fma, vzeroupper, avx512_vpopcntdq, avx512_vpclmulqdq, avx512_vaes, avx512_vnni, clflush, clflushopt, avx512_vbmi2, avx512_vbmi, hv
+Processor Information for all 32 processors :
+  Max Mhz: 4201, Current Mhz: 4201, Mhz Limit: 4201
+
+Memory: 4k page, system-wide physical 130196M (19290M free)
+TotalPageFile size 225947M (AvailPageFile size 30M)
+current process WorkingSet (physical memory assigned to process): 13M, peak: 13M
+current process commit charge ("private bytes"): 89M, peak: 90M
+
+vm_info: OpenJDK 64-Bit Server VM (17.0.13+11) for windows-amd64 JRE (17.0.13+11), built on Oct 16 2024 00:10:08 by "admin" with MS VC++ 17.7 (VS2022)
+
+END.

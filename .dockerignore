@@ -1,0 +1,53 @@
+# Version control
+.github/
+.gitattributes
+
+# Build outputs
+build/
+**/build/
+.gradle/
+
+# Logs
+logs/
+
+# IDE files
+.idea/
+.vscode/
+.fleet/
+.aiassistant/
+
+# Docker files themselves
+.docker/*/target/
+
+# Environment files
+.env*
+!.env.example
+
+# Temporary files
+**/tmp/
+**/temp/
+
+# Node modules if any
+node_modules/
+**/node_modules/
+
+# Kotlin cache
+.kotlin/
+**/.kotlin/
+
+# JS Test artifacts and build outputs
+**/crypto-x509-example-js/
+**/jsTest/crypto-x509-example-js/
+**/build/js/
+**/build/compileSync/
+**/build/klib/
+**/build/tmp/
+
+# Other unnecessary files
+README.md
+LICENSE
+CHANGELOG.md
+
+# Local configuration files with secrets
+**/application-local.properties
+**/application-local.yml

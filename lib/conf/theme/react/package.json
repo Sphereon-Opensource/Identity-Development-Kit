@@ -1,0 +1,50 @@
+{
+  "name": "@sphereon/theme-react",
+  "version": "0.1.0",
+  "description": "Sphereon Theme SDK for React — M3 token-based theming with optional VDX backend integration",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./defaults": {
+      "types": "./dist/defaults.d.ts",
+      "import": "./dist/defaults.js",
+      "default": "./dist/defaults.js"
+    },
+    "./server": {
+      "types": "./dist/server-utils.d.ts",
+      "import": "./dist/server-utils.js",
+      "default": "./dist/server-utils.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/jest-dom": "^6.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "AGPL-3.0-or-later"
+}

@@ -1,0 +1,856 @@
+/*
+ * © 2025 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+package com.sphereon.crypto.kms.provider.software
+
+import dev.whyoleg.cryptography.BinarySize.Companion.bits
+import dev.whyoleg.cryptography.CryptographySystem
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.CryptographyProviderApi
+import dev.whyoleg.cryptography.algorithms.EC
+import dev.whyoleg.cryptography.algorithms.ECDSA
+import dev.whyoleg.cryptography.algorithms.RSA
+import dev.whyoleg.cryptography.algorithms.SHA256
+import dev.whyoleg.cryptography.algorithms.SHA384
+import dev.whyoleg.cryptography.algorithms.SHA512
+import dev.whyoleg.cryptography.materials.key.KeyGenerator
+import dev.zacsweers.metro.Assisted
+import dev.zacsweers.metro.AssistedInject
+import dev.zacsweers.metro.Inject
+import com.sphereon.cbor.toCborByteString
+import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.Encoding
+import com.sphereon.core.api.decodeFrom
+import com.sphereon.crypto.core.CoseJoseKeyMappingService
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.ResolvedKeyInfoType
+import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.ManagedKeyInfoType
+import com.sphereon.crypto.core.generic.CoseKeyPair
+import com.sphereon.crypto.core.generic.CryptoAlg
+import com.sphereon.crypto.core.generic.Curve
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.JoseKeyPair
+import com.sphereon.crypto.core.generic.KeyOperations
+import com.sphereon.crypto.core.generic.KeyTypeMapping
+import com.sphereon.crypto.core.generic.ManagedKeyPair
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
+import com.sphereon.crypto.core.interop.DerKmpKeyInfoContext
+import com.sphereon.crypto.core.interop.checkSupportedEcdsaCurve
+import com.sphereon.crypto.core.interop.derPrivateKeyToJwk
+import com.sphereon.crypto.core.interop.derPublicKeyToJwk
+import com.sphereon.crypto.core.interop.keyInfoToEcdsaDerKmpContext
+import com.sphereon.crypto.core.interop.keyInfoToRSADerKmpContext
+import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
+import com.sphereon.crypto.core.interop.resolvePSSSaltSize
+import com.sphereon.crypto.core.interop.resolveRSAKmpDigest
+import com.sphereon.crypto.core.interop.toSignumPrivateKey
+import com.sphereon.crypto.core.jose.JwkType
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.core.jose.generateJwkThumbprint
+import com.sphereon.crypto.core.kms.CertificateOptions
+import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
+import com.sphereon.crypto.core.kms.EncryptionResult
+import com.sphereon.crypto.core.kms.HasKeyStoreService
+import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
+import com.sphereon.crypto.core.kms.KeyStoreManager
+import com.sphereon.crypto.core.kms.KeyStoreService
+import com.sphereon.crypto.core.kms.KeyStorageType
+import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
+import com.sphereon.crypto.core.kms.KmsProvider
+import com.sphereon.crypto.core.kms.KmsProviderCapabilities
+import com.sphereon.crypto.core.kms.KmsProviderConfigBase
+import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.OperationCapability
+import com.sphereon.crypto.core.kms.model.KeyProviderSettings
+
+import com.sphereon.crypto.core.generic.computeHmac
+import com.sphereon.crypto.core.generic.generateHmacKey
+import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.crypto.core.sign.model.SignInput
+import com.sphereon.crypto.core.sign.model.SignOutput
+import com.sphereon.crypto.core.sign.model.Signature
+import com.sphereon.crypto.core.x509.Certificate
+import com.sphereon.crypto.core.x509.CertificateCreationUtils
+import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreConfigType
+import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreService
+import kotlin.experimental.ExperimentalObjCName
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.native.ObjCName
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SoftwareKmsProvider", exact = true)
+interface SoftwareKmsProvider : KmsProvider, HasKeyStoreService {
+//    override val keyStore: KeyStoreService?
+}
+
+/**
+ * Non-Hardware-based CryptoProvider provides Elliptic Curve and RSA cryptographic operations delegating to well-known platform implementations like OpenSSL3, WebCrypto, Apple, Jdk,
+ *
+ * Warning: To be used for testing purposes. Use hardware-based crypto providers for production!
+ * If you need ephemeral keys then you can use this provider together with the default in memory private key store and thus that is the exception to the above warning.
+ *
+ * @param _cryptoProvider An instance of CryptographyProvider to use for cryptographic operations. Default is CryptographyProvider.Default.
+ */
+@JsExportCompat
+@AssistedInject
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SoftwareKmsProviderImpl", exact = true)
+class SoftwareKmsProviderImpl(
+    @Assisted private val providerConfig: KmsProviderConfigBase,
+    // Assisted because this comes from a factory in app scope
+    @Assisted private val execution: SessionExecution,
+    @Assisted val keyStoreManager: KeyStoreManager? = null,
+
+    ) : SoftwareKmsProvider {
+    private val config: SoftwareKmsProviderConfigType = providerConfig as? SoftwareKmsProviderConfigType ?: throw IllegalArgumentException("Config must be ISoftwareKmsProviderConfig")
+    private val log = execution.log.logManager.withTag("SoftwareKmsProvider")
+    override val kmsProviderType = config.kmsProviderType
+    override val id = config.id
+    override val order = config.order
+    override val enabled = config.enabled
+    private var _privateKeyStore: KeyStoreService? = this.config.keyStore?.let {
+        keyStoreManager?.createFromKeyStoreConfig(config = it, execution = execution) ?: (
+                if (this.config.keyStore is MemoryKeyStoreConfigType) MemoryKeyStoreService(this.config.keyStore!!)
+                else throw IllegalArgumentException("A key store manager is required when key store configuration is supplied and not of type MemoryKeyStoreConfig. Config: $config")
+                )
+    }
+
+    override val keyStore: KeyStoreService
+        get() {
+            val keyStore = _privateKeyStore
+            requireNotNull(keyStore) { "Key store is not initialized" }
+            return keyStore
+        }
+
+    @OptIn(CryptographyProviderApi::class)
+    private val _cryptoProvider: CryptographyProvider =
+        (config as? SoftwareKmsProviderConfigType)?.cryptographyProvider?.let { provId -> CryptographySystem.getRegisteredProviders().find { prov -> prov.name == provId } }
+            ?: CryptographyProvider.Default
+
+    /**
+     * Provides ECDSA (Elliptic Curve Digital Signature Algorithm) cryptographic functions.
+     * This variable holds an instance of the provider which is used to perform various cryptographic operations such as
+     * key generation, signature generation, and signature verification.
+     */
+    private val ecdsa = lazy { _cryptoProvider.get(ECDSA) }
+    private val rsaPss = lazy { _cryptoProvider.get(RSA.PSS) }
+    private val rsaPkcs1 = lazy { _cryptoProvider.get(RSA.PKCS1) }
+
+    /**
+     * Returns the full capabilities of this KMS provider.
+     */
+    override fun getCapabilities(): KmsProviderCapabilities {
+        return KmsProviderCapabilities(
+            providerId = id,
+            providerType = kmsProviderType,
+
+            // Storage capabilities
+            storageTypes = arrayOf(KeyStorageType.PERSISTENT, KeyStorageType.EPHEMERAL),
+            supportsKeyImport = true,
+            supportsKeyExport = true,
+            exposePrivateKeys = config.exposePrivateKeysDuringGeneration,
+
+            // Operations
+            operations = arrayOf(
+                OperationCapability(
+                    operation = KmsProviderOperation.GENERATE_KEY,
+                    supported = true
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.IMPORT_KEY,
+                    supported = true
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.EXPORT_KEY,
+                    supported = true
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.DELETE_KEY,
+                    supported = true
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.SIGN,
+                    supported = true,
+                    signatureAlgorithms = arrayOf(
+                        SignatureAlgorithm.ECDSA_SHA256,
+                        SignatureAlgorithm.ECDSA_SHA384,
+                        SignatureAlgorithm.ECDSA_SHA512,
+                        SignatureAlgorithm.RSA_RAW,
+                        SignatureAlgorithm.RSA_SHA256,
+                        SignatureAlgorithm.RSA_SHA384,
+                        SignatureAlgorithm.RSA_SHA512,
+                        SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                        SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                        SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.VERIFY,
+                    supported = true,
+                    signatureAlgorithms = arrayOf(
+                        SignatureAlgorithm.ECDSA_SHA256,
+                        SignatureAlgorithm.ECDSA_SHA384,
+                        SignatureAlgorithm.ECDSA_SHA512,
+                        SignatureAlgorithm.RSA_RAW,
+                        SignatureAlgorithm.RSA_SHA256,
+                        SignatureAlgorithm.RSA_SHA384,
+                        SignatureAlgorithm.RSA_SHA512,
+                        SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                        SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                        SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.ENCRYPT,
+                    supported = true,
+                    contentEncryptionAlgorithms = arrayOf(
+                        ContentEncryptionAlgorithm.A128GCM,
+                        ContentEncryptionAlgorithm.A192GCM,
+                        ContentEncryptionAlgorithm.A256GCM
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.DECRYPT,
+                    supported = true,
+                    contentEncryptionAlgorithms = arrayOf(
+                        ContentEncryptionAlgorithm.A128GCM,
+                        ContentEncryptionAlgorithm.A192GCM,
+                        ContentEncryptionAlgorithm.A256GCM
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.WRAP_KEY,
+                    supported = true,
+                    keyWrapAlgorithms = arrayOf(
+                        KeyWrapAlgorithm.RSA_OAEP,
+                        KeyWrapAlgorithm.RSA_OAEP_256,
+                        KeyWrapAlgorithm.RSA_OAEP_512
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.UNWRAP_KEY,
+                    supported = true,
+                    keyWrapAlgorithms = arrayOf(
+                        KeyWrapAlgorithm.RSA_OAEP,
+                        KeyWrapAlgorithm.RSA_OAEP_256,
+                        KeyWrapAlgorithm.RSA_OAEP_512
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.KEY_AGREEMENT,
+                    supported = true,
+                    keyAgreementAlgorithms = arrayOf(
+                        KeyAgreementAlgorithm.ECDH_ES,
+                        KeyAgreementAlgorithm.ECDH_ES_A128KW,
+                        KeyAgreementAlgorithm.ECDH_ES_A192KW,
+                        KeyAgreementAlgorithm.ECDH_ES_A256KW
+                    ),
+                    notes = "Supports ECDH key agreement with P-256, P-384, and P-521 curves"
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.GENERATE_CERTIFICATE,
+                    supported = config.autoCreateCertificate
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.IMPORT_CERTIFICATE,
+                    supported = true
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.X509_CHAIN_VALIDATION,
+                    supported = false,
+                    notes = "Not yet implemented"
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.HARDWARE_BACKED,
+                    supported = false
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.ATTESTATION,
+                    supported = false
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.GENERATE_MAC,
+                    supported = true,
+                    signatureAlgorithms = arrayOf(
+                        SignatureAlgorithm.HMAC_SHA256,
+                        SignatureAlgorithm.HMAC_SHA384,
+                        SignatureAlgorithm.HMAC_SHA512
+                    )
+                ),
+                OperationCapability(
+                    operation = KmsProviderOperation.VERIFY_MAC,
+                    supported = true,
+                    signatureAlgorithms = arrayOf(
+                        SignatureAlgorithm.HMAC_SHA256,
+                        SignatureAlgorithm.HMAC_SHA384,
+                        SignatureAlgorithm.HMAC_SHA512
+                    )
+                )
+            ),
+
+            // Key type support
+            supportedKeyTypes = arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA, KeyTypeMapping.Symmetric),
+            supportedCurves = arrayOf(Curve.P_256, Curve.P_384, Curve.P_521),
+
+            // Algorithm support - using generic crypto types
+            supportedCryptoAlgorithms = arrayOf(CryptoAlg.ECDSA, CryptoAlg.RSA, CryptoAlg.HMAC),
+            supportedDigestAlgorithms = arrayOf(DigestAlg.SHA256, DigestAlg.SHA384, DigestAlg.SHA512),
+            signatureAlgorithms = arrayOf(
+                SignatureAlgorithm.ECDSA_SHA256,
+                SignatureAlgorithm.ECDSA_SHA384,
+                SignatureAlgorithm.ECDSA_SHA512,
+                SignatureAlgorithm.RSA_RAW,
+                SignatureAlgorithm.RSA_SHA256,
+                SignatureAlgorithm.RSA_SHA384,
+                SignatureAlgorithm.RSA_SHA512,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
+                SignatureAlgorithm.HMAC_SHA256,
+                SignatureAlgorithm.HMAC_SHA384,
+                SignatureAlgorithm.HMAC_SHA512
+            ),
+            contentEncryptionAlgorithms = arrayOf(
+                ContentEncryptionAlgorithm.A128GCM,
+                ContentEncryptionAlgorithm.A192GCM,
+                ContentEncryptionAlgorithm.A256GCM
+            ),
+
+            // Additional capabilities
+            supportsX509 = true,
+            supportsAttestation = false,
+            supportsHardwareBacking = false,
+
+            // Public key resolution
+            supportsPublicKeyResolution = true,
+            resolutionMethods = emptyArray() // TODO: Need to determine available IIdentifierMethod instances
+        )
+    }
+
+    /**
+     * Returns an array of supported elliptic curves for cryptographic operations.
+     *
+     * @return An array of CurveMapping objects representing the supported elliptic curves.
+     */
+    @Deprecated("Use getCapabilities().supportedCurves instead")
+    override fun supportedCurves(): Array<Curve> = getCapabilities().supportedCurves
+
+    /**
+     * Checks if the provided elliptic curve is supported by the SoftwareKmsProviderImpl.
+     *
+     * @param curve The elliptic curve to be checked.
+     * @return True if the curve is supported, false otherwise.
+     */
+    override fun isSupportedCurve(curve: Curve): Boolean = getCapabilities().supportedCurves.contains(curve)
+
+    /**
+     * Returns an array of supported hash algorithms.
+     *
+     * @return An array containing the supported HashAlgorithm values: SHA256, SHA384, and SHA512.
+     */
+    @Deprecated("Use getCapabilities().supportedDigestAlgorithms instead")
+    override fun supportedDigests(): Array<DigestAlg> = getCapabilities().supportedDigestAlgorithms
+
+    /**
+     * Generates a cryptographic key pair based on the provided elliptic curve.
+     *
+     * @param curve The elliptic curve mapping used to generate the key pair.
+     * @return A `CryptoProviderKeyPair` object containing the generated key pair
+     *         with their respective JWK and COSE representations.
+     */
+
+    override suspend fun generateKeyAsync(
+        alias: String?,
+        use: JwkUse?,
+        keyOperations: Array<out KeyOperations>?,
+        alg: SignatureAlgorithm?,
+        certificateOptions: CertificateOptions?
+    ): ManagedKeyPair {
+        val keyUse = use ?: JwkUse.sig
+        val algMapping = alg ?: SignatureAlgorithm.ECDSA_SHA256
+        val curve = algMapping.curve
+        val keyType = when (algMapping.cryptoAlgorithm) {
+            CryptoAlg.RSA -> KeyTypeMapping.RSA
+            CryptoAlg.HMAC -> KeyTypeMapping.Symmetric
+            else -> KeyTypeMapping.EC
+        }
+
+        val keyOpsMapping = keyOperations ?: arrayOf(KeyOperations.SIGN)
+
+        // Try platform-specific native key generation first (iOS uses keychain)
+        val finalAlias = alias ?: "key-${kotlin.random.Random.nextLong()}"
+        val nativeKeyPair = generateKeyPairNative(
+            alias = finalAlias,
+            keyType = keyType,
+            algorithm = algMapping,
+            keyUse = keyUse,
+            keyOperations = keyOpsMapping,
+            overwriteAlias = this.config.keyStore?.overwriteAlias ?: true
+        )
+
+        if (nativeKeyPair != null) {
+            // Native generation succeeded (e.g., iOS keychain)
+            // TODO: Handle certificates if requested (certificateOptions)
+            return nativeKeyPair.copy(providerId = id)
+        }
+
+        // Symmetric key generation (HMAC/AES) - uses raw random bytes, no DER/certificate path
+        if (keyType == KeyTypeMapping.Symmetric) {
+            val digestAlg = algMapping.digestAlgorithm ?: DigestAlg.SHA256
+            val keyBytes = generateHmacKey(digestAlg)
+            val kValue = keyBytes.encodeToBase64Url()
+
+            val kid = alias ?: "key-${kotlin.random.Random.nextLong()}"
+            val keyOpsMapping = keyOperations ?: arrayOf(KeyOperations.MAC_CREATE, KeyOperations.MAC_VERIFY)
+            val privateJwk = Jwk(
+                kty = JwaKeyType.oct,
+                k = kValue,
+                alg = algMapping.jose,
+                use = keyUse.value,
+                key_ops = keyOpsMapping.map { it.jose }.toTypedArray(),
+                kid = kid,
+                generateKid = false
+            )
+            // Public JWK omits the secret key material
+            val publicJwk = privateJwk.copy(k = null)
+
+            val publicCoseKey = CoseJoseKeyMappingService.toCoseKey(publicJwk)
+            val managedKeyPair = ManagedKeyPair(
+                providerId = id,
+                kid = kid,
+                alias = alias ?: kid,
+                jose = JoseKeyPair(if (config.exposePrivateKeysDuringGeneration) privateJwk else null, publicJwk),
+                cose = CoseKeyPair(
+                    if (config.exposePrivateKeysDuringGeneration) CoseJoseKeyMappingService.toCoseKey(privateJwk) else null,
+                    publicCoseKey
+                )
+            )
+
+            if (config.persistKeysDuringGeneration) {
+                log.debug("Persisting symmetric key ${managedKeyPair.alias} to key store")
+                val keyInfo = ResolvedKeyInfo<Jwk>(
+                    key = privateJwk,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    keyType = KeyTypeMapping.Symmetric,
+                    alias = managedKeyPair.alias,
+                    providerId = id,
+                    kid = kid,
+                    signatureAlgorithm = algMapping
+                )
+                keyStore.storeKey(
+                    keyInfo, alias = managedKeyPair.alias, providerId = managedKeyPair.providerId
+                )
+            }
+
+            return managedKeyPair
+        }
+
+        // Fall back to software generation using cryptography library
+        val keyPairGenerator: KeyGenerator<*>
+        val privateKeyDer: ByteArray
+        val publicKeyDer: ByteArray
+
+        if (keyType === KeyTypeMapping.EC) {
+            require(curve !== null) { "Curve must be provided for EC key type" }
+            // Only EcDSA curves for now.
+            checkSupportedEcdsaCurve(curve)
+            val curveImpl = resolveEcdsaKmpCurve(curve)
+            keyPairGenerator = ecdsa.value.keyPairGenerator(curveImpl)
+            val keyPair = keyPairGenerator.generateKey()
+
+            privateKeyDer = keyPair.privateKey.encodeToByteArray(EC.PrivateKey.Format.DER)
+            publicKeyDer = keyPair.publicKey.encodeToByteArray(EC.PublicKey.Format.DER)
+
+            /*
+                        privateJwk = convertRawECKeyBytesToJwk(
+                            privateKeyBytes = privateKeyRaw,
+                            publicKeyBytes = publicKeyRaw,
+                            use = keyUse,
+                            alg = algMapping,
+                            curve = curve,
+                            keyOperations = keyOpsMapping
+                        )
+                        publicJwk = privateJwk.copy(d = null) // let's make sure we do not leak the private key component*/
+        } else {
+            val (size, digest) = when (algMapping) {
+                SignatureAlgorithm.RSA_SHA384, SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1 -> 3072.bits to SHA384
+                SignatureAlgorithm.RSA_SHA512, SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1 -> 4096.bits to SHA512
+                else -> 2048.bits to SHA256
+            }
+
+            // Use PSS key generator for PSS algorithms to ensure compatibility
+            val isPss = when (algMapping) {
+                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
+                SignatureAlgorithm.RSA_SSA_PSS_RAW_MGF1 -> true
+                else -> false
+            }
+
+            keyPairGenerator = if (isPss) {
+                rsaPss.value.keyPairGenerator(keySize = size, digest = digest)
+            } else {
+                rsaPkcs1.value.keyPairGenerator(keySize = size, digest = digest)
+            }
+            val keyPair = keyPairGenerator.generateKey()
+            privateKeyDer = keyPair.privateKey.encodeToByteArray(RSA.PrivateKey.Format.DER)
+            publicKeyDer = keyPair.publicKey.encodeToByteArray(RSA.PublicKey.Format.DER)
+        }
+
+
+        val privateJwk: Jwk = derPrivateKeyToJwk(privateKeyDer).copy(use = keyUse.value, key_ops = keyOpsMapping.map { it.jose }.toTypedArray(), alg = algMapping.jose)
+        val publicJwk: Jwk = derPublicKeyToJwk(publicKeyDer).copy(use = keyUse.value, key_ops = keyOpsMapping.map { it.jose }.toTypedArray(), alg = algMapping.jose)
+
+        val kid = privateJwk.kid ?: generateJwkThumbprint(publicJwk)
+        val privateCoseKey = CoseJoseKeyMappingService.toCoseKey(privateJwk)
+        val publicCoseKey = CoseJoseKeyMappingService.toCoseKey(publicJwk)
+
+
+        var keyInfo: ResolvedKeyInfoType<JwkType> = ResolvedKeyInfo(
+            key = privateJwk,
+            keyVisibility = KeyVisibility.PRIVATE,
+            keyType = keyType,
+            alias = alias ?: kid,
+            providerId = id,
+            kid = kid,
+            x5c = privateJwk.x5c,
+            signatureAlgorithm = privateJwk.getSignatureAlgorithm() ?: alg
+        )
+        var certChain: Array<Certificate>? = null
+
+        // If certificate options are provided use them, otherwise see if we need to create a self signed cert and use the alias as CN
+        val certOpts = certificateOptions ?: if (!config.autoCreateCertificate) null else CertificateOptions(
+            subjectKeyInfo = keyInfo,
+            subject = X509DistinguishedNameElements(commonName = "alias")
+        )
+        if (certOpts != null && keyInfo.x5c == null) {
+            // Create a self-signed certificate if no cert chain is provided and the option is enabled
+            val (subjectKeyInfo, subject, issuerKeyInfo, issuer, serialNumber, notBefore, notAfter) = certOpts
+            val certResult = CertificateCreationUtils.createCertificate(issuerKeyInfo, issuer, subjectKeyInfo, subject, serialNumber, notBefore, notAfter, {
+                this.createRawSignature(keyInfo = keyInfo, input = it, requireX5Chain = false)
+            })
+            // Let's populate the certchain and also update the keyInfo with the cert chain
+            certChain = arrayOf(certResult.certificate)
+            keyInfo = certResult.certificate.amendJwkKeyInfo(keyInfo)
+        }
+
+        val managedKeyPair = ManagedKeyPair(
+            providerId = id,
+            kid = kid,
+            alias = alias ?: kid,
+            jose = JoseKeyPair(if (config.exposePrivateKeysDuringGeneration) privateJwk.copy(kid = kid) else null, publicJwk.copy(kid = kid)),
+            cose = CoseKeyPair(
+                if (config.exposePrivateKeysDuringGeneration) privateCoseKey.copy(kid = kid.toCborByteString(Encoding.UTF8)) else null,
+                publicCoseKey.copy(kid = kid.toCborByteString(Encoding.UTF8))
+            )
+        )
+
+        if (config.persistKeysDuringGeneration) {
+            log.debug("Persisting key ${keyInfo.alias} to key store")
+            keyStore.storeKey(
+                ResolvedKeyInfo.fromKeyInfo(keyInfo, privateJwk), alias = managedKeyPair.alias, providerId = managedKeyPair.providerId, certChain = certChain
+            )
+        }
+
+        return managedKeyPair
+    }
+
+    private suspend fun keyInfoToBytesWithKeystoreLookup(keyInfo: KeyInfoType<*>, mangedKeyRequired: Boolean = false): DerKmpKeyInfoContext {
+        log.debug("[KEYSTORE-LOOKUP] Looking up key with alias=${keyInfo.alias}, kid=${keyInfo.kid}, signatureAlgorithm=${keyInfo.signatureAlgorithm}")
+        // When a managed (private) key is required (e.g., for signing) and the keystore exposes
+        // private key material for signing, we must request PRIVATE visibility from the keystore.
+        // Software keystores (memory, PKCS12, JKS, file-backed) store and expose private key bytes
+        // for software signing. Hardware-backed keystores (e.g., iOS keychain, HSMs) delegate signing
+        // to hardware without exposing private keys; those are handled by signWithNativeKey().
+        val lookupKeyInfo = if (mangedKeyRequired && _privateKeyStore?.exposesPrivateKeysForSigning() == true) {
+            KeyInfo<Nothing>(
+                alias = keyInfo.alias,
+                kid = keyInfo.kid,
+                keyVisibility = KeyVisibility.PRIVATE,
+                signatureAlgorithm = keyInfo.signatureAlgorithm,
+                providerId = keyInfo.providerId,
+            )
+        } else {
+            keyInfo
+        }
+        val resolvedKeyInfo = if (!mangedKeyRequired) {
+            val resolved = keyInfo as? ResolvedKeyInfoType<*> ?: _privateKeyStore?.getKey(keyInfo)
+            log.debug("[KEYSTORE-LOOKUP] Retrieved key: alias=${resolved?.alias}, signatureAlgorithm=${resolved?.signatureAlgorithm}")
+            resolved
+        } else {
+            val key = keyInfo.key
+            val resolved = if (keyInfo is ManagedKeyInfoType<*> || (keyInfo is ResolvedKeyInfoType<*> && key != null && key.d != null)) {
+                if (key!!.d == null) {
+                    _privateKeyStore?.getKey(lookupKeyInfo) ?: keyInfo
+                } else {
+                    keyInfo
+                }
+            } else {
+                _privateKeyStore?.getKey(lookupKeyInfo)
+            }
+            log.debug("[KEYSTORE-LOOKUP] Retrieved key: alias=${resolved?.alias}, signatureAlgorithm=${resolved?.signatureAlgorithm}")
+            resolved
+        }
+
+        requireNotNull(resolvedKeyInfo) { "Key ${keyInfo.alias ?: "<none>"} was not resolved, or not found in keystore" }
+        return when (resolvedKeyInfo.keyType) {
+            KeyTypeMapping.EC -> {
+                keyInfoToEcdsaDerKmpContext(keyInfo, resolvedKeyInfo)
+            }
+
+            KeyTypeMapping.RSA -> {
+                keyInfoToRSADerKmpContext(keyInfo, resolver = { resolvedKeyInfo })
+            }
+
+            else -> throw IllegalArgumentException("Key type ${resolvedKeyInfo.keyType} not supported")
+
+        }
+
+    }
+
+    /**
+     * Generates a signature for the given input data using the provided key information.
+     *
+     * @param keyInfo Information about the signing key.
+     * @param input The data to be signed.
+     * @return The generated signature as a byte array.
+     * @throws IllegalArgumentException If the private key is not provided or not supported.
+     */
+    override suspend fun createRawSignature(keyInfo: KeyInfoType<*>, input: ByteArray, requireX5Chain: Boolean): ByteArray {
+        // Try native signing first (e.g., iOS keychain)
+        val nativeSignature = signWithNativeKey(keyInfo, input)
+        if (nativeSignature != null) {
+            return nativeSignature
+        }
+
+        // Fall back to software signing
+        val (key, _, privateKeyBytes, curveImpl, algImpl) = keyInfoToBytesWithKeystoreLookup(keyInfo, mangedKeyRequired = true)
+
+        return when {
+            key.kty == JwaKeyType.EC && key.d != null && privateKeyBytes !== null && curveImpl != null -> {
+                val privateKey = ecdsa.value.privateKeyDecoder(curveImpl).decodeFromByteArray(EC.PrivateKey.Format.DER, privateKeyBytes)
+                return privateKey.signatureGenerator(digest = algImpl, format = ECDSA.SignatureFormat.RAW).generateSignature(input)
+            }
+
+            key.kty == JwaKeyType.RSA && key.n != null && privateKeyBytes !== null -> {
+                val derPrivateKey = key.toSignumPrivateKey().encodeToDer()
+                val signatureAlgorithm = keyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm() ?: SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1
+                log.debug("[SIGNING] RSA: keyInfo.signatureAlgorithm=${keyInfo.signatureAlgorithm}, key.getSignatureAlgorithm()=${key.getSignatureAlgorithm()}, resolved=$signatureAlgorithm")
+                val digest = resolveRSAKmpDigest(signatureAlgorithm)
+                when (signatureAlgorithm) {
+                    SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1, SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1, SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1, SignatureAlgorithm.RSA_SSA_PSS_RAW_MGF1 -> {
+                        log.debug("[SIGNING] Using RSA-PSS with digest=$digest (using library default salt size = digest length)")
+                        log.debug("[SIGNING] DER private key size: ${derPrivateKey.size} bytes, first 20 bytes: ${derPrivateKey.take(20).joinToString(",") { it.toString() }}")
+                        val privateKey = rsaPss.value.privateKeyDecoder(digest = digest).decodeFromByteArray(RSA.PrivateKey.Format.DER, derPrivateKey)
+                        privateKey.signatureGenerator().generateSignature(input)
+                    }
+
+                    else -> {
+                        log.debug("[SIGNING] Using RSA-PKCS1 with digest=$digest")
+                        val privateKey = rsaPkcs1.value.privateKeyDecoder(digest = digest).decodeFromByteArray(RSA.PrivateKey.Format.DER, derPrivateKey)
+                        privateKey.signatureGenerator().generateSignature(input)
+                    }
+
+                }
+            }
+
+            else -> throw IllegalArgumentException("Private key resolution or HSMs not supported yet. Please provide a private key")
+        }
+    }
+
+
+    /**
+     * Verifies the signature of the input data using the provided key information.
+     *
+     * @param keyInfo Key information that includes the public key and other details.
+     * @param input The original data which the signature is supposed to represent.
+     * @param signature The signature that needs to be verified.
+     * @return true if the signature is valid, false otherwise.
+     * @throws IllegalArgumentException if a private key is used to verify the signature.
+     */
+    override suspend fun isValidRawSignature(keyInfo: KeyInfoType<*>, input: ByteArray, signature: ByteArray): Boolean {
+        val (key, publicKeyBytes, _, curveImpl, algImpl) = keyInfoToBytesWithKeystoreLookup(keyInfo)
+        return when {
+            key.x != null && curveImpl != null -> {
+                val publicKey = ecdsa.value.publicKeyDecoder(curveImpl).decodeFromByteArray(EC.PublicKey.Format.DER, publicKeyBytes)
+                publicKey.signatureVerifier(digest = algImpl, format = ECDSA.SignatureFormat.RAW).tryVerifySignature(input, signature)
+            }
+
+            key.n != null -> {
+                val signatureAlgorithm = keyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm() ?: SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1
+                log.debug("[VERIFICATION] RSA: keyInfo.signatureAlgorithm=${keyInfo.signatureAlgorithm}, key.getSignatureAlgorithm()=${key.getSignatureAlgorithm()}, resolved=$signatureAlgorithm")
+                val digest = resolveRSAKmpDigest(signatureAlgorithm)
+                when (signatureAlgorithm) {
+                    SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1, SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1, SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1, SignatureAlgorithm.RSA_SSA_PSS_RAW_MGF1 -> {
+                        log.debug("[VERIFICATION] Using RSA-PSS with digest=$digest (using library default salt size = digest length)")
+                        log.debug("[VERIFICATION] DER public key size: ${publicKeyBytes.size} bytes, first 20 bytes: ${publicKeyBytes.take(20).joinToString(",") { it.toString() }}")
+                        val publicKey = rsaPss.value.publicKeyDecoder(digest = digest).decodeFromByteArray(RSA.PublicKey.Format.DER, publicKeyBytes)
+                        publicKey.signatureVerifier().tryVerifySignature(input, signature)
+                    }
+
+                    else -> {
+                        log.debug("[VERIFICATION] Using RSA-PKCS1 with digest=$digest")
+                        val publicKey = rsaPkcs1.value.publicKeyDecoder(digest = digest).decodeFromByteArray(RSA.PublicKey.Format.DER, publicKeyBytes)
+                        publicKey.signatureVerifier().tryVerifySignature(input, signature)
+                    }
+                }
+            }
+
+            else -> throw IllegalArgumentException("Private key resolution or HSMs not supported yet. Please provide a private key")
+        }
+    }
+
+    override suspend fun createSignature(signInput: SignInput, keyInfo: KeyInfoType<*>?, signatureAlgorithm: SignatureAlgorithm?): SignOutput {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun isValidSignature(signInput: SignInput, signature: Signature): Boolean {
+        TODO("Not yet implemented")
+    }
+
+    // Encryption operations
+    override suspend fun encrypt(
+        keyInfo: KeyInfoType<*>,
+        plaintext: ByteArray,
+        algorithm: ContentEncryptionAlgorithm,
+        additionalAuthenticatedData: ByteArray?
+    ): EncryptionResult {
+        val resolvedKeyInfo = resolveKeyIfNeeded(keyInfo)
+        val result = encryptWithNativeKey(resolvedKeyInfo, plaintext, algorithm.identifier, additionalAuthenticatedData)
+            ?: throw UnsupportedOperationException("Encryption algorithm '${algorithm.identifier}' not supported on this platform")
+
+        return result
+    }
+
+    override suspend fun decrypt(
+        keyInfo: KeyInfoType<*>,
+        ciphertext: ByteArray,
+        algorithm: ContentEncryptionAlgorithm,
+        iv: ByteArray,
+        authTag: ByteArray,
+        additionalAuthenticatedData: ByteArray?
+    ): ByteArray {
+        val resolvedKeyInfo = resolveKeyIfNeeded(keyInfo)
+        return decryptWithNativeKey(resolvedKeyInfo, ciphertext, algorithm.identifier, iv, authTag, additionalAuthenticatedData)
+            ?: throw UnsupportedOperationException("Decryption algorithm '${algorithm.identifier}' not supported on this platform")
+    }
+
+    override suspend fun wrapKey(
+        wrappingKeyInfo: KeyInfoType<*>,
+        keyToWrap: ByteArray,
+        algorithm: KeyWrapAlgorithm
+    ): ByteArray {
+        val resolvedKeyInfo = resolveKeyIfNeeded(wrappingKeyInfo)
+        return wrapKeyWithNativeKey(resolvedKeyInfo, keyToWrap, algorithm.identifier)
+            ?: throw UnsupportedOperationException("Key wrapping algorithm '${algorithm.identifier}' not supported on this platform")
+    }
+
+    override suspend fun unwrapKey(
+        unwrappingKeyInfo: KeyInfoType<*>,
+        wrappedKey: ByteArray,
+        algorithm: KeyWrapAlgorithm
+    ): ByteArray {
+        val resolvedKeyInfo = resolveKeyIfNeeded(unwrappingKeyInfo)
+        return unwrapKeyWithNativeKey(resolvedKeyInfo, wrappedKey, algorithm.identifier)
+            ?: throw UnsupportedOperationException("Key unwrapping algorithm '${algorithm.identifier}' not supported on this platform")
+    }
+
+    override suspend fun performKeyAgreement(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        algorithm: KeyAgreementAlgorithm,
+        keyDataLen: Int?
+    ): ByteArray {
+        log.debug("Performing ECDH key agreement with algorithm: ${algorithm.identifier}")
+        return performKeyAgreementWithNativeKey(privateKeyInfo, publicKeyInfo, algorithm.identifier)
+    }
+
+    override suspend fun generateMac(keyId: String, message: ByteArray, digestAlgorithm: DigestAlg): ByteArray {
+        val keyBytes = resolveHmacKeyBytes(keyId)
+        return computeHmac(keyBytes, message, digestAlgorithm)
+    }
+
+    override suspend fun verifyMac(keyId: String, message: ByteArray, mac: ByteArray, digestAlgorithm: DigestAlg): Boolean {
+        val keyBytes = resolveHmacKeyBytes(keyId)
+        val computed = computeHmac(keyBytes, message, digestAlgorithm)
+        return computed.contentEquals(mac)
+    }
+
+    /**
+     * Resolves the key material from the keystore when keyInfo.key is null.
+     * This is needed for encrypt/decrypt operations where a KeyInfo with only
+     * an alias (no key material) is passed — the actual JWK must be fetched from the store.
+     */
+    private suspend fun resolveKeyIfNeeded(keyInfo: KeyInfoType<*>): KeyInfoType<*> {
+        if (keyInfo.key != null) return keyInfo
+        val keyId = keyInfo.alias ?: keyInfo.kid
+            ?: throw IllegalArgumentException("KeyInfo has no key material and no alias/kid to resolve from keystore")
+        val managedKey = keyStore.getKey(KeyInfo<Jwk>(kid = keyId))
+        return managedKey
+    }
+
+    private suspend fun resolveHmacKeyBytes(keyId: String): ByteArray {
+        val managedKey = keyStore.getKey(KeyInfo<Jwk>(kid = keyId))
+        val jwk = managedKey.key as? JwkType
+            ?: throw IllegalArgumentException("Key '$keyId' cannot be resolved as JWK")
+        val kValue = jwk.k
+            ?: throw IllegalArgumentException("Key '$keyId' is not a symmetric key (missing 'k' field)")
+        return kValue.decodeFrom(Encoding.BASE64URL)
+    }
+
+    @Deprecated("Use getCapabilities().supportedKeyTypes instead")
+    override fun supportedKeyTypes(): Array<KeyTypeMapping> = getCapabilities().supportedKeyTypes
+
+    /**
+     * Returns an array of supported EcDSA and RSA algorithm mappings.
+     *
+     * @return An array containing AlgorithmMappings
+     */
+    @Deprecated("Use getCapabilities().signatureAlgorithms instead")
+    override fun supportedSignatureAlgorithms(): Array<SignatureAlgorithm> = getCapabilities().signatureAlgorithms
+
+    fun setPrivateKeyStore(keyStore: KeyStoreService) = apply {
+        this._privateKeyStore = keyStore
+    }
+
+
+    override val settings: KeyProviderSettings? = null
+
+
+    override suspend fun listKeys(): Array<ManagedKeyInfoType<*>> = keyStore.listKeys()
+
+    override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> = keyStore.getKey(keyInfo)
+
+    override suspend fun storeKey(
+        keyInfo: ResolvedKeyInfoType<*>,
+        providerId: String,
+        alias: String,
+        certChain: Array<Certificate>?
+    ): ManagedKeyInfoType<*> = keyStore.storeKey(keyInfo, providerId, alias, certChain)
+
+    override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean = keyStore.deleteKey(keyInfo)
+
+    override fun keyVisibility(): KeyVisibility = keyStore.keyVisibility()
+}
+
+

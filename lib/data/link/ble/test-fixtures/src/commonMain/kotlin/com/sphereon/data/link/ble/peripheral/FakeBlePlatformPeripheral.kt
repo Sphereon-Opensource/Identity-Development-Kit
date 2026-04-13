@@ -1,0 +1,456 @@
+/*
+ * © 2025 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+package com.sphereon.data.link.ble.peripheral
+
+import dev.zacsweers.metro.createGraph
+
+import com.sphereon.core.api.log.AppLogManager
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.asErrorResult
+import com.sphereon.data.link.ble.*
+import com.sphereon.data.link.ble.client.BleEvent
+import com.sphereon.data.link.ble.model.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.datetime.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+
+/**
+ * Fake implementation of [BlePlatformPeripheral] for testing peripheral mode BLE operations.
+ *
+ * This fake simulates BLE peripheral (server) behavior for automated testing without requiring
+ * physical devices. It tracks connected centrals, manages session IDs, emits events, and allows
+ * configuration of behavior including failures and delays.
+ *
+ * Following [Amazon App Platform testing guidelines](https://amzn.github.io/app-platform/testing/),
+ * this is a **fake** (not a mock from a mocking framework). Fakes are preferred because they:
+ * - Are fast and deterministic
+ * - Don't require mocking frameworks
+ * - Are more maintainable and stable
+ * - Test the "what" (inputs/outputs) rather than the "how" (implementation details)
+ *
+ * This fake uses DI with @ContributesBinding to automatically replace platform-specific
+ * implementations (AndroidBlePlatformPeripheral, IosBlePlatformPeripheral) when the test-fixtures
+ * module is included in test dependencies.
+ *
+ * ## Key Features:
+ * - Session ID tracking per connected device
+ * - Event emission simulation (client writes, connections, disconnections)
+ * - State tracking (advertising, connected devices, added services)
+ * - Data tracking (notified data, received writes)
+ * - Configurable behavior (delays, failures, session timeout)
+ * - Thread-safe operations
+ * - Automatic DI injection in test scopes
+ *
+ * ## Usage Example:
+ * ```kotlin
+ * // In test with DI:
+ * val appComponent = createGraph<TestE2EAppComponent>(testApp)
+ * val fakePeripheral = appComponent.blePlatformPeripheral // Automatically injected fake!
+ *
+ * // Configure fake behavior:
+ * (fakePeripheral as FakeBlePlatformPeripheral).simulateClientConnect("device123")
+ * fakePeripheral.simulateClientWrite("device123", serviceUuid, charUuid, data)
+ * ```
+ *
+ * @see <a href="https://amzn.github.io/app-platform/testing/">App Platform Testing Guide</a>
+ */
+// Note: @ContributesBinding is added in platform-specific source sets (androidMain, iosMain)
+// where we can use the replaces parameter with platform-specific classes
+@OptIn(ExperimentalUuidApi::class)
+open class FakeBlePlatformPeripheral(
+    logManager: AppLogManager
+) : AbstractBlePlatformPeripheral(
+    logManager = logManager,
+    scope = CoroutineScope(SupervisorJob())
+) {
+
+    // Event emission
+    private val eventListeners = mutableSetOf<BleEvent.Listener>()
+
+    // State tracking
+    var isAdvertising: Boolean = false
+        private set
+    var addedServices: MutableList<GattService> = mutableListOf()
+        private set
+
+    // Session tracking: deviceAddress -> sessionId
+    private val connectedDevices = mutableMapOf<String, Uuid>()
+
+    // Session activity tracking: sessionId -> lastActivityTime
+    private val sessionActivity = mutableMapOf<Uuid, Long>()
+
+    // Mock data storage
+    private val notifiedData = mutableMapOf<Uuid, MutableList<ByteArray>>()
+    private val receivedWrites = mutableMapOf<Uuid, MutableList<Pair<String, ByteArray>>>()
+
+    // Event capture for testing
+    private val capturedEvents = mutableListOf<BleEvent>()
+
+    // Behavior configuration
+    var advertiseDelay: Duration = 0.milliseconds
+    var connectionDelay: Duration = 0.milliseconds
+    var notifyDelay: Duration = 0.milliseconds
+    var shouldFailNextNotify: Boolean = false
+    var shouldFailNextAdvertise: Boolean = false
+    private var sessionTimeout: Duration = 10.minutes
+
+    // Connection awaiter
+    private var connectionAwaiter: CompletableDeferred<Unit>? = null
+
+    // Test helpers
+
+    /**
+     * Simulates a client (central) connecting to this peripheral.
+     * Creates a new session ID for the device and emits connection event.
+     */
+    fun simulateClientConnect(deviceAddress: String) {
+        val sessionId = connectedDevices.getOrPut(deviceAddress) { Uuid.random() }
+        sessionActivity[sessionId] = Clock.System.now().toEpochMilliseconds()
+
+        val event = BleEvent.ConnectionStateChanged(
+            requestId = sessionId,
+            deviceAddress = deviceAddress,
+            newState = 2, // Connected
+            status = 0 // Success
+        )
+
+        capturedEvents.add(event)
+        // Iterate over a copy to avoid ConcurrentModificationException
+        eventListeners.toList().forEach { it.onConnectionStateChanged(event) }
+
+        // Complete any pending connection awaiter
+        connectionAwaiter?.complete(Unit)
+    }
+
+    /**
+     * Simulates a client (central) disconnecting from this peripheral.
+     * Removes the session ID and emits disconnection event.
+     */
+    fun simulateClientDisconnect(deviceAddress: String) {
+        val sessionId = connectedDevices.remove(deviceAddress)
+        if (sessionId != null) {
+            sessionActivity.remove(sessionId)
+
+            val event = BleEvent.ConnectionStateChanged(
+                requestId = sessionId,
+                deviceAddress = deviceAddress,
+                newState = 0, // Disconnected
+                status = 0 // Success
+            )
+
+            capturedEvents.add(event)
+            // Iterate over a copy to avoid ConcurrentModificationException
+            eventListeners.toList().forEach { it.onConnectionStateChanged(event) }
+        }
+    }
+
+    /**
+     * Simulates a client (central) writing data to a characteristic.
+     * Emits [BleEvent.CharacteristicChanged] to all listeners.
+     */
+    fun simulateClientWrite(deviceAddress: String, serviceId: Uuid, charId: Uuid, value: ByteArray) {
+        val sessionId = connectedDevices[deviceAddress]
+            ?: throw IllegalArgumentException("Device $deviceAddress is not connected")
+
+        // Update activity timestamp
+        sessionActivity[sessionId] = Clock.System.now().toEpochMilliseconds()
+
+        // Store received write
+        receivedWrites.getOrPut(charId) { mutableListOf() }.add(deviceAddress to value)
+
+        // Find service and characteristic
+        log.info("simulateClientWrite: Looking for service=$serviceId, char=$charId")
+        log.info("simulateClientWrite: Available services (${addedServices.size}): ${addedServices.map { it.id }}")
+
+        val service = addedServices.find { it.id == serviceId }
+        val characteristic = service?.characteristics?.find { it.id == charId }
+
+        if (service == null || characteristic == null) {
+            log.error("simulateClientWrite: Service or characteristic not found!")
+            log.error("  Requested service: $serviceId")
+            log.error("  Requested characteristic: $charId")
+            log.error("  Available services: ${addedServices.map { it.id }}")
+            if (service != null) {
+                log.error("  Service found but characteristic not in: ${service.characteristics.map { it.id }}")
+            }
+            throw IllegalArgumentException("Service $serviceId or characteristic $charId not found")
+        }
+
+        val event = BleEvent.CharacteristicChanged(
+            requestId = sessionId,
+            deviceAddress = deviceAddress,
+            service = service,
+            characteristic = characteristic,
+            value = value
+        )
+
+        capturedEvents.add(event)
+        // Iterate over a copy to avoid ConcurrentModificationException
+        eventListeners.toList().forEach { it.onCharacteristicChanged(event) }
+    }
+
+    /**
+     * Simulates MTU change for a specific device.
+     */
+    fun simulateMtuChange(deviceAddress: String, newMtu: Int) {
+        val sessionId = connectedDevices[deviceAddress]
+            ?: throw IllegalArgumentException("Device $deviceAddress is not connected")
+
+        val event = BleEvent.MtuChanged(
+            requestId = sessionId,
+            deviceAddress = deviceAddress,
+            mtu = newMtu,
+            status = 0 // Success
+        )
+
+        capturedEvents.add(event)
+        // Iterate over a copy to avoid ConcurrentModificationException
+        eventListeners.toList().forEach { it.onMtuChanged(event) }
+    }
+
+    /**
+     * Gets all writes received on a specific characteristic.
+     * Returns a list of (deviceAddress, data) pairs.
+     */
+    fun getReceivedWrites(characteristicId: Uuid): List<Pair<String, ByteArray>> {
+        return receivedWrites[characteristicId]?.toList() ?: emptyList()
+    }
+
+    /**
+     * Gets all data notified on a specific characteristic.
+     */
+    fun getNotifiedData(characteristicId: Uuid): List<ByteArray> {
+        return notifiedData[characteristicId]?.toList() ?: emptyList()
+    }
+
+    /**
+     * Gets the number of currently connected devices.
+     */
+    fun getConnectedDeviceCount(): Int = connectedDevices.size
+
+    /**
+     * Gets all captured events for testing verification.
+     */
+    fun getCapturedEvents(): List<BleEvent> = capturedEvents.toList()
+
+    /**
+     * Gets the number of active sessions.
+     */
+    fun getActiveSessionCount(): Int = connectedDevices.size
+
+    /**
+     * Configures the session timeout duration for testing.
+     */
+    fun setSessionTimeout(timeout: Duration) {
+        sessionTimeout = timeout
+    }
+
+    /**
+     * Manually runs session cleanup (removes stale sessions).
+     */
+    fun runCleanup() {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val staleSessionIds = sessionActivity.filter { (_, lastActivity) ->
+            (now - lastActivity).compareTo(sessionTimeout.inWholeMilliseconds) > 0
+        }.keys
+
+        // Remove stale sessions
+        val devicesToRemove = connectedDevices.filter { it.value in staleSessionIds }.keys
+        devicesToRemove.forEach { deviceAddress ->
+            connectedDevices.remove(deviceAddress)
+        }
+
+        staleSessionIds.forEach { sessionId ->
+            sessionActivity.remove(sessionId)
+        }
+    }
+
+    /**
+     * Clears all test data.
+     */
+    fun clearTestData() {
+        notifiedData.clear()
+        receivedWrites.clear()
+        capturedEvents.clear()
+    }
+
+    // BlePlatformPeripheral implementation
+
+    override suspend fun startAdvertising(serviceUuid: Uuid): IdkResult<Unit, BleError> {
+        if (shouldFailNextAdvertise) {
+            shouldFailNextAdvertise = false
+            return BleErrors.advertiseFailed("Mock advertising failure").asErrorResult()
+        }
+
+        if (advertiseDelay > Duration.ZERO) {
+            delay(advertiseDelay)
+        }
+
+        isAdvertising = true
+
+        // CRITICAL FIX: In real BLE, starting advertising also registers the GATT service
+        // This must happen synchronously before returning, or clients can't connect and write
+        // The addedServices list must be populated for simulateClientWrite() to work
+        if (addedServices.isNotEmpty()) {
+            // Services were already configured via addService() - they are already registered
+            log.info("Started advertising with ${addedServices.size} service(s) already registered")
+        } else {
+            log.warn("Started advertising but no services registered - connections may fail")
+        }
+
+        return Ok(Unit)
+    }
+
+    override suspend fun stopAdvertising(): IdkResult<Unit, BleError> {
+        isAdvertising = false
+        return Ok(Unit)
+    }
+
+    override suspend fun addService(service: GattService): IdkResult<GattService, BleError> {
+        addedServices.add(service)
+        log.info("Service added: ${service.id} with ${service.characteristics.size} characteristics: ${service.characteristics.map { it.id }}")
+        log.info("Total services now: ${addedServices.size}, UUIDs: ${addedServices.map { it.id }}")
+        return Ok(service)
+    }
+
+    override suspend fun removeService(service: HasUuidId): IdkResult<Unit, BleError> {
+        addedServices.removeAll { it.id == service.id }
+        return Ok(Unit)
+    }
+
+    override suspend fun notifyCharacteristicChanged(
+        service: HasUuidId,
+        characteristic: HasUuidId,
+        value: ByteArray
+    ): IdkResult<Unit, CharacteristicWriteError> {
+        if (shouldFailNextNotify) {
+            shouldFailNextNotify = false
+            return BleErrors.writeCharacteristicFailed("Mock notify failure").asErrorResult()
+        }
+
+        if (notifyDelay > Duration.ZERO) {
+            delay(notifyDelay)
+        }
+
+        // Store notified data
+        notifiedData.getOrPut(characteristic.id) { mutableListOf() }.add(value)
+
+        // Emit notification events to all connected devices
+        connectedDevices.forEach { (deviceAddress, sessionId) ->
+            // Update activity
+            sessionActivity[sessionId] = Clock.System.now().toEpochMilliseconds()
+
+            val gattService = addedServices.find { it.id == service.id }
+            val gattChar = gattService?.characteristics?.find { it.id == characteristic.id }
+
+            if (gattService != null && gattChar != null) {
+                val event = BleEvent.Notification(
+                    requestId = sessionId,
+                    deviceAddress = deviceAddress,
+                    service = gattService,
+                    characteristic = gattChar,
+                    value = value
+                )
+
+                capturedEvents.add(event)
+                // Iterate over a copy to avoid ConcurrentModificationException
+                eventListeners.toList().forEach { it.onNotification(event) }
+            }
+        }
+
+        return Ok(Unit)
+    }
+
+    override suspend fun readCharacteristic(
+        service: HasUuidId,
+        characteristic: HasUuidId
+    ): IdkResult<GattCharacteristic, BleError> {
+        val gattService = addedServices.find { it.id == service.id }
+            ?: return BleErrors.readCharacteristicFailed("Service not found").asErrorResult()
+
+        val gattChar = gattService.characteristics.find { it.id == characteristic.id }
+            ?: return BleErrors.readCharacteristicFailed("Characteristic not found").asErrorResult()
+
+        return Ok(gattChar)
+    }
+
+    override suspend fun awaitConnection(): IdkResult<Unit, BleError> {
+        if (connectionDelay > Duration.ZERO) {
+            delay(connectionDelay)
+        }
+
+        // If already connected, return immediately
+        if (connectedDevices.isNotEmpty()) {
+            return Ok(Unit)
+        }
+
+        // Otherwise, wait for a connection
+        connectionAwaiter = CompletableDeferred()
+        connectionAwaiter?.await()
+
+        return Ok(Unit)
+    }
+
+    override suspend fun disconnect(): IdkResult<Unit, BleError> {
+        // Disconnect all connected devices
+        connectedDevices.keys.toList().forEach { deviceAddress ->
+            simulateClientDisconnect(deviceAddress)
+        }
+
+        return Ok(Unit)
+    }
+
+    // Event listener management
+
+    override fun getBleEventListeners(): Set<BleEvent.Listener> = eventListeners.toSet()
+
+    override fun addBleEventListener(vararg listener: BleEvent.Listener): BlePlatformPeripheral {
+        eventListeners.addAll(listener)
+        return this
+    }
+
+    override fun removeBleEventListener(listener: BleEvent.Listener): BlePlatformPeripheral {
+        eventListeners.remove(listener)
+        return this
+    }
+
+    override fun clearBleEventListeners(): BlePlatformPeripheral {
+        eventListeners.clear()
+        return this
+    }
+
+    override fun close() {
+        isAdvertising = false
+        connectedDevices.clear()
+        sessionActivity.clear()
+        addedServices.clear()
+        eventListeners.clear()
+        notifiedData.clear()
+        receivedWrites.clear()
+        capturedEvents.clear()
+        connectionAwaiter?.cancel()
+    }
+}

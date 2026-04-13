@@ -1,0 +1,46 @@
+/*
+ * © 2025 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+package com.sphereon.crypto.core.sign.model
+
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.core.compat.JsExportCompat
+
+/**
+ * Extension point interface for signature parameters.
+ *
+ * IDK defines this interface with core properties.
+ * EDK implements it with eIDAS-specific subclasses (CAdESParameters, PAdESParameters, etc.).
+ *
+ * Developers pass parameters via [SignInput.parameters] to control signing behavior.
+ * When null, the implementation uses defaults appropriate for its form (e.g. RAW).
+ */
+interface SignatureParameters {
+    val signatureLevel: SignatureLevel
+    val signaturePackaging: SignaturePackaging
+    val digestAlgorithm: DigestAlg?
+}
+
+/**
+ * Simple signature parameters for RAW/JWS/COSE signing in IDK.
+ */
+data class RawSignatureParameters(
+    override val signatureLevel: SignatureLevel = SignatureLevel.RAW,
+    override val signaturePackaging: SignaturePackaging = SignaturePackaging.DETACHED,
+    override val digestAlgorithm: DigestAlg? = DigestAlg.SHA256,
+    val requireX5Chain: Boolean = false
+) : SignatureParameters

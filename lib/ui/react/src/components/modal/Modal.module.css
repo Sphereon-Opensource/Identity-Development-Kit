@@ -1,0 +1,71 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--comp-modal-overlay, rgba(0, 0, 0, 0.32));
+  z-index: var(--z-modal, 1000);
+  animation: fadeIn 150ms ease-out;
+}
+
+.dialog {
+  background: var(--comp-modal-background);
+  color: var(--comp-modal-foreground);
+  border: 1px solid var(--comp-modal-border);
+  border-radius: var(--comp-modal-radius);
+  box-shadow: var(--comp-modal-shadow);
+  padding: var(--spacing-inset-lg, 24px);
+  max-width: 560px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: slideUp 200ms ease-out;
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialog:focus-visible {
+  box-shadow: var(--shadow-state-focus, 0 0 0 3px rgba(66, 133, 244, 0.5));
+}
+
+.title {
+  margin: 0 0 var(--spacing-2, 8px);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.description {
+  margin: 0 0 var(--spacing-4, 16px);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.content {
+  margin: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .dialog {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .dialog {
+    border: 2px solid ButtonText;
+  }
+}

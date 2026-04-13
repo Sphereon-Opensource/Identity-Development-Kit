@@ -1,0 +1,611 @@
+/*
+ * © 2025 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sphereon.core.api.http.dispatch
+
+import com.sphereon.core.api.http.*
+import com.sphereon.core.api.http.describe.*
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class DefaultHttpAdapterDispatcherTest {
+
+    /**
+     * Simple test adapter that captures the normalized request for verification.
+     */
+    private class TestAdapter(
+        override val id: String,
+        private val adapterMount: HttpAdapterMount,
+        private val routeSpecs: List<Pair<HttpMethod, String>>,
+        private val responseCode: Int = 200,
+        private val captureNormalizedPath: ((String) -> Unit)? = null
+    ) : RoutedHttpAdapter() {
+
+        override val mount: HttpAdapterMount get() = adapterMount
+
+        override val routes: List<HttpRoute> = routeSpecs.map { (method, pattern) ->
+            HttpRoute(
+                endpoint = HttpEndpointDescriptor(method = method, pathPattern = pattern),
+                handler = { request ->
+                    captureNormalizedPath?.invoke(request.path)
+                    GenericHttpResponse(
+                        statusCode = responseCode,
+                        body = "id=$id,path=${request.path},tenantId=${request.pathParameters["tenantId"]}"
+                    )
+                }
+            )
+        }
+    }
+
+    private class TestDescriptorProvider(
+        override val id: String,
+        private val mount: HttpAdapterMount,
+        private val endpoints: List<HttpEndpointDescriptor>
+    ) : HttpAdapterDescriptorProvider {
+        override fun describe(): HttpAdapterDescription = HttpAdapterDescription(
+            id = id,
+            mount = mount,
+            endpoints = endpoints
+        )
+    }
+
+    private fun createCatalog(providers: Set<HttpAdapterDescriptorProvider>): HttpAdapterCatalog {
+        return DefaultHttpAdapterCatalog(providers, com.sphereon.core.api.http.config.UniversalHttpConfig.DEFAULT)
+    }
+
+    private fun createDispatcher(catalog: HttpAdapterCatalog, adapters: Set<HttpAdapter>): DefaultHttpAdapterDispatcher {
+        return DefaultHttpAdapterDispatcher(catalog, adapters)
+    }
+
+    // ========== Path normalization tests (TenantPathMode.OFF) ==========
+
+    @Test
+    fun dispatchNormalizesPathByStrippingServerPrefix() = runTest {
+        var capturedPath: String? = null
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api/kms", adapterBasePath = "/keys"),
+            // Routes are now relative to adapterBasePath
+            routeSpecs = listOf(HttpMethod.GET to "/{keyId}"),
+            captureNormalizedPath = { capturedPath = it }
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            // Endpoints include basePath prefix (after describe() transforms them)
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys/{keyId}"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/keys/abc123"))
+
+        assertEquals(200, response.statusCode)
+        assertEquals("/keys/abc123", capturedPath)
+    }
+
+    @Test
+    fun dispatchRoutesToCorrectAdapterByServerPrefix() = runTest {
+        val kmsAdapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api/kms", adapterBasePath = "/keys"),
+            // Routes relative to adapterBasePath
+            routeSpecs = listOf(HttpMethod.GET to "/"),
+            responseCode = 201
+        )
+        val oauthAdapter = TestAdapter(
+            id = "OAUTH2_AS",
+            adapterMount = HttpAdapterMount(serverPrefix = "/oauth2", adapterBasePath = "/"),
+            routeSpecs = listOf(HttpMethod.GET to "/token"),
+            responseCode = 202
+        )
+        val providers = setOf(
+            TestDescriptorProvider("KMS_KEYS", kmsAdapter.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))),
+            TestDescriptorProvider("OAUTH2_AS", oauthAdapter.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/token")))
+        )
+
+        val catalog = createCatalog(providers)
+        val dispatcher = createDispatcher(catalog, setOf(kmsAdapter, oauthAdapter))
+
+        val kmsResponse = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/keys"))
+        assertEquals(201, kmsResponse.statusCode)
+
+        val oauthResponse = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/oauth2/token"))
+        assertEquals(202, oauthResponse.statusCode)
+    }
+
+    @Test
+    fun dispatchReturns404WhenNoAdapterMatches() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api/kms", adapterBasePath = "/keys"),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/unknown/path"))
+
+        assertEquals(404, response.statusCode)
+    }
+
+    @Test
+    fun dispatchReturns404WhenMethodDoesNotMatch() = runTest {
+        val adapter = TestAdapter(
+            id = "TEST_ADAPTER",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "TEST_ADAPTER",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/items"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "POST", path = "/api/items"))
+
+        assertEquals(404, response.statusCode)
+    }
+
+    // ========== Tenant-in-path tests: BEFORE_SERVER_PREFIX ==========
+
+    @Test
+    fun dispatchExtractsTenantIdWhenBeforeServerPrefix() = runTest {
+        var capturedTenantId: String? = null
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/"),
+            captureNormalizedPath = { }
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/t/tenant123/api/kms/keys"))
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("tenantId=tenant123") == true)
+    }
+
+    @Test
+    fun dispatchNormalizesPathWhenTenantBeforeServerPrefix() = runTest {
+        var capturedPath: String? = null
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/{keyId}"),
+            captureNormalizedPath = { capturedPath = it }
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys/{keyId}"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/t/myTenant/api/kms/keys/key456"))
+
+        assertEquals("/keys/key456", capturedPath)
+    }
+
+    // ========== Tenant-in-path tests: AFTER_SERVER_PREFIX ==========
+
+    @Test
+    fun dispatchExtractsTenantIdWhenAfterServerPrefix() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.AFTER_SERVER_PREFIX
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/t/tenant999/keys"))
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("tenantId=tenant999") == true)
+    }
+
+    @Test
+    fun dispatchNormalizesPathWhenTenantAfterServerPrefix() = runTest {
+        var capturedPath: String? = null
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.AFTER_SERVER_PREFIX
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/{keyId}"),
+            captureNormalizedPath = { capturedPath = it }
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys/{keyId}"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/t/tenantABC/keys/keyXYZ"))
+
+        assertEquals("/keys/keyXYZ", capturedPath)
+    }
+
+    // ========== Tenant-in-path tests: BOTH ==========
+
+    @Test
+    fun dispatchAcceptsTenantBeforeWhenModeIsBoth() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BOTH
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/t/beforeTenant/api/kms/keys"))
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("tenantId=beforeTenant") == true)
+    }
+
+    @Test
+    fun dispatchAcceptsTenantAfterWhenModeIsBoth() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BOTH
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/t/afterTenant/keys"))
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("tenantId=afterTenant") == true)
+    }
+
+    // ========== Tenant resolution precedence tests ==========
+
+    @Test
+    fun dispatchUsesHeaderTenantWhenPrecedenceIsHeaderThenPath() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
+                tenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(
+            GenericHttpRequest(
+                method = "GET",
+                path = "/t/pathTenant/api/kms/keys",
+                pathParameters = mapOf("tenantId" to "headerTenant")
+            )
+        )
+
+        assertEquals(200, response.statusCode)
+        // Header tenant should win
+        assertTrue(response.body?.contains("tenantId=headerTenant") == true)
+    }
+
+    @Test
+    fun dispatchUsesPathTenantWhenPrecedenceIsPathThenHeader() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
+                tenantResolutionPriority = TenantResolutionPriority.PATH_THEN_HEADER
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(
+            GenericHttpRequest(
+                method = "GET",
+                path = "/t/pathTenant/api/kms/keys",
+                pathParameters = mapOf("tenantId" to "headerTenant")
+            )
+        )
+
+        assertEquals(200, response.statusCode)
+        // Path tenant should win
+        assertTrue(response.body?.contains("tenantId=pathTenant") == true)
+    }
+
+    @Test
+    fun dispatchUsesPathTenantWhenHeaderIsAbsentAndPrecedenceIsHeaderThenPath() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
+                tenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(
+            GenericHttpRequest(
+                method = "GET",
+                path = "/t/pathTenant/api/kms/keys"
+                // No header tenant provided
+            )
+        )
+
+        assertEquals(200, response.statusCode)
+        // Path tenant should be used as fallback
+        assertTrue(response.body?.contains("tenantId=pathTenant") == true)
+    }
+
+    // ========== Custom tenant segment pattern tests ==========
+
+    @Test
+    fun dispatchUsesCustomTenantSegmentPattern() = runTest {
+        val adapter = TestAdapter(
+            id = "KMS_KEYS",
+            adapterMount = HttpAdapterMount(
+                serverPrefix = "/api/kms",
+                adapterBasePath = "/keys",
+                tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
+                tenantSegmentPattern = "/tenant/{tenantId}"  // custom pattern
+            ),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "KMS_KEYS",
+            mount = adapter.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/tenant/customTenant/api/kms/keys"))
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("tenantId=customTenant") == true)
+    }
+
+    // ========== Specificity scoring tests ==========
+
+    @Test
+    fun dispatchSelectsMoreSpecificServerPrefixWhenAmbiguous() = runTest {
+        // Two adapters: one with /api, one with /api/kms
+        val generalAdapter = TestAdapter(
+            id = "GENERAL",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/keys"),
+            routeSpecs = listOf(HttpMethod.GET to "/"),
+            responseCode = 201
+        )
+        val specificAdapter = TestAdapter(
+            id = "KMS_SPECIFIC",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api/kms", adapterBasePath = "/keys"),
+            routeSpecs = listOf(HttpMethod.GET to "/"),
+            responseCode = 202
+        )
+        val providers = setOf(
+            TestDescriptorProvider("GENERAL", generalAdapter.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys"))),
+            TestDescriptorProvider("KMS_SPECIFIC", specificAdapter.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys")))
+        )
+
+        val catalog = createCatalog(providers)
+        val dispatcher = createDispatcher(catalog, setOf(generalAdapter, specificAdapter))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/keys"))
+
+        // The more specific serverPrefix (/api/kms) should win
+        assertEquals(202, response.statusCode)
+    }
+
+    @Test
+    fun dispatchSelectsMoreSpecificEndpointPattern() = runTest {
+        // Two routes in one adapter: /items and /items/{id}
+        val adapter = TestAdapter(
+            id = "ITEMS_ADAPTER",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+            routeSpecs = listOf(
+                HttpMethod.GET to "/",
+                HttpMethod.GET to "/{id}"
+            )
+        )
+        val provider = TestDescriptorProvider(
+            id = "ITEMS_ADAPTER",
+            mount = adapter.describe().mount,
+            endpoints = listOf(
+                HttpEndpointDescriptor(HttpMethod.GET, "/items"),
+                HttpEndpointDescriptor(HttpMethod.GET, "/items/{id}")
+            )
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+        // Request to /api/items/123 should match the more specific /items/{id}
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/items/123"))
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("path=/items/123") == true)
+    }
+
+    // ========== Error handling tests ==========
+
+    @Test
+    fun dispatchReturns500WhenMultipleRuntimeAdaptersHaveSameId() = runTest {
+        // Create two adapters with the same ID (runtime error)
+        val adapter1 = TestAdapter(
+            id = "DUPLICATE_ID",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/a"),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val adapter2 = TestAdapter(
+            id = "DUPLICATE_ID",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/b"),
+            routeSpecs = listOf(HttpMethod.GET to "/")
+        )
+        val provider = TestDescriptorProvider(
+            id = "DUPLICATE_ID",
+            mount = adapter1.describe().mount,
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/a"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, setOf(adapter1, adapter2))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/a"))
+
+        assertEquals(500, response.statusCode)
+        assertTrue(response.body?.contains("Multiple runtime HttpAdapter") == true)
+    }
+
+    @Test
+    fun dispatchReturns500WhenAmbiguousMatch() = runTest {
+        // Two adapters with identical mounts and endpoints
+        val adapter1 = TestAdapter(
+            id = "ADAPTER_A",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+            routeSpecs = listOf(HttpMethod.GET to "/"),
+            responseCode = 201
+        )
+        val adapter2 = TestAdapter(
+            id = "ADAPTER_B",
+            adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+            routeSpecs = listOf(HttpMethod.GET to "/"),
+            responseCode = 202
+        )
+        val providers = setOf(
+            TestDescriptorProvider("ADAPTER_A", adapter1.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/items"))),
+            TestDescriptorProvider("ADAPTER_B", adapter2.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/items")))
+        )
+
+        val catalog = createCatalog(providers)
+        val dispatcher = createDispatcher(catalog, setOf(adapter1, adapter2))
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/items"))
+
+        assertEquals(500, response.statusCode)
+        assertTrue(response.body?.contains("Ambiguous") == true)
+    }
+
+    @Test
+    fun dispatchReturns500WhenNoRuntimeAdapterForMatchedDescriptor() = runTest {
+        // Catalog has a descriptor but no runtime adapter with that ID
+        val provider = TestDescriptorProvider(
+            id = "MISSING_ADAPTER",
+            mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/missing"),
+            endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/missing"))
+        )
+
+        val catalog = createCatalog(setOf(provider))
+        val dispatcher = createDispatcher(catalog, emptySet())
+
+        val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/missing"))
+
+        assertEquals(500, response.statusCode)
+        assertTrue(response.body?.contains("No runtime adapter") == true)
+    }
+}
