@@ -18,7 +18,7 @@
 package com.sphereon.core.api.context
 
 import com.sphereon.core.api.log.UserContextLogManager
-import com.sphereon.core.api.session.CommandExecutor
+import com.sphereon.core.api.session.CommandInvoker
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.context.UserContextGraph
 import com.sphereon.di.context.UserContextInstance
@@ -58,7 +58,7 @@ interface CoreApiContextExtensionGraph {
     val sessionContextManager: SessionContextManager
     val logManager: UserContextLogManager
     val conf: ContextConfig
-    val commandExecutor: CommandExecutor
+    val commandInvoker: CommandInvoker
 
     fun loggerWithTag(tag: String = "sphereon") = logManager.withTagAsync(tag)
 

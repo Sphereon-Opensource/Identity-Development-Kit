@@ -1,14 +1,22 @@
-name: Build & Test
+name: Public CI
+
+# Runs on the public IDK repo only — full multiplatform build + npm/Maven
+# publish. Triggered by mirror pushes from the private repo to develop/main,
+# manual dispatch, and PRs opened directly on the public repo.
+#
+# This file is mirrored to the private repo too (it ships in the tree); the
+# top-level repository gate makes it a no-op there.
 
 on:
   push:
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
     inputs:
       full_build:
         description: 'Run full multiplatform build (not just JVM)'
         required: false
-        default: false
+        default: true
         type: boolean
 
 concurrency:
@@ -19,14 +27,14 @@ env:
   GRADLE_OPTS: "-Dkotlin.native.ignoreDisabledTargets=true -Dfile.encoding=UTF-8"
 
 # Pipeline:
-#   push        → jvm only (~5 min)
-#   PR/develop  → jvm → multiplatform (sequential targets, shared build cache on one runner)
-#   develop/main→ jvm → multiplatform → publish
+#   PR / push develop / push main → jvm → multiplatform
+#   push develop / push main      → ... → publish
 
 jobs:
-  # ─── JVM: every push (~5 min) ───
+  # ─── JVM: every trigger (~5 min) ───
   jvm:
     name: JVM Build & Test
+    if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit'
     runs-on: linux-x64
     timeout-minutes: 20
     steps:
@@ -45,11 +53,6 @@ jobs:
             caches
             notifications
             build-cache-1
-
-#      - name: Clear stale Sphereon SNAPSHOT cache
-#        run: |
-#          find ~/.gradle/caches -path "*com.sphereon*" -type f -delete 2>/dev/null || true
-#          find ~/.gradle/caches -path "*com/sphereon*" -type f -delete 2>/dev/null || true
 
       - name: Build & test (JVM only)
         run: >-
@@ -71,9 +74,6 @@ jobs:
   # and dependency resolution from the JVM build. This avoids 10min cold starts per target.
   multiplatform:
     name: Multiplatform Build
-    # Heavy multiplatform build only runs on the public repo. Private CI stops at the
-    # JVM job for fast feedback (~5 min); the multiplatform matrix runs on the public
-    # repo after mirror, where it's a prerequisite for publishing.
     if: >-
       github.repository == 'Sphereon-Opensource/Identity-Development-Kit' &&
       (github.event_name == 'pull_request' ||
@@ -99,11 +99,6 @@ jobs:
             caches
             notifications
             build-cache-1
-
-#      - name: Clear stale Sphereon SNAPSHOT cache
-#        run: |
-#          find ~/.gradle/caches -path "*com.sphereon*" -type f -delete 2>/dev/null || true
-#          find ~/.gradle/caches -path "*com/sphereon*" -type f -delete 2>/dev/null || true
 
       # ── Android ──
       - name: Cache Android SDK
@@ -187,8 +182,6 @@ jobs:
   # ─── Publish: after multiplatform passes (wasmJs is never published) ───
   publish:
     name: Publish
-    # Publish only runs on the public repo (the npm/Maven publishing credentials
-    # live there; private must never publish).
     if: >-
       github.repository == 'Sphereon-Opensource/Identity-Development-Kit' &&
       github.event_name == 'push' &&

@@ -34,12 +34,12 @@ import kotlin.native.ObjCName
 /**
  * App-scoped command executor that supports cross-tenant execution.
  *
- * Extends [CommandExecutor] with an overload that accepts explicit tenant/principal context.
- * The base [CommandExecutor] methods delegate via a background service context.
+ * Extends [CommandInvoker] with an overload that accepts explicit tenant/principal context.
+ * The base [CommandInvoker] methods delegate via a background service context.
  */
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("AppCommandExecutor", exact = true)
-interface AppCommandExecutor : CommandExecutor {
+@ObjCName("AppCommandInvoker", exact = true)
+interface AppCommandInvoker : CommandInvoker {
     /**
      * Execute a command with explicit tenant/principal context.
      *
@@ -56,13 +56,13 @@ interface AppCommandExecutor : CommandExecutor {
 
 @Inject
 @SingleIn(AppScope::class)
-@ContributesBinding(AppScope::class, binding = binding<AppCommandExecutor>())
+@ContributesBinding(AppScope::class, binding = binding<AppCommandInvoker>())
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("AppCommandExecutorImpl", exact = true)
-class AppCommandExecutorImpl(
+@ObjCName("AppCommandInvokerImpl", exact = true)
+class AppCommandInvokerImpl(
     val userContextManager: UserContextManager,
-) : AppCommandExecutor {
-    private fun backgroundExecutor(): CommandExecutor = userContextManager.getBackgroundService().asCoreApiContextGraph().commandExecutor
+) : AppCommandInvoker {
+    private fun backgroundExecutor(): CommandInvoker = userContextManager.getBackgroundService().asCoreApiContextGraph().commandInvoker
 
     override fun resolve(commandId: String): ServiceCommand<*, *>? = backgroundExecutor().resolve(commandId)
 
@@ -82,7 +82,7 @@ class AppCommandExecutorImpl(
         input: TInput,
     ): IdkResult<TOutput, IdkError> {
         val activeContext = userContextManager.createOrGetFromInputs(tenantInput, principalInput)
-        val executor = activeContext.asCoreApiContextGraph().commandExecutor
+        val executor = activeContext.asCoreApiContextGraph().commandInvoker
         return executor.execute(command, input)
     }
 }

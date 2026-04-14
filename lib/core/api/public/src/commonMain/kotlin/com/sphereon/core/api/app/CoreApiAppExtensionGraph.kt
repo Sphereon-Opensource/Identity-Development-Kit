@@ -22,7 +22,7 @@ import com.sphereon.core.api.context.CoreApiContextExtensionGraph
 import com.sphereon.core.api.context.asCoreApiContextGraph
 import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.core.api.log.UserContextLogManager
-import com.sphereon.core.api.session.AppCommandExecutor
+import com.sphereon.core.api.session.AppCommandInvoker
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.context.UserContextManager
 import dev.zacsweers.metro.AppScope
@@ -62,7 +62,7 @@ interface CoreApiAppExtensionGraph {
 
     val appLogManager: AppLogManager
     val appConfig: AppConfigService
-    val commandExecutor: AppCommandExecutor
+    val commandInvoker: AppCommandInvoker
 
     fun appLoggerWithTag(tag: String = "sphereon") = appContextLogManager.withTagAsync(tag)
 

@@ -371,7 +371,7 @@ class CoreApiContextExtensionGraphTest {
             get() = throw NotImplementedError("Not needed for this test")
         override val conf: ContextConfig
             get() = throw NotImplementedError("Not needed for this test")
-        override val commandExecutor: com.sphereon.core.api.session.CommandExecutor
+        override val commandInvoker: com.sphereon.core.api.session.CommandInvoker
             get() = throw NotImplementedError("Not needed for this test")
 
         // UserContextGraph properties (sessionContextManager satisfies both interfaces)
@@ -408,7 +408,7 @@ class CoreApiContextExtensionFunctionsTest {
             get() = throw NotImplementedError("Not needed for this test")
         override val conf: ContextConfig
             get() = throw NotImplementedError("Not needed for this test")
-        override val commandExecutor: com.sphereon.core.api.session.CommandExecutor
+        override val commandInvoker: com.sphereon.core.api.session.CommandInvoker
             get() = throw NotImplementedError("Not needed for this test")
 
         // UserContextGraph properties (sessionContextManager satisfies both interfaces)

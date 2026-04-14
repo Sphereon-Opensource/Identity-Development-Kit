@@ -98,9 +98,9 @@ class JvmTest {
         runBlocking {
             val appGraph: TestAppGraph = createTestAppGraph(this, "appId", "profile", "version")
             val start = Clock.System.now()
-            val cmd = appGraph.commandExecutor.resolve(HelloWorldServiceImpl.SERVICE_ID)!!
+            val cmd = appGraph.commandInvoker.resolve(HelloWorldServiceImpl.SERVICE_ID)!!
             @Suppress("UNCHECKED_CAST")
-            val out = appGraph.commandExecutor.execute(
+            val out = appGraph.commandInvoker.execute(
                 tenantInput = DefaultTenantInputString("test@principal.com"),
                 principalInput = DefaultPrincipalInputString("test@principal.com"),
                 command = cmd as com.sphereon.core.api.service.ServiceCommand<String, String>,

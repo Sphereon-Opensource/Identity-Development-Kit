@@ -1,0 +1,58 @@
+name: Private CI
+
+# Runs on the private IDK repo only — fast JVM-only verification on PRs.
+# The mirror workflow forwards merged commits to the public repo, where
+# CI-public.yaml runs the full multiplatform build + publish.
+#
+# This file is mirrored to the public repo too (it ships in the tree); the
+# top-level repository gate makes it a no-op there.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dkotlin.native.ignoreDisabledTargets=true -Dfile.encoding=UTF-8"
+
+jobs:
+  jvm:
+    name: JVM Build & Test
+    if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private'
+#    runs-on: ubuntu-latest
+    runs-on: linux-x64
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: chmod +x ./gradlew
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            build-cache-1
+
+      - name: Build & test (JVM only)
+        run: >-
+          ./gradlew build --build-cache
+          -Dkmp.targets=jvm
+          -x koverVerify
+          -x :lib-crypto-kms-provider-aws:jvmTest
+          -x :lib-crypto-kms-provider-azure:jvmTest
+          -x :lib-data-link-http-client:jvmTest
+
+      - name: Print test failures
+        if: failure()
+        run: |
+          find . -path "*/build/reports/tests/jvmTest/*.html" -name "index.html" \
+            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;

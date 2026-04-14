@@ -699,13 +699,13 @@ class CoreApiDiIntegrationTest {
         }
 
     @Test
-    fun appGraphExposesCommandExecutor() =
+    fun appGraphExposesCommandInvoker() =
         runTest {
             val testScope = TestScope()
             val app = createCoreApiTestAppGraph(testScope)
 
             val coreApiApp = app as com.sphereon.core.api.app.CoreApiAppExtensionGraph
-            assertNotNull(coreApiApp.commandExecutor)
+            assertNotNull(coreApiApp.commandInvoker)
 
             app.destroy()
         }
@@ -769,7 +769,7 @@ class CoreApiDiIntegrationTest {
 
             val coreApiApp = app as com.sphereon.core.api.app.CoreApiAppExtensionGraph
             assertNotNull(coreApiApp)
-            assertNotNull(coreApiApp.commandExecutor)
+            assertNotNull(coreApiApp.commandInvoker)
 
             app.destroy()
         }
@@ -1041,7 +1041,7 @@ class CoreApiDiIntegrationTest {
         }
 
     @Test
-    fun coreApiContextExtensionGraphExposesCommandExecutor() =
+    fun coreApiContextExtensionGraphExposesCommandInvoker() =
         runTest {
             val testScope = TestScope()
             val app = createCoreApiTestAppGraph(testScope)
@@ -1049,7 +1049,7 @@ class CoreApiDiIntegrationTest {
             val userContext = app.userContextManager.getAnonymous()
             val coreApiContext = userContext.asCoreApiContextGraph()
 
-            assertNotNull(coreApiContext.commandExecutor)
+            assertNotNull(coreApiContext.commandInvoker)
 
             app.destroy()
         }

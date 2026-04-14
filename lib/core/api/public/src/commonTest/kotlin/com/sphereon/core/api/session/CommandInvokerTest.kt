@@ -32,7 +32,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class CommandExecutorTest {
+class CommandInvokerTest {
     @Suppress("UNCHECKED_CAST")
     private class TestServiceCommand(
         override val commandId: String,
@@ -76,7 +76,7 @@ class CommandExecutorTest {
     @Test
     fun resolveReturnsCommandWhenPresent() {
         val command = TestServiceCommand(commandId = "core.test.get")
-        val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.get" to command)))
+        val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.get" to command)))
 
         val resolved = executor.resolve("core.test.get")
 
@@ -86,7 +86,7 @@ class CommandExecutorTest {
 
     @Test
     fun resolveReturnsNullWhenMissing() {
-        val executor = SessionScopeCommandExecutor(FakeRegistry())
+        val executor = SessionScopeCommandInvoker(FakeRegistry())
 
         assertNull(executor.resolve("core.test.missing"))
     }
@@ -94,7 +94,7 @@ class CommandExecutorTest {
     @Test
     fun resolveTypedReturnsCastCommand() {
         val command = TestServiceCommand(commandId = "core.test.get")
-        val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.get" to command)))
+        val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.get" to command)))
 
         val resolved = executor.resolve<TestServiceCommand>("core.test.get")
 
@@ -105,7 +105,7 @@ class CommandExecutorTest {
     @Test
     fun resolveTypedReturnsNullForWrongType() {
         val command = TestServiceCommand(commandId = "core.test.get")
-        val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.get" to command)))
+        val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.get" to command)))
 
         // ServiceCommand<*, *> is a supertype, but a specific unrelated interface cast will fail
         // Since TestServiceCommand doesn't implement some other interface, cast to String will fail
@@ -125,7 +125,7 @@ class CommandExecutorTest {
                     commandId = "core.test.execute",
                     executeResult = expected,
                 )
-            val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.execute" to command)))
+            val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.execute" to command)))
 
             val result = executor.execute(command, "args")
 
@@ -139,7 +139,7 @@ class CommandExecutorTest {
     fun executeReturnsDisabledErrorForDisabledCommand() =
         runTest {
             val command = TestServiceCommand(commandId = "core.test.execute", isEnabled = false)
-            val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.execute" to command)))
+            val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.execute" to command)))
 
             val result = executor.execute(command, "args")
 
@@ -153,7 +153,7 @@ class CommandExecutorTest {
     fun executeReturnsUnsupportedArgError() =
         runTest {
             val command = TestServiceCommand(commandId = "core.test.execute", supportsResult = false)
-            val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.execute" to command)))
+            val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.execute" to command)))
 
             val result = executor.execute(command, "args")
 
@@ -168,7 +168,7 @@ class CommandExecutorTest {
         runTest {
             val exception = IllegalStateException("boom in supports")
             val command = TestServiceCommand(commandId = "core.test.execute", supportsException = exception)
-            val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.execute" to command)))
+            val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.execute" to command)))
 
             val result = executor.execute(command, "args")
 
@@ -186,7 +186,7 @@ class CommandExecutorTest {
         runTest {
             val exception = RuntimeException("boom in execute")
             val command = TestServiceCommand(commandId = "core.test.execute", executeException = exception)
-            val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.execute" to command)))
+            val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.execute" to command)))
 
             val result = executor.execute(command, "args")
 
@@ -204,14 +204,14 @@ class CommandExecutorTest {
     @Test
     fun hasReturnsTrueForRegisteredCommand() {
         val command = TestServiceCommand(commandId = "core.test.get")
-        val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.get" to command)))
+        val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.get" to command)))
 
         assertTrue(executor.has("core.test.get"))
     }
 
     @Test
     fun hasReturnsFalseForMissingCommand() {
-        val executor = SessionScopeCommandExecutor(FakeRegistry())
+        val executor = SessionScopeCommandInvoker(FakeRegistry())
 
         assertEquals(false, executor.has("core.test.missing"))
     }
@@ -223,7 +223,7 @@ class CommandExecutorTest {
                 "core.test.get" to TestServiceCommand(commandId = "core.test.get"),
                 "core.test.create" to TestServiceCommand(commandId = "core.test.create"),
             )
-        val executor = SessionScopeCommandExecutor(FakeRegistry(commands))
+        val executor = SessionScopeCommandInvoker(FakeRegistry(commands))
 
         val ids = executor.listCommandIds()
 
@@ -238,7 +238,7 @@ class CommandExecutorTest {
     fun executeByIdResolvesAndExecutes() =
         runTest {
             val command = TestServiceCommand(commandId = "core.test.execute", executeResult = Ok(99))
-            val executor = SessionScopeCommandExecutor(FakeRegistry(mapOf("core.test.execute" to command)))
+            val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.execute" to command)))
 
             val result = executor.executeById<TestServiceCommand, String, Int>("core.test.execute", "args")
 
@@ -249,7 +249,7 @@ class CommandExecutorTest {
     @Test
     fun executeByIdReturnsNotFoundForMissingCommand() =
         runTest {
-            val executor = SessionScopeCommandExecutor(FakeRegistry())
+            val executor = SessionScopeCommandInvoker(FakeRegistry())
 
             val result = executor.executeById<TestServiceCommand, String, Int>("core.test.missing", "args")
 

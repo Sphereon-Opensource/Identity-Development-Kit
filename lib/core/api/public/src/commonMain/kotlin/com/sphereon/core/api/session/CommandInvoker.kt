@@ -45,8 +45,8 @@ import kotlin.native.ObjCName
  */
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("CommandExecutor", exact = true)
-interface CommandExecutor {
+@ObjCName("CommandInvoker", exact = true)
+interface CommandInvoker {
     /**
      * Resolve a command by ID. Returns the raw [ServiceCommand].
      * Use the reified extension for typed resolution.
@@ -74,7 +74,7 @@ interface CommandExecutor {
  * ```
  */
 @Suppress("UNCHECKED_CAST")
-inline fun <reified C : ServiceCommand<*, *>> CommandExecutor.resolve(commandId: String): C? = resolve(commandId) as? C
+inline fun <reified C : ServiceCommand<*, *>> CommandInvoker.resolve(commandId: String): C? = resolve(commandId) as? C
 
 /**
  * Convenience: resolve + execute by commandId in one call.
@@ -85,7 +85,7 @@ inline fun <reified C : ServiceCommand<*, *>> CommandExecutor.resolve(commandId:
  * ```
  */
 @Suppress("UNCHECKED_CAST")
-suspend inline fun <reified C : ServiceCommand<TInput, TOutput>, TInput : Any, TOutput : Any> CommandExecutor.executeById(
+suspend inline fun <reified C : ServiceCommand<TInput, TOutput>, TInput : Any, TOutput : Any> CommandInvoker.executeById(
     commandId: String,
     input: TInput,
 ): IdkResult<TOutput, IdkError> {
@@ -98,20 +98,20 @@ suspend inline fun <reified C : ServiceCommand<TInput, TOutput>, TInput : Any, T
 // ========== Session-scoped implementation ==========
 
 /**
- * Session-scoped [CommandExecutor] backed by [SessionScopedCommandRegistry].
+ * Session-scoped [CommandInvoker] backed by [SessionScopedCommandRegistry].
  *
  * Uses the registry directly — participates in LOCAL/SERVER routing when the
  * VDX [DefaultSessionScopedCommandRegistry] replaces the IDK default.
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<CommandExecutor>())
+@ContributesBinding(SessionScope::class, binding = binding<CommandInvoker>())
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("SessionScopeCommandExecutor", exact = true)
-class SessionScopeCommandExecutor(
+@ObjCName("SessionScopeCommandInvoker", exact = true)
+class SessionScopeCommandInvoker(
     private val registry: SessionScopedCommandRegistry,
     private val errorMapper: CommandErrorMapper<IdkError> = IdkErrorCommandErrorMapper,
-) : CommandExecutor {
+) : CommandInvoker {
     override fun resolve(commandId: String): ServiceCommand<*, *>? = registry.get(commandId)
 
     override suspend fun <TInput : Any, TOutput : Any> execute(
@@ -144,20 +144,20 @@ class SessionScopeCommandExecutor(
 // ========== User-scoped implementation ==========
 
 /**
- * User-scoped [CommandExecutor] that delegates to the session-scoped executor
+ * User-scoped [CommandInvoker] that delegates to the session-scoped executor
  * via a background service session.
  */
 @Inject
 @SingleIn(UserScope::class)
-@ContributesBinding(UserScope::class, binding = binding<CommandExecutor>())
+@ContributesBinding(UserScope::class, binding = binding<CommandInvoker>())
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("UserScopeCommandExecutor", exact = true)
-class UserScopeCommandExecutor(
+@ObjCName("UserScopeCommandInvoker", exact = true)
+class UserScopeCommandInvoker(
     private val sessionContextManager: SessionContextManager,
-) : CommandExecutor {
-    private fun sessionExecutor(): CommandExecutor {
+) : CommandInvoker {
+    private fun sessionExecutor(): CommandInvoker {
         val session = sessionContextManager.getOrCreateBackgroundService()
-        return (session.graph as CommandExecutorGraph).commandExecutor
+        return (session.graph as CommandInvokerGraph).commandInvoker
     }
 
     override fun resolve(commandId: String): ServiceCommand<*, *>? = sessionExecutor().resolve(commandId)
@@ -175,12 +175,12 @@ class UserScopeCommandExecutor(
 // ========== Session graph ==========
 
 /**
- * Provides access to [CommandExecutor] from the session graph graph.
+ * Provides access to [CommandInvoker] from the session graph graph.
  *
- * Used by [UserScopeCommandExecutor] and [AppCommandExecutorImpl] to access
- * the session-scoped executor via `session.graph as CommandExecutorGraph`.
+ * Used by [UserScopeCommandInvoker] and [AppCommandInvokerImpl] to access
+ * the session-scoped executor via `session.graph as CommandInvokerGraph`.
  */
 @ContributesTo(SessionScope::class)
-interface CommandExecutorGraph {
-    val commandExecutor: CommandExecutor
+interface CommandInvokerGraph {
+    val commandInvoker: CommandInvoker
 }
