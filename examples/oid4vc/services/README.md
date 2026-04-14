@@ -6,7 +6,7 @@ Local development setup for testing OID4VCI credential issuance and OID4VP crede
 
 | Service | Internal Port | Description |
 |---------|---------------|-------------|
-| **Caddy** | 8080 (exposed) | Reverse proxy — single entry point for all services |
+| **Caddy** | 8080 (exposed) | Reverse proxy. Single entry point for all services |
 | **OAuth2 AS** | 8080 | Authorization Server with built-in test login |
 | **OID4VCI Issuer** | 8080 | Credential issuer with SD-JWT (`TestCredential`, `EuPid`) and mdoc (`AgeOver18`) |
 | **OID4VP Verifier** | 8080 | Verifier for credential presentations |
@@ -41,13 +41,13 @@ Two entrypoints are provided. Pick the one that matches your situation:
 ```bash
 ./start.sh                                   # Linux / macOS, auto-detect LAN IP
 ./start.sh https://my.ngrok.app              # Pass external URL
-IDK_VERSION=0.24.0 ./start.sh                # Pin a specific release
+IDK_VERSION=0.25.0 ./start.sh                # Pin a specific release
 EXTERNAL_BASE_URL=http://192.168.1.100:8080 ./start.sh
 ```
 ```cmd
 start.bat                                    REM Windows
 start.bat https://my.ngrok.app
-set IDK_VERSION=0.24.0 && start.bat
+set IDK_VERSION=0.25.0 && start.bat
 ```
 
 **Contributors iterating on IDK source (local build):**
@@ -156,7 +156,7 @@ In production, VCT metadata is hosted through the blob store service.
 
 To add a new credential type:
 
-1. Create a VCT metadata file `vct/MyNewCredential.json` (see `vct/TestCredential.json` as template). Include the display locales you want wallets to render — wallets pick the best match against the user's preferred locale.
+1. Create a VCT metadata file `vct/MyNewCredential.json` (see `vct/TestCredential.json` as template). Include the display locales you want wallets to render. Wallets pick the best match against the user's preferred locale.
 2. Add the credential config in `config/oid4vci-issuer.yml`. Real-world snippet from the shipped config (the `"[Id]"` bracket form is how map keys are declared):
 
 ```yaml
@@ -189,7 +189,7 @@ Configuration in `config/oauth2-as.yml`. Live values from the shipped config:
 | `oauth2.servers.default.internal-clients.issuer.client-id` | `issuer-service` | Internal client used by the issuer to call the AS |
 
 Additional grant type that can be enabled:
-- `urn:ietf:params:oauth:grant-type:token-exchange` — token exchange (RFC 8693)
+- `urn:ietf:params:oauth:grant-type:token-exchange`. Token exchange (RFC 8693)
 
 ### OID4VP Verifier
 
@@ -212,7 +212,7 @@ Dots become underscores, keys are uppercased. Config keys use bare domain prefix
 
 No user login required. The issuer creates a credential offer with a pre-authorized code.
 
-1. **Create offer** — `POST /oid4vci/backend/credential/offers`
+1. **Create offer**. `POST /oid4vci/backend/credential/offers`
 2. Wallet scans QR code from the response
 3. Wallet exchanges pre-auth code at `POST /auth/token`
 4. Wallet requests credential at `POST /oid4vci/credential`
@@ -221,7 +221,7 @@ No user login required. The issuer creates a credential offer with a pre-authori
 
 Requires user login. The wallet redirects to the AS for authentication.
 
-1. **Create offer** — `POST /oid4vci/backend/credential/offers` with `authorization_code` grant
+1. **Create offer**. `POST /oid4vci/backend/credential/offers` with `authorization_code` grant
 2. Wallet scans QR, opens authorization URL in browser
 3. User logs in at `/auth/login` (testuser/testpass)
 4. AS redirects back with authorization code
@@ -230,11 +230,11 @@ Requires user login. The wallet redirects to the AS for authentication.
 
 ### Credential Presentation (OID4VP)
 
-1. **Create auth request** — `POST /oid4vp/backend/auth/requests` with DCQL query
+1. **Create auth request**. `POST /oid4vp/backend/auth/requests` with DCQL query
 2. Wallet scans QR code
 3. Wallet fetches request object from `/oid4vp/request-uri/{id}`
 4. Wallet submits VP to the direct_post endpoint
-5. **Check result** — `GET /oid4vp/backend/auth/requests/{id}`
+5. **Check result**. `GET /oid4vp/backend/auth/requests/{id}`
 
 ## Postman Collection
 
@@ -243,10 +243,10 @@ Import `postman/IDK-OID4VCI-OID4VP-E2E.postman_collection.json` into Postman.
 Set the `base_url` collection variable to your `EXTERNAL_BASE_URL`.
 
 The collection has three folders:
-- **Setup** — health checks, metadata discovery
-- **Pre-Authorized Code Flow** — full issuance flow (auto-extracts tokens between requests)
-- **Authorization Code Flow** — issuance with user login (some manual steps)
-- **OID4VP Verification** — create request, check result
+- **Setup**. Health checks, metadata discovery
+- **Pre-Authorized Code Flow**. Full issuance flow (auto-extracts tokens between requests)
+- **Authorization Code Flow**. Issuance with user login (some manual steps)
+- **OID4VP Verification**. Create request, check result
 
 ## Troubleshooting
 
@@ -261,10 +261,10 @@ The collection has three folders:
 - First build takes time (downloads dependencies, compiles)
 
 **Pre-auth code expired:**
-- Default TTL is 10 minutes — create a fresh offer
+- Default TTL is 10 minutes. Create a fresh offer
 
 **Auth code flow login doesn't work:**
-- The login form is at `/auth/login` — make sure Caddy routes `/auth/*` to the OAuth2 AS
+- The login form is at `/auth/login`. Make sure Caddy routes `/auth/*` to the OAuth2 AS
 - Credentials: `testuser` / `testpass`
 
 **Rebuild after code changes (dev):**
