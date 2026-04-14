@@ -1,0 +1,109 @@
+name: Mirror to Public
+
+# One-way mirror from the private IDK repo to the public IDK repo.
+#
+# Triggered automatically when develop or main advance on private, and on
+# manual dispatch as a fallback. Performs a fast-forward push of the chosen
+# branch to the public repo using a fine-grained PAT stored as PUBLIC_REPO_TOKEN.
+#
+# This file is mirrored to the public repo too (it ships in the tree), but every
+# job is gated on the private repo name so the workflow is a no-op there.
+#
+# Branch protection on private (squash-merge-only, no force-push) keeps the
+# mirrored history clean and ensures every push is fast-forward.
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to mirror (develop or main)'
+        required: true
+        default: 'develop'
+        type: choice
+        options:
+          - develop
+          - main
+      dry_run:
+        description: 'Print the push command without executing it'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  # Serialize per branch so two concurrent pushes can't race the public repo
+  # into a non-fast-forward state.
+  group: mirror-to-public-${{ github.event.inputs.branch || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PUBLIC_REPO: Sphereon-Opensource/Identity-Development-Kit
+
+jobs:
+  mirror:
+    name: Mirror branch to public
+    # No-op on the public mirror itself.
+    if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private'
+    runs-on: linux-x64
+    timeout-minutes: 10
+    steps:
+      - name: Resolve target branch
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history needed so the public repo can fast-forward from
+          # whatever commit it currently has.
+          fetch-depth: 0
+          ref: ${{ steps.target.outputs.branch }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "sphereon-mirror-bot"
+          git config user.email "sphereon-mirror-bot@users.noreply.github.com"
+
+      - name: Add public remote
+        env:
+          TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          if [ -z "${TOKEN}" ]; then
+            echo "PUBLIC_REPO_TOKEN secret is not set on this repository." >&2
+            exit 1
+          fi
+          git remote add public "https://x-access-token:${TOKEN}@github.com/${PUBLIC_REPO}.git"
+
+      - name: Push to public
+        env:
+          BRANCH: ${{ steps.target.outputs.branch }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          DRY_FLAG=""
+          if [ "${DRY_RUN}" = "true" ]; then
+            DRY_FLAG="--dry-run"
+            echo "DRY RUN — push will be simulated, not applied."
+          fi
+          # --follow-tags carries annotated tags reachable from the pushed commit.
+          # No --force: if the push isn't a fast-forward, the workflow fails so a
+          # human investigates rather than silently rewriting public history.
+          git push ${DRY_FLAG} --follow-tags public "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+
+      - name: Summary
+        if: always()
+        env:
+          BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          {
+            echo "## Mirror to public"
+            echo ""
+            echo "- Source: \`${{ github.repository }}@${GITHUB_SHA}\`"
+            echo "- Target: \`${PUBLIC_REPO}\` branch \`${BRANCH}\`"
+            echo "- Dry run: \`${{ inputs.dry_run || 'false' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

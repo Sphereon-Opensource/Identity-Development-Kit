@@ -2,6 +2,9 @@
 
 import com.android.build.gradle.AppExtension
 import com.android.build.gradle.LibraryExtension
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import org.jetbrains.kotlin.gradle.targets.js.testing.KotlinJsTest
 
 // Detect host architecture and OS
@@ -233,7 +236,16 @@ fun getNpmVersion(): String {
         commandLine("git", "rev-parse", "--short=7", "HEAD")
     }.standardOutput.asText.get().replace("\n", "").trim()
 
-    return "$baseVersion-build-$gitCommitHash"
+    // npm registry rejects republishing the same version, so each SNAPSHOT publish
+    // must produce a unique version. Add a monotonic build id (CI run number, or
+    // local UTC timestamp) so consecutive publishes always get a fresh version.
+    val buildId = System.getenv("GITHUB_RUN_NUMBER")
+        ?: DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+            .withZone(ZoneOffset.UTC)
+            .format(Instant.now())
+
+    val baseNoSuffix = baseVersion.removeSuffix("-SNAPSHOT")
+    return "$baseNoSuffix-SNAPSHOT.$buildId.$gitCommitHash"
 }
 
 // =============================================================================
@@ -258,6 +270,30 @@ tasks.register("assembleAllNpmPackages") {
     group = "publishing"
     description = "Assemble all IDK npm packages (validate without publishing)"
     dependsOn(provider { subprojects.mapNotNull { it.tasks.findByName("assembleJsPackage") } })
+}
+
+// Force evaluation of every subproject so the deprecation task below can
+// inspect their applied plugins. Only runs when the task is actually requested.
+if (gradle.startParameter.taskNames.any { it.endsWith("listNpmPackageNames") }) {
+    subprojects.forEach { evaluationDependsOn(it.path) }
+}
+
+tasks.register("listNpmPackageNames") {
+    group = "publishing"
+    description = "Write all @sphereon/idk-* npm package names this build publishes to build/npm-packages.txt"
+    notCompatibleWithConfigurationCache("Enumerates subprojects at execution time")
+    val outFile = layout.buildDirectory.file("npm-packages.txt")
+    outputs.file(outFile)
+    doLast {
+        val names = subprojects
+            .filter { it.plugins.hasPlugin("com.sphereon.gradle.plugin.npm-publication") }
+            .map { "@sphereon/idk-${it.name}" }
+            .sorted()
+        val f = outFile.get().asFile
+        f.parentFile.mkdirs()
+        f.writeText(names.joinToString(separator = "\n", postfix = "\n"))
+        logger.lifecycle("Wrote ${names.size} package name(s) to ${f.absolutePath}")
+    }
 }
 
 // =============================================================================

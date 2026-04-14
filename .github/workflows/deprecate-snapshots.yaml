@@ -1,0 +1,69 @@
+name: Deprecate Old npm Snapshots
+
+# Periodically marks @sphereon/idk-* snapshot versions older than the retention
+# window as deprecated on npmjs, so consumers see a warning when they install
+# them. npmjs only allows hard `npm unpublish` within 72h of publish, so this
+# is the long-term hygiene mechanism.
+on:
+  schedule:
+    # Sundays 03:00 UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: 'Snapshots older than this many days will be deprecated'
+        required: false
+        default: '30'
+      dry_run:
+        description: 'Only print what would be deprecated; do not call npm'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  deprecate:
+    name: Deprecate old snapshots
+    runs-on: linux-x64
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: chmod +x ./gradlew .github/scripts/deprecate-old-snapshots.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure jq is installed
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq jq
+          fi
+          jq --version
+
+      - name: List published npm packages
+        run: |
+          ./gradlew listNpmPackageNames
+          # The task writes its result to a file (Gradle/convention banner pollutes stdout).
+          cp build/npm-packages.txt packages.txt
+          echo "Discovered $(wc -l < packages.txt) candidate package(s):"
+          cat packages.txt
+
+      - name: Deprecate snapshots older than retention window
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGES_FILE: packages.txt
+          MAX_AGE_DAYS: ${{ inputs.max_age_days || '30' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: bash .github/scripts/deprecate-old-snapshots.sh
