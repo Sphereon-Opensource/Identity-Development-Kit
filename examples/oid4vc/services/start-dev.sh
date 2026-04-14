@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#
+# Start the IDK services environment for wallet testing (DEV MODE).
+#
+# Dev mode: builds fat JARs from the local IDK source tree, then builds and
+# starts Docker images from those JARs. Use this when iterating on IDK code.
+#
+# For end-users who just want to run published images from Docker Hub, use
+# ./start.sh instead.
+#
+# Usage:
+#   ./start-dev.sh                                          # Auto-detect LAN IP
+#   ./start-dev.sh https://my.ngrok.app                     # Pass URL as argument
+#   EXTERNAL_BASE_URL=http://myhost:8080 ./start-dev.sh     # Use env var
+#
+set -euo pipefail
+cd "$(dirname "$0")"
+
+SCRIPT_DIR="$(pwd)"
+# shellcheck source=lib/resolve-base-url.sh
+source "${SCRIPT_DIR}/lib/resolve-base-url.sh"
+# shellcheck source=lib/template-vcts.sh
+source "${SCRIPT_DIR}/lib/template-vcts.sh"
+# shellcheck source=lib/generate-keystores.sh
+source "${SCRIPT_DIR}/lib/generate-keystores.sh"
+
+resolve_external_base_url "${1:-}"
+
+IDK_ROOT="$(cd ../../.. && pwd)"
+IDK_VERSION="$(grep '^version=' "${IDK_ROOT}/gradle.properties" | cut -d= -f2)"
+echo "IDK_VERSION=${IDK_VERSION} (from ${IDK_ROOT}/gradle.properties)"
+echo "Dev mode: building from local IDK source at ${IDK_ROOT}"
+
+cat > .env <<EOF
+EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
+IDK_VERSION=${IDK_VERSION}
+EOF
+
+template_vct_files "${EXTERNAL_BASE_URL}"
+
+echo "Building fat JARs from ${IDK_ROOT}..."
+(cd "${IDK_ROOT}" && ./gradlew \
+    :services-oauth2-as-rest:buildFatJar \
+    :services-oid4vci-issuer-rest:buildFatJar \
+    :services-oid4vp-verifier-rest:buildFatJar \
+    :examples-oid4vc-webapp-server:buildFatJar \
+    --no-daemon --parallel \
+    -Dkotlin.mpp.enabledTargets=jvm \
+    -Dkotlin.native.ignoreDisabledTargets=true)
+
+mkdir -p jars
+cp "${IDK_ROOT}/services/oauth2-as/rest/build/libs/"*-all.jar jars/oauth2-as.jar
+cp "${IDK_ROOT}/services/oid4vci-issuer/rest/build/libs/"*-all.jar jars/oid4vci-issuer.jar
+cp "${IDK_ROOT}/services/oid4vp-verifier/rest/build/libs/"*-all.jar jars/oid4vp-verifier.jar
+cp "${IDK_ROOT}/examples/oid4vc/webapp/server/build/libs/"*-all.jar jars/webapp.jar
+
+generate_all_keystores
+
+echo ""
+echo "Starting IDK services environment..."
+echo "  Issuer identifier: ${EXTERNAL_BASE_URL}/oid4vci"
+echo "  Issuer metadata:   ${EXTERNAL_BASE_URL}/.well-known/openid-credential-issuer/oid4vci"
+echo "  AS issuer:         ${EXTERNAL_BASE_URL}/auth"
+echo "  AS discovery:      ${EXTERNAL_BASE_URL}/.well-known/oauth-authorization-server/auth"
+echo "  Login form:        ${EXTERNAL_BASE_URL}/auth/login"
+echo ""
+
+docker compose up -d --build
+
+echo ""
+echo "Services starting. Check health:"
+echo "  curl ${EXTERNAL_BASE_URL}/auth/health"

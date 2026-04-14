@@ -1,23 +1,24 @@
 name: Public CI
 
-# Runs on the public IDK repo only — full multiplatform build + npm/Maven
-# publish. Triggered by mirror pushes from the private repo to develop/main,
-# manual dispatch, and PRs opened directly on the public repo.
+# Runs on the public IDK repo only — single-job multiplatform build that, on
+# pushes to develop/main, also publishes to npm/Nexus in the same Gradle
+# invocation.
 #
-# This file is mirrored to the private repo too (it ships in the tree); the
-# top-level repository gate makes it a no-op there.
+# Why one job: Gradle's `publish` task pulls in compile/assemble for every
+# target, so multiplatform-build and publish are the same work. Splitting them
+# into separate jobs forces a fresh runner, cold Gradle daemon, KSP/Metro
+# re-init, and dependency re-resolution per job (≈5–10 min lost per boundary).
+# JVM tests already passed on the private repo before mirror, so we skip them
+# here entirely.
+#
+# This file is mirrored to the private repo too; the top-level repository gate
+# makes it a no-op there.
 
 on:
   push:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
-    inputs:
-      full_build:
-        description: 'Run full multiplatform build (not just JVM)'
-        required: false
-        default: true
-        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,12 +32,11 @@ env:
 #   push develop / push main      → ... → publish
 
 jobs:
-  # ─── JVM: every trigger (~5 min) ───
-  jvm:
-    name: JVM Build & Test
+  build:
+    name: Multiplatform Build${{ github.event_name == 'push' && ' & Publish' || '' }}
     if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit'
     runs-on: linux-x64
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - run: chmod +x ./gradlew
@@ -54,53 +54,7 @@ jobs:
             notifications
             build-cache-1
 
-      - name: Build & test (JVM only)
-        run: >-
-          ./gradlew build --build-cache
-          -Dkmp.targets=jvm
-          -x koverVerify
-          -x :lib-crypto-kms-provider-aws:jvmTest
-          -x :lib-crypto-kms-provider-azure:jvmTest
-          -x :lib-data-link-http-client:jvmTest
-
-      - name: Print test failures
-        if: failure()
-        run: |
-          find . -path "*/build/reports/tests/jvmTest/*.html" -name "index.html" \
-            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
-
-  # ─── Multiplatform: single runner, sequential targets, shared build cache ───
-  # Running on one runner means each target reuses commonMain metadata, KSP output,
-  # and dependency resolution from the JVM build. This avoids 10min cold starts per target.
-  multiplatform:
-    name: Multiplatform Build
-    if: >-
-      github.repository == 'Sphereon-Opensource/Identity-Development-Kit' &&
-      (github.event_name == 'pull_request' ||
-       github.ref == 'refs/heads/main' ||
-       github.ref == 'refs/heads/develop' ||
-       (github.event_name == 'workflow_dispatch' && inputs.full_build))
-    runs-on: linux-x64
-    timeout-minutes: 40
-    needs: jvm
-    steps:
-      - uses: actions/checkout@v4
-      - run: chmod +x ./gradlew
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: false
-          gradle-home-cache-includes: |
-            caches
-            notifications
-            build-cache-1
-
-      # ── Android ──
+      # ── Android SDK ──
       - name: Cache Android SDK
         id: android-sdk-cache
         uses: actions/cache@v4
@@ -126,12 +80,7 @@ jobs:
       - name: Set Android SDK location
         run: echo "sdk.dir=$HOME/android-sdk" > local.properties
 
-      - name: Build (Android)
-        run: >-
-          ./gradlew compileAndroidMain
-          --build-cache -Dkmp.targets=jvm,android
-
-      # ── JS ──
+      # ── JS / wasmJs caches ──
       - name: Cache Kotlin/JS store
         uses: actions/cache@v4
         with:
@@ -144,75 +93,33 @@ jobs:
       - name: Upgrade JS/wasmJs lock files
         run: ./gradlew kotlinUpgradePackageLock kotlinWasmUpgradePackageLock --stacktrace
 
-      - name: Build (JS)
+      # ── Single Gradle invocation: build + non-JVM tests + (on push) publish ──
+      # `check` runs every target's tests; we exclude JVM-side tests because
+      # they already passed on the private repo, but JS / wasmJs / Android / native
+      # tests run here — they exercise target-specific codegen and runtime
+      # behavior that the JVM tests can't cover.
+      # `publish` reaches every multiplatform `publishXxxPublicationToYyy` task
+      # and depends on assemble; combining `check` and `publish` in one command
+      # reuses the same Gradle daemon for compile, test, and publish.
+      - name: ${{ github.event_name == 'push' && 'Build, test & publish' || 'Build & test' }} (all targets, excl. jvmTest)
         run: >-
-          ./gradlew compileKotlinJs compileProductionLibraryKotlinJs
-          --build-cache -Dkmp.targets=jvm,js
-          -x jsTest -x jsBrowserTest -x jsNodeTest
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      # ── wasmJs ──
-      - name: Build (wasmJs)
-        run: >-
-          ./gradlew compileKotlinWasmJs
-          --build-cache -Dkmp.targets=jvm,wasmJs
-          -x assembleWasmJsPackage -x packWasmJsPackage
-
-      # ── Native (temporarily disabled — test setup needs Metro DI migration) ──
-      # - name: Cache Kotlin/Native distribution
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: ~/.konan
-      #     key: konan-${{ runner.os }}-${{ hashFiles('gradle.properties') }}
-      #     restore-keys: konan-${{ runner.os }}-
-      #
-      # - name: Build & test (native)
-      #   run: >-
-      #     ./gradlew compileKotlinLinuxX64 linuxX64Test
-      #     --build-cache -Dkmp.targets=jvm,native
-      #     -x :lib-data-store-blob-impl-fs:linuxX64Test
-
-      - name: Print test failures
-        if: failure()
-        run: |
-          find . -name "index.html" -path "*/build/reports/tests/*" \
-            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
-
-  # ─── Publish: after multiplatform passes (wasmJs is never published) ───
-  publish:
-    name: Publish
-    if: >-
-      github.repository == 'Sphereon-Opensource/Identity-Development-Kit' &&
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: linux-x64
-    timeout-minutes: 25
-    needs: multiplatform
-    steps:
-      - uses: actions/checkout@v4
-      - run: chmod +x ./gradlew
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: false
-          gradle-home-cache-includes: |
-            caches
-            notifications
-            build-cache-1
-
-      - name: Set Android SDK location
-        run: echo "sdk.dir=$HOME/android-sdk" > local.properties
-
-      - name: Publish
-        run: ./gradlew publish --build-cache
+          ./gradlew check
+          ${{ github.event_name == 'push' && 'publish' || '' }}
+          --build-cache
+          -Dkmp.targets=all
+          -x jvmTest
+          -x koverVerify
+          -x :lib-crypto-kms-provider-aws:test
+          -x :lib-crypto-kms-provider-azure:test
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Print failure context
+        if: failure()
+        run: |
+          find . -name "index.html" -path "*/build/reports/tests/*" \
+            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
+

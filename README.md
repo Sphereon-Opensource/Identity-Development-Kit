@@ -465,7 +465,7 @@ Output: `build/dokka/html/index.html`. The hosted Dokka build is also linked fro
 
 ## Related Projects
 
-### [Enterprise Development Kit (EDK)](https://docs.sphereon.com/edk)
+### [Enterprise Development Kit (EDK)](https://docs.sphereon.com/edk/guides/getting-started)
 
 Sphereon's proprietary product that extends the IDK with the layers required for production enterprise deployments. The IDK provides the identity primitives (cryptography, DIDs, verifiable credentials, SD-JWT, OID4VP, KMS, command/DI framework); the EDK adds:
 
@@ -503,6 +503,6 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for detai
 
 <p align="center">
   <a href="https://sphereon.com">Website</a> &nbsp;&bull;&nbsp;
-  <a href="https://docs.sphereon.com/idk">Documentation</a> &nbsp;&bull;&nbsp;
+  <a href="https://docs.sphereon.com/idk/introduction">Documentation</a> &nbsp;&bull;&nbsp;
   <a href="https://github.com/Sphereon-Opensource">GitHub</a>
 </p>

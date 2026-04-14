@@ -74,6 +74,60 @@
           "text_color": "#ffffff"
         }
       }
+    },
+    {
+      "locale": "fr-FR",
+      "name": "Identifiant personnel UE",
+      "description": "Justificatif d'identification personnelle pour les citoyens de l'UE",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "Union européenne"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "name": "欧盟个人身份证",
+      "description": "欧盟公民个人身份凭证",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "欧盟"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
+    },
+    {
+      "locale": "ja-JP",
+      "name": "EU個人識別情報",
+      "description": "EU市民向けの個人識別クレデンシャル",
+      "rendering": {
+        "simple": {
+          "logo": {
+            "uri": "EXTERNAL_BASE_URL/assets/eudiw-logo.png",
+            "alt_text": "欧州連合"
+          },
+          "background_image": {
+            "uri": "EXTERNAL_BASE_URL/assets/eu-background.jpg"
+          },
+          "background_color": "#003399",
+          "text_color": "#ffffff"
+        }
+      }
     }
   ],
   "claims": [
@@ -83,7 +137,10 @@
         { "locale": "en-US", "label": "Family Name", "description": "Last name" },
         { "locale": "de-DE", "label": "Nachname", "description": "Familienname" },
         { "locale": "es-ES", "label": "Apellido", "description": "Apellido del titular" },
-        { "locale": "nl-NL", "label": "Achternaam", "description": "Achternaam" }
+        { "locale": "nl-NL", "label": "Achternaam", "description": "Achternaam" },
+        { "locale": "fr-FR", "label": "Nom de famille", "description": "Nom" },
+        { "locale": "zh-CN", "label": "姓氏", "description": "姓" },
+        { "locale": "ja-JP", "label": "姓", "description": "苗字" }
       ],
       "mandatory": true
     },
@@ -93,7 +150,10 @@
         { "locale": "en-US", "label": "Given Name", "description": "First name" },
         { "locale": "de-DE", "label": "Vorname", "description": "Vorname" },
         { "locale": "es-ES", "label": "Nombre", "description": "Nombre de pila" },
-        { "locale": "nl-NL", "label": "Voornaam", "description": "Voornaam" }
+        { "locale": "nl-NL", "label": "Voornaam", "description": "Voornaam" },
+        { "locale": "fr-FR", "label": "Prénom", "description": "Prénom" },
+        { "locale": "zh-CN", "label": "名字", "description": "名" },
+        { "locale": "ja-JP", "label": "名", "description": "名前" }
       ],
       "mandatory": true
     },
@@ -103,7 +163,10 @@
         { "locale": "en-US", "label": "Date of Birth", "description": "Birth date" },
         { "locale": "de-DE", "label": "Geburtsdatum", "description": "Geburtsdatum" },
         { "locale": "es-ES", "label": "Fecha de Nacimiento", "description": "Fecha de nacimiento" },
-        { "locale": "nl-NL", "label": "Geboortedatum", "description": "Geboortedatum" }
+        { "locale": "nl-NL", "label": "Geboortedatum", "description": "Geboortedatum" },
+        { "locale": "fr-FR", "label": "Date de naissance", "description": "Date de naissance" },
+        { "locale": "zh-CN", "label": "出生日期", "description": "出生日期" },
+        { "locale": "ja-JP", "label": "生年月日", "description": "生年月日" }
       ],
       "sd": "always",
       "mandatory": true
@@ -114,7 +177,10 @@
         { "locale": "en-US", "label": "Age Over 18", "description": "Age attestation: 18 or older" },
         { "locale": "de-DE", "label": "Alter über 18", "description": "Altersnachweis: 18 oder älter" },
         { "locale": "es-ES", "label": "Mayor de 18", "description": "Verificación de edad: 18 o más" },
-        { "locale": "nl-NL", "label": "Ouder dan 18", "description": "Leeftijdsverificatie: 18 of ouder" }
+        { "locale": "nl-NL", "label": "Ouder dan 18", "description": "Leeftijdsverificatie: 18 of ouder" },
+        { "locale": "fr-FR", "label": "Plus de 18 ans", "description": "Attestation d'âge : 18 ans ou plus" },
+        { "locale": "zh-CN", "label": "年满18岁", "description": "年龄证明：18岁及以上" },
+        { "locale": "ja-JP", "label": "18歳以上", "description": "年齢証明：18歳以上" }
       ],
       "sd": "always"
     },
@@ -124,7 +190,10 @@
         { "locale": "en-US", "label": "Nationality", "description": "Country of citizenship" },
         { "locale": "de-DE", "label": "Staatsangehörigkeit", "description": "Land der Staatsangehörigkeit" },
         { "locale": "es-ES", "label": "Nacionalidad", "description": "País de ciudadanía" },
-        { "locale": "nl-NL", "label": "Nationaliteit", "description": "Land van nationaliteit" }
+        { "locale": "nl-NL", "label": "Nationaliteit", "description": "Land van nationaliteit" },
+        { "locale": "fr-FR", "label": "Nationalité", "description": "Pays de citoyenneté" },
+        { "locale": "zh-CN", "label": "国籍", "description": "公民身份国家" },
+        { "locale": "ja-JP", "label": "国籍", "description": "市民権を有する国" }
       ],
       "sd": "always",
       "mandatory": true
@@ -135,7 +204,10 @@
         { "locale": "en-US", "label": "Country of Residence", "description": "Country of residence" },
         { "locale": "de-DE", "label": "Wohnsitzland", "description": "Land des Wohnsitzes" },
         { "locale": "es-ES", "label": "País de Residencia", "description": "País de residencia" },
-        { "locale": "nl-NL", "label": "Woonland", "description": "Land van woonplaats" }
+        { "locale": "nl-NL", "label": "Woonland", "description": "Land van woonplaats" },
+        { "locale": "fr-FR", "label": "Pays de résidence", "description": "Pays de résidence" },
+        { "locale": "zh-CN", "label": "居住国家", "description": "居住国家" },
+        { "locale": "ja-JP", "label": "居住国", "description": "居住国" }
       ],
       "sd": "always"
     },
@@ -145,7 +217,10 @@
         { "locale": "en-US", "label": "City", "description": "City of residence" },
         { "locale": "de-DE", "label": "Stadt", "description": "Wohnort" },
         { "locale": "es-ES", "label": "Ciudad", "description": "Ciudad de residencia" },
-        { "locale": "nl-NL", "label": "Woonplaats", "description": "Woonplaats" }
+        { "locale": "nl-NL", "label": "Woonplaats", "description": "Woonplaats" },
+        { "locale": "fr-FR", "label": "Ville", "description": "Ville de résidence" },
+        { "locale": "zh-CN", "label": "城市", "description": "居住城市" },
+        { "locale": "ja-JP", "label": "市区町村", "description": "居住市区町村" }
       ],
       "sd": "always"
     },
@@ -155,7 +230,10 @@
         { "locale": "en-US", "label": "Postal Code", "description": "Postal code" },
         { "locale": "de-DE", "label": "Postleitzahl", "description": "Postleitzahl" },
         { "locale": "es-ES", "label": "Código Postal", "description": "Código postal" },
-        { "locale": "nl-NL", "label": "Postcode", "description": "Postcode" }
+        { "locale": "nl-NL", "label": "Postcode", "description": "Postcode" },
+        { "locale": "fr-FR", "label": "Code postal", "description": "Code postal" },
+        { "locale": "zh-CN", "label": "邮政编码", "description": "邮政编码" },
+        { "locale": "ja-JP", "label": "郵便番号", "description": "郵便番号" }
       ],
       "sd": "always"
     },
@@ -165,7 +243,10 @@
         { "locale": "en-US", "label": "Street Address", "description": "Street and number" },
         { "locale": "de-DE", "label": "Straße", "description": "Straße und Hausnummer" },
         { "locale": "es-ES", "label": "Dirección", "description": "Calle y número" },
-        { "locale": "nl-NL", "label": "Straat", "description": "Straat en huisnummer" }
+        { "locale": "nl-NL", "label": "Straat", "description": "Straat en huisnummer" },
+        { "locale": "fr-FR", "label": "Adresse", "description": "Rue et numéro" },
+        { "locale": "zh-CN", "label": "街道地址", "description": "街道和门牌号" },
+        { "locale": "ja-JP", "label": "住所", "description": "番地" }
       ],
       "sd": "always"
     },
@@ -175,7 +256,10 @@
         { "locale": "en-US", "label": "Issuing Authority", "description": "Authority that issued the credential" },
         { "locale": "de-DE", "label": "Ausstellende Behörde", "description": "Ausstellende Behörde" },
         { "locale": "es-ES", "label": "Autoridad Emisora", "description": "Autoridad que emitió la credencial" },
-        { "locale": "nl-NL", "label": "Uitgevende Instantie", "description": "Instantie die het bewijs heeft uitgegeven" }
+        { "locale": "nl-NL", "label": "Uitgevende Instantie", "description": "Instantie die het bewijs heeft uitgegeven" },
+        { "locale": "fr-FR", "label": "Autorité émettrice", "description": "Autorité ayant délivré le justificatif" },
+        { "locale": "zh-CN", "label": "签发机构", "description": "签发该凭证的机构" },
+        { "locale": "ja-JP", "label": "発行機関", "description": "クレデンシャルを発行した機関" }
       ],
       "sd": "always"
     },
@@ -185,7 +269,10 @@
         { "locale": "en-US", "label": "Issuing Country", "description": "Country of issuance" },
         { "locale": "de-DE", "label": "Ausstellungsland", "description": "Land der Ausstellung" },
         { "locale": "es-ES", "label": "País Emisor", "description": "País de emisión" },
-        { "locale": "nl-NL", "label": "Uitgevend Land", "description": "Land van uitgifte" }
+        { "locale": "nl-NL", "label": "Uitgevend Land", "description": "Land van uitgifte" },
+        { "locale": "fr-FR", "label": "Pays émetteur", "description": "Pays d'émission" },
+        { "locale": "zh-CN", "label": "签发国家", "description": "签发国家" },
+        { "locale": "ja-JP", "label": "発行国", "description": "発行国" }
       ],
       "mandatory": true
     },
@@ -195,7 +282,10 @@
         { "locale": "en-US", "label": "Document Number", "description": "ID document number" },
         { "locale": "de-DE", "label": "Dokumentennummer", "description": "Ausweisnummer" },
         { "locale": "es-ES", "label": "Número de Documento", "description": "Número de documento de identidad" },
-        { "locale": "nl-NL", "label": "Documentnummer", "description": "Documentnummer" }
+        { "locale": "nl-NL", "label": "Documentnummer", "description": "Documentnummer" },
+        { "locale": "fr-FR", "label": "Numéro de document", "description": "Numéro du document d'identité" },
+        { "locale": "zh-CN", "label": "证件号码", "description": "身份证件号码" },
+        { "locale": "ja-JP", "label": "書類番号", "description": "身分証明書番号" }
       ],
       "sd": "always"
     },
@@ -205,7 +295,10 @@
         { "locale": "en-US", "label": "Gender", "description": "Gender" },
         { "locale": "de-DE", "label": "Geschlecht", "description": "Geschlecht" },
         { "locale": "es-ES", "label": "Género", "description": "Género" },
-        { "locale": "nl-NL", "label": "Geslacht", "description": "Geslacht" }
+        { "locale": "nl-NL", "label": "Geslacht", "description": "Geslacht" },
+        { "locale": "fr-FR", "label": "Genre", "description": "Genre" },
+        { "locale": "zh-CN", "label": "性别", "description": "性别" },
+        { "locale": "ja-JP", "label": "性別", "description": "性別" }
       ],
       "sd": "always"
     },
@@ -215,7 +308,10 @@
         { "locale": "en-US", "label": "Place of Birth", "description": "Place of birth" },
         { "locale": "de-DE", "label": "Geburtsort", "description": "Geburtsort" },
         { "locale": "es-ES", "label": "Lugar de Nacimiento", "description": "Lugar de nacimiento" },
-        { "locale": "nl-NL", "label": "Geboorteplaats", "description": "Geboorteplaats" }
+        { "locale": "nl-NL", "label": "Geboorteplaats", "description": "Geboorteplaats" },
+        { "locale": "fr-FR", "label": "Lieu de naissance", "description": "Lieu de naissance" },
+        { "locale": "zh-CN", "label": "出生地", "description": "出生地点" },
+        { "locale": "ja-JP", "label": "出生地", "description": "出生地" }
       ],
       "sd": "always"
     }

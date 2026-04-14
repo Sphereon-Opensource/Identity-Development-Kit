@@ -8,7 +8,7 @@ Local development setup for testing OID4VCI credential issuance and OID4VP crede
 |---------|---------------|-------------|
 | **Caddy** | 8080 (exposed) | Reverse proxy — single entry point for all services |
 | **OAuth2 AS** | 8080 | Authorization Server with built-in test login |
-| **OID4VCI Issuer** | 8080 | Credential issuer with SD-JWT TestCredential |
+| **OID4VCI Issuer** | 8080 | Credential issuer with SD-JWT (`TestCredential`, `EuPid`) and mdoc (`AgeOver18`) |
 | **OID4VP Verifier** | 8080 | Verifier for credential presentations |
 
 All services are accessed through Caddy on a single port (default `8080`). Caddy routes by path:
@@ -27,29 +27,66 @@ Well-known metadata discovery:
 
 ## Quick Start
 
-**Linux / macOS:**
+Two entrypoints are provided. Pick the one that matches your situation:
+
+| Script | Purpose | Requires IDK source? | Builds images? | Pulls from Docker Hub? |
+|---|---|---|---|---|
+| `start.sh` / `start.bat` | Run published `sphereon/idk-*` images | no | no | yes (`docker compose pull`) |
+| `start-dev.sh` / `start-dev.bat` | Iterate on local IDK source | yes | yes (via `docker compose up --build`) | no |
+| `build-images.sh` / `.bat` | Produce release-candidate images locally | yes | yes (tagged version + latest + git sha) | no |
+| `publish-images.sh` / `.bat` | Push release images to a Docker registry | yes | pushes pre-built tags | push |
+
+**End-users / demos (published images):**
+
 ```bash
-# Auto-detect LAN IP and start
-./start.sh
-
-# Or pass external URL as argument (e.g. ngrok)
-./start.sh https://my.ngrok.app
-
-# Or use env var
+./start.sh                                   # Linux / macOS, auto-detect LAN IP
+./start.sh https://my.ngrok.app              # Pass external URL
+IDK_VERSION=0.24.0 ./start.sh                # Pin a specific release
 EXTERNAL_BASE_URL=http://192.168.1.100:8080 ./start.sh
 ```
-
-**Windows:**
 ```cmd
-REM Auto-detect LAN IP and start
-start.bat
-
-REM Or pass external URL as argument (e.g. ngrok)
+start.bat                                    REM Windows
 start.bat https://my.ngrok.app
-
-REM Or use env var
-set EXTERNAL_BASE_URL=http://192.168.1.100:8080 && start.bat
+set IDK_VERSION=0.24.0 && start.bat
 ```
+
+**Contributors iterating on IDK source (local build):**
+
+```bash
+./start-dev.sh
+./start-dev.sh https://my.ngrok.app
+```
+```cmd
+start-dev.bat
+```
+
+### Versioning
+
+Docker image tags track IDK's own version from `vdx/edk/idk/gradle.properties` (`version=...`). No manual version string duplication. A release of IDK becomes an image release of the four services `sphereon/idk-oauth2-as`, `sphereon/idk-oid4vci-issuer`, `sphereon/idk-oid4vp-verifier`, `sphereon/idk-oid4vc-webapp`.
+
+Version resolution in `start.sh`:
+1. `IDK_VERSION` env var (highest priority)
+2. `vdx/edk/idk/gradle.properties` `version=` field, if the IDK source is checked out
+3. Fallback: `latest`
+
+### Publishing images
+
+Operators push new release images like this:
+
+```bash
+docker login docker.io
+
+# Release build (refuses if tree is dirty or version is *-SNAPSHOT)
+./publish-images.sh
+
+# Internal / preview push of a SNAPSHOT
+./publish-images.sh --allow-snapshot
+
+# Override the registry (default: sphereon on docker.io)
+REGISTRY=ghcr.io/sphereon ./publish-images.sh
+```
+
+`:latest` is only pushed for non-SNAPSHOT releases to keep that tag safe. Per-version tags and the git-SHA tag are always pushed.
 
 Verify:
 ```bash
@@ -90,28 +127,28 @@ The OAuth2 AS has a built-in test login at `/login`:
 
 ### Credential Configuration
 
-The issuer is pre-configured with a `TestCredential` (SD-JWT VC):
+The issuer ships three pre-configured credential types (see `config/oid4vci-issuer.yml`, `credential-configuration-ids: TestCredential,EuPid,AgeOver18`):
 
-| Property | Value |
-|----------|-------|
-| Configuration ID | `TestCredential` |
-| Format | `vc+sd-jwt` |
-| VCT | `${EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential` |
-| Claims | `given_name`, `family_name`, `email` (selectively disclosable) |
-| Signing Algorithm | ES256 |
-| Binding Methods | `jwk`, `did:jwk`, `did:key` |
-| Proof Types | JWT (ES256) |
+| Configuration ID | Format | VCT / Doctype | Signing Key Alias | Purpose |
+|---|---|---|---|---|
+| `TestCredential` | `dc+sd-jwt` | `${EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential` | `TestCredential` | Simple demo SD-JWT with `given_name`, `family_name`, `email` |
+| `EuPid` | `dc+sd-jwt` | `${EXTERNAL_BASE_URL}/oid4vci/vct/EuPid` | `PID` | EU Personal ID (EUDI ARF) with ~14 claims |
+| `AgeOver18` | `mso_mdoc` | doctype `eu.europa.ec.av.1` | `AgeOver18` | ISO 18013-5 mdoc age attestation |
 
-To modify: edit `config/oid4vci-issuer.yaml`.
+To modify: edit `config/oid4vci-issuer.yml`.
 
 #### VCT Type Metadata
 
 Each SD-JWT credential type has a VCT (Verifiable Credential Type) URL that points to a type metadata document describing the credential's claims, display properties, and rendering. Per the SD-JWT VC spec (draft-ietf-oauth-sd-jwt-vc), wallets resolve this URL to get credential display information.
 
-In this demo, VCT metadata is served as static JSON files via Caddy at `/oid4vci/vct/{type}`. The `start.sh` script templates the `vct` field with the actual `EXTERNAL_BASE_URL` before startup.
+In this demo, VCT metadata is served as static JSON files via Caddy at `/oid4vci/vct/{type}`. Both `start.sh` and `start-dev.sh` template the `vct` field with the actual `EXTERNAL_BASE_URL` before startup (shared helper: `lib/template-vcts.sh` / `lib/template-vcts.ps1`).
 
-Source files: `vct/TestCredential.json`
-Resolved files: `vct/resolved/TestCredential.json` (generated by start.sh)
+- Source files: `vct/TestCredential.json`, `vct/EuPid.json`
+- Resolved files: `vct/resolved/*.json` (generated on every start)
+
+Included display locales per type (top-level `display` and per-claim `display`):
+
+`en-US`, `de-DE`, `es-ES`, `nl-NL`, `fr-FR`, `zh-CN`, `ja-JP`
 
 In production, VCT metadata is hosted through the blob store service.
 
@@ -119,55 +156,44 @@ In production, VCT metadata is hosted through the blob store service.
 
 To add a new credential type:
 
-1. Create a VCT metadata file `vct/MyNewCredential.json` (see `vct/TestCredential.json` as template)
-2. Add the credential config in `config/oid4vci-issuer.yaml`:
+1. Create a VCT metadata file `vct/MyNewCredential.json` (see `vct/TestCredential.json` as template). Include the display locales you want wallets to render — wallets pick the best match against the user's preferred locale.
+2. Add the credential config in `config/oid4vci-issuer.yml`. Real-world snippet from the shipped config (the `"[Id]"` bracket form is how map keys are declared):
 
 ```yaml
 oid4vci:
   issuer:
-    credentialConfigurationIds: TestCredential,MyNewCredential
+    credential-configuration-ids: TestCredential,EuPid,AgeOver18,MyNewCredential
     credentials:
-      MyNewCredential:
+      "[MyNewCredential]":
         format: "dc+sd-jwt"
         vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/MyNewCredential"
-        scope: my_credential
-        signingAlgorithms: ES256
-        bindingMethods: jwk,did:jwk,did:key
-        proofTypes:
-          jwt:
-            signingAlgorithms: ES256
-        claims:
-          name:
-            mandatory: true
-          age:
-            mandatory: false
-        display:
-          name: My Credential
-          locale: en-US
+        signing-key-alias: MyNewCredential
 ```
+
+3. If you need a dedicated signing key, add its alias to `generate_keystore "oid4vci-issuer" ...` in `lib/generate-keystores.sh` (and the `.ps1` equivalent).
 
 ### OAuth2 Authorization Server
 
-Configuration in `config/oauth2-as.yaml`:
+Configuration in `config/oauth2-as.yml`. Live values from the shipped config:
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `oauth2.servers.default.mode` | `HOSTED` | AS mode (`HOSTED` = embedded) |
 | `oauth2.servers.default.oidc` | `SUPPORTED` | OIDC support (`DISABLED`, `SUPPORTED`, `REQUIRED`) |
 | `oauth2.servers.default.pkce` | `REQUIRED` | PKCE policy (`DISABLED`, `SUPPORTED`, `REQUIRED`) |
-| `oauth2.servers.default.tokenFormat` | `JWT` | Token format (`JWT`, `OPAQUE`) |
-| `oauth2.servers.default.accessTokenLifetimeSeconds` | `3600` | Access token TTL |
-| `oauth2.servers.default.authorizationCodeLifetimeSeconds` | `600` | Auth code TTL |
-| `oauth2.servers.default.grantTypesEnabled` | auth_code, pre-auth | Enabled grant types |
+| `oauth2.servers.default.token-format` | `JWT` | Token format (`JWT`, `OPAQUE`) |
+| `oauth2.servers.default.access-token-lifetime-seconds` | `3600` | Access token TTL |
+| `oauth2.servers.default.authorization-code-lifetime-seconds` | `600` | Auth code TTL |
+| `oauth2.servers.default.grant-types-enabled` | `authorization_code`, `urn:ietf:params:oauth:grant-type:pre-authorized_code`, `client_credentials`, `refresh_token` | Enabled grant types |
+| `oauth2.servers.default.public-clients.allow-any` | `true` | Accept any public client (demo only) |
+| `oauth2.servers.default.internal-clients.issuer.client-id` | `issuer-service` | Internal client used by the issuer to call the AS |
 
-Additional grant types that can be enabled:
-- `client_credentials` — service-to-service
-- `refresh_token` — token refresh
+Additional grant type that can be enabled:
 - `urn:ietf:params:oauth:grant-type:token-exchange` — token exchange (RFC 8693)
 
 ### OID4VP Verifier
 
-Configuration in `config/oid4vp-verifier.yaml`. The verifier's DCQL query is specified per-request via the REST API, not in static config.
+Configuration in `config/oid4vp-verifier.yml`. The verifier's DCQL query is specified per-request via the REST API, not in static config.
 
 ### Service-Level Overrides
 
@@ -241,8 +267,14 @@ The collection has three folders:
 - The login form is at `/auth/login` — make sure Caddy routes `/auth/*` to the OAuth2 AS
 - Credentials: `testuser` / `testpass`
 
-**Rebuild after code changes:**
+**Rebuild after code changes (dev):**
 ```bash
 docker compose down
-docker compose up -d --build
+./start-dev.sh     # rebuilds fat JARs + images, then starts
+```
+
+**Switch between dev and published-image flows:**
+```bash
+docker compose down
+./start.sh         # uses sphereon/idk-*:${IDK_VERSION} from Docker Hub
 ```

@@ -21,12 +21,16 @@ services:
       - idk_e2e_network
 
   webapp:
-    image: sphereon/idk-oid4vc-webapp:latest
+    image: sphereon/idk-oid4vc-webapp:${IDK_VERSION:-latest}
+    pull_policy: missing
     build:
       context: .
       dockerfile: Dockerfile.service
       args:
         JAR_FILE: jars/webapp.jar
+      tags:
+        - sphereon/idk-oid4vc-webapp:${IDK_VERSION:-latest}
+        - sphereon/idk-oid4vc-webapp:latest
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - ISSUER_URL=http://oid4vci-issuer:8080
@@ -41,12 +45,16 @@ services:
       - idk_e2e_network
 
   oauth2-as:
-    image: sphereon/idk-oauth2-as:latest
+    image: sphereon/idk-oauth2-as:${IDK_VERSION:-latest}
+    pull_policy: missing
     build:
       context: .
       dockerfile: Dockerfile.service
       args:
         JAR_FILE: jars/oauth2-as.jar
+      tags:
+        - sphereon/idk-oauth2-as:${IDK_VERSION:-latest}
+        - sphereon/idk-oauth2-as:latest
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
@@ -66,12 +74,16 @@ services:
       - idk_e2e_network
 
   oid4vci-issuer:
-    image: sphereon/idk-oid4vci-issuer:latest
+    image: sphereon/idk-oid4vci-issuer:${IDK_VERSION:-latest}
+    pull_policy: missing
     build:
       context: .
       dockerfile: Dockerfile.service
       args:
         JAR_FILE: jars/oid4vci-issuer.jar
+      tags:
+        - sphereon/idk-oid4vci-issuer:${IDK_VERSION:-latest}
+        - sphereon/idk-oid4vci-issuer:latest
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - OAUTH2_AS_INTERNAL_URL=http://oauth2-as:8080
@@ -93,12 +105,16 @@ services:
       - idk_e2e_network
 
   oid4vp-verifier:
-    image: sphereon/idk-oid4vp-verifier:latest
+    image: sphereon/idk-oid4vp-verifier:${IDK_VERSION:-latest}
+    pull_policy: missing
     build:
       context: .
       dockerfile: Dockerfile.service
       args:
         JAR_FILE: jars/oid4vp-verifier.jar
+      tags:
+        - sphereon/idk-oid4vp-verifier:${IDK_VERSION:-latest}
+        - sphereon/idk-oid4vp-verifier:latest
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
