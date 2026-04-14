@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.dcql
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * DCQL Error Types
@@ -224,6 +225,7 @@ sealed interface DcqlError : IdkErrorType {
  *
  * @see com.sphereon.oauth2.common.validation.ValidationErrorDetail
  */
+@JsExportCompat
 data class ValidationErrorDetail(
     val path: String,
     val message: String,

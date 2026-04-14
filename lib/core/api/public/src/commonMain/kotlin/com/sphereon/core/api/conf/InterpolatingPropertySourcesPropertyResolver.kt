@@ -18,6 +18,7 @@
 package com.sphereon.core.api.conf
 
 import com.sphereon.core.api.coroutines.runBlockingCompat
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.reflect.KClass
@@ -35,6 +36,7 @@ import kotlin.reflect.KClass
  * completes without actual suspension (true for all placeholder types except
  * secret references backed by async providers).
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InterpolatingPropertySourcesPropertyResolver", exact = true)
 class InterpolatingPropertySourcesPropertyResolver(

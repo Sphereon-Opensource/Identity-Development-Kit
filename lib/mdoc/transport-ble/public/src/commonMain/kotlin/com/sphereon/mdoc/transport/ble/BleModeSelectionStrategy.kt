@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -84,6 +85,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleModeSelectionStrategy", exact = true)
+@JsExportCompat
 enum class BleModeSelectionStrategy {
     /**
      * Prefer central client mode (default - most reliable).

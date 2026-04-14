@@ -16,27 +16,32 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.matching.crypto.EncryptedPayload
 import com.sphereon.identity.matching.model.IdentifierType
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
+@JsExportCompat
 @Serializable
-data class ReconciliationSession(
-    val id: String,
-    val tenantId: String,
-    val status: ReconciliationSessionStatus,
-    val identifierHash: String,
-    val identifierType: IdentifierType,
-    val providerId: String,
-    val authorizationUrl: String? = null,
-    val state: String? = null,
-    val nonce: String? = null,
-    val codeVerifier: String? = null,
-    val redirectUri: String? = null,
-    val tokenEndpoint: String? = null,
-    val encryptedIdentity: EncryptedPayload? = null,
-    val errorMessage: String? = null,
-    val createdAt: Instant,
-    val expiresAt: Instant,
-)
+data class ReconciliationSession
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val tenantId: String,
+        val status: ReconciliationSessionStatus,
+        val identifierHash: String,
+        val identifierType: IdentifierType,
+        val providerId: String,
+        val authorizationUrl: String? = null,
+        val state: String? = null,
+        val nonce: String? = null,
+        val codeVerifier: String? = null,
+        val redirectUri: String? = null,
+        val tokenEndpoint: String? = null,
+        val encryptedIdentity: EncryptedPayload? = null,
+        val errorMessage: String? = null,
+        val createdAt: Instant,
+        val expiresAt: Instant,
+    )

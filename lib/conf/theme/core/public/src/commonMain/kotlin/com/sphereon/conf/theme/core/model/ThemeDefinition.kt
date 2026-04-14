@@ -16,7 +16,9 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 /**
@@ -34,16 +36,19 @@ import kotlin.time.Instant
  * @property createdAt When this definition was created
  * @property updatedAt When this definition was last updated
  */
+@JsExportCompat
 @Serializable
-data class ThemeDefinition(
-    val id: String,
-    val name: String,
-    val variant: ThemeVariant? = null,
-    val parentId: String? = null,
-    val scope: ThemeScope = ThemeScope.APP,
-    val appId: String? = null,
-    val tokens: List<ThemeToken> = emptyList(),
-    val version: Long = 1,
-    val createdAt: Instant? = null,
-    val updatedAt: Instant? = null,
-)
+data class ThemeDefinition
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val name: String,
+        val variant: ThemeVariant? = null,
+        val parentId: String? = null,
+        val scope: ThemeScope = ThemeScope.APP,
+        val appId: String? = null,
+        val tokens: List<ThemeToken> = emptyList(),
+        val version: Long = 1,
+        val createdAt: Instant? = null,
+        val updatedAt: Instant? = null,
+    )

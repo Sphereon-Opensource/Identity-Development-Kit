@@ -79,6 +79,7 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResourceServerService", exact = true)
+@JsExportCompat
 interface ResourceServerService {
     /**
      * Command: Validate Access Token

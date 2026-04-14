@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.TenantPathMode
 import com.sphereon.core.api.http.describe.TenantResolutionPriority
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * DSL marker for Universal HTTP Config builders.
@@ -30,6 +31,7 @@ annotation class UniversalHttpConfigDsl
 /**
  * Builder for [UniversalHttpDefaults].
  */
+@JsExportCompat
 @UniversalHttpConfigDsl
 class UniversalHttpDefaultsBuilder {
     /**
@@ -76,6 +78,7 @@ class UniversalHttpDefaultsBuilder {
 /**
  * Builder for [UniversalHttpAdapterOverride].
  */
+@JsExportCompat
 @UniversalHttpConfigDsl
 class UniversalHttpAdapterOverrideBuilder {
     /**
@@ -122,6 +125,7 @@ class UniversalHttpAdapterOverrideBuilder {
 /**
  * Builder for [UniversalHttpConfig].
  */
+@JsExportCompat
 @UniversalHttpConfigDsl
 class UniversalHttpConfigBuilder {
     private var defaultsBuilder: UniversalHttpDefaultsBuilder = UniversalHttpDefaultsBuilder()

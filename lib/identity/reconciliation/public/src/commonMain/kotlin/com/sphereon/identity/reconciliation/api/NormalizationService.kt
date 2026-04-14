@@ -16,11 +16,16 @@
 
 package com.sphereon.identity.reconciliation.api
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
+
+@JsExportCompat
 interface NormalizationService {
     fun normalize(
         value: String,
         profileName: String,
     ): String
 
+    @JsExportIgnoreCompat
     fun supportedProfiles(): Set<String>
 }

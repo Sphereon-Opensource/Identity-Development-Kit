@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
@@ -30,6 +31,8 @@ import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
  * @property tokenTypeHint Optional hint about the type of token
  * @property additionalParameters Additional parameters to include in the request
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class IntrospectTokenArgs(
     val authorizationServerMetadata: AuthorizationServerMetadata,
     val token: String,
@@ -45,6 +48,7 @@ data class IntrospectTokenArgs(
  * The introspection endpoint allows a resource server to query the
  * authorization server about the state and metadata of a token.
  */
+@JsExportCompat
 interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenIntrospectionResponse> {
     override val commandId: String get() = COMMAND_ID
 

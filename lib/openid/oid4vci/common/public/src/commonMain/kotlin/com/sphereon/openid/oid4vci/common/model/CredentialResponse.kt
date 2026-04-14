@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vci.common.serializer.CredentialResponseSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -26,6 +27,7 @@ import kotlinx.serialization.json.JsonElement
  *
  * Each item in the `credentials` array wraps a single credential.
  */
+@JsExportCompat
 @Serializable
 data class CredentialResponseItem(
     val credential: JsonElement,
@@ -38,6 +40,7 @@ data class CredentialResponseItem(
  * 1.1: [credentials] is an array of [CredentialResponseItem], each containing a `credential` field.
  * [interval] is REQUIRED when [transactionId] is present (1.1 Section 9.3).
  */
+@JsExportCompat
 @Serializable(with = CredentialResponseSerializer::class)
 data class CredentialResponse(
     val credential: JsonElement? = null,

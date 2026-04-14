@@ -18,10 +18,12 @@
 package com.sphereon.data.link.ble.model
 
 import com.sphereon.core.api.session.Command
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.BleError
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleCommand", exact = true)
 interface BleCommand<Arg : Any, BleResp : Any> : Command<Arg, BleResp, BleError>

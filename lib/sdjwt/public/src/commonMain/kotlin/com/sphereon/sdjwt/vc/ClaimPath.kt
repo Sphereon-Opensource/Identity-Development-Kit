@@ -16,6 +16,7 @@
 
 package com.sphereon.sdjwt.vc
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.Disclosure
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -31,6 +32,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlin.jvm.JvmStatic
 
 /*
  * Claim path utilities for SD-JWT-VC
@@ -49,6 +51,7 @@ import kotlinx.serialization.json.put
  *
  * @property segments Path segments (property names or null for array indices)
  */
+@JsExportCompat
 data class ClaimPath(
     val segments: List<String?>,
 ) {
@@ -81,6 +84,7 @@ data class ClaimPath(
         /**
          * Create path from string segments
          */
+        @JvmStatic
         fun of(vararg segments: String?): ClaimPath = ClaimPath(segments.toList())
 
         /**

@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -31,6 +32,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobStore", exact = true)
+@JsExportCompat
 interface BlobStore {
     val storeId: String
 

@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob.command
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.ListOptions
@@ -26,6 +27,7 @@ import kotlinx.serialization.Serializable
 // -- Standard blob operations --
 
 @Serializable
+@JsExportCompat
 data class BlobPutInput(
     val target: BlobInfo,
     val dataBase64: String,
@@ -33,33 +35,39 @@ data class BlobPutInput(
 )
 
 @Serializable
+@JsExportCompat
 data class BlobGetInput(
     val info: BlobInfo,
 )
 
 @Serializable
+@JsExportCompat
 data class BlobDeleteInput(
     val info: BlobInfo,
 )
 
 @Serializable
+@JsExportCompat
 data class BlobStatInput(
     val info: BlobInfo,
 )
 
 @Serializable
+@JsExportCompat
 data class BlobListInput(
     val info: BlobInfo,
     val options: ListOptions = ListOptions.DEFAULT,
 )
 
 @Serializable
+@JsExportCompat
 data class BlobCopyInput(
     val source: BlobInfo,
     val destination: BlobInfo,
 )
 
 @Serializable
+@JsExportCompat
 data class BlobMoveInput(
     val source: BlobInfo,
     val destination: BlobInfo,
@@ -68,6 +76,7 @@ data class BlobMoveInput(
 // -- CAS operations --
 
 @Serializable
+@JsExportCompat
 data class CasStoreInput(
     val info: BlobInfo,
     val dataBase64: String,
@@ -75,12 +84,14 @@ data class CasStoreInput(
 )
 
 @Serializable
+@JsExportCompat
 data class CasGetInput(
     val info: BlobInfo,
     val addressMultibase: String,
 )
 
 @Serializable
+@JsExportCompat
 data class CasVerifyInput(
     val info: BlobInfo,
     val addressMultibase: String,
@@ -89,6 +100,7 @@ data class CasVerifyInput(
 // -- Metadata search --
 
 @Serializable
+@JsExportCompat
 data class MetadataSearchInput(
     val info: BlobInfo,
     val query: MetadataSearchQuery,
@@ -97,6 +109,7 @@ data class MetadataSearchInput(
 // -- Serializable output wrappers --
 
 @Serializable
+@JsExportCompat
 data class BlobGetOutput(
     val dataBase64: String,
     val path: String,
@@ -106,11 +119,13 @@ data class BlobGetOutput(
 )
 
 @Serializable
+@JsExportCompat
 data class BlobDeleteOutput(
     val deleted: Boolean,
 )
 
 @Serializable
+@JsExportCompat
 data class CasVerifyOutput(
     val valid: Boolean,
 )

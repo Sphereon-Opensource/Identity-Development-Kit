@@ -19,11 +19,13 @@
 
 package com.sphereon.data.store.party.result
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.CorrelationIdentifier
 import com.sphereon.data.store.party.model.Identity
 import com.sphereon.data.store.party.model.IdentityRole
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -46,97 +48,100 @@ import kotlin.uuid.Uuid
  * )
  * ```
  */
+@JsExportCompat
 @Serializable
-data class IdentityResult(
-    /** Party ID - serves as the primary key */
-    @SerialName("partyId")
-    val partyId: Uuid,
-    /** Tenant this identity belongs to */
-    @SerialName("tenantId")
-    val tenantId: String,
-    /** The role of this identity in the credential ecosystem */
-    @SerialName("identityRole")
-    val identityRole: IdentityRole,
-    /** Whether this is the default identity for the owning party */
-    @SerialName("isDefault")
-    val isDefault: Boolean,
-    /** When the identity was created */
-    @SerialName("createdAt")
-    val createdAt: Instant,
-    /** Who created the identity (party ID) */
-    @SerialName("createdById")
-    val createdById: Uuid? = null,
-    /** When the identity was last updated */
-    @SerialName("updatedAt")
-    val updatedAt: Instant,
-    /** Who last updated the identity (party ID) */
-    @SerialName("updatedById")
-    val updatedById: Uuid? = null,
-    /** When the identity was soft-deleted (null if not deleted) */
-    @SerialName("deletedAt")
-    val deletedAt: Instant? = null,
-    /** Who deleted the identity (party ID) */
-    @SerialName("deletedById")
-    val deletedById: Uuid? = null,
-    /**
-     * Correlation identifiers associated with this identity.
-     * Populated when [IdentityFetchOptions.includeCorrelationIdentifiers] is true.
-     * Null means not fetched (vs empty list which means no identifiers exist).
-     */
-    @SerialName("correlationIdentifiers")
-    val correlationIdentifiers: List<CorrelationIdentifierResult>? = null,
-) {
-    companion object {
+data class IdentityResult
+    @JvmOverloads
+    constructor(
+        /** Party ID - serves as the primary key */
+        @SerialName("partyId")
+        val partyId: Uuid,
+        /** Tenant this identity belongs to */
+        @SerialName("tenantId")
+        val tenantId: String,
+        /** The role of this identity in the credential ecosystem */
+        @SerialName("identityRole")
+        val identityRole: IdentityRole,
+        /** Whether this is the default identity for the owning party */
+        @SerialName("isDefault")
+        val isDefault: Boolean,
+        /** When the identity was created */
+        @SerialName("createdAt")
+        val createdAt: Instant,
+        /** Who created the identity (party ID) */
+        @SerialName("createdById")
+        val createdById: Uuid? = null,
+        /** When the identity was last updated */
+        @SerialName("updatedAt")
+        val updatedAt: Instant,
+        /** Who last updated the identity (party ID) */
+        @SerialName("updatedById")
+        val updatedById: Uuid? = null,
+        /** When the identity was soft-deleted (null if not deleted) */
+        @SerialName("deletedAt")
+        val deletedAt: Instant? = null,
+        /** Who deleted the identity (party ID) */
+        @SerialName("deletedById")
+        val deletedById: Uuid? = null,
         /**
-         * Create an IdentityResult from an Identity entity.
-         *
-         * @param identity The source identity entity
-         * @param correlationIdentifiers Optional list of correlation identifier results
+         * Correlation identifiers associated with this identity.
+         * Populated when [IdentityFetchOptions.includeCorrelationIdentifiers] is true.
+         * Null means not fetched (vs empty list which means no identifiers exist).
          */
-        fun from(
-            identity: Identity,
-            correlationIdentifiers: List<CorrelationIdentifierResult>? = null,
-        ) = IdentityResult(
-            partyId = identity.partyId,
-            tenantId = identity.tenantId,
-            identityRole = identity.identityRole,
-            isDefault = identity.isDefault,
-            createdAt = identity.createdAt,
-            createdById = identity.createdById,
-            updatedAt = identity.updatedAt,
-            updatedById = identity.updatedById,
-            deletedAt = identity.deletedAt,
-            deletedById = identity.deletedById,
-            correlationIdentifiers = correlationIdentifiers,
-        )
+        @SerialName("correlationIdentifiers")
+        val correlationIdentifiers: List<CorrelationIdentifierResult>? = null,
+    ) {
+        companion object {
+            /**
+             * Create an IdentityResult from an Identity entity.
+             *
+             * @param identity The source identity entity
+             * @param correlationIdentifiers Optional list of correlation identifier results
+             */
+            fun from(
+                identity: Identity,
+                correlationIdentifiers: List<CorrelationIdentifierResult>? = null,
+            ) = IdentityResult(
+                partyId = identity.partyId,
+                tenantId = identity.tenantId,
+                identityRole = identity.identityRole,
+                isDefault = identity.isDefault,
+                createdAt = identity.createdAt,
+                createdById = identity.createdById,
+                updatedAt = identity.updatedAt,
+                updatedById = identity.updatedById,
+                deletedAt = identity.deletedAt,
+                deletedById = identity.deletedById,
+                correlationIdentifiers = correlationIdentifiers,
+            )
 
-        /**
-         * Create an IdentityResult from an Identity entity with raw correlation identifiers.
-         *
-         * @param identity The source identity entity
-         * @param correlationIdentifiers List of correlation identifier entities to convert
-         */
-        fun fromWithIdentifiers(
-            identity: Identity,
-            correlationIdentifiers: List<CorrelationIdentifier>,
-        ) = from(
-            identity = identity,
-            correlationIdentifiers = correlationIdentifiers.map { CorrelationIdentifierResult.from(it) },
-        )
+            /**
+             * Create an IdentityResult from an Identity entity with raw correlation identifiers.
+             *
+             * @param identity The source identity entity
+             * @param correlationIdentifiers List of correlation identifier entities to convert
+             */
+            fun fromWithIdentifiers(
+                identity: Identity,
+                correlationIdentifiers: List<CorrelationIdentifier>,
+            ) = from(
+                identity = identity,
+                correlationIdentifiers = correlationIdentifiers.map { CorrelationIdentifierResult.from(it) },
+            )
+        }
+
+        /** Convert back to the core Identity entity (without associations) */
+        fun toIdentity() =
+            Identity(
+                partyId = partyId,
+                tenantId = tenantId,
+                identityRole = identityRole,
+                isDefault = isDefault,
+                createdAt = createdAt,
+                createdById = createdById,
+                updatedAt = updatedAt,
+                updatedById = updatedById,
+                deletedAt = deletedAt,
+                deletedById = deletedById,
+            )
     }
-
-    /** Convert back to the core Identity entity (without associations) */
-    fun toIdentity() =
-        Identity(
-            partyId = partyId,
-            tenantId = tenantId,
-            identityRole = identityRole,
-            isDefault = isDefault,
-            createdAt = createdAt,
-            createdById = createdById,
-            updatedAt = updatedAt,
-            updatedById = updatedById,
-            deletedAt = deletedAt,
-            deletedById = deletedById,
-        )
-}

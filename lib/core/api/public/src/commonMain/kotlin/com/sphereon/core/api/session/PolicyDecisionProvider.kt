@@ -20,6 +20,7 @@ package com.sphereon.core.api.session
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -33,6 +34,7 @@ import kotlinx.serialization.Serializable
  * @property correlationId Optional correlation ID for tracing
  * @property metadata Additional context for policy evaluation
  */
+@JsExportCompat
 @Serializable
 data class PolicyContext(
     val actorId: String,
@@ -68,6 +70,7 @@ data class PolicyContext(
  * );
  * ```
  */
+@JsExportCompat
 interface PolicyDecisionProvider {
     /**
      * Evaluates whether the action is allowed by the policy engine.

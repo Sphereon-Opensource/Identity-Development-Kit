@@ -16,21 +16,26 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.blob.BlobInfo
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class SourceSnapshotRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val sourceType: DesignSourceType,
-    val sourceUrl: String? = null,
-    val etag: String? = null,
-    val integrity: String? = null,
-    val said: String? = null,
-    val fetchedAt: Instant,
-    val contentBlob: BlobInfo,
-    val normalizedFromVersion: String? = null,
-)
+data class SourceSnapshotRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val sourceType: DesignSourceType,
+        val sourceUrl: String? = null,
+        val etag: String? = null,
+        val integrity: String? = null,
+        val said: String? = null,
+        val fetchedAt: Instant,
+        val contentBlob: BlobInfo,
+        val normalizedFromVersion: String? = null,
+    )

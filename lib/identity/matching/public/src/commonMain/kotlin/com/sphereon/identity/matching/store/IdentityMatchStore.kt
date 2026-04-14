@@ -16,9 +16,11 @@
 
 package com.sphereon.identity.matching.store
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.matching.model.IdentifierType
 import com.sphereon.identity.matching.model.IdentityMatch
 
+@JsExportCompat
 interface IdentityMatchStore {
     suspend fun findByIdentifierHash(
         tenantId: String,

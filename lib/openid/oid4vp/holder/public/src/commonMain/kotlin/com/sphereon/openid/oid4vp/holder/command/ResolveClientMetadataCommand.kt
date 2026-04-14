@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vp.holder.command
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import kotlinx.serialization.Serializable
@@ -32,6 +33,7 @@ import kotlinx.serialization.Serializable
  * @property metadata The resolved client metadata, or null if not provided
  */
 @Serializable
+@JsExportCompat
 data class ResolvedClientMetadata(
     val metadata: ClientMetadata? = null,
 )
@@ -47,6 +49,7 @@ data class ResolvedClientMetadata(
  * @see ClientMetadata
  * @see ResolvedClientMetadata
  */
+@JsExportCompat
 interface ResolveClientMetadataCommand : ServiceCommand<AuthorizationRequest, ResolvedClientMetadata> {
     override val commandId: String get() = COMMAND_ID
 

@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.HasOrder
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -54,6 +55,7 @@ import kotlin.native.ObjCName
  * }
  * ```
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertySourceContribution", exact = true)
 interface PropertySourceContribution : HasOrder {

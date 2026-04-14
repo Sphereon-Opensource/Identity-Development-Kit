@@ -17,12 +17,15 @@
 
 package com.sphereon.data.store.kv
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * A small pluggable codec used by [KvStore] to store typed values as bytes.
  *
  * Implementations must be deterministic and backward compatible for the same [KvNamespace],
  * because stored values may outlive the process (for example in Kottage-backed storage).
  */
+@JsExportCompat
 interface KvCodec<V : Any> {
     fun encode(value: V): ByteArray
 

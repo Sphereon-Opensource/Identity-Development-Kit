@@ -28,6 +28,7 @@ import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -86,12 +87,15 @@ enum class MdocVerification {
 
     companion object {
         @JsStatic
+        @JvmStatic
         val ALL: MdocVerificationTypes = entries.toSet()
 
         @JsStatic
+        @JvmStatic
         val ISSUER_AUTH: MdocVerificationTypes = setOf(CERTIFICATE_CHAIN, ISSUER_AUTH_SIGNATURE, VALIDITY)
 
         @JsStatic
+        @JvmStatic
         val DOCUMENT: MdocVerificationTypes = ALL
     }
 }

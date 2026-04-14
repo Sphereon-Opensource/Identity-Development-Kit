@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -23,6 +24,7 @@ import kotlin.time.Instant
  * Descriptor for a stored blob, returned by put/stat/list operations.
  */
 @Serializable
+@JsExportCompat
 data class BlobDescriptor(
     val path: String,
     val storeId: String,

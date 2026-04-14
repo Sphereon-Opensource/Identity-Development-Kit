@@ -6,7 +6,10 @@
 
 package com.sphereon.trust.core.revocation
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -16,6 +19,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationChecker", exact = true)
+@JsExportCompat
 interface RevocationChecker {
     suspend fun checkRevocation(
         certificate: ByteArray,
@@ -26,6 +30,7 @@ interface RevocationChecker {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationCheckOptions", exact = true)
+@JsExportCompat
 data class RevocationCheckOptions(
     val checkOCSP: Boolean = true,
     val checkCRL: Boolean = true,
@@ -40,6 +45,7 @@ data class RevocationCheckOptions(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationCheckResult", exact = true)
+@JsExportCompat
 data class RevocationCheckResult(
     val status: RevocationStatus,
     val method: RevocationCheckMethod,
@@ -48,11 +54,13 @@ data class RevocationCheckResult(
     val revocationTime: Long? = null,
     val revocationReason: RevocationReason? = null,
     val errorMessage: String? = null,
+    @JsExportIgnoreCompat
     val details: Map<String, String> = emptyMap(),
 )
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationStatus", exact = true)
+@JsExportCompat
 enum class RevocationStatus {
     GOOD,
     REVOKED,
@@ -62,6 +70,7 @@ enum class RevocationStatus {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationCheckMethod", exact = true)
+@JsExportCompat
 enum class RevocationCheckMethod {
     OCSP,
     CRL,
@@ -72,6 +81,7 @@ enum class RevocationCheckMethod {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationReason", exact = true)
+@JsExportCompat
 enum class RevocationReason(
     val code: Int,
 ) {
@@ -88,6 +98,7 @@ enum class RevocationReason(
     ;
 
     companion object {
+        @JvmStatic
         fun fromCode(code: Int): RevocationReason? = RevocationReason.entries.firstOrNull { it.code == code }
     }
 }
@@ -102,6 +113,7 @@ class RevocationCheckException(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OCSPChecker", exact = true)
+@JsExportCompat
 interface OCSPChecker {
     suspend fun checkOCSP(
         certificate: ByteArray,
@@ -115,6 +127,7 @@ interface OCSPChecker {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CRLChecker", exact = true)
+@JsExportCompat
 interface CRLChecker {
     suspend fun checkCRL(
         certificate: ByteArray,

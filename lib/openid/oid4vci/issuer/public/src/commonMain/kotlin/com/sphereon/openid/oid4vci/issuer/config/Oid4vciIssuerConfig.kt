@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vci.issuer.config
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.common.model.BatchCredentialIssuance
@@ -30,8 +32,11 @@ import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
  * Supplies credential configurations and issuer display properties.
  * In Phase 8, this will be backed by the credential-design store.
  */
+@JsExportCompat
 interface Oid4vciIssuerConfigProvider {
     val issuerIdentifier: String
+
+    @JsExportIgnoreCompat
     val credentialConfigurations: Map<String, CredentialConfigurationSupported>
     val authorizationServers: List<String>?
     val display: List<DisplayProperties>?
@@ -81,6 +86,7 @@ interface Oid4vciIssuerConfigProvider {
      * Keyed by credential configuration ID. Used at issuance time to resolve the signing key
      * and populate the JWT protected header with the appropriate identifier (kid, x5c, etc.).
      */
+    @JsExportIgnoreCompat
     val credentialSigningConfigs: Map<String, CredentialSigningConfig>
         get() = emptyMap()
 
@@ -92,6 +98,7 @@ interface Oid4vciIssuerConfigProvider {
      * Consumed by the SD-JWT VC Issuer Metadata endpoint (`/.well-known/jwt-vc-issuer`)
      * to build the published JWKS.
      */
+    @JsExportIgnoreCompat
     val signingKeyAliases: Set<String>
         get() {
             val perCredential =
@@ -132,6 +139,7 @@ interface Oid4vciIssuerConfigProvider {
  * @property signingKeyMode Key reference mode determining how the signing key is identified in the JWT header.
  * @property signingCertChainPath Optional PEM file path for X.509 certificate chain (fallback when KMS key has no x5c).
  */
+@JsExportCompat
 data class CredentialSigningConfig(
     val signingKeyAlias: String? = null,
     val signingKeyMode: SigningKeyMode = SigningKeyMode.None,

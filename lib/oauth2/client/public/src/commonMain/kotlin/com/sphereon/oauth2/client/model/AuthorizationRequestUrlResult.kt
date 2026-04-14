@@ -16,6 +16,9 @@
 
 package com.sphereon.oauth2.client.model
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmOverloads
+
 /**
  * Result of creating an authorization request URL
  *
@@ -23,8 +26,11 @@ package com.sphereon.oauth2.client.model
  * @property pkceData PKCE data if PKCE was used (code_verifier needed for token exchange)
  * @property dpopNonce DPoP nonce if DPoP was used with PAR
  */
-data class AuthorizationRequestUrlResult(
-    val authorizationRequestUrl: String,
-    val pkceData: PkceData? = null,
-    val dpopNonce: String? = null,
-)
+@JsExportCompat
+data class AuthorizationRequestUrlResult
+    @JvmOverloads
+    constructor(
+        val authorizationRequestUrl: String,
+        val pkceData: PkceData? = null,
+        val dpopNonce: String? = null,
+    )

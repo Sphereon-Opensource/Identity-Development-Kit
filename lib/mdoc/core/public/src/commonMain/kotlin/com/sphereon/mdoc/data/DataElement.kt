@@ -25,6 +25,7 @@ import com.sphereon.mdoc.data.device.NameSpace
 import com.sphereon.mdoc.oid4vp.Oid4VPConstraintField
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -40,6 +41,7 @@ data class DataElement(
     override fun toString(): String = "DataElement(identifier=$identifier, intentToRetain=$intentToRetain, definition=$definition)"
 
     companion object {
+        @JvmStatic
         fun fromDefinition(def: DataElementDef): DataElement = DataElement(def.identifier, IntentToRetain(def.presence.mandatory), def)
     }
 }

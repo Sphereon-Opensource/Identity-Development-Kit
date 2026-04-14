@@ -18,6 +18,8 @@ package com.sphereon.openid.oid4vci.issuer.format
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import kotlinx.serialization.json.JsonElement
@@ -27,6 +29,7 @@ import kotlinx.serialization.json.JsonElement
  *
  * Implementations registered via `@ContributesIntoSet` for each supported format.
  */
+@JsExportCompat
 interface CredentialFormatHandler {
     val supportedFormat: String
 
@@ -44,6 +47,7 @@ interface CredentialFormatHandler {
 /**
  * Context passed to format handlers during credential issuance.
  */
+@JsExportCompat
 data class IssuanceContext(
     val subject: String,
     val clientId: String,
@@ -53,8 +57,11 @@ data class IssuanceContext(
     val holderBindingKey: JsonElement?,
     val holderIdentifier: String? = null,
     val holderKeyId: String? = null,
+    @JsExportIgnoreCompat
     val attributes: Map<String, JsonElement>,
+    @JsExportIgnoreCompat
     val sdPolicies: Map<String, SdPolicy> = emptyMap(),
+    @JsExportIgnoreCompat
     val mandatoryClaims: Set<String> = emptySet(),
     /** Key alias in the KMS for credential signing. Defaults to credentialConfigurationId. */
     val signingKeyAlias: String? = null,
@@ -81,6 +88,7 @@ data class IssuanceContext(
 /**
  * Selective disclosure policy for a claim.
  */
+@JsExportCompat
 enum class SdPolicy {
     ALWAYS_DISCLOSED,
     SELECTIVELY_DISCLOSABLE,
@@ -90,6 +98,7 @@ enum class SdPolicy {
 /**
  * Wrapper for an issued credential.
  */
+@JsExportCompat
 data class CredentialEnvelope(
     val credential: JsonElement,
     val format: String,

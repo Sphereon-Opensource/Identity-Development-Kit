@@ -23,8 +23,9 @@ import com.sphereon.core.api.session.Command
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
-
 // ============================================================================
 // Request/Response Types
 // ============================================================================
@@ -38,10 +39,13 @@ import kotlin.native.ObjCName
 @ObjCName("QueryProviderArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class QueryProviderArgs(
-    @kotlinx.serialization.Transient
-    val query: KmsProviderQuery? = null,
-)
+data class
+QueryProviderArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val query: KmsProviderQuery? = null,
+    )
 
 /**
  * Represents a provider match from a query.
@@ -59,12 +63,15 @@ data class QueryProviderArgs(
 @ObjCName("ProviderMatch", exact = true)
 @JsExportCompat
 @Serializable
-data class ProviderMatch(
-    val providerId: String,
-    @kotlinx.serialization.Transient
-    val capabilities: KmsProviderCapabilities? = null,
-    val matchScore: Int = 100,
-)
+data class
+ProviderMatch
+    @JvmOverloads
+    constructor(
+        val providerId: String,
+        @kotlinx.serialization.Transient
+        val capabilities: KmsProviderCapabilities? = null,
+        val matchScore: Int = 100,
+    )
 
 /**
  * Result of querying for a single KMS provider.
@@ -75,9 +82,12 @@ data class ProviderMatch(
 @ObjCName("QueryProviderResult", exact = true)
 @JsExportCompat
 @Serializable
-data class QueryProviderResult(
-    val match: ProviderMatch? = null,
-)
+data class
+QueryProviderResult
+    @JvmOverloads
+    constructor(
+        val match: ProviderMatch? = null,
+    )
 
 /**
  * Arguments for querying multiple KMS providers based on capability criteria.
@@ -88,10 +98,13 @@ data class QueryProviderResult(
 @ObjCName("QueryProvidersArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class QueryProvidersArgs(
-    @kotlinx.serialization.Transient
-    val query: KmsProviderQuery? = null,
-)
+data class
+QueryProvidersArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val query: KmsProviderQuery? = null,
+    )
 
 /**
  * Result of querying for multiple KMS providers.
@@ -103,38 +116,41 @@ data class QueryProvidersArgs(
 @ObjCName("QueryProvidersResult", exact = true)
 @JsExportCompat
 @Serializable
-data class QueryProvidersResult(
-    val matches: Array<ProviderMatch> = emptyArray(),
-    val totalProviders: Int = 0,
-) {
-    val matchCount: Int get() = matches.size
+data class
+QueryProvidersResult
+    @JvmOverloads
+    constructor(
+        val matches: Array<ProviderMatch> = emptyArray(),
+        val totalProviders: Int = 0,
+    ) {
+        val matchCount: Int get() = matches.size
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as QueryProvidersResult
+
+            if (!matches.contentEquals(other.matches)) {
+                return false
+            }
+            if (totalProviders != other.totalProviders) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as QueryProvidersResult
-
-        if (!matches.contentEquals(other.matches)) {
-            return false
+        override fun hashCode(): Int {
+            var result = matches.contentHashCode()
+            result = 31 * result + totalProviders
+            return result
         }
-        if (totalProviders != other.totalProviders) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = matches.contentHashCode()
-        result = 31 * result + totalProviders
-        return result
-    }
-}
 
 /**
  * Arguments for getting all provider capabilities.
@@ -144,9 +160,12 @@ data class QueryProvidersResult(
 @ObjCName("GetAllCapabilitiesArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class GetAllCapabilitiesArgs(
-    val includeDisabled: Boolean = false,
-)
+data class
+GetAllCapabilitiesArgs
+    @JvmOverloads
+    constructor(
+        val includeDisabled: Boolean = false,
+    )
 
 /**
  * Result containing all provider capabilities.
@@ -156,10 +175,13 @@ data class GetAllCapabilitiesArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetAllCapabilitiesResult", exact = true)
 @JsExportCompat
-data class GetAllCapabilitiesResult(
-    @kotlinx.serialization.Transient
-    val capabilities: Map<String, KmsProviderCapabilities> = emptyMap(),
-)
+data class
+GetAllCapabilitiesResult
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val capabilities: Map<String, KmsProviderCapabilities> = emptyMap(),
+    )
 
 // ============================================================================
 // Command Interfaces
@@ -194,6 +216,7 @@ data class GetAllCapabilitiesResult(
  * }
  * ```
  */
+@JsExportCompat
 interface QueryProviderCommand : Command<QueryProviderArgs, QueryProviderResult, IdkError> {
     override val id: String
         get() = COMMAND_ID
@@ -238,6 +261,7 @@ interface QueryProviderCommand : Command<QueryProviderArgs, QueryProviderResult,
  * }
  * ```
  */
+@JsExportCompat
 interface QueryProvidersCommand : Command<QueryProvidersArgs, QueryProvidersResult, IdkError> {
     override val id: String
         get() = COMMAND_ID
@@ -266,6 +290,7 @@ interface QueryProvidersCommand : Command<QueryProvidersArgs, QueryProvidersResu
  * }
  * ```
  */
+@JsExportCompat
 interface GetAllCapabilitiesCommand : Command<GetAllCapabilitiesArgs, GetAllCapabilitiesResult, IdkError> {
     override val id: String
         get() = COMMAND_ID

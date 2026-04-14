@@ -30,6 +30,7 @@ import kotlin.native.ObjCName
  * @property httpUrl The HTTP URL (scheme, host, port, path - no query/fragment)
  * @property expectedJkt The expected JWK thumbprint from access token (cnf.jkt)
  */
+@JsExportCompat
 data class VerifyDpopProofArgs(
     val dpopProof: String,
     val httpMethod: String,
@@ -72,6 +73,7 @@ data class VerifyDpopProofArgs(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyDpopProofCommand", exact = true)
+@JsExportCompat
 interface VerifyDpopProofCommand : ServiceCommand<VerifyDpopProofArgs, DpopVerificationResult> {
     override val commandId: String get() = COMMAND_ID
 

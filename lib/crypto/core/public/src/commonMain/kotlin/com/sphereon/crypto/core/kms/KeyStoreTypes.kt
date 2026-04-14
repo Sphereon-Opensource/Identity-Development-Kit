@@ -32,6 +32,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -39,18 +41,22 @@ import kotlin.native.ObjCName
 @SerialName("KeyStoreConfig")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeyStoreConfigImpl", exact = true)
-data class KeyStoreConfigImpl(
-    override val keyStoreType: String,
-    override val id: String,
-    override val enabled: Boolean = true,
-    override val order: Int = Order.MEDIUM.orderValue,
-    override val defaultConfigValues: Map<String, String> = emptyMap(),
-    override val keyVisibility: String = KeyVisibility.PUBLIC.keyVisibility,
-    override val overwriteAlias: Boolean = false,
-) : AbstractKeyStoreConfig(),
-    KeyStoreConfig
+data class
+KeyStoreConfigImpl
+    @JvmOverloads
+    constructor(
+        override val keyStoreType: String,
+        override val id: String,
+        override val enabled: Boolean = true,
+        override val order: Int = Order.MEDIUM.orderValue,
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        override val keyVisibility: String = KeyVisibility.PUBLIC.keyVisibility,
+        override val overwriteAlias: Boolean = false,
+    ) : AbstractKeyStoreConfig(),
+        KeyStoreConfig
 
 @Serializable
+@JsExportCompat
 abstract class AbstractKeyStoreConfig {
     @SerialName("type")
     abstract val keyStoreType: String
@@ -150,6 +156,7 @@ interface KeyStoreManager {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeyStoreManagerAsync", exact = true)
+@JsExportCompat
 interface KeyStoreManagerAsync : KeyStoreManager {
     /**
      * Creates KeyStores from config properties (async).

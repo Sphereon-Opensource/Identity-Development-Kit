@@ -18,11 +18,13 @@ package com.sphereon.core.api.auth
 
 import com.sphereon.core.api.binary.BinaryRequest
 import com.sphereon.core.api.tracing.TraceContext
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.IdentityConstants
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlin.jvm.JvmStatic
 
 /**
  * Standard authentication and authorization headers.
@@ -159,6 +161,7 @@ object AuthHeaders {
  * @property policyContext Additional policy evaluation context
  * @property scopes Requested operation scopes
  */
+@JsExportCompat
 @Serializable
 data class AuthContext(
     val token: String? = null,
@@ -256,6 +259,7 @@ data class AuthContext(
         /**
          * Extracts auth context from a map of headers.
          */
+        @JvmStatic
         fun fromHeaders(headers: Map<String, String>): AuthContext {
             // Helper to get header case-insensitively
             fun get(name: String): String? = headers[name] ?: headers[name.lowercase()] ?: headers[name.uppercase()]

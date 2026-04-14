@@ -16,8 +16,10 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 @Serializable
 enum class DesignEntityType {
     CREDENTIAL,
@@ -25,6 +27,7 @@ enum class DesignEntityType {
     VERIFIER,
 }
 
+@JsExportCompat
 @Serializable
 enum class DesignHostingMode {
     LOCAL,
@@ -32,6 +35,7 @@ enum class DesignHostingMode {
     INFERRED,
 }
 
+@JsExportCompat
 @Serializable
 enum class DesignSourceType {
     LOCAL_OVERRIDE,
@@ -54,6 +58,7 @@ enum class DesignSourceType {
     MANUAL_IMPORT,
 }
 
+@JsExportCompat
 @Serializable
 enum class RenderVariantKind {
     SIMPLE_CARD,
@@ -63,6 +68,7 @@ enum class RenderVariantKind {
     EXTERNAL_REFERENCE,
 }
 
+@JsExportCompat
 @Serializable
 enum class ClaimValueKind {
     STRING,
@@ -81,6 +87,7 @@ enum class ClaimValueKind {
     UNKNOWN,
 }
 
+@JsExportCompat
 @Serializable
 enum class ClaimWidgetHint {
     TEXT,
@@ -100,6 +107,7 @@ enum class ClaimWidgetHint {
     FILE,
 }
 
+@JsExportCompat
 @Serializable
 enum class SdPolicy {
     ALWAYS,
@@ -107,15 +115,19 @@ enum class SdPolicy {
     NEVER,
 }
 
+@JsExportCompat
 @Serializable
 enum class SvgOrientation { PORTRAIT, LANDSCAPE }
 
+@JsExportCompat
 @Serializable
 enum class SvgColorScheme { LIGHT, DARK }
 
+@JsExportCompat
 @Serializable
 enum class SvgContrast { NORMAL, HIGH }
 
+@JsExportCompat
 @Serializable
 enum class DesignAssetType {
     LOGO,

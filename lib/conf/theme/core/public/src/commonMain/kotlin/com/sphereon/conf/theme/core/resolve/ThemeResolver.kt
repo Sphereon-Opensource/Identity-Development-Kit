@@ -18,11 +18,13 @@ package com.sphereon.conf.theme.core.resolve
 
 import com.sphereon.conf.theme.core.model.ResolvedTheme
 import com.sphereon.conf.theme.core.model.ThemeVariant
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Resolves a fully flattened theme by merging definition layers
  * in precedence order: SYSTEM < APP < TENANT < PRINCIPAL.
  */
+@JsExportCompat
 interface ThemeResolver {
     /**
      * Resolve the effective theme for a tenant.

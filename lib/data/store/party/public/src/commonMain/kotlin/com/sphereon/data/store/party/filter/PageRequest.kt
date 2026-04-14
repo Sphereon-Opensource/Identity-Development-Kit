@@ -17,12 +17,15 @@
 
 package com.sphereon.data.store.party.filter
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Sort direction for query results.
  */
+@JsExportCompat
 @Serializable
 enum class SortDirection {
     @SerialName("asc")
@@ -35,13 +38,16 @@ enum class SortDirection {
 /**
  * Sort specification for a single field.
  */
+@JsExportCompat
 @Serializable
-data class SortSpec(
-    /** The field name to sort by */
-    val field: String,
-    /** Sort direction */
-    val direction: SortDirection = SortDirection.ASC,
-)
+data class SortSpec
+    @JvmOverloads
+    constructor(
+        /** The field name to sort by */
+        val field: String,
+        /** Sort direction */
+        val direction: SortDirection = SortDirection.ASC,
+    )
 
 /**
  * Pagination and sorting parameters for list queries.
@@ -58,89 +64,93 @@ data class SortSpec(
  * PageRequest.of(20).withSort("name")
  * ```
  */
+@JsExportCompat
 @Serializable
-data class PageRequest(
-    /** Maximum number of items to return (default 50) */
-    val limit: Int = 50,
-    /** Number of items to skip (for pagination) */
-    val offset: Int = 0,
-    /** Sort specifications (applied in order) */
-    val sort: List<SortSpec> = emptyList(),
-) {
-    companion object {
-        /** Default page request (50 items, no sorting) */
-        val DEFAULT = PageRequest()
+data class PageRequest
+    @JvmOverloads
+    constructor(
+        /** Maximum number of items to return (default 50) */
+        val limit: Int = 50,
+        /** Number of items to skip (for pagination) */
+        val offset: Int = 0,
+        /** Sort specifications (applied in order) */
+        val sort: List<SortSpec> = emptyList(),
+    ) {
+        companion object {
+            /** Default page request (50 items, no sorting) */
+            val DEFAULT = PageRequest()
 
-        /** Create a page request with specified limit */
-        fun of(
-            limit: Int,
-            offset: Int = 0,
-        ) = PageRequest(limit = limit, offset = offset)
+            /** Create a page request with specified limit */
+            fun of(
+                limit: Int,
+                offset: Int = 0,
+            ) = PageRequest(limit = limit, offset = offset)
 
-        /** Create a page request sorted by a single field */
-        fun sorted(
+            /** Create a page request sorted by a single field */
+            fun sorted(
+                field: String,
+                direction: SortDirection = SortDirection.ASC,
+            ) = PageRequest(sort = listOf(SortSpec(field, direction)))
+
+            /**
+             * Parse pagination parameters from HTTP query params.
+             * Supports both 'page/size' style (OpenAPI) and 'limit/offset' style.
+             *
+             * @param params query parameter map
+             * @param maxLimit upper bound for limit (default 100)
+             * @param defaultLimit limit when none specified (default 20)
+             * @param defaultSortField sort field when none specified (default "createdAt")
+             * @param defaultSortDirection sort direction when none specified (default DESC)
+             */
+            fun fromQueryParams(
+                params: Map<String, String?>,
+                maxLimit: Int = 100,
+                defaultLimit: Int = 20,
+                defaultSortField: String = "createdAt",
+                defaultSortDirection: SortDirection = SortDirection.DESC,
+            ): PageRequest {
+                val page = params["page"]?.toIntOrNull() ?: 0
+                val size = params["size"]?.toIntOrNull()
+                val clampedLimit = (params["limit"]?.toIntOrNull() ?: size ?: defaultLimit).coerceIn(1, maxLimit)
+                val offset = params["offset"]?.toIntOrNull() ?: (page * clampedLimit)
+
+                val sortField = params["sort"] ?: defaultSortField
+                val sortDirection =
+                    params["sortDirection"]?.let {
+                        when (it.uppercase()) {
+                            "ASC" -> SortDirection.ASC
+                            "DESC" -> SortDirection.DESC
+                            else -> defaultSortDirection
+                        }
+                    } ?: defaultSortDirection
+
+                return PageRequest(
+                    limit = clampedLimit,
+                    offset = offset.coerceAtLeast(0),
+                    sort = listOf(SortSpec(sortField, sortDirection)),
+                )
+            }
+        }
+
+        /** Add a sort specification */
+        fun withSort(
             field: String,
             direction: SortDirection = SortDirection.ASC,
-        ) = PageRequest(sort = listOf(SortSpec(field, direction)))
+        ) = copy(sort = sort + SortSpec(field, direction))
 
-        /**
-         * Parse pagination parameters from HTTP query params.
-         * Supports both 'page/size' style (OpenAPI) and 'limit/offset' style.
-         *
-         * @param params query parameter map
-         * @param maxLimit upper bound for limit (default 100)
-         * @param defaultLimit limit when none specified (default 20)
-         * @param defaultSortField sort field when none specified (default "createdAt")
-         * @param defaultSortDirection sort direction when none specified (default DESC)
-         */
-        fun fromQueryParams(
-            params: Map<String, String?>,
-            maxLimit: Int = 100,
-            defaultLimit: Int = 20,
-            defaultSortField: String = "createdAt",
-            defaultSortDirection: SortDirection = SortDirection.DESC,
-        ): PageRequest {
-            val page = params["page"]?.toIntOrNull() ?: 0
-            val size = params["size"]?.toIntOrNull()
-            val clampedLimit = (params["limit"]?.toIntOrNull() ?: size ?: defaultLimit).coerceIn(1, maxLimit)
-            val offset = params["offset"]?.toIntOrNull() ?: (page * clampedLimit)
+        /** Get the next page request */
+        fun nextPage() = copy(offset = offset + limit)
 
-            val sortField = params["sort"] ?: defaultSortField
-            val sortDirection =
-                params["sortDirection"]?.let {
-                    when (it.uppercase()) {
-                        "ASC" -> SortDirection.ASC
-                        "DESC" -> SortDirection.DESC
-                        else -> defaultSortDirection
-                    }
-                } ?: defaultSortDirection
-
-            return PageRequest(
-                limit = clampedLimit,
-                offset = offset.coerceAtLeast(0),
-                sort = listOf(SortSpec(sortField, sortDirection)),
-            )
-        }
+        /** Get the previous page request (minimum offset is 0) */
+        fun previousPage() = copy(offset = maxOf(0, offset - limit))
     }
-
-    /** Add a sort specification */
-    fun withSort(
-        field: String,
-        direction: SortDirection = SortDirection.ASC,
-    ) = copy(sort = sort + SortSpec(field, direction))
-
-    /** Get the next page request */
-    fun nextPage() = copy(offset = offset + limit)
-
-    /** Get the previous page request (minimum offset is 0) */
-    fun previousPage() = copy(offset = maxOf(0, offset - limit))
-}
 
 /**
  * Paginated result wrapper.
  *
  * Contains the items for the current page along with metadata for navigation.
  */
+@JsExportCompat
 @Serializable
 data class Page<T>(
     /** The items in this page */
@@ -209,6 +219,7 @@ data class Page<T>(
  * Raw pagination metadata values, suitable for constructing module-specific
  * API PagingMeta objects without duplicating computation logic.
  */
+@JsExportCompat
 data class PagingValues(
     val page: Int,
     val size: Int,

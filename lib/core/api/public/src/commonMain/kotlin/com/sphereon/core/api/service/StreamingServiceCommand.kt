@@ -18,11 +18,13 @@ package com.sphereon.core.api.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.Flow
 
 /**
  * The streaming mode a command supports.
  */
+@JsExportCompat
 enum class StreamingMode {
     /** Server sends a stream of responses for a single request. */
     SERVER_STREAM,
@@ -40,6 +42,7 @@ enum class StreamingMode {
  * @param TInput The input type for the command
  * @param TOutput The type of each streamed output item
  */
+@JsExportCompat
 interface ServerStreamingServiceCommand<TInput : Any, TOutput : Any> : ServiceCommand<TInput, TOutput> {
     /**
      * Executes the command and returns a stream of results.
@@ -60,6 +63,7 @@ interface ServerStreamingServiceCommand<TInput : Any, TOutput : Any> : ServiceCo
  * @param TInput The type of each input message in the stream
  * @param TOutput The type of each output message in the stream
  */
+@JsExportCompat
 interface BidiStreamingServiceCommand<TInput : Any, TOutput : Any> : ServiceCommand<TInput, TOutput> {
     /**
      * Executes the command with a bidirectional stream.

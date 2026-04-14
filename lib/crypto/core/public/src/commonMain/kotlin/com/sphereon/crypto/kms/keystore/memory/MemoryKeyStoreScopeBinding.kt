@@ -20,6 +20,7 @@ package com.sphereon.crypto.kms.keystore.memory
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -66,6 +67,7 @@ enum class MemoryKeyStoreScopeBinding(
     ;
 
     companion object {
+        @JvmStatic
         fun fromValue(value: String): MemoryKeyStoreScopeBinding =
             MemoryKeyStoreScopeBinding.entries.find { it.value.equals(value, ignoreCase = true) }
                 ?: throw IllegalArgumentException("Unknown scope binding: $value")

@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.dsl
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -37,6 +38,7 @@ import kotlinx.serialization.json.putJsonArray
  * }
  * ```
  */
+@JsExportCompat
 @Oid4vciDsl
 class PkceBuilder {
     private var challenge: String? = null
@@ -74,6 +76,7 @@ class PkceBuilder {
  * }
  * ```
  */
+@JsExportCompat
 @Oid4vciDsl
 class AuthorizationDetailsBuilder {
     private val details = mutableListOf<JsonElement>()

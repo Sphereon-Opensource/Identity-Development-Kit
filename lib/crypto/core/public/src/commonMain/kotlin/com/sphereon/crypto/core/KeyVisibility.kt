@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
@@ -43,6 +44,7 @@ enum class KeyVisibility : WithKeyVisibility {
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String): KeyVisibility =
             entries.firstOrNull { it.keyVisibility == value.lowercase() }
                 ?: throw IllegalArgumentException("Unknown key visibility: $value")

@@ -6,6 +6,8 @@
 package com.sphereon.core.events
 
 import com.sphereon.core.api.context.IdkScope
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
@@ -44,6 +46,7 @@ import dev.zacsweers.metro.SingleIn
  * }
  * ```
  */
+@JsExportCompat
 interface SessionEventService : EventService {
     override val scope: IdkScope get() = IdkScope.SESSION
 
@@ -62,6 +65,7 @@ interface SessionEventService : EventService {
      */
     @SingleIn(SessionScope::class)
     @ContributesTo(SessionScope::class)
+    @JsExportIgnoreCompat
     interface Graph {
         val sessionEventService: SessionEventService
     }

@@ -4,6 +4,7 @@ import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.Json
 /**
  * Standard REST error response envelope.
  */
+@JsExportCompat
 @Serializable
 data class RestErrorBody(
     val error: RestErrorDetail,
@@ -19,6 +21,7 @@ data class RestErrorBody(
 /**
  * Error detail within the REST error envelope.
  */
+@JsExportCompat
 @Serializable
 data class RestErrorDetail(
     val code: String,
@@ -63,6 +66,7 @@ private const val HTTP_SERVICE_UNAVAILABLE = 503
  * Produces responses with standard JSON error envelope and appropriate HTTP status
  * derived from the error's [ErrorCategory].
  */
+@JsExportCompat
 class DefaultRestErrorRenderer : HttpErrorRenderer {
     private val json =
         Json {

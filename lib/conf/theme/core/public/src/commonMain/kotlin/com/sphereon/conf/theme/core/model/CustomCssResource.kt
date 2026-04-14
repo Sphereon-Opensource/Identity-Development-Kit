@@ -16,26 +16,32 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 /**
  * A managed custom CSS resource for per-tenant/per-app custom styling.
  */
+@JsExportCompat
 @Serializable
-data class CustomCssResource(
-    val id: String,
-    val tenantId: String,
-    val appId: String? = null,
-    val css: String,
-    val version: Long = 1,
-    val contentHash: String,
-    val publicationMode: CssPublicationMode = CssPublicationMode.HOSTED,
-    val publishedUrl: String? = null,
-    val createdAt: Instant? = null,
-    val updatedAt: Instant? = null,
-)
+data class CustomCssResource
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val tenantId: String,
+        val appId: String? = null,
+        val css: String,
+        val version: Long = 1,
+        val contentHash: String,
+        val publicationMode: CssPublicationMode = CssPublicationMode.HOSTED,
+        val publishedUrl: String? = null,
+        val createdAt: Instant? = null,
+        val updatedAt: Instant? = null,
+    )
 
+@JsExportCompat
 @Serializable
 enum class CssPublicationMode {
     HOSTED,

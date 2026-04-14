@@ -16,33 +16,38 @@
  */
 
 package com.sphereon.crypto.core.cose
-
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 
+@JsExportCompat
 data class DecodedCbor<T>(
     val value: T,
     val originalBytes: ByteArray,
 )
 
+@JsExportCompat
 interface CoseKeyCborCodec {
     fun encode(value: CoseKey): IdkResult<ByteArray, IdkError>
 
     fun decode(bytes: ByteArray): IdkResult<DecodedCbor<CoseKey>, IdkError>
 }
 
+@JsExportCompat
 interface CoseHeaderCborCodec {
     fun encode(value: CoseHeaderCbor): IdkResult<ByteArray, IdkError>
 
     fun decode(bytes: ByteArray): IdkResult<DecodedCbor<CoseHeaderCbor>, IdkError>
 }
 
+@JsExportCompat
 interface CoseSign1CborCodec {
     fun encode(value: CoseSign1<*>): IdkResult<ByteArray, IdkError>
 
     fun decode(bytes: ByteArray): IdkResult<DecodedCbor<CoseSign1<Any>>, IdkError>
 }
 
+@JsExportCompat
 interface CoseMac0CborCodec {
     fun encode(value: CoseMac0Cbor): IdkResult<ByteArray, IdkError>
 

@@ -16,8 +16,10 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmStatic
 
 /**
  * Status of an OID4VP authentication session.
@@ -32,6 +34,7 @@ import kotlinx.serialization.Serializable
  * 7. ERROR - An error occurred during the flow
  */
 @Serializable
+@JsExportCompat
 enum class Oid4vpAuthSessionStatus {
     /**
      * Authorization request created, waiting for wallet to scan QR code.
@@ -90,6 +93,7 @@ enum class Oid4vpAuthSessionStatus {
          * @return The matching [Oid4vpAuthSessionStatus]
          * @throws IllegalArgumentException if value is not found
          */
+        @JvmStatic
         fun fromValue(value: String): Oid4vpAuthSessionStatus =
             entries.find { it.name.equals(value, ignoreCase = true) }
                 ?: throw IllegalArgumentException("Unknown Oid4vpAuthSessionStatus: $value")

@@ -26,6 +26,7 @@ import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @Serializable
@@ -183,15 +184,19 @@ data class DeviceResponse(
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val VERSION = StringLabel("version")
 
         @JsStatic
+        @JvmStatic
         val DOCUMENTS = StringLabel("documents")
 
         @JsStatic
+        @JvmStatic
         val DOCUMENT_ERRORS = StringLabel("documentErrors")
 
         @JsStatic
+        @JvmStatic
         val STATUS = StringLabel("status")
     }
 }

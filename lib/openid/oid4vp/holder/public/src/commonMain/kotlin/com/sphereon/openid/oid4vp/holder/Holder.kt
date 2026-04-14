@@ -19,7 +19,6 @@ package com.sphereon.openid.oid4vp.holder
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ResponseMode
@@ -86,14 +85,12 @@ interface Oid4vpHolderAdapter : Oid4vpHolderService
  * @see SelectedCredential
  * @see SubmissionResult
  */
-@JsExportCompat
 @Suppress("NON_EXPORTABLE_TYPE")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Oid4vpHolder", exact = true)
 interface Oid4vpHolder : Oid4vpHolderAdapter {
     val commands: Commands
 
-    @JsExportIgnoreCompat
     interface Commands {
         val parseAuthorizationRequest: ParseAuthorizationRequestCommand
         val resolveAuthorizationRequest: ResolveAuthorizationRequestCommand

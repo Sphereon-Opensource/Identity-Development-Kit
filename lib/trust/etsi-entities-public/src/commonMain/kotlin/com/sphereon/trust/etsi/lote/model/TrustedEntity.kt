@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -24,6 +25,7 @@ import kotlinx.serialization.json.JsonElement
 /**
  * Trusted entity per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class TrustedEntity(
     @SerialName("TrustedEntityInformation")
@@ -35,6 +37,7 @@ data class TrustedEntity(
 /**
  * Information about a trusted entity per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class TrustedEntityInformation(
     @SerialName("TEName")
@@ -52,6 +55,7 @@ data class TrustedEntityInformation(
 /**
  * A service provided by a trusted entity per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class TrustedEntityService(
     @SerialName("ServiceInformation")

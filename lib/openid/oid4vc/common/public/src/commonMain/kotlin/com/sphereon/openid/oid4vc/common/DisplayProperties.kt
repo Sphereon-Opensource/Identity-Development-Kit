@@ -16,8 +16,10 @@
 
 package com.sphereon.openid.oid4vc.common
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Display properties for a credential configuration.
@@ -25,34 +27,43 @@ import kotlinx.serialization.Serializable
  * Per OID4VCI Section 11.2.3, each entry in the "display" array
  * describes how to render a credential for a given locale.
  */
+@JsExportCompat
 @Serializable
-data class DisplayProperties(
-    val name: String,
-    val locale: String? = null,
-    val logo: LogoProperties? = null,
-    val description: String? = null,
-    @SerialName("background_color")
-    val backgroundColor: String? = null,
-    @SerialName("background_image")
-    val backgroundImage: ImageProperties? = null,
-    @SerialName("text_color")
-    val textColor: String? = null,
-)
+data class DisplayProperties
+    @JvmOverloads
+    constructor(
+        val name: String,
+        val locale: String? = null,
+        val logo: LogoProperties? = null,
+        val description: String? = null,
+        @SerialName("background_color")
+        val backgroundColor: String? = null,
+        @SerialName("background_image")
+        val backgroundImage: ImageProperties? = null,
+        @SerialName("text_color")
+        val textColor: String? = null,
+    )
 
 /**
  * Logo display properties.
  */
+@JsExportCompat
 @Serializable
-data class LogoProperties(
-    val uri: String? = null,
-    @SerialName("alt_text")
-    val altText: String? = null,
-)
+data class LogoProperties
+    @JvmOverloads
+    constructor(
+        val uri: String? = null,
+        @SerialName("alt_text")
+        val altText: String? = null,
+    )
 
 /**
  * Image properties (used for background_image, etc.).
  */
+@JsExportCompat
 @Serializable
-data class ImageProperties(
-    val uri: String? = null,
-)
+data class ImageProperties
+    @JvmOverloads
+    constructor(
+        val uri: String? = null,
+    )

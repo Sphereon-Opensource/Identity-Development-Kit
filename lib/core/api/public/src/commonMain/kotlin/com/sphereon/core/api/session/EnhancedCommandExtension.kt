@@ -19,6 +19,7 @@ package com.sphereon.core.api.session
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Result of the beforeExecute hook in an enhanced command extension.
@@ -32,6 +33,7 @@ import com.sphereon.core.api.error.IdkErrorType
  * @param R The success result type
  * @param E The error type
  */
+@JsExportCompat
 sealed class BeforeExecuteResult<out A, out R, out E> {
     /**
      * Continue with command execution, potentially with modified arguments.
@@ -138,6 +140,7 @@ sealed class BeforeExecuteResult<out A, out R, out E> {
  * @param SuccessResult The success result type
  * @param ErrorResult The error type
  */
+@JsExportCompat
 interface IEnhancedCommandExecutionExtension<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType> {
     /**
      * Called before command execution.
@@ -201,6 +204,7 @@ interface IEnhancedCommandExecutionExtension<Arg : Any, SuccessResult : Any, Err
  * Note: This adapter runs suspend functions in a blocking manner. For full async support,
  * use the enhanced extension system directly.
  */
+@JsExportCompat
 class EnhancedExtensionAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
     private val enhanced: IEnhancedCommandExecutionExtension<Arg, SuccessResult, ErrorResult>,
 ) : ICommandExecutionExtension<Arg, SuccessResult, ErrorResult> {
@@ -240,6 +244,7 @@ class EnhancedExtensionAdapter<Arg : Any, SuccessResult : Any, ErrorResult : Idk
  *
  * @param extensions The extensions to combine
  */
+@JsExportCompat
 class CompositeEnhancedExtension<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
     private val extensions: List<IEnhancedCommandExecutionExtension<Arg, SuccessResult, ErrorResult>>,
 ) : IEnhancedCommandExecutionExtension<Arg, SuccessResult, ErrorResult> {

@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.matching.store
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.matching.model.IdentityLinkBinding
 import kotlin.time.Instant
 
@@ -27,6 +28,7 @@ import kotlin.time.Instant
  * (HMAC of the holder key). Both are point lookups. Expired-binding scan is
  * available for inactivity cleanup.
  */
+@JsExportCompat
 interface IdentityLinkBindingStore {
     suspend fun create(binding: IdentityLinkBinding): IdentityLinkBinding
 

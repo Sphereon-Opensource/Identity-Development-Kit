@@ -18,8 +18,6 @@ package com.sphereon.oauth2.common.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.command.ValidateIdTokenArgs
 import com.sphereon.oauth2.common.command.ValidateIdTokenCommand
 import com.sphereon.oauth2.common.model.ValidatedIdToken
@@ -40,7 +38,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdTokenService", exact = true)
-@JsExportCompat
 interface IdTokenService {
     /**
      * Commands for direct command access
@@ -52,7 +49,6 @@ interface IdTokenService {
 
     suspend fun validateIdToken(args: ValidateIdTokenArgs): IdkResult<ValidatedIdToken, IdkError>
 
-    @JsExportIgnoreCompat
     interface Commands {
         val validateIdToken: ValidateIdTokenCommand
     }

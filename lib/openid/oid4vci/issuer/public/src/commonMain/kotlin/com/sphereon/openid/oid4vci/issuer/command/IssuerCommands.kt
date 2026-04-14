@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.issuer.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtCompactResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
@@ -37,6 +38,7 @@ import kotlinx.serialization.json.JsonElement
 // CreateCredentialOfferCommand
 // ============================================================================
 
+@JsExportCompat
 data class CreateCredentialOfferArgs(
     val issuerId: String,
     val credentialConfigurationIds: List<String>,
@@ -47,6 +49,7 @@ data class CreateCredentialOfferArgs(
     val offerTtlSeconds: Long = 600,
 )
 
+@JsExportCompat
 data class CreatedCredentialOffer(
     val offerId: String,
     val sessionId: String,
@@ -55,6 +58,7 @@ data class CreatedCredentialOffer(
     val txCode: String? = null,
 )
 
+@JsExportCompat
 interface CreateCredentialOfferCommand : ServiceCommand<CreateCredentialOfferArgs, CreatedCredentialOffer> {
     override val commandId: String get() = COMMAND_ID
 
@@ -67,6 +71,7 @@ interface CreateCredentialOfferCommand : ServiceCommand<CreateCredentialOfferArg
 // BuildIssuerMetadataCommand
 // ============================================================================
 
+@JsExportCompat
 data class BuildIssuerMetadataArgs(
     val issuerIdentifier: String,
     val baseUrl: String,
@@ -78,6 +83,7 @@ data class BuildIssuerMetadataArgs(
     val batchCredentialIssuance: BatchCredentialIssuance? = null,
 )
 
+@JsExportCompat
 interface BuildIssuerMetadataCommand : ServiceCommand<BuildIssuerMetadataArgs, CredentialIssuerMetadata> {
     override val commandId: String get() = COMMAND_ID
 
@@ -90,10 +96,12 @@ interface BuildIssuerMetadataCommand : ServiceCommand<BuildIssuerMetadataArgs, C
 // IssueNonceCommand
 // ============================================================================
 
+@JsExportCompat
 data class IssueNonceArgs(
     val ttlSeconds: Long = 300,
 )
 
+@JsExportCompat
 interface IssueNonceCommand : ServiceCommand<IssueNonceArgs, NonceResponse> {
     override val commandId: String get() = COMMAND_ID
 
@@ -106,6 +114,7 @@ interface IssueNonceCommand : ServiceCommand<IssueNonceArgs, NonceResponse> {
 // HandleCredentialRequestCommand
 // ============================================================================
 
+@JsExportCompat
 data class HandleCredentialRequestArgs(
     val accessToken: String,
     val dpopProof: String? = null,
@@ -114,6 +123,7 @@ data class HandleCredentialRequestArgs(
     val credentialConfigurations: Map<String, CredentialConfigurationSupported> = emptyMap(),
 )
 
+@JsExportCompat
 interface HandleCredentialRequestCommand : ServiceCommand<HandleCredentialRequestArgs, CredentialResponse> {
     override val commandId: String get() = COMMAND_ID
 
@@ -126,12 +136,14 @@ interface HandleCredentialRequestCommand : ServiceCommand<HandleCredentialReques
 // HandleDeferredCredentialRequestCommand
 // ============================================================================
 
+@JsExportCompat
 data class HandleDeferredCredentialRequestArgs(
     val accessToken: String,
     val dpopProof: String? = null,
     val deferredRequest: DeferredCredentialRequest,
 )
 
+@JsExportCompat
 interface HandleDeferredCredentialRequestCommand : ServiceCommand<HandleDeferredCredentialRequestArgs, CredentialResponse> {
     override val commandId: String get() = COMMAND_ID
 
@@ -144,11 +156,13 @@ interface HandleDeferredCredentialRequestCommand : ServiceCommand<HandleDeferred
 // HandleNotificationCommand
 // ============================================================================
 
+@JsExportCompat
 data class HandleNotificationArgs(
     val accessToken: String,
     val notification: CredentialNotification,
 )
 
+@JsExportCompat
 interface HandleNotificationCommand : ServiceCommand<HandleNotificationArgs, Unit> {
     override val commandId: String get() = COMMAND_ID
 
@@ -161,12 +175,14 @@ interface HandleNotificationCommand : ServiceCommand<HandleNotificationArgs, Uni
 // BuildSignedIssuerMetadataCommand
 // ============================================================================
 
+@JsExportCompat
 data class BuildSignedIssuerMetadataArgs(
     val metadata: CredentialIssuerMetadata,
     val signingKey: ManagedIdentifierOptsOrResult,
     val identifierMode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
 )
 
+@JsExportCompat
 interface BuildSignedIssuerMetadataCommand : ServiceCommand<BuildSignedIssuerMetadataArgs, JwtCompactResult> {
     override val commandId: String get() = COMMAND_ID
 

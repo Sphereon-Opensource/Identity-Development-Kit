@@ -16,7 +16,9 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * A single design token within a theme.
@@ -25,9 +27,12 @@ import kotlinx.serialization.Serializable
  * @property value The token value. Can be a literal or a reference like "{color.primary}"
  * @property type The semantic type of this token
  */
+@JsExportCompat
 @Serializable
-data class ThemeToken(
-    val key: String,
-    val value: String,
-    val type: ThemeTokenType = ThemeTokenType.STRING,
-)
+data class ThemeToken
+    @JvmOverloads
+    constructor(
+        val key: String,
+        val value: String,
+        val type: ThemeTokenType = ThemeTokenType.STRING,
+    )

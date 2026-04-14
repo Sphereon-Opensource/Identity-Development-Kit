@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -132,6 +133,7 @@ enum class MajorType(
          * @return a [MajorType] for the given value.
          */
         @JsStatic
+        @JvmStatic
         fun fromInt(value: Int): MajorType =
             entries.find { it.type == value }
                 ?: throw IllegalArgumentException("Unknown major type with value $value")

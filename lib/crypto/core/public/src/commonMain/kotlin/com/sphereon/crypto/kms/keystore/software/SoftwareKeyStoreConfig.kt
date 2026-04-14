@@ -38,10 +38,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.serializer
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SoftwareKeyStoreConfig", exact = true)
+@JsExportCompat
 interface SoftwareKeyStoreConfig : KeyStoreConfig {
     val accessMode: String
     val persist: Boolean
@@ -65,6 +67,7 @@ object SoftwareKeyStoreConfigSerializer : JsonContentPolymorphicSerializer<KeySt
 }
 
 @Serializable
+@JsExportCompat
 abstract class AbstractSoftwareKeyStoreConfig :
     AbstractKeyStoreConfig(),
     SoftwareKeyStoreConfig {
@@ -94,269 +97,278 @@ abstract class AbstractSoftwareKeyStoreConfig :
 @SerialName("pkcs12")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Pkcs12KeyStoreConfig", exact = true)
-data class Pkcs12KeyStoreConfig(
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val id: String = "pkcs12",
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val enabled: Boolean = true,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val order: Int = Order.MEDIUM.orderValue,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    @SerialName("defaultConfigValues")
-    override val defaultConfigValues: Map<String, String> = emptyMap(),
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val password: String,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val path: String? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val bytes: ByteArray? = null,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("accessMode")
-    override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("keyVisibility")
-    override val keyVisibility: String = KeyVisibility.PRIVATE.keyVisibility,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val persist: Boolean = true,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("overwriteAlias")
-    override val overwriteAlias: Boolean = true,
-) : AbstractSoftwareKeyStoreConfig() {
-    @OptIn(InternalSerializationApi::class)
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @Transient
-    override val keyStoreType: String = PredefinedKeyStoreTypes.PKCS12.keyStoreType
+data class
+Pkcs12KeyStoreConfig
+    @JvmOverloads
+    constructor(
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val id: String = "pkcs12",
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val enabled: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val order: Int = Order.MEDIUM.orderValue,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        @SerialName("defaultConfigValues")
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val password: String,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val bytes: ByteArray? = null,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("accessMode")
+        override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("keyVisibility")
+        override val keyVisibility: String = KeyVisibility.PRIVATE.keyVisibility,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val persist: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("overwriteAlias")
+        override val overwriteAlias: Boolean = true,
+    ) : AbstractSoftwareKeyStoreConfig() {
+        @OptIn(InternalSerializationApi::class)
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @Transient
+        override val keyStoreType: String = PredefinedKeyStoreTypes.PKCS12.keyStoreType
 
-    // get the discriminator as a field (the field name, objectName, is unimportant)
-    // this must be a delegated field so there's no backing field, so kxs ignores it
-    @OptIn(InternalSerializationApi::class)
-    val type: String
-        get() = this::class.serializer().descriptor.serialName
+        // get the discriminator as a field (the field name, objectName, is unimportant)
+        // this must be a delegated field so there's no backing field, so kxs ignores it
+        @OptIn(InternalSerializationApi::class)
+        val type: String
+            get() = this::class.serializer().descriptor.serialName
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as Pkcs12KeyStoreConfig
+
+            if (enabled != other.enabled) {
+                return false
+            }
+            if (order != other.order) {
+                return false
+            }
+            if (persist != other.persist) {
+                return false
+            }
+            if (id != other.id) {
+                return false
+            }
+            if (defaultConfigValues != other.defaultConfigValues) {
+                return false
+            }
+            if (password != other.password) {
+                return false
+            }
+            if (path != other.path) {
+                return false
+            }
+            if (!bytes.contentEquals(other.bytes)) {
+                return false
+            }
+            if (accessMode != other.accessMode) {
+                return false
+            }
+            if (keyVisibility != other.keyVisibility) {
+                return false
+            }
+            if (keyStoreType != other.keyStoreType) {
+                return false
+            }
+            if (overwriteAlias != other.overwriteAlias) {
+                return false
+            }
+            if (type != other.type) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as Pkcs12KeyStoreConfig
-
-        if (enabled != other.enabled) {
-            return false
+        override fun hashCode(): Int {
+            var result = enabled.hashCode()
+            result = 31 * result + order
+            result = 31 * result + persist.hashCode()
+            result = 31 * result + id.hashCode()
+            result = 31 * result + defaultConfigValues.hashCode()
+            result = 31 * result + password.hashCode()
+            result = 31 * result + (path?.hashCode() ?: 0)
+            result = 31 * result + (bytes?.contentHashCode() ?: 0)
+            result = 31 * result + accessMode.hashCode()
+            result = 31 * result + keyVisibility.hashCode()
+            result = 31 * result + keyStoreType.hashCode()
+            result = 31 * result + type.hashCode()
+            result = 31 * result + overwriteAlias.hashCode()
+            return result
         }
-        if (order != other.order) {
-            return false
-        }
-        if (persist != other.persist) {
-            return false
-        }
-        if (id != other.id) {
-            return false
-        }
-        if (defaultConfigValues != other.defaultConfigValues) {
-            return false
-        }
-        if (password != other.password) {
-            return false
-        }
-        if (path != other.path) {
-            return false
-        }
-        if (!bytes.contentEquals(other.bytes)) {
-            return false
-        }
-        if (accessMode != other.accessMode) {
-            return false
-        }
-        if (keyVisibility != other.keyVisibility) {
-            return false
-        }
-        if (keyStoreType != other.keyStoreType) {
-            return false
-        }
-        if (overwriteAlias != other.overwriteAlias) {
-            return false
-        }
-        if (type != other.type) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = enabled.hashCode()
-        result = 31 * result + order
-        result = 31 * result + persist.hashCode()
-        result = 31 * result + id.hashCode()
-        result = 31 * result + defaultConfigValues.hashCode()
-        result = 31 * result + password.hashCode()
-        result = 31 * result + (path?.hashCode() ?: 0)
-        result = 31 * result + (bytes?.contentHashCode() ?: 0)
-        result = 31 * result + accessMode.hashCode()
-        result = 31 * result + keyVisibility.hashCode()
-        result = 31 * result + keyStoreType.hashCode()
-        result = 31 * result + type.hashCode()
-        result = 31 * result + overwriteAlias.hashCode()
-        return result
-    }
-}
 
 @JsExportCompat
 @Serializable
 @SerialName("jks")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JksKeyStoreConfig", exact = true)
-data class JksKeyStoreConfig(
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val id: String = "jks",
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val enabled: Boolean = true,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val order: Int = Order.MEDIUM.orderValue,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    @SerialName("defaultConfigValues")
-    override val defaultConfigValues: Map<String, String> = emptyMap(),
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val password: String,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val path: String? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val bytes: ByteArray? = null,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("accessMode")
-    override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("keyVisibility")
-    override val keyVisibility: String = KeyVisibility.PRIVATE.keyVisibility,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val persist: Boolean = true,
-    @SerialName("overwriteAlias")
-    override val overwriteAlias: Boolean = false,
-) : AbstractSoftwareKeyStoreConfig() {
-    @OptIn(InternalSerializationApi::class)
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @Transient
-    override val keyStoreType: String = PredefinedKeyStoreTypes.JKS.keyStoreType
+data class
+JksKeyStoreConfig
+    @JvmOverloads
+    constructor(
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val id: String = "jks",
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val enabled: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val order: Int = Order.MEDIUM.orderValue,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        @SerialName("defaultConfigValues")
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val password: String,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val bytes: ByteArray? = null,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("accessMode")
+        override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("keyVisibility")
+        override val keyVisibility: String = KeyVisibility.PRIVATE.keyVisibility,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val persist: Boolean = true,
+        @SerialName("overwriteAlias")
+        override val overwriteAlias: Boolean = false,
+    ) : AbstractSoftwareKeyStoreConfig() {
+        @OptIn(InternalSerializationApi::class)
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @Transient
+        override val keyStoreType: String = PredefinedKeyStoreTypes.JKS.keyStoreType
 
-    // get the discriminator as a field (the field name, objectName, is unimportant)
-    // this must be a delegated field so there's no backing field, so kxs ignores it
-    @OptIn(InternalSerializationApi::class)
-    val type: String
-        get() = this::class.serializer().descriptor.serialName
+        // get the discriminator as a field (the field name, objectName, is unimportant)
+        // this must be a delegated field so there's no backing field, so kxs ignores it
+        @OptIn(InternalSerializationApi::class)
+        val type: String
+            get() = this::class.serializer().descriptor.serialName
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as JksKeyStoreConfig
+
+            if (enabled != other.enabled) {
+                return false
+            }
+            if (order != other.order) {
+                return false
+            }
+            if (persist != other.persist) {
+                return false
+            }
+            if (id != other.id) {
+                return false
+            }
+            if (defaultConfigValues != other.defaultConfigValues) {
+                return false
+            }
+            if (password != other.password) {
+                return false
+            }
+            if (path != other.path) {
+                return false
+            }
+            if (!bytes.contentEquals(other.bytes)) {
+                return false
+            }
+            if (accessMode != other.accessMode) {
+                return false
+            }
+            if (keyVisibility != other.keyVisibility) {
+                return false
+            }
+            if (keyStoreType != other.keyStoreType) {
+                return false
+            }
+            if (overwriteAlias != other.overwriteAlias) {
+                return false
+            }
+            if (type != other.type) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as JksKeyStoreConfig
-
-        if (enabled != other.enabled) {
-            return false
+        override fun hashCode(): Int {
+            var result = enabled.hashCode()
+            result = 31 * result + order
+            result = 31 * result + persist.hashCode()
+            result = 31 * result + id.hashCode()
+            result = 31 * result + defaultConfigValues.hashCode()
+            result = 31 * result + password.hashCode()
+            result = 31 * result + (path?.hashCode() ?: 0)
+            result = 31 * result + (bytes?.contentHashCode() ?: 0)
+            result = 31 * result + accessMode.hashCode()
+            result = 31 * result + keyVisibility.hashCode()
+            result = 31 * result + keyStoreType.hashCode()
+            result = 31 * result + type.hashCode()
+            result = 31 * result + overwriteAlias.hashCode()
+            return result
         }
-        if (order != other.order) {
-            return false
-        }
-        if (persist != other.persist) {
-            return false
-        }
-        if (id != other.id) {
-            return false
-        }
-        if (defaultConfigValues != other.defaultConfigValues) {
-            return false
-        }
-        if (password != other.password) {
-            return false
-        }
-        if (path != other.path) {
-            return false
-        }
-        if (!bytes.contentEquals(other.bytes)) {
-            return false
-        }
-        if (accessMode != other.accessMode) {
-            return false
-        }
-        if (keyVisibility != other.keyVisibility) {
-            return false
-        }
-        if (keyStoreType != other.keyStoreType) {
-            return false
-        }
-        if (overwriteAlias != other.overwriteAlias) {
-            return false
-        }
-        if (type != other.type) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = enabled.hashCode()
-        result = 31 * result + order
-        result = 31 * result + persist.hashCode()
-        result = 31 * result + id.hashCode()
-        result = 31 * result + defaultConfigValues.hashCode()
-        result = 31 * result + password.hashCode()
-        result = 31 * result + (path?.hashCode() ?: 0)
-        result = 31 * result + (bytes?.contentHashCode() ?: 0)
-        result = 31 * result + accessMode.hashCode()
-        result = 31 * result + keyVisibility.hashCode()
-        result = 31 * result + keyStoreType.hashCode()
-        result = 31 * result + type.hashCode()
-        result = 31 * result + overwriteAlias.hashCode()
-        return result
-    }
-}
 
 @JsExportCompat
 @Serializable
 @SerialName("apple")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AppleKeyStoreConfig", exact = true)
-data class AppleKeyStoreConfig(
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val id: String = "apple",
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val enabled: Boolean = true,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val order: Int = Order.MEDIUM.orderValue,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    @SerialName("defaultConfigValues")
-    override val defaultConfigValues: Map<String, String> = emptyMap(),
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val password: String? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val path: String? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    override val bytes: ByteArray? = null,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("accessMode")
-    override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("keyVisibility")
-    override val keyVisibility: String = KeyVisibility.PUBLIC.keyVisibility,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val persist: Boolean = true,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("overwriteAlias")
-    override val overwriteAlias: Boolean = true,
-) : AbstractSoftwareKeyStoreConfig() {
-    @OptIn(InternalSerializationApi::class)
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @Transient
-    override val keyStoreType: String = PredefinedKeyStoreTypes.APPLE.keyStoreType
+data class
+AppleKeyStoreConfig
+    @JvmOverloads
+    constructor(
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val id: String = "apple",
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val enabled: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val order: Int = Order.MEDIUM.orderValue,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        @SerialName("defaultConfigValues")
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val password: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val bytes: ByteArray? = null,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("accessMode")
+        override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("keyVisibility")
+        override val keyVisibility: String = KeyVisibility.PUBLIC.keyVisibility,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val persist: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("overwriteAlias")
+        override val overwriteAlias: Boolean = true,
+    ) : AbstractSoftwareKeyStoreConfig() {
+        @OptIn(InternalSerializationApi::class)
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @Transient
+        override val keyStoreType: String = PredefinedKeyStoreTypes.APPLE.keyStoreType
 
-    @OptIn(InternalSerializationApi::class)
-    val type: String
-        get() = this::class.serializer().descriptor.serialName
-}
+        @OptIn(InternalSerializationApi::class)
+        val type: String
+            get() = this::class.serializer().descriptor.serialName
+    }

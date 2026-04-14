@@ -18,6 +18,7 @@ package com.sphereon.core.api.session
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
@@ -31,6 +32,7 @@ private const val DEFAULT_INTERCEPTOR_ORDER = 100
  * @property parsedCommandId Parsed CommandId, or null if not a valid 3-segment ID
  * @property subsystem The event subsystem this command belongs to
  */
+@JsExportCompat
 data class CommandExecutionContext(
     val commandId: String,
     val parsedCommandId: CommandId?,
@@ -44,6 +46,7 @@ data class CommandExecutionContext(
  * All interceptors in the chain are always called regardless of denials --
  * this allows audit interceptors to always emit STARTED events.
  */
+@JsExportCompat
 sealed class InterceptorVerdict {
     data object Continue : InterceptorVerdict()
 
@@ -63,6 +66,7 @@ sealed class InterceptorVerdict {
  * Interceptors are called in [order] ascending for [beforeExecute] and
  * descending for [afterExecute].
  */
+@JsExportCompat
 interface CommandLifecycleInterceptor {
     val name: String
     val order: Int get() = DEFAULT_INTERCEPTOR_ORDER
@@ -105,6 +109,7 @@ interface CommandLifecycleInterceptor {
  * IDK provides [EmptyInterceptorChain] by default via [DefaultInterceptorChainGraph].
  * Downstream layers replace this with a chain containing concrete interceptors.
  */
+@JsExportCompat
 interface CommandLifecycleInterceptorChain {
     val interceptors: List<CommandLifecycleInterceptor>
 }

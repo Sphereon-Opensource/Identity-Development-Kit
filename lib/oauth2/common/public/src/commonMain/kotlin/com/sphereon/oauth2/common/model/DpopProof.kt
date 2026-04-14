@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import kotlinx.serialization.Serializable
@@ -28,6 +29,7 @@ import kotlinx.serialization.Serializable
  * - alg: A signature algorithm identifier (REQUIRED)
  * - jwk: The public key used to sign the proof (REQUIRED)
  */
+@JsExportCompat
 @Serializable
 data class DpopJwtHeader(
     val typ: String = "dpop+jwt",
@@ -46,6 +48,7 @@ data class DpopJwtHeader(
  * - ath: Hash of the access token (REQUIRED when presenting access token)
  * - nonce: Server-provided nonce (OPTIONAL but REQUIRED when server returns one)
  */
+@JsExportCompat
 @Serializable
 data class DpopJwtPayload(
     val jti: String,
@@ -67,6 +70,8 @@ data class DpopJwtPayload(
  * @property issuedAt The creation time (optional, defaults to current time)
  * @property additionalClaims Additional claims to include in the payload
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class CreateDpopProofOptions(
     val issuer: ManagedIdentifierOptsOrResult,
     val httpMethod: String,
@@ -83,6 +88,7 @@ data class CreateDpopProofOptions(
  * @property dpopProof The compact JWT string
  * @property jwkThumbprint The thumbprint of the public key (for cnf claim)
  */
+@JsExportCompat
 data class DpopProofResult(
     val dpopProof: String,
     val jwkThumbprint: String,
@@ -100,6 +106,8 @@ data class DpopProofResult(
  * @property allowedSigningAlgs Allowed signing algorithms (optional)
  * @property now Current timestamp for validation (optional, defaults to current time)
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class VerifyDpopProofOptions(
     val dpopProof: String,
     val httpMethod: String,
@@ -118,6 +126,7 @@ data class VerifyDpopProofOptions(
  * @property payload The verified payload
  * @property jwkThumbprint The thumbprint of the public key
  */
+@JsExportCompat
 data class VerifyDpopProofResult(
     val header: DpopJwtHeader,
     val payload: DpopJwtPayload,

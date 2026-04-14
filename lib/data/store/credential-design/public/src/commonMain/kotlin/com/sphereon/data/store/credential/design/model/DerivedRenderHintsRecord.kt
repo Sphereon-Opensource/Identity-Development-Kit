@@ -16,37 +16,50 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class ClaimCardinality(
-    val min: Int? = null,
-    val max: Int? = null,
-)
+data class ClaimCardinality
+    @JvmOverloads
+    constructor(
+        val min: Int? = null,
+        val max: Int? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class FieldRenderHint(
-    val path: DesignClaimPath,
-    val valueKind: ClaimValueKind,
-    val widgetHint: ClaimWidgetHint? = null,
-    val formatHint: String? = null,
-    val contentMediaType: String? = null,
-    val contentEncoding: String? = null,
-    val repeatable: Boolean = false,
-    val contextTerms: List<String> = emptyList(),
-    val characterEncoding: String? = null,
-    val standard: String? = null,
-    val cardinality: ClaimCardinality? = null,
-    val sensitive: Boolean = false,
-)
+data class FieldRenderHint
+    @JvmOverloads
+    constructor(
+        val path: DesignClaimPath,
+        val valueKind: ClaimValueKind,
+        val widgetHint: ClaimWidgetHint? = null,
+        val formatHint: String? = null,
+        val contentMediaType: String? = null,
+        val contentEncoding: String? = null,
+        val repeatable: Boolean = false,
+        val contextTerms: List<String> = emptyList(),
+        val characterEncoding: String? = null,
+        val standard: String? = null,
+        val cardinality: ClaimCardinality? = null,
+        val sensitive: Boolean = false,
+    )
 
+@JsExportCompat
 @Serializable
-data class DerivedRenderHintsRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val sourceSnapshotIds: List<Uuid> = emptyList(),
-    val fieldHints: List<FieldRenderHint>,
-    val groupHints: Map<String, List<DesignClaimPath>> = emptyMap(),
-    val defaultOrdering: List<DesignClaimPath> = emptyList(),
-)
+data class DerivedRenderHintsRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val sourceSnapshotIds: List<Uuid> = emptyList(),
+        val fieldHints: List<FieldRenderHint>,
+        @JsExportIgnoreCompat
+        val groupHints: Map<String, List<DesignClaimPath>> = emptyMap(),
+        val defaultOrdering: List<DesignClaimPath> = emptyList(),
+    )

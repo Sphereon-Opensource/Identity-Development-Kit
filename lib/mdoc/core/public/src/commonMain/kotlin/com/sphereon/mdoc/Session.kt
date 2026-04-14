@@ -50,6 +50,7 @@ import dev.whyoleg.cryptography.algorithms.SHA256
 import kotlinx.io.bytestring.ByteStringBuilder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 private val MDOC_READER_IDENTIFIER = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
@@ -384,9 +385,11 @@ data class SessionEstablishment(
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val E_READER_KEY = StringLabel("eReaderKey")
 
         @JsStatic
+        @JvmStatic
         val DATA = StringLabel("data")
     }
 }
@@ -422,7 +425,10 @@ data class SessionData(
     override fun toString(): String = "SessionData(data=$data, status=$status, original=${stringify(original)})"
 
     companion object Decoder {
+        @JvmStatic
         val DATA = StringLabel("data")
+
+        @JvmStatic
         val STATUS = StringLabel("status")
     }
 }

@@ -19,7 +19,6 @@ package com.sphereon.ui.prompt.coordinator
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ui.prompt.core.CancelReason
 import com.sphereon.ui.prompt.core.PromptHandle

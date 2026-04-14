@@ -20,8 +20,10 @@
 package com.sphereon.data.store.party.model
 
 import com.sphereon.core.api.HasId
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -33,55 +35,58 @@ import kotlin.uuid.Uuid
  * Each identifier can have a type-specific extension (e.g., [IdentifierX509] for X.509 certs).
  * The lookup flow is: identifier value → correlation_identifier → identity → party
  */
+@JsExportCompat
 @Serializable
-data class CorrelationIdentifier(
-    /** Unique identifier for this correlation identifier */
-    @SerialName("id")
-    val correlationId: Uuid,
-    /** The identity this identifier belongs to (identity.party_id) */
-    @SerialName("identityId")
-    val identityId: Uuid,
-    /** Tenant this identifier belongs to */
-    @SerialName("tenantId")
-    val tenantId: String,
-    /** The type of identifier */
-    @SerialName("identifierType")
-    val identifierType: IdentifierType,
-    /** The actual identifier value (DID string, email, phone number, VAT number, etc.) */
-    val value: String,
-    /** Whether this is the primary identifier for its type */
-    @SerialName("isPrimary")
-    val isPrimary: Boolean = false,
-    /** Whether this identifier has been verified */
-    @SerialName("isVerified")
-    val isVerified: Boolean = false,
-    /** When the identifier was verified */
-    @SerialName("verifiedAt")
-    val verifiedAt: Instant? = null,
-    /** When this identifier became active */
-    @SerialName("validFrom")
-    val validFrom: Instant,
-    /** When this identifier expired (null = current/active) */
-    @SerialName("validUntil")
-    val validUntil: Instant? = null,
-    /** When the identifier was created */
-    @SerialName("createdAt")
-    val createdAt: Instant,
-    /** Who created the identifier (party ID) */
-    @SerialName("createdById")
-    val createdById: Uuid? = null,
-    /** When the identifier was last updated */
-    @SerialName("updatedAt")
-    val updatedAt: Instant,
-    /** Who last updated the identifier (party ID) */
-    @SerialName("updatedById")
-    val updatedById: Uuid? = null,
-    /** When the identifier was soft-deleted (null if not deleted) */
-    @SerialName("deletedAt")
-    val deletedAt: Instant? = null,
-    /** Who deleted the identifier (party ID) */
-    @SerialName("deletedById")
-    val deletedById: Uuid? = null,
-) : HasId {
-    override val id: String get() = correlationId.toString()
-}
+data class CorrelationIdentifier
+    @JvmOverloads
+    constructor(
+        /** Unique identifier for this correlation identifier */
+        @SerialName("id")
+        val correlationId: Uuid,
+        /** The identity this identifier belongs to (identity.party_id) */
+        @SerialName("identityId")
+        val identityId: Uuid,
+        /** Tenant this identifier belongs to */
+        @SerialName("tenantId")
+        val tenantId: String,
+        /** The type of identifier */
+        @SerialName("identifierType")
+        val identifierType: IdentifierType,
+        /** The actual identifier value (DID string, email, phone number, VAT number, etc.) */
+        val value: String,
+        /** Whether this is the primary identifier for its type */
+        @SerialName("isPrimary")
+        val isPrimary: Boolean = false,
+        /** Whether this identifier has been verified */
+        @SerialName("isVerified")
+        val isVerified: Boolean = false,
+        /** When the identifier was verified */
+        @SerialName("verifiedAt")
+        val verifiedAt: Instant? = null,
+        /** When this identifier became active */
+        @SerialName("validFrom")
+        val validFrom: Instant,
+        /** When this identifier expired (null = current/active) */
+        @SerialName("validUntil")
+        val validUntil: Instant? = null,
+        /** When the identifier was created */
+        @SerialName("createdAt")
+        val createdAt: Instant,
+        /** Who created the identifier (party ID) */
+        @SerialName("createdById")
+        val createdById: Uuid? = null,
+        /** When the identifier was last updated */
+        @SerialName("updatedAt")
+        val updatedAt: Instant,
+        /** Who last updated the identifier (party ID) */
+        @SerialName("updatedById")
+        val updatedById: Uuid? = null,
+        /** When the identifier was soft-deleted (null if not deleted) */
+        @SerialName("deletedAt")
+        val deletedAt: Instant? = null,
+        /** Who deleted the identifier (party ID) */
+        @SerialName("deletedById")
+        val deletedById: Uuid? = null,
+    ) : HasId {
+        override val id: String get() = correlationId.toString()
+    }

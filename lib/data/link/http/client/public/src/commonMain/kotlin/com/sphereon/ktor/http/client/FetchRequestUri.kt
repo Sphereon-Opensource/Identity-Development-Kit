@@ -124,6 +124,7 @@ interface FetchRequestUriCommand : Command<FetchRequestUriArgs, FetchedRequestUr
 /**
  * Command service interface for fetching request URIs
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("FetchRequestUriCommandService", exact = true)
 interface FetchRequestUriCommandService {

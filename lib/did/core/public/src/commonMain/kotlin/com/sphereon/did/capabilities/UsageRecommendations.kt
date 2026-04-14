@@ -20,6 +20,8 @@ package com.sphereon.did.capabilities
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -37,44 +39,49 @@ import kotlin.native.ObjCName
 @ObjCName("DidUsageRecommendations", exact = true)
 @JsExportCompat
 @Serializable
-data class UsageRecommendations(
-    val naturalPersons: Boolean = false,
-    val organizations: Boolean = false,
-    val ephemeral: Boolean = false,
-    val longLived: Boolean = false,
-) {
-    companion object {
-        /**
-         * Recommended for ephemeral/personal use (did:key, did:jwk).
-         */
-        val EPHEMERAL_PERSONAL: UsageRecommendations =
-            UsageRecommendations(
-                naturalPersons = true,
-                organizations = false,
-                ephemeral = true,
-                longLived = false,
-            )
+data class UsageRecommendations
+    @JvmOverloads
+    constructor(
+        val naturalPersons: Boolean = false,
+        val organizations: Boolean = false,
+        val ephemeral: Boolean = false,
+        val longLived: Boolean = false,
+    ) {
+        companion object {
+            /**
+             * Recommended for ephemeral/personal use (did:key, did:jwk).
+             */
+            @JvmStatic
+            val EPHEMERAL_PERSONAL: UsageRecommendations =
+                UsageRecommendations(
+                    naturalPersons = true,
+                    organizations = false,
+                    ephemeral = true,
+                    longLived = false,
+                )
 
-        /**
-         * Recommended for organizational use (did:web).
-         */
-        val ORGANIZATIONAL: UsageRecommendations =
-            UsageRecommendations(
-                naturalPersons = false,
-                organizations = true,
-                ephemeral = false,
-                longLived = true,
-            )
+            /**
+             * Recommended for organizational use (did:web).
+             */
+            @JvmStatic
+            val ORGANIZATIONAL: UsageRecommendations =
+                UsageRecommendations(
+                    naturalPersons = false,
+                    organizations = true,
+                    ephemeral = false,
+                    longLived = true,
+                )
 
-        /**
-         * Suitable for any use case.
-         */
-        val GENERAL: UsageRecommendations =
-            UsageRecommendations(
-                naturalPersons = true,
-                organizations = true,
-                ephemeral = true,
-                longLived = true,
-            )
+            /**
+             * Suitable for any use case.
+             */
+            @JvmStatic
+            val GENERAL: UsageRecommendations =
+                UsageRecommendations(
+                    naturalPersons = true,
+                    organizations = true,
+                    ephemeral = true,
+                    longLived = true,
+                )
+        }
     }
-}

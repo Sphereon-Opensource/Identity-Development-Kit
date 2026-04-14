@@ -20,6 +20,7 @@ package com.sphereon.mdoc.engagement
 import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.transfer.TransferInstance
 import com.sphereon.mdoc.transfer.TransferManager
@@ -41,6 +42,7 @@ import kotlin.uuid.Uuid
  * This is used by the manager to suspend/resume engagements when switching between
  * concurrent engagement types (QR, NFC, etc).
  */
+@JsExportCompat
 interface SuspendableEngagement {
     /**
      * Suspends this engagement, preventing it from responding to connection attempts.
@@ -73,6 +75,7 @@ interface SuspendableEngagement {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EngagementInstance", exact = true)
+@JsExportCompat
 interface EngagementInstance : MdocEngagementEvent.Handlers {
     val sessionCoroutineScope: CoroutineScopeScoped
 

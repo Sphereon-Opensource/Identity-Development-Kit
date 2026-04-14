@@ -16,12 +16,14 @@
 
 package com.sphereon.core.api.auth
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
  * Minimal token validation interface for open-source extensibility.
  *
  */
+@JsExportCompat
 interface TokenValidator {
     /**
      * Validate a bearer token and return its status.
@@ -38,6 +40,7 @@ interface TokenValidator {
  * @property active Whether the token is currently valid and active
  * @property reason Human-readable explanation when [active] is false
  */
+@JsExportCompat
 @Serializable
 data class TokenValidationResult(
     val active: Boolean,

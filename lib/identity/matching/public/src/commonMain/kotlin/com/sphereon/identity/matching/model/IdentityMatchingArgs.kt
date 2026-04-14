@@ -16,8 +16,12 @@
 
 package com.sphereon.identity.matching.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
 data class LookupIdentityMatchArgs(
     val identifierHash: String,
@@ -25,22 +29,28 @@ data class LookupIdentityMatchArgs(
     val tenantId: String,
 )
 
+@JsExportCompat
 @Serializable
-data class CreateIdentityMatchArgs(
-    val identifierHash: String,
-    val identifierType: IdentifierType,
-    val internalIdentityId: String,
-    val tenantId: String,
-    val metadata: Map<String, String> = emptyMap(),
-    val hashKeyVersion: String? = null,
-)
+data class CreateIdentityMatchArgs
+    @JvmOverloads
+    constructor(
+        val identifierHash: String,
+        val identifierType: IdentifierType,
+        val internalIdentityId: String,
+        val tenantId: String,
+        @JsExportIgnoreCompat
+        val metadata: Map<String, String> = emptyMap(),
+        val hashKeyVersion: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
 data class DeleteIdentityMatchArgs(
     val matchId: String,
     val tenantId: String,
 )
 
+@JsExportCompat
 @Serializable
 data class ListIdentityMatchesArgs(
     val internalIdentityId: String,

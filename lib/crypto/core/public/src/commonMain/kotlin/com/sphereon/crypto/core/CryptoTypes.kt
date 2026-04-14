@@ -43,6 +43,7 @@ interface CryptoServices {
  * Injectable interface for crypto callbacks.
  * Uses marker interfaces to work around generic type injection limitations.
  */
+@JsExportCompat
 interface CryptoCallbacks {
     fun x509(): X509VerifyPlatformCallback<*>
 

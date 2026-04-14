@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -33,6 +34,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateAuthRequestEndpointCommand", exact = true)
+@JsExportCompat
 interface CreateAuthRequestEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.universal.create"
@@ -61,6 +63,7 @@ interface CreateAuthRequestEndpointCommand : HttpEndpointCommand {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetAuthRequestStatusEndpointCommand", exact = true)
+@JsExportCompat
 interface GetAuthRequestStatusEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.universal.status"
@@ -87,6 +90,7 @@ interface GetAuthRequestStatusEndpointCommand : HttpEndpointCommand {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteAuthRequestEndpointCommand", exact = true)
+@JsExportCompat
 interface DeleteAuthRequestEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.universal.delete"

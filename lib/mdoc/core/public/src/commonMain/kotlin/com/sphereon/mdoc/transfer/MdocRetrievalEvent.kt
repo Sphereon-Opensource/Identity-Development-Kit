@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.transfer
 
 import com.sphereon.core.compat.DateTimeUtils
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.mdoc.MdocEvent
 import com.sphereon.mdoc.data.device.DeviceRequest
@@ -37,6 +38,7 @@ private fun cborNullBytes(): ByteArray = byteArrayOf(0xF6.toByte())
  *
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("for", exact = true)
+@JsExportCompat
  * Extends [MdocEvent] to provide a unified interface for all mdoc interaction events.
  */
 @OptIn(ExperimentalUuidApi::class)
@@ -1079,6 +1081,7 @@ suspend fun Collection<MdocRetrievalEvent.Listener>.onRetrievalEvent(event: Mdoc
 /**
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("that", exact = true)
+@JsExportCompat
  * Wrapper class that adds engagement event context to a retrieval event.
  * This class is used in the datatransfer module to associate retrieval events
  * with their corresponding engagement events.

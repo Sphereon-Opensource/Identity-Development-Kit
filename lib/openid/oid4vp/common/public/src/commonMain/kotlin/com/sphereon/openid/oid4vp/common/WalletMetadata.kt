@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.common
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import io.konform.validation.Validation
 import io.konform.validation.jsonschema.pattern
 import kotlinx.serialization.SerialName
@@ -63,6 +64,7 @@ data class WalletMetadata(
      *
      * Required per OpenID4VP 1.0 Section 9.
      */
+    @JsExportIgnoreCompat
     @SerialName("vp_formats_supported")
     val vpFormatsSupported: Map<String, VpFormatSupport>,
     /**
@@ -114,6 +116,7 @@ data class WalletMetadata(
      *
      * Allows for future extensibility without breaking changes.
      */
+    @JsExportIgnoreCompat
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -312,6 +315,7 @@ val validateWalletRequestUriPostBody =
  *
  * Provides a convenient DSL for configuring wallet metadata.
  */
+@JsExportCompat
 class WalletMetadataBuilder {
     private val vpFormatsSupported = mutableMapOf<String, VpFormatSupport>()
     private var clientIdSchemesSupported: MutableList<ClientIdScheme>? = null

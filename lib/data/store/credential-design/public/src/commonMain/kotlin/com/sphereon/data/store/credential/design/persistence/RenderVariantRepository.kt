@@ -16,10 +16,12 @@
 
 package com.sphereon.data.store.credential.design.persistence
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.DesignFilter
 import com.sphereon.data.store.credential.design.model.RenderVariantRecord
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 interface RenderVariantRepository {
     suspend fun findById(
         tenantId: String,

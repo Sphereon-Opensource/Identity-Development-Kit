@@ -16,7 +16,10 @@
 
 package com.sphereon.core.api.tracing
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * W3C Trace Context representation.
@@ -29,41 +32,45 @@ import kotlinx.serialization.Serializable
  * @property parentSpanId Optional parent span identifier for nested spans
  * @property traceFlags Trace flags (e.g., 0x01 = sampled)
  */
+@JsExportCompat
 @Serializable
-data class TraceContext(
-    val traceId: String,
-    val spanId: String,
-    val parentSpanId: String? = null,
-    val traceFlags: Int = 0,
-) {
-    /**
-     * Serializes to W3C traceparent header format.
-     * Format: "00-{traceId}-{spanId}-{traceFlags}"
-     */
-    fun toW3CTraceparent(): String = "00-$traceId-$spanId-${traceFlags.toString(HEX_RADIX).padStart(2, '0')}"
-
-    companion object {
-        private const val HEX_RADIX = 16
-        private val TRACEPARENT_REGEX = Regex("^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$")
-
+data class TraceContext
+    @JvmOverloads
+    constructor(
+        val traceId: String,
+        val spanId: String,
+        val parentSpanId: String? = null,
+        val traceFlags: Int = 0,
+    ) {
         /**
-         * Parses a W3C traceparent header value into a [TraceContext].
-         *
-         * @param header The traceparent header value
-         * @return Parsed [TraceContext] or null if the header is invalid
+         * Serializes to W3C traceparent header format.
+         * Format: "00-{traceId}-{spanId}-{traceFlags}"
          */
-        fun fromW3CTraceparent(header: String): TraceContext? {
-            val match = TRACEPARENT_REGEX.matchEntire(header.trim().lowercase()) ?: return null
-            val (_, traceId, spanId, flags) = match.destructured
-            // Version "ff" is invalid per spec
-            if (match.groupValues[1] == "ff") {
-                return null
+        fun toW3CTraceparent(): String = "00-$traceId-$spanId-${traceFlags.toString(HEX_RADIX).padStart(2, '0')}"
+
+        companion object {
+            private const val HEX_RADIX = 16
+            private val TRACEPARENT_REGEX = Regex("^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$")
+
+            /**
+             * Parses a W3C traceparent header value into a [TraceContext].
+             *
+             * @param header The traceparent header value
+             * @return Parsed [TraceContext] or null if the header is invalid
+             */
+            @JvmStatic
+            fun fromW3CTraceparent(header: String): TraceContext? {
+                val match = TRACEPARENT_REGEX.matchEntire(header.trim().lowercase()) ?: return null
+                val (_, traceId, spanId, flags) = match.destructured
+                // Version "ff" is invalid per spec
+                if (match.groupValues[1] == "ff") {
+                    return null
+                }
+                return TraceContext(
+                    traceId = traceId,
+                    spanId = spanId,
+                    traceFlags = flags.toInt(HEX_RADIX),
+                )
             }
-            return TraceContext(
-                traceId = traceId,
-                spanId = spanId,
-                traceFlags = flags.toInt(HEX_RADIX),
-            )
         }
     }
-}

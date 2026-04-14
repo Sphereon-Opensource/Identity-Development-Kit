@@ -21,6 +21,8 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -40,63 +42,65 @@ import kotlin.native.ObjCName
 @ObjCName("DidVerificationMethod", exact = true)
 @JsExportCompat
 @Serializable
-data class VerificationMethod(
-    val id: String,
-    val type: String,
-    val controller: String,
-    val publicKeyJwk: Jwk? = null,
-    val publicKeyMultibase: String? = null,
-) {
-    init {
-        require(publicKeyJwk != null || publicKeyMultibase != null) {
-            "VerificationMethod must have either publicKeyJwk or publicKeyMultibase"
+data class VerificationMethod
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val type: String,
+        val controller: String,
+        val publicKeyJwk: Jwk? = null,
+        val publicKeyMultibase: String? = null,
+    ) {
+        init {
+            require(publicKeyJwk != null || publicKeyMultibase != null) {
+                "VerificationMethod must have either publicKeyJwk or publicKeyMultibase"
+            }
         }
-    }
 
-    /**
-     * Gets the key ID (fragment) from the verification method ID.
-     * For example, if id is "did:example:123#key-1", this returns "key-1".
-     *
-     * @return The fragment portion of the ID, or the full ID if no fragment is present
-     */
-    fun getKeyId(): String {
-        val fragmentIndex = id.indexOf('#')
-        return if (fragmentIndex >= 0) {
-            id.substring(fragmentIndex + 1)
-        } else {
-            id
+        /**
+         * Gets the key ID (fragment) from the verification method ID.
+         * For example, if id is "did:example:123#key-1", this returns "key-1".
+         *
+         * @return The fragment portion of the ID, or the full ID if no fragment is present
+         */
+        fun getKeyId(): String {
+            val fragmentIndex = id.indexOf('#')
+            return if (fragmentIndex >= 0) {
+                id.substring(fragmentIndex + 1)
+            } else {
+                id
+            }
         }
-    }
 
-    /**
-     * Gets the DID portion from the verification method ID.
-     * For example, if id is "did:example:123#key-1", this returns "did:example:123".
-     *
-     * @return The DID portion of the ID, or the full ID if no fragment is present
-     */
-    fun getDid(): String {
-        val fragmentIndex = id.indexOf('#')
-        return if (fragmentIndex >= 0) {
-            id.substring(0, fragmentIndex)
-        } else {
-            id
+        /**
+         * Gets the DID portion from the verification method ID.
+         * For example, if id is "did:example:123#key-1", this returns "did:example:123".
+         *
+         * @return The DID portion of the ID, or the full ID if no fragment is present
+         */
+        fun getDid(): String {
+            val fragmentIndex = id.indexOf('#')
+            return if (fragmentIndex >= 0) {
+                id.substring(0, fragmentIndex)
+            } else {
+                id
+            }
         }
+
+        /**
+         * Checks if this verification method uses a JWK representation.
+         */
+        fun isJwk(): Boolean = publicKeyJwk != null
+
+        /**
+         * Checks if this verification method uses a Multibase representation.
+         */
+        fun isMultibase(): Boolean = publicKeyMultibase != null
+
+        /**
+         * Gets the verification method type as an enum, if recognized.
+         *
+         * @return The VerificationMethodType enum value, or null if the type is not recognized
+         */
+        fun getTypeEnum(): VerificationMethodType? = VerificationMethodType.fromValue(type)
     }
-
-    /**
-     * Checks if this verification method uses a JWK representation.
-     */
-    fun isJwk(): Boolean = publicKeyJwk != null
-
-    /**
-     * Checks if this verification method uses a Multibase representation.
-     */
-    fun isMultibase(): Boolean = publicKeyMultibase != null
-
-    /**
-     * Gets the verification method type as an enum, if recognized.
-     *
-     * @return The VerificationMethodType enum value, or null if the type is not recognized
-     */
-    fun getTypeEnum(): VerificationMethodType? = VerificationMethodType.fromValue(type)
-}

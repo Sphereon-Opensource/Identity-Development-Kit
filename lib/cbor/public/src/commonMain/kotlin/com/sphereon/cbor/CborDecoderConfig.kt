@@ -19,6 +19,8 @@ package com.sphereon.cbor
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * Configuration for the CBOR decoder with security limits.
@@ -36,71 +38,76 @@ import kotlin.js.JsStatic
  *                           Default: 10,000,000 bytes (~10MB)
  */
 @JsExportCompat
-data class CborDecoderConfig(
-    val maxDepth: Int = DEFAULT_MAX_DEPTH,
-    val maxItems: Int = DEFAULT_MAX_ITEMS,
-    val maxStringLength: Int = DEFAULT_MAX_STRING_LENGTH,
-) {
-    init {
-        require(maxDepth > 0) { "maxDepth must be positive" }
-        require(maxItems > 0) { "maxItems must be positive" }
-        require(maxStringLength > 0) { "maxStringLength must be positive" }
+data class CborDecoderConfig
+    @JvmOverloads
+    constructor(
+        val maxDepth: Int = DEFAULT_MAX_DEPTH,
+        val maxItems: Int = DEFAULT_MAX_ITEMS,
+        val maxStringLength: Int = DEFAULT_MAX_STRING_LENGTH,
+    ) {
+        init {
+            require(maxDepth > 0) { "maxDepth must be positive" }
+            require(maxItems > 0) { "maxItems must be positive" }
+            require(maxStringLength > 0) { "maxStringLength must be positive" }
+        }
+
+        companion object {
+            /**
+             * Default maximum nesting depth.
+             * 64 levels is sufficient for virtually all legitimate use cases while
+             * preventing stack overflow from maliciously nested structures.
+             */
+            const val DEFAULT_MAX_DEPTH = 64
+
+            /**
+             * Default maximum item count.
+             * 1 million items provides ample room for legitimate data while
+             * preventing memory exhaustion attacks.
+             */
+            const val DEFAULT_MAX_ITEMS = 1_000_000
+
+            /**
+             * Default maximum string length (10MB).
+             * Large enough for most legitimate uses (embedded images, documents)
+             * while preventing memory exhaustion from single huge strings.
+             */
+            const val DEFAULT_MAX_STRING_LENGTH = 10_000_000
+
+            /**
+             * Default configuration with standard security limits.
+             */
+            @JsStatic
+            @JvmStatic
+            val DEFAULT = CborDecoderConfig()
+
+            /**
+             * Permissive configuration for trusted input.
+             * Use only when you control the input source and need to process
+             * very large or deeply nested structures.
+             */
+            @JsStatic
+            @JvmStatic
+            val PERMISSIVE =
+                CborDecoderConfig(
+                    maxDepth = Int.MAX_VALUE,
+                    maxItems = Int.MAX_VALUE,
+                    maxStringLength = Int.MAX_VALUE,
+                )
+
+            /**
+             * Strict configuration for untrusted input.
+             * Lower limits for processing potentially malicious data.
+             */
+            @JsStatic
+            @JvmStatic
+            val STRICT =
+                CborDecoderConfig(
+                    maxDepth = 32,
+                    maxItems = 100_000,
+                    maxStringLength = 1_000_000,
+                )
+        }
     }
-
-    companion object {
-        /**
-         * Default maximum nesting depth.
-         * 64 levels is sufficient for virtually all legitimate use cases while
-         * preventing stack overflow from maliciously nested structures.
-         */
-        const val DEFAULT_MAX_DEPTH = 64
-
-        /**
-         * Default maximum item count.
-         * 1 million items provides ample room for legitimate data while
-         * preventing memory exhaustion attacks.
-         */
-        const val DEFAULT_MAX_ITEMS = 1_000_000
-
-        /**
-         * Default maximum string length (10MB).
-         * Large enough for most legitimate uses (embedded images, documents)
-         * while preventing memory exhaustion from single huge strings.
-         */
-        const val DEFAULT_MAX_STRING_LENGTH = 10_000_000
-
-        /**
-         * Default configuration with standard security limits.
-         */
-        @JsStatic
-        val DEFAULT = CborDecoderConfig()
-
-        /**
-         * Permissive configuration for trusted input.
-         * Use only when you control the input source and need to process
-         * very large or deeply nested structures.
-         */
-        @JsStatic
-        val PERMISSIVE =
-            CborDecoderConfig(
-                maxDepth = Int.MAX_VALUE,
-                maxItems = Int.MAX_VALUE,
-                maxStringLength = Int.MAX_VALUE,
-            )
-
-        /**
-         * Strict configuration for untrusted input.
-         * Lower limits for processing potentially malicious data.
-         */
-        @JsStatic
-        val STRICT =
-            CborDecoderConfig(
-                maxDepth = 32,
-                maxItems = 100_000,
-                maxStringLength = 1_000_000,
-            )
-    }
-}
 
 /**
  * Internal state tracker for CBOR decoding operations.

@@ -22,6 +22,7 @@ import com.sphereon.cbor.CborItem
 import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.NumberLabel
 import com.sphereon.cbor.longToNumberLabel
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.transfer.OriginInfo
 import com.sphereon.mdoc.transfer.OriginInfoCategory
@@ -47,6 +48,7 @@ import kotlin.uuid.Uuid
 @ObjCName("DeviceEngagementDsl", exact = true)
 annotation class DeviceEngagementDsl
 
+@JsExportCompat
 @DeviceEngagementDsl
 class DeviceEngagementBuilder(
     private val eDeviceKeyBytes: CborEncodedItem<CoseKeyType>,
@@ -145,6 +147,7 @@ class DeviceEngagementBuilder(
     }
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OriginInfoBuilder", exact = true)
@@ -170,6 +173,7 @@ class OriginInfoBuilder {
     }
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CapabilitiesBuilder", exact = true)
@@ -179,6 +183,7 @@ class CapabilitiesBuilder {
     fun build(): Capabilities = Capabilities(macKeysSupport = macKeysSupport)
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 class SecurityBuilder(
     private val deviceKeyBytes: CborEncodedItem<CoseKeyType>? = null,
@@ -192,6 +197,7 @@ class SecurityBuilder(
     fun build(): DeviceEngagementSecurity = DeviceEngagementSecurity(cipherSuite, deviceKeyBytes ?: eDeviceKeyBytes)
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RetrievalMethodsBuilder", exact = true)
@@ -221,6 +227,7 @@ class RetrievalMethodsBuilder {
     fun build(): Array<DeviceRetrievalMethod>? = list.takeIf { it.isNotEmpty() }?.toTypedArray()
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleOptionsBuilder", exact = true)
@@ -247,6 +254,7 @@ class BleOptionsBuilder {
         )
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NfcOptionsBuilder", exact = true)
@@ -261,6 +269,7 @@ class NfcOptionsBuilder {
         )
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("WifiAwareOptionsBuilder", exact = true)
@@ -274,6 +283,7 @@ class WifiAwareOptionsBuilder {
         )
 }
 
+@JsExportCompat
 @DeviceEngagementDsl
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("WebsiteOptionsBuilder", exact = true)

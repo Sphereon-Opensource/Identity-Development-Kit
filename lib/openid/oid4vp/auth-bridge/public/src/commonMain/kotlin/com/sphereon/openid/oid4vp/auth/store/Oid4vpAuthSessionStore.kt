@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.auth.store
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthSession
 import kotlin.time.Duration
 
@@ -29,6 +30,7 @@ import kotlin.time.Duration
  * implementation for development and testing. For production use, implement
  * a store backed by a persistent KV store or database.
  */
+@JsExportCompat
 interface Oid4vpAuthSessionStore {
     /**
      * Store a session with the given TTL.

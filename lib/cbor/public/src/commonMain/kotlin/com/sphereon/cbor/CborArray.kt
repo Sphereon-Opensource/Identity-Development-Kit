@@ -21,48 +21,51 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.stringify
 import kotlinx.io.bytestring.ByteStringBuilder
 import kotlinx.serialization.json.JsonArray
+import kotlin.jvm.JvmOverloads
 
 @Suppress("UNCHECKED_CAST")
 @JsExportCompat
-class CborArray<V : CborItem<*>>(
-    value: cddl_list<V> = mutableListOf(),
-    val indefiniteLength: Boolean = false,
-) : CborCollectionItem<cddl_list<V>>(value, CDDL.list) {
-    fun <T> required(idx: Int): T {
-        require(idx <= this.value.size) { "Index $idx out of bounds" }
-        return value[idx] as T
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    fun <T> optional(idx: Int): T? {
-        val item = value.getOrNull(idx) ?: return null
-        if (item is CborNil || item is CborNull) {
-            return null
-        }
-        return item as T
-    }
-
-    override fun toJsonSimple(): JsonArray = JsonArray(value.map { it.toJsonSimple() })
-
-    override fun toJsonWithCDDL(): JsonArray = JsonArray(value.map { it.toJsonWithCDDL() })
-
-    override fun toJsonCborItem(): ICborItemValueJson =
-        object : ICborItemValueJson {
-            override val cddl = this@CborArray.cddl
-            override val value = this@CborArray.toJsonWithCDDL()
+class CborArray<V : CborItem<*>>
+    @JvmOverloads
+    constructor(
+        value: cddl_list<V> = mutableListOf(),
+        val indefiniteLength: Boolean = false,
+    ) : CborCollectionItem<cddl_list<V>>(value, CDDL.list) {
+        fun <T> required(idx: Int): T {
+            require(idx <= this.value.size) { "Index $idx out of bounds" }
+            return value[idx] as T
         }
 
-    override fun encode(builder: ByteStringBuilder) {
-        if (indefiniteLength) {
-            val majorTypeShifted = (majorType!!.type shl 5)
-            builder.append((majorTypeShifted + 31).toByte())
-            value.forEach { (it as CborItem<V>).encode(builder) }
-            builder.append(0xff.toByte())
-        } else {
-            cborEncodeLength(builder, majorType!!, value.size)
-            value.forEach { (it as CborItem<V>).encode(builder) }
+        @Suppress("UNCHECKED_CAST")
+        fun <T> optional(idx: Int): T? {
+            val item = value.getOrNull(idx) ?: return null
+            if (item is CborNil || item is CborNull) {
+                return null
+            }
+            return item as T
         }
-    }
 
-    override fun toString(): String = "CborArray(value=${stringify(value)}, indefiniteLength=$indefiniteLength)"
-}
+        override fun toJsonSimple(): JsonArray = JsonArray(value.map { it.toJsonSimple() })
+
+        override fun toJsonWithCDDL(): JsonArray = JsonArray(value.map { it.toJsonWithCDDL() })
+
+        override fun toJsonCborItem(): ICborItemValueJson =
+            object : ICborItemValueJson {
+                override val cddl = this@CborArray.cddl
+                override val value = this@CborArray.toJsonWithCDDL()
+            }
+
+        override fun encode(builder: ByteStringBuilder) {
+            if (indefiniteLength) {
+                val majorTypeShifted = (majorType!!.type shl 5)
+                builder.append((majorTypeShifted + 31).toByte())
+                value.forEach { (it as CborItem<V>).encode(builder) }
+                builder.append(0xff.toByte())
+            } else {
+                cborEncodeLength(builder, majorType!!, value.size)
+                value.forEach { (it as CborItem<V>).encode(builder) }
+            }
+        }
+
+        override fun toString(): String = "CborArray(value=${stringify(value)}, indefiniteLength=$indefiniteLength)"
+    }

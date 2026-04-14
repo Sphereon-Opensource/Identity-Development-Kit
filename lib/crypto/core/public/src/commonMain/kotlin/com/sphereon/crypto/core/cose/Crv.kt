@@ -29,6 +29,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -62,12 +63,14 @@ enum class CoseCurve(
     companion object {
         @JsStatic
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(value: Int): CoseCurve =
             entries.find { entry -> entry.value == value }
                 ?: throw IllegalArgumentException("Unknown value $value")
 
         @JsStatic
         @JsName("fromCurveName")
+        @JvmStatic
         fun fromCurveName(curveName: String): CoseCurve =
             entries.find { it.curveName == curveName }
                 ?: throw IllegalArgumentException("Unknown curve name $curveName")

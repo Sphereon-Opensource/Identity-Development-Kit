@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.data.server
 
 import com.sphereon.cbor.cddl_tstr
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.data.DeviceResponseDocumentErrorAlias
 import com.sphereon.mdoc.data.JWT
 import kotlin.experimental.ExperimentalObjCName
@@ -26,6 +27,7 @@ import kotlin.native.ObjCName
 /**
  * 8.3.2.2.2.2 Server retrieval mdoc response
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ServerResponse", exact = true)
 data class ServerResponse(

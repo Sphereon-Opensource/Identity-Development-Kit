@@ -16,7 +16,9 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 @Serializable
 sealed interface ReconciliationPlan {
@@ -26,39 +28,47 @@ sealed interface ReconciliationPlan {
 }
 
 @Serializable
-data class UseExistingBinding(
-    override val requiredAttributeNames: Set<String> = emptySet(),
-    override val materialProfileId: String? = null,
-    override val selectorRuleVersion: String,
-) : ReconciliationPlan
+data class UseExistingBinding
+    @JvmOverloads
+    constructor(
+        override val requiredAttributeNames: Set<String> = emptySet(),
+        override val materialProfileId: String? = null,
+        override val selectorRuleVersion: String,
+    ) : ReconciliationPlan
 
 @Serializable
-data class RunIdv(
-    val providerId: String,
-    val methodId: String? = null,
-    override val materialProfileId: String,
-    override val requiredAttributeNames: Set<String> = emptySet(),
-    val minimumAssurance: String? = null,
-    val bindingPolicy: BindingPolicy = BindingPolicy.REUSE_OR_CREATE,
-    override val selectorRuleVersion: String,
-) : ReconciliationPlan
+data class RunIdv
+    @JvmOverloads
+    constructor(
+        val providerId: String,
+        val methodId: String? = null,
+        override val materialProfileId: String,
+        override val requiredAttributeNames: Set<String> = emptySet(),
+        val minimumAssurance: String? = null,
+        val bindingPolicy: BindingPolicy = BindingPolicy.REUSE_OR_CREATE,
+        override val selectorRuleVersion: String,
+    ) : ReconciliationPlan
 
 @Serializable
-data class StepUp(
-    val providerId: String,
-    val methodId: String? = null,
-    override val materialProfileId: String,
-    override val requiredAttributeNames: Set<String> = emptySet(),
-    override val selectorRuleVersion: String,
-) : ReconciliationPlan
+data class StepUp
+    @JvmOverloads
+    constructor(
+        val providerId: String,
+        val methodId: String? = null,
+        override val materialProfileId: String,
+        override val requiredAttributeNames: Set<String> = emptySet(),
+        override val selectorRuleVersion: String,
+    ) : ReconciliationPlan
 
 @Serializable
-data class FailClosed(
-    val reason: String,
-    override val materialProfileId: String? = null,
-    override val requiredAttributeNames: Set<String> = emptySet(),
-    override val selectorRuleVersion: String,
-) : ReconciliationPlan
+data class FailClosed
+    @JvmOverloads
+    constructor(
+        val reason: String,
+        override val materialProfileId: String? = null,
+        override val requiredAttributeNames: Set<String> = emptySet(),
+        override val selectorRuleVersion: String,
+    ) : ReconciliationPlan
 
 @Serializable
 data class SkipReconciliation(
@@ -68,6 +78,7 @@ data class SkipReconciliation(
     override val requiredAttributeNames: Set<String> = emptySet()
 }
 
+@JsExportCompat
 @Serializable
 enum class BindingPolicy {
     REUSE_OR_CREATE,

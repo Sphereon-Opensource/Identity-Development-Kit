@@ -16,7 +16,10 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 /**
@@ -35,17 +38,21 @@ import kotlin.time.Instant
  * @property appliedLayers Names of the layers that contributed to this resolution
  * @property web Web-specific branding metadata (custom CSS URLs, font stylesheets)
  */
+@JsExportCompat
 @Serializable
-data class ResolvedTheme(
-    val tokens: Map<String, String>,
-    val resolvedAt: Instant,
-    val variant: ThemeVariant? = null,
-    val layerCount: Int = 0,
-    val etag: String? = null,
-    val fallback: Boolean = false,
-    val tenantId: String? = null,
-    val appId: String? = null,
-    val branding: BrandingMetadata? = null,
-    val appliedLayers: List<String>? = null,
-    val web: WebBrandingMetadata? = null,
-)
+data class ResolvedTheme
+    @JvmOverloads
+    constructor(
+        @JsExportIgnoreCompat
+        val tokens: Map<String, String>,
+        val resolvedAt: Instant,
+        val variant: ThemeVariant? = null,
+        val layerCount: Int = 0,
+        val etag: String? = null,
+        val fallback: Boolean = false,
+        val tenantId: String? = null,
+        val appId: String? = null,
+        val branding: BrandingMetadata? = null,
+        val appliedLayers: List<String>? = null,
+        val web: WebBrandingMetadata? = null,
+    )

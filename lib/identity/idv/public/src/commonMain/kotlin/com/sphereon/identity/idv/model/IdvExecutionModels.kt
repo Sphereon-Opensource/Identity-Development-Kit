@@ -16,6 +16,8 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.PartyType
@@ -24,6 +26,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlin.time.Instant
 
+@JsExportCompat
 @Serializable
 data class IdvSubjectRef(
     val ownerPartyId: String? = null,
@@ -32,12 +35,14 @@ data class IdvSubjectRef(
     val relationshipContext: PartyRelationshipRef? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class PartyRelationshipRef(
     val organizationPartyId: String,
     val relationshipType: String,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvExecutionContext(
     val tenantId: String,
@@ -49,9 +54,12 @@ data class IdvExecutionContext(
     val correlationId: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class AttributeBag(
+    @JsExportIgnoreCompat
     val attributes: Map<AttributePath, JsonElement> = emptyMap(),
+    @JsExportIgnoreCompat
     val provenance: Map<AttributePath, IdvNodeId> = emptyMap(),
 ) {
     companion object {
@@ -75,6 +83,7 @@ data class AttributeBag(
                 },
         )
 
+    @JsExportIgnoreCompat
     fun withAll(
         values: Map<AttributePath, JsonElement>,
         source: IdvNodeId? = null,
@@ -90,6 +99,7 @@ data class AttributeBag(
         )
 }
 
+@JsExportCompat
 @Serializable
 sealed interface IdvError {
     val message: String
@@ -157,6 +167,7 @@ data class ConcurrencyError(
     val actualVersion: Long,
 ) : IdvError
 
+@JsExportCompat
 @Serializable
 data class IdvUseCaseDefinition(
     val id: IdvUseCaseId,
@@ -173,6 +184,7 @@ data class IdvUseCaseDefinition(
     val completionMessage: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvTargetPolicy(
     val associationType: IdentityAssociationType,
@@ -180,6 +192,7 @@ data class IdvTargetPolicy(
     val autoCreateParty: Boolean = true,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvExecutionPolicy(
     val minimumAssurance: EidasAssuranceLevel,
@@ -189,10 +202,12 @@ data class IdvExecutionPolicy(
     val rateLimitPolicy: RateLimitPolicy? = null,
     val regulatoryContext: RegulatoryContext? = null,
     val evidenceRetentionPolicy: RetentionPolicy? = null,
+    @JsExportIgnoreCompat
     val requiredConsents: Set<ConsentType> = emptySet(),
     val territoryId: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class RateLimitPolicy(
     val maxExecutionsPerHour: Int? = null,
@@ -201,6 +216,7 @@ data class RateLimitPolicy(
     val perSubjectLimit: Boolean = true,
 )
 
+@JsExportCompat
 @Serializable
 data class RegulatoryContext(
     val framework: TrustFrameworkType,
@@ -209,6 +225,7 @@ data class RegulatoryContext(
     val etsiLoip: EtsiLoip? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class RetentionPolicy(
     val evidenceRetentionDays: Int,
@@ -216,20 +233,28 @@ data class RetentionPolicy(
     val legalBasis: LegalBasis,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvUseCaseTrigger(
     val entryPointType: IdvEntryPointType? = null,
+    @JsExportIgnoreCompat
     val credentialTypes: Set<String>? = null,
+    @JsExportIgnoreCompat
     val dcqlQueryIds: Set<String>? = null,
+    @JsExportIgnoreCompat
     val credentialSetIds: Set<String>? = null,
     val attributePredicates: List<AttributePredicate>? = null,
+    @JsExportIgnoreCompat
     val providerIds: Set<String>? = null,
+    @JsExportIgnoreCompat
     val formIds: Set<String>? = null,
     val triggerType: IdvTriggerType? = null,
     val priority: Int = 0,
+    @JsExportIgnoreCompat
     val customTags: Set<String>? = null,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface IdvMaterializationRule
 
@@ -269,6 +294,7 @@ data class MarkVerifiedMaterialization(
     val forUseCaseId: IdvUseCaseId? = null,
 ) : IdvMaterializationRule
 
+@JsExportCompat
 @Serializable
 data class IdvExecution(
     val executionId: IdvExecutionId,
@@ -276,6 +302,7 @@ data class IdvExecution(
     val tenantId: String,
     val subject: IdvSubjectRef,
     val status: IdvExecutionStatus,
+    @JsExportIgnoreCompat
     val nodeStates: Map<IdvNodeId, IdvNodeState>,
     val currentPendingActions: List<NodePendingAction>,
     val accumulatedAttributes: AttributeBag,
@@ -289,6 +316,7 @@ data class IdvExecution(
     val correlationId: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class NodePendingAction(
     val nodeId: IdvNodeId,
@@ -296,14 +324,17 @@ data class NodePendingAction(
     val action: IdvPendingAction,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvNodeResult(
     val nodeId: IdvNodeId,
     val methodId: IdvMethodId,
     val identifiers: List<ResolvedIdentifier>,
+    @JsExportIgnoreCompat
     val attributes: Map<AttributePath, JsonElement>,
     val assurance: EidasAssuranceLevel,
     val aal: AuthAssuranceLevel,
+    @JsExportIgnoreCompat
     val amr: Set<AuthMethodReference>,
     val evidence: IdvEvidence,
     val trustFramework: TrustFrameworkType? = null,
@@ -312,6 +343,7 @@ data class IdvNodeResult(
     val verifiedAttributesMetadata: VerifiedAttributesMetadata? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class ResolvedIdentifier(
     val type: IdentifierType,
@@ -320,16 +352,19 @@ data class ResolvedIdentifier(
     val assurance: EidasAssuranceLevel,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvEvidence(
     val provider: String,
     val method: String,
     val timestamp: Instant,
+    @JsExportIgnoreCompat
     val metadata: Map<String, JsonElement> = emptyMap(),
     val responseHash: String? = null,
     val evidenceType: IdvEvidenceType? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class VerifiedAttributesMetadata(
     val trustFramework: TrustFrameworkType,
@@ -338,12 +373,14 @@ data class VerifiedAttributesMetadata(
     val verificationMethod: String,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvExecutionResult(
     val executionId: IdvExecutionId,
     val status: IdvExecutionStatus,
     val overallAssurance: EidasAssuranceLevel,
     val overallAal: AuthAssuranceLevel,
+    @JsExportIgnoreCompat
     val combinedAmr: Set<AuthMethodReference>,
     val allIdentifiers: List<ResolvedIdentifier>,
     val allAttributes: AttributeBag,
@@ -352,6 +389,7 @@ data class IdvExecutionResult(
     val materializationStatus: IdvMaterializationResult? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvMaterializationResult(
     val createdIdentifiers: List<String>,
@@ -361,19 +399,23 @@ data class IdvMaterializationResult(
     val errors: List<MaterializationError> = emptyList(),
 )
 
+@JsExportCompat
 @Serializable
 data class CompiledIdvGraph(
     val rootNode: IdvNode,
+    @JsExportIgnoreCompat
     val nodesById: Map<IdvNodeId, IdvNode>,
     val executionOrder: List<IdvNodeId>,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvNodeDispatchResult(
     val execution: IdvExecution,
     val outcome: DispatchOutcome,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvMaterializationProjection(
     val execution: IdvExecution,

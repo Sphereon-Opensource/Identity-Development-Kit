@@ -34,10 +34,12 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.jose.JwkUse
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PlatformKey", exact = true)
+@JsExportCompat
 interface PlatformKey : KeyType {
 //    fun toJwk(): Jwk
 }
@@ -51,55 +53,58 @@ interface PlatformKey : KeyType {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ManagedKeyPair", exact = true)
 @JsExportCompat
-data class ManagedKeyPair(
-    val kid: String?,
-    val providerId: String,
-    val alias: String,
-    val cose: CoseKeyPair,
-    val jose: JoseKeyPair,
-    val privateKey: PlatformKey? = null,
-) {
-    fun cborToManagedKeyInfo(visibility: KeyVisibility = KeyVisibility.PUBLIC) = toManagedKeyInfo<CoseKeyType>(visibility, KeyEncoding.COSE)
+data class
+ManagedKeyPair
+    @JvmOverloads
+    constructor(
+        val kid: String?,
+        val providerId: String,
+        val alias: String,
+        val cose: CoseKeyPair,
+        val jose: JoseKeyPair,
+        val privateKey: PlatformKey? = null,
+    ) {
+        fun cborToManagedKeyInfo(visibility: KeyVisibility = KeyVisibility.PUBLIC) = toManagedKeyInfo<CoseKeyType>(visibility, KeyEncoding.COSE)
 
-    fun joseToManagedKeyInfo(visibility: KeyVisibility = KeyVisibility.PUBLIC) = toManagedKeyInfo<JwkType>(visibility, KeyEncoding.JOSE)
+        fun joseToManagedKeyInfo(visibility: KeyVisibility = KeyVisibility.PUBLIC) = toManagedKeyInfo<JwkType>(visibility, KeyEncoding.JOSE)
 
-    @Suppress("UNCHECKED_CAST")
-    fun <KT : KeyType> toManagedKeyInfo(
-        visibility: KeyVisibility = KeyVisibility.PUBLIC,
-        keyEncoding: KeyEncoding,
-    ): ManagedKeyInfoType<KT> {
-        val resolvedKeyInfo: ResolvedKeyInfoType<KT>
-        val key =
-            if (keyEncoding === KeyEncoding.COSE && visibility === KeyVisibility.PRIVATE) {
-                cose.privateCoseKey ?: cose.publicCoseKey
-            } else if (keyEncoding === KeyEncoding.COSE && visibility === KeyVisibility.PUBLIC) {
-                cose.publicCoseKey
-            } else if (keyEncoding === KeyEncoding.JOSE && visibility === KeyVisibility.PRIVATE) {
-                jose.privateJwk ?: jose.publicJwk
-            } else if (keyEncoding === KeyEncoding.JOSE && visibility === KeyVisibility.PUBLIC) {
-                jose.publicJwk
-            } else {
-                throw IllegalArgumentException("Invalid class or visibility combination")
-            }
+        @Suppress("UNCHECKED_CAST")
+        fun <KT : KeyType> toManagedKeyInfo(
+            visibility: KeyVisibility = KeyVisibility.PUBLIC,
+            keyEncoding: KeyEncoding,
+        ): ManagedKeyInfoType<KT> {
+            val resolvedKeyInfo: ResolvedKeyInfoType<KT>
+            val key =
+                if (keyEncoding === KeyEncoding.COSE && visibility === KeyVisibility.PRIVATE) {
+                    cose.privateCoseKey ?: cose.publicCoseKey
+                } else if (keyEncoding === KeyEncoding.COSE && visibility === KeyVisibility.PUBLIC) {
+                    cose.publicCoseKey
+                } else if (keyEncoding === KeyEncoding.JOSE && visibility === KeyVisibility.PRIVATE) {
+                    jose.privateJwk ?: jose.publicJwk
+                } else if (keyEncoding === KeyEncoding.JOSE && visibility === KeyVisibility.PUBLIC) {
+                    jose.publicJwk
+                } else {
+                    throw IllegalArgumentException("Invalid class or visibility combination")
+                }
 
-        resolvedKeyInfo =
-            ResolvedKeyInfo(
-                key = key as KT,
-                alias = alias,
+            resolvedKeyInfo =
+                ResolvedKeyInfo(
+                    key = key as KT,
+                    alias = alias,
+                    providerId = providerId,
+                    keyVisibility = visibility,
+                    keyType = key.getKeyType(),
+                    x5c = key.getX509CertificateChain(),
+                    kid = kid ?: key.getKeyId(false),
+                    signatureAlgorithm = key.getSignatureAlgorithm(),
+                )
+            return ManagedKeyInfo(
                 providerId = providerId,
-                keyVisibility = visibility,
-                keyType = key.getKeyType(),
-                x5c = key.getX509CertificateChain(),
-                kid = kid ?: key.getKeyId(false),
-                signatureAlgorithm = key.getSignatureAlgorithm(),
+                alias = alias,
+                resolvedKeyInfo = resolvedKeyInfo,
             )
-        return ManagedKeyInfo(
-            providerId = providerId,
-            alias = alias,
-            resolvedKeyInfo = resolvedKeyInfo,
-        )
+        }
     }
-}
 
 /**
  * Data class representing a cryptographic key pair used with JOSE (JSON Object Signing and Encryption).

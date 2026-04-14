@@ -17,7 +17,9 @@
 
 package com.sphereon.crypto.core.kms
 
+import com.sphereon.core.compat.JsExportCompat
 import io.ktor.utils.io.ByteChannel
+import kotlin.jvm.JvmOverloads
 
 // TODO do we still need this if we have the config objects?
 
@@ -28,57 +30,61 @@ import io.ktor.utils.io.ByteChannel
  * @property source source of raw keystore data (file, bytes, or channel)
  * @property keyStorePassword password used to unlock the keystore
  */
-data class KeyStoreLoaderOpts(
-    val type: String,
-    val source: Source,
-    val keyStorePassword: String? = null,
-) {
-    /**
-     * Represents the origin of the keystore data.
-     */
-    sealed class Source {
+@JsExportCompat
+data class
+KeyStoreLoaderOpts
+    @JvmOverloads
+    constructor(
+        val type: String,
+        val source: Source,
+        val keyStorePassword: String? = null,
+    ) {
         /**
-         * Load keystore data from a file path.
-         * @param path the filesystem path to the keystore file
+         * Represents the origin of the keystore data.
          */
-        data class File(
-            val path: String,
-            val autoCreate: Boolean = true,
-        ) : Source()
+        sealed class Source {
+            /**
+             * Load keystore data from a file path.
+             * @param path the filesystem path to the keystore file
+             */
+            data class File(
+                val path: String,
+                val autoCreate: Boolean = true,
+            ) : Source()
 
-        /**
-         * Load keystore data from an in-memory byte array.
-         * @param data the raw keystore bytes
-         */
-        data class Bytes(
-            var data: ByteArray,
-        ) : Source() {
-            override fun equals(other: Any?): Boolean {
-                if (this === other) {
+            /**
+             * Load keystore data from an in-memory byte array.
+             * @param data the raw keystore bytes
+             */
+            data class Bytes(
+                var data: ByteArray,
+            ) : Source() {
+                override fun equals(other: Any?): Boolean {
+                    if (this === other) {
+                        return true
+                    }
+                    if (other == null || this::class != other::class) {
+                        return false
+                    }
+
+                    other as Bytes
+
+                    if (!data.contentEquals(other.data)) {
+                        return false
+                    }
+
                     return true
                 }
-                if (other == null || this::class != other::class) {
-                    return false
-                }
 
-                other as Bytes
-
-                if (!data.contentEquals(other.data)) {
-                    return false
-                }
-
-                return true
+                override fun hashCode(): Int = data.contentHashCode()
             }
 
-            override fun hashCode(): Int = data.contentHashCode()
+            /**
+             * Load keystore data from a ByteReadChannel.
+             * @param channel the [ByteChannel] supplying the keystore bytes
+             */
+            data class Channel(
+                val channel: ByteChannel,
+            ) : Source()
         }
-
-        /**
-         * Load keystore data from a ByteReadChannel.
-         * @param channel the [ByteChannel] supplying the keystore bytes
-         */
-        data class Channel(
-            val channel: ByteChannel,
-        ) : Source()
     }
-}

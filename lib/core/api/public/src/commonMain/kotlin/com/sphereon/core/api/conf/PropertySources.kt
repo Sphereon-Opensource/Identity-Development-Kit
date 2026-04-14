@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.HasOrder
 import com.sphereon.di.Order
 import com.sphereon.di.SortOrder
@@ -49,6 +50,7 @@ import kotlin.reflect.KClass
  * 5. For database-based sources, use a profile column in the query filter.
  * 6. Keep logical property keys profile-free — profile selection is external to key identity.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertySource", exact = true)
 interface PropertySource<T> :
@@ -80,6 +82,7 @@ interface PropertySource<T> :
  * This enables true scope-aware resolution (APP/TENANT/PRINCIPAL) when
  * resolving properties or interpolating `${scope:key}` placeholders.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedPropertySource", exact = true)
 interface ScopedPropertySource<T> : PropertySource<T> {
@@ -93,6 +96,7 @@ interface ScopedPropertySource<T> : PropertySource<T> {
  */
 inline fun <reified R : Any> PropertySource<*>.getProperty(name: String): R? = getProperty(name, R::class)
 
+@JsExportCompat
 abstract class AbstractPropertySource<T>(
     private val name: String,
     private val source: T,
@@ -111,6 +115,7 @@ abstract class AbstractPropertySource<T>(
     override fun compareTo(other: PropertySource<*>): Int = this.getOrder().compareTo(other.getOrder())
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MutableMapPropertySource", exact = true)
 open class MutableMapPropertySource(
@@ -160,6 +165,7 @@ open class MutableMapPropertySource(
             .toSet()
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MapPropertySource", exact = true)
 open class MapPropertySource(
@@ -198,6 +204,7 @@ open class MapPropertySource(
             .toSet()
 }
 
+@JsExportCompat
 @AssistedFactory
 interface PropertiesFilePropertySourceFactory {
     fun createPropertiesFileSource(
@@ -206,6 +213,7 @@ interface PropertiesFilePropertySourceFactory {
     ): PropertiesFilePropertySource
 }
 
+@JsExportCompat
 @AssistedInject
 class PropertiesFilePropertySource(
     @Assisted name: String,
@@ -277,6 +285,7 @@ class EnvPropertySource :
 @ObjCName("StaticEnvProprtySourceObject", exact = true)
 object StaticEnvPropertySourceObject : PropertySource<Map<String, Any>> by ProtectedEnvPropertySource()
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertySources", exact = true)
 interface PropertySources : MutableIterable<PropertySource<*>> {
@@ -298,6 +307,7 @@ interface PropertySources : MutableIterable<PropertySource<*>> {
     fun copy(additionalSources: PropertySources? = null): PropertySources
 }
 
+@JsExportCompat
 open class SyncedDefaultMapPropertySource(
     sourceName: String,
     private val syncLevel: ConfigLevel,

@@ -126,6 +126,7 @@ class PrincipalResolutionHandlerImpl(
     }
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultTenantInputString", exact = true)
 data class DefaultTenantInputString(
@@ -149,6 +150,7 @@ data class DefaultTenantInputString(
     override fun hashCode(): Int = tenant.hashCode()
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultPrincipalInputString", exact = true)
 data class DefaultPrincipalInputString(
@@ -177,6 +179,7 @@ data class DefaultPrincipalInputString(
  *
  * @property host The Host header value (e.g., "acme.example.com")
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HostTenantInput", exact = true)
 data class HostTenantInput(
@@ -190,6 +193,7 @@ data class HostTenantInput(
  *
  * @property path The URL path prefix (e.g., "/tenants/acme/keys")
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PathTenantInput", exact = true)
 data class PathTenantInput(

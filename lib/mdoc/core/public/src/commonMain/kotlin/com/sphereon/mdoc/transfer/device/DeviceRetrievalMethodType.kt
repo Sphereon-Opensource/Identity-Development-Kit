@@ -16,9 +16,11 @@
 
 package com.sphereon.mdoc.transfer.device
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeviceRetrievalMethodType", exact = true)
 enum class DeviceRetrievalMethodType(

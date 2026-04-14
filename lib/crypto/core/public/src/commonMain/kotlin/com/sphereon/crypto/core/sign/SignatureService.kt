@@ -39,6 +39,7 @@ import com.sphereon.crypto.core.sign.model.SignatureParameters
  * Developers inject this interface and call the same methods regardless
  * of the underlying signing mechanism. The classpath determines what forms are available.
  */
+@JsExportCompat
 interface SignatureService : SimpleSignatureService {
     /**
      * Create a digital signature.

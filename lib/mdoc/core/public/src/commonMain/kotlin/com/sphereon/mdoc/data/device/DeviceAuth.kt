@@ -28,6 +28,7 @@ import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -48,6 +49,7 @@ value class DeviceMac(
     override fun toString(): String = mac
 
     companion object {
+        @JvmStatic
         fun fromCborItem(structure: CborString): DeviceMac = DeviceMac(structure.value)
     }
 }
@@ -89,9 +91,11 @@ data class DeviceAuth(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val DEVICE_SIGNATURE = StringLabel("deviceSignature")
 
         @JsStatic
+        @JvmStatic
         val DEVICE_MAC = StringLabel("deviceMac")
     }
 }
@@ -107,6 +111,7 @@ data class DeviceAuthentication(
 ) {
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromOid4vp(
             clientId: String,
             responseUri: String,

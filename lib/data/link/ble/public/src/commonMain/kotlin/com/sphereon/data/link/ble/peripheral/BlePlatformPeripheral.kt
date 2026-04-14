@@ -18,6 +18,8 @@
 package com.sphereon.data.link.ble.peripheral
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.CharacteristicWriteError
 import com.sphereon.data.link.ble.client.BleEvent
@@ -34,9 +36,11 @@ import kotlin.uuid.Uuid
  * This is the counterpart to BlePlatformClient, used for peripheral server mode
  * where the device advertises and accepts connections from central devices.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlePlatformPeripheral", exact = true)
 interface BlePlatformPeripheral : AutoCloseable {
+    @JsExportIgnoreCompat
     val bleEvents: SharedFlow<BleEvent>
 
     /**

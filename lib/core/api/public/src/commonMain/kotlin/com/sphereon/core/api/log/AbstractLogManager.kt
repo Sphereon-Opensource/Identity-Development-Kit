@@ -18,11 +18,13 @@ package com.sphereon.core.api.log
 
 import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionInstance
 
+@JsExportCompat
 open class AbstractLogManager(
     private val scope: IdkScope,
     loggers: Set<LogService> = emptySet(),

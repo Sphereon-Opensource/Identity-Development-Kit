@@ -20,7 +20,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.EmptyResult
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.CreatePkceCommand
 import com.sphereon.oauth2.client.command.VerifyPkceArgs
@@ -41,7 +40,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PkceService", exact = true)
-@JsExportCompat
 interface PkceService {
     suspend fun createPkce(args: CreatePkceArgs): IdkResult<PkceData, IdkError>
 
@@ -55,7 +53,6 @@ interface PkceService {
     /**
      * Container for all PKCE commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val createPkce: CreatePkceCommand
         val verifyPkce: VerifyPkceCommand

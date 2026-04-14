@@ -19,14 +19,17 @@ package com.sphereon.mdoc.data.device
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.DecodedMdoc
 
+@JsExportCompat
 interface DeviceRequestCborCodec {
     fun encode(value: DeviceRequest): IdkResult<ByteArray, IdkError>
 
     fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<DeviceRequest>, IdkError>
 }
 
+@JsExportCompat
 interface DeviceResponseCborCodec {
     fun encode(value: DeviceResponse): IdkResult<ByteArray, IdkError>
 

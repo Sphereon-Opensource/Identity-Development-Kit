@@ -96,6 +96,7 @@ sealed interface DeviceEvent {
  *
  * This provides a clean separation between device-level events and the prompt system.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DevicePromptAdapter", exact = true)
 interface DevicePromptAdapter {
@@ -111,6 +112,7 @@ interface DevicePromptAdapter {
 /**
  * Default implementation of DevicePromptAdapter.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultDevicePromptAdapter", exact = true)
 class DefaultDevicePromptAdapter(

@@ -17,11 +17,13 @@
 
 package com.sphereon.trust.etsi.lote.parser
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.trust.etsi.lote.model.LoTE
 
 /**
  * Serialization format for LoTE data.
  */
+@JsExportCompat
 enum class LoTESerializationFormat {
     JSON,
     XML,

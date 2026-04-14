@@ -17,6 +17,7 @@
 
 package com.sphereon.ktor.http.client.config
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.kms.CertificateStoreService
 import com.sphereon.crypto.core.kms.KeyStoreLoaderOpts
 import com.sphereon.crypto.core.kms.KeyStoreService
@@ -24,6 +25,7 @@ import com.sphereon.crypto.core.sign.SimpleSignatureService
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("LegacySslConfig", exact = true)
 data class LegacySslConfig(

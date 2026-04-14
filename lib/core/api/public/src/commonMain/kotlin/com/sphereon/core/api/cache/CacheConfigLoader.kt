@@ -17,6 +17,7 @@
 package com.sphereon.core.api.cache
 
 import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.compat.JsExportCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -30,6 +31,7 @@ import kotlin.time.Duration.Companion.minutes
 /**
  * Interface for loading cache requirements from the config system.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheConfigLoader", exact = true)
 interface CacheConfigLoader {

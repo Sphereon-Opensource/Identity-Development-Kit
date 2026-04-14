@@ -19,6 +19,7 @@ package com.sphereon.mdoc.transfer
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.engagement.MdocEngagementStateType
@@ -34,6 +35,7 @@ import kotlin.native.ObjCName
  * Base interface for mdoc transfer implementations.
  * Provides common functionality for all transfer types (BLE, REST API, etc.)
  */
+@JsExportCompat
 interface IMdocTransfer<OpenResult : Any> : AutoCloseable {
     val connectionMethod: ConnectionMethod
 
@@ -88,6 +90,7 @@ interface IMdocTransfer<OpenResult : Any> : AutoCloseable {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IMdocTransferWithAdvertising", exact = true)
+@JsExportCompat
 sealed interface IMdocTransferWithAdvertising<OpenResult : Any> : IMdocTransfer<OpenResult> {
     suspend fun startAdvertising()
 }
@@ -95,6 +98,7 @@ sealed interface IMdocTransferWithAdvertising<OpenResult : Any> : IMdocTransfer<
 /**
  * Interface for transfers that support scanning (BLE central mode).
  */
+@JsExportCompat
 sealed interface IMdocTransferWithScanning<OpenResult : Any> : IMdocTransfer<OpenResult> {
     suspend fun startScanning()
 }

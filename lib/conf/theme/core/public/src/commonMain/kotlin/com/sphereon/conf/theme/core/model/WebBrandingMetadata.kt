@@ -16,15 +16,20 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Web-specific branding metadata for browser-based consumers.
  * Includes URLs for custom CSS, font stylesheets, and asset base paths.
  */
+@JsExportCompat
 @Serializable
-data class WebBrandingMetadata(
-    val customCssUrl: String? = null,
-    val fontStylesheetUrls: List<String>? = null,
-    val assetBaseUrl: String? = null,
-)
+data class WebBrandingMetadata
+    @JvmOverloads
+    constructor(
+        val customCssUrl: String? = null,
+        val fontStylesheetUrls: List<String>? = null,
+        val assetBaseUrl: String? = null,
+    )

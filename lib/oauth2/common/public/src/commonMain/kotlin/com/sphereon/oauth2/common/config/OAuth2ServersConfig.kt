@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.config
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -24,6 +25,8 @@ import kotlinx.serialization.Serializable
  * Supports multiple named server instances (e.g., "primary" for hosted AS,
  * "keycloak" for external AS).
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 @Serializable
 data class OAuth2ServersConfig(
     val defaultServer: String = "default",

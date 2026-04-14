@@ -16,9 +16,11 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 @Serializable
 data class CredentialOffer(
     @SerialName("credential_issuer") val credentialIssuer: String,
@@ -26,18 +28,21 @@ data class CredentialOffer(
     val grants: CredentialOfferGrants? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class CredentialOfferGrants(
     @SerialName("authorization_code") val authorizationCode: AuthorizationCodeOfferGrant? = null,
     @SerialName("urn:ietf:params:oauth:grant-type:pre-authorized_code") val preAuthorizedCode: PreAuthorizedCodeOfferGrant? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class AuthorizationCodeOfferGrant(
     @SerialName("issuer_state") val issuerState: String? = null,
     @SerialName("authorization_server") val authorizationServer: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class PreAuthorizedCodeOfferGrant(
     @SerialName("pre-authorized_code") val preAuthorizedCode: String,
@@ -46,6 +51,7 @@ data class PreAuthorizedCodeOfferGrant(
     @SerialName("authorization_server") val authorizationServer: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class TxCodeConfig(
     @SerialName("input_mode") val inputMode: String? = "numeric",

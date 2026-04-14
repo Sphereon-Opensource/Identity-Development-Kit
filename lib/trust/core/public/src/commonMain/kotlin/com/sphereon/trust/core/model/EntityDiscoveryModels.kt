@@ -7,6 +7,7 @@
 package com.sphereon.trust.core.model
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlin.experimental.ExperimentalObjCName
@@ -211,6 +212,7 @@ data class DiscoveredEntityInfo(
     /** True when this entity is the one that was actually matched as the trust anchor during validation */
     val trustAnchor: Boolean = false,
     // --- Raw source metadata ---
+    @JsExportIgnoreCompat
     val sourceMetadata: Map<String, JsonElement> = emptyMap(),
 )
 

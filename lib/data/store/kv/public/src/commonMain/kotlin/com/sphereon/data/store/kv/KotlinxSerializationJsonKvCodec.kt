@@ -17,6 +17,7 @@
 
 package com.sphereon.data.store.kv
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
@@ -26,6 +27,7 @@ import kotlinx.serialization.json.Json
  * This is suitable for persisted KV stores (for example Kottage-backed storage),
  * because the stored format is stable bytes.
  */
+@JsExportCompat
 class KotlinxSerializationJsonKvCodec<V : Any>(
     private val json: Json,
     private val serializer: KSerializer<V>,

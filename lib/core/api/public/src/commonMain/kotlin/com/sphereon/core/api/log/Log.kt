@@ -136,6 +136,7 @@ private fun commandOrTagFromMetadata(metadata: Map<String, String>?): String? =
  * Rules are evaluated in this order: scope -> service pattern -> command pattern.
  * Later stages can override minimum level from earlier stages.
  */
+@JsExportCompat
 data class LogPolicy(
     val minLevelByScope: Map<IdkScope, LogLevel> = emptyMap(),
     val minLevelByServicePattern: Map<String, LogLevel> = emptyMap(),
@@ -506,6 +507,7 @@ interface AsyncLogService :
     fun toSync(): LogService
 }
 
+@JsExportCompat
 interface Logger {
     fun trace(
         message: String,
@@ -571,18 +573,22 @@ fun Set<LogService>.filterEnabled() = this.filter { it.isEnabled }.toSet()
 fun Set<LogService>.filterScope(idkScope: IdkScope) = this.filter { it.scope == idkScope }.toSet()
 
 // Interfaces to workaround qualifiers not working nicely yet across scopes
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AppLogManager", exact = true)
 interface AppLogManager : LogManager
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionLogManager", exact = true)
 interface SessionLogManager : LogManager
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UserContextLogManager", exact = true)
 interface UserContextLogManager : LogManager
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("LogManager", exact = true)
 interface LogManager {
@@ -880,6 +886,7 @@ object LogMessageFormatter {
     }
 }
 
+@JsExportCompat
 sealed class LogError(
     override val code: String,
     override val defaultMessage: String,

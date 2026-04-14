@@ -27,6 +27,7 @@ import com.sphereon.core.api.session.Command
 import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
 import com.sphereon.core.api.session.ICommandExecutionExtension
 import com.sphereon.core.api.session.ICommandInitExtension
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Command interface for HTTP endpoint handlers.
@@ -64,6 +65,7 @@ import com.sphereon.core.api.session.ICommandInitExtension
  * }
  * ```
  */
+@JsExportCompat
 interface HttpEndpointCommand : Command<GenericHttpRequest, GenericHttpResponse, IdkError> {
     /**
      * The endpoint descriptor for this command.

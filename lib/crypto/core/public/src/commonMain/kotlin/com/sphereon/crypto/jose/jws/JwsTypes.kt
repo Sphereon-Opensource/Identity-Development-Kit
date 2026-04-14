@@ -26,6 +26,7 @@ import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 import kotlin.time.Clock
 
@@ -55,12 +56,15 @@ data class JwsCompact(
 @ObjCName("JwsJsonFlattened", exact = true)
 @JsExportCompat
 @Serializable
-data class JwsJsonFlattened(
-    val payload: String,
-    val protected: String,
-    val header: JsonObject? = null,
-    val signature: String,
-) : Jws
+data class
+JwsJsonFlattened
+    @JvmOverloads
+    constructor(
+        val payload: String,
+        val protected: String,
+        val header: JsonObject? = null,
+        val signature: String,
+    ) : Jws
 
 /**
  * General JWS JSON serialization format with multiple signatures
@@ -81,11 +85,14 @@ data class JwsJsonGeneral(
 @ObjCName("JwsJsonSignature", exact = true)
 @JsExportCompat
 @Serializable
-data class JwsJsonSignature(
-    val protected: String,
-    val header: JsonObject? = null,
-    val signature: String,
-)
+data class
+JwsJsonSignature
+    @JvmOverloads
+    constructor(
+        val protected: String,
+        val header: JsonObject? = null,
+        val signature: String,
+    )
 
 /**
  * JWS JSON General with resolved identifiers for each signature
@@ -106,16 +113,19 @@ data class JwsJsonGeneralWithIdentifiers(
 @ObjCName("JwsJsonSignatureWithIdentifier", exact = true)
 @JsExportCompat
 @Serializable
-data class JwsJsonSignatureWithIdentifier(
-    val protected: String,
-    @kotlinx.serialization.Transient
-    val parsedProtectedHeader: JsonObject = JsonObject(emptyMap()),
-    val header: JsonObject? = null,
-    val signature: String,
-    // Note: IdentifierOptsOrResult cannot be serialized directly, so this is stored as metadata
-    @kotlinx.serialization.Transient
-    val identifier: IdentifierOptsOrResult? = null,
-)
+data class
+JwsJsonSignatureWithIdentifier
+    @JvmOverloads
+    constructor(
+        val protected: String,
+        @kotlinx.serialization.Transient
+        val parsedProtectedHeader: JsonObject = JsonObject(emptyMap()),
+        val header: JsonObject? = null,
+        val signature: String,
+        // Note: IdentifierOptsOrResult cannot be serialized directly, so this is stored as metadata
+        @kotlinx.serialization.Transient
+        val identifier: IdentifierOptsOrResult? = null,
+    )
 
 /**
  * Prepared JWS object ready for signing
@@ -123,46 +133,49 @@ data class JwsJsonSignatureWithIdentifier(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PreparedJws", exact = true)
 @JsExportCompat
-data class PreparedJws(
-    val protectedHeader: JwtHeader,
-    val payload: ByteArray,
-    val unprotectedHeader: JwtHeader? = null,
-    val existingSignatures: List<JwsJsonSignature>? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+PreparedJws
+    @JvmOverloads
+    constructor(
+        val protectedHeader: JwtHeader,
+        val payload: ByteArray,
+        val unprotectedHeader: JwtHeader? = null,
+        val existingSignatures: List<JwsJsonSignature>? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as PreparedJws
+
+            if (protectedHeader != other.protectedHeader) {
+                return false
+            }
+            if (!payload.contentEquals(other.payload)) {
+                return false
+            }
+            if (unprotectedHeader != other.unprotectedHeader) {
+                return false
+            }
+            if (existingSignatures != other.existingSignatures) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as PreparedJws
-
-        if (protectedHeader != other.protectedHeader) {
-            return false
+        override fun hashCode(): Int {
+            var result = protectedHeader.hashCode()
+            result = 31 * result + payload.contentHashCode()
+            result = 31 * result + (unprotectedHeader?.hashCode() ?: 0)
+            result = 31 * result + (existingSignatures?.hashCode() ?: 0)
+            return result
         }
-        if (!payload.contentEquals(other.payload)) {
-            return false
-        }
-        if (unprotectedHeader != other.unprotectedHeader) {
-            return false
-        }
-        if (existingSignatures != other.existingSignatures) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = protectedHeader.hashCode()
-        result = 31 * result + payload.contentHashCode()
-        result = 31 * result + (unprotectedHeader?.hashCode() ?: 0)
-        result = 31 * result + (existingSignatures?.hashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Prepared JWS object with base64url encoded values and identifier.
@@ -256,16 +269,19 @@ enum class JwsIdentifierMode {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JwsValidationResult", exact = true)
 @JsExportCompat
-data class JwsValidationResult(
-    val jws: JwsJsonGeneralWithIdentifiers,
-    val isValid: Boolean,
-    val errorMessages: List<String> = emptyList(),
-    val verificationTime: Long = Clock.System.now().toEpochMilliseconds(),
-    val parsedPayload: JsonObject,
-) {
-    val isCritical: Boolean
-        get() = !isValid
-}
+data class
+JwsValidationResult
+    @JvmOverloads
+    constructor(
+        val jws: JwsJsonGeneralWithIdentifiers,
+        val isValid: Boolean,
+        val errorMessages: List<String> = emptyList(),
+        val verificationTime: Long = Clock.System.now().toEpochMilliseconds(),
+        val parsedPayload: JsonObject,
+    ) {
+        val isCritical: Boolean
+            get() = !isValid
+    }
 
 /**
  * Utility functions for JWS type checking

@@ -18,9 +18,11 @@
 @file:OptIn(ExperimentalUuidApi::class)
 
 package com.sphereon.data.link.ble.filter
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 public class FilterPredicateBuilder internal constructor() {
     public var name: Filter.Name? = null
     public var address: String? = null

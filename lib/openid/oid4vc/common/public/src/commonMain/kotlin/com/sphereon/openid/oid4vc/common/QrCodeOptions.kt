@@ -20,6 +20,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -29,19 +30,21 @@ import kotlin.native.ObjCName
 @ObjCName("QrCodeOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class QrCodeOptions(
-    /**
-     * QR code size in pixels. Default: 400.
-     */
-    val size: Int = 400,
-    /**
-     * Dark color (foreground) in CSS format. Default: #000000.
-     */
-    @SerialName("color_dark")
-    val colorDark: String = "#000000",
-    /**
-     * Light color (background) in CSS format. Default: #ffffff.
-     */
-    @SerialName("color_light")
-    val colorLight: String = "#ffffff",
-)
+data class QrCodeOptions
+    @JvmOverloads
+    constructor(
+        /**
+         * QR code size in pixels. Default: 400.
+         */
+        val size: Int = 400,
+        /**
+         * Dark color (foreground) in CSS format. Default: #000000.
+         */
+        @SerialName("color_dark")
+        val colorDark: String = "#000000",
+        /**
+         * Light color (background) in CSS format. Default: #ffffff.
+         */
+        @SerialName("color_light")
+        val colorLight: String = "#ffffff",
+    )

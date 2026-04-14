@@ -17,6 +17,7 @@
 package com.sphereon.identity.resolution.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.resolution.model.IdentityResolutionResult
 import com.sphereon.identity.resolution.model.ResolveIdentityArgs
 import com.sphereon.identity.resolution.model.ResolveMatchingIdentityArgs
@@ -25,6 +26,7 @@ import com.sphereon.identity.resolution.model.ResolveMatchingIdentityArgs
  * Main orchestration command — tries registered resolvers in priority order.
  * Returns [IdentityResolutionResult] with `resolved=true` if found, or `resolved=false` if not.
  */
+@JsExportCompat
 interface ResolveIdentityCommand : ServiceCommand<ResolveIdentityArgs, IdentityResolutionResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -37,6 +39,7 @@ interface ResolveIdentityCommand : ServiceCommand<ResolveIdentityArgs, IdentityR
  * Matching-specific command — HMAC hash via KMS + lookup in identity match store.
  * Returns [IdentityResolutionResult] with `resolved=true` if found, or `resolved=false` if not.
  */
+@JsExportCompat
 interface ResolveMatchingIdentityCommand : ServiceCommand<ResolveMatchingIdentityArgs, IdentityResolutionResult> {
     override val commandId: String get() = COMMAND_ID
 

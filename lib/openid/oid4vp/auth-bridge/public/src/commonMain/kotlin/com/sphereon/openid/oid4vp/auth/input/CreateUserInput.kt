@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.auth.input
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.auth.model.UserType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -33,6 +34,7 @@ import kotlinx.serialization.Serializable
  * @property displayName The display name of the user (optional).
  */
 @Serializable
+@JsExportCompat
 data class CreateUserInput(
     @SerialName("username")
     val username: String,

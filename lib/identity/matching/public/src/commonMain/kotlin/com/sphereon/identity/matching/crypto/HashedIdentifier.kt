@@ -16,8 +16,10 @@
 
 package com.sphereon.identity.matching.crypto
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Result of an HMAC hashing operation on an identifier.
@@ -28,9 +30,12 @@ import kotlinx.serialization.Serializable
  * @property keyVersion The version identifier of the HMAC key used
  * @property algorithm The JWA algorithm used for hashing (default: HS256 = HMAC w/ SHA-256)
  */
+@JsExportCompat
 @Serializable
-data class HashedIdentifier(
-    val hash: String,
-    val keyVersion: String,
-    val algorithm: JwaAlgorithm = JwaAlgorithm.HS256,
-)
+data class HashedIdentifier
+    @JvmOverloads
+    constructor(
+        val hash: String,
+        val keyVersion: String,
+        val algorithm: JwaAlgorithm = JwaAlgorithm.HS256,
+    )

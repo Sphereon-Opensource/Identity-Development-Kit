@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.common
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -62,6 +64,7 @@ val AuthorizationResponse.isOid4vp: Boolean
  * Provides type-safe builder methods for OID4VP-specific parameters while
  * leveraging the OAuth2 AuthorizationResponse foundation.
  */
+@JsExportCompat
 class Oid4vpAuthorizationResponseBuilder(
     private var code: String = "",
 ) {
@@ -85,6 +88,7 @@ class Oid4vpAuthorizationResponseBuilder(
      * @param queryId The credential query ID from the DCQL query
      * @param presentation The presentation string
      */
+    @JsExportIgnoreCompat
     fun vpToken(
         queryId: String,
         presentation: String,
@@ -97,6 +101,7 @@ class Oid4vpAuthorizationResponseBuilder(
      *
      * @param entries Map of credential query IDs to presentation lists
      */
+    @JsExportIgnoreCompat
     fun vpToken(entries: Map<String, List<String>>) =
         apply {
             this.vpToken = vpTokenOf(entries)

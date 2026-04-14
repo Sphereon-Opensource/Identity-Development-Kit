@@ -26,6 +26,7 @@ import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JvmInline
@@ -134,15 +135,19 @@ data class DeviceRequest(
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val VERSION = StringLabel("version")
 
         @JsStatic
+        @JvmStatic
         val DOC_REQUESTS = StringLabel("docRequests")
 
         @JsStatic
+        @JvmStatic
         val MAC_KEYS = StringLabel("macKeys")
 
         @JsStatic
+        @JvmStatic
         val OID4VP_REQUEST = StringLabel("oid4vpRequest")
     }
 }

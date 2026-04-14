@@ -21,6 +21,7 @@ import kotlinx.io.bytestring.ByteStringBuilder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.experimental.or
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -74,22 +75,26 @@ abstract class CborSimple<Type : Any?>(
         @OptIn(ExperimentalObjCName::class)
         @ObjCName("CBOR_FALSE")
         @JsStatic
+        @JvmStatic
         val FALSE = CborFalse()
 
         /** The [Simple] value for TRUE */
         @OptIn(ExperimentalObjCName::class)
         @ObjCName("CBOR_TRUE")
         @JsStatic
+        @JvmStatic
         val TRUE = CborTrue()
 
         /** The [Simple] value for NULL */
         @OptIn(ExperimentalObjCName::class)
         @ObjCName("CBOR_NULL")
         @JsStatic
+        @JvmStatic
         val NULL = CborNull()
 
         /** The [Simple] value for UNDEFINED */
         @JsStatic
+        @JvmStatic
         val UNDEFINED = CborUndefined()
     }
 }

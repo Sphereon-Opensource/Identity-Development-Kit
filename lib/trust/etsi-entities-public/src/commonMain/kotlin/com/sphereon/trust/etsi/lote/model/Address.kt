@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -25,6 +26,7 @@ import kotlinx.serialization.Serializable
  *
  * Per ETSI TS 119 602 JSON schema.
  */
+@JsExportCompat
 @Serializable
 data class OperatorAddress(
     @SerialName("PostalAddresses")
@@ -36,6 +38,7 @@ data class OperatorAddress(
 /**
  * Postal address per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class LoTEPostalAddress(
     val lang: String? = null,

@@ -19,8 +19,6 @@ package com.sphereon.oauth2.server.authorization.service
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.StringResult
-import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
@@ -120,7 +118,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AuthorizationServerService", exact = true)
-@JsExportCompat
 interface AuthorizationServerService {
     // Token Endpoint
     suspend fun parseTokenRequest(args: ParseTokenRequestArgs): IdkResult<TokenRequestData, IdkError>
@@ -199,7 +196,6 @@ interface AuthorizationServerService {
     /**
      * All authorization server commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         // Token Endpoint Commands
         val parseTokenRequest: ParseTokenRequestCommand

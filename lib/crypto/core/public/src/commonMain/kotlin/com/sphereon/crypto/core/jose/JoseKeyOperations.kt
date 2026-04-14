@@ -27,6 +27,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -56,6 +57,7 @@ enum class JoseKeyOperations(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String): JoseKeyOperations =
             entries.find { entry -> entry.value == value }
                 ?: throw IllegalArgumentException("Unknown value $value")

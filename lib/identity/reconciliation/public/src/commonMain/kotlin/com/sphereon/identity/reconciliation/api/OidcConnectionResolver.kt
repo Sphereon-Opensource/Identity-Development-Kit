@@ -16,22 +16,27 @@
 
 package com.sphereon.identity.reconciliation.api
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Resolved OIDC connection details ready for use by reconciliation commands.
  * Portal resolves [OidcClientConfig] references into this at runtime.
  */
+@JsExportCompat
 @Serializable
-data class ResolvedOidcConnection(
-    val discoveryUrl: String,
-    val clientId: String,
-    val clientSecret: String?,
-    val scopes: List<String> = listOf("openid"),
-    val userInfoEnabled: Boolean = false,
-    val authorizationEndpointOverride: String? = null,
-    val tokenEndpointOverride: String? = null,
-)
+data class ResolvedOidcConnection
+    @JvmOverloads
+    constructor(
+        val discoveryUrl: String,
+        val clientId: String,
+        val clientSecret: String?,
+        val scopes: List<String> = listOf("openid"),
+        val userInfoEnabled: Boolean = false,
+        val authorizationEndpointOverride: String? = null,
+        val tokenEndpointOverride: String? = null,
+    )
 
 /**
  * Resolves OIDC client config references into usable connection details.
@@ -39,6 +44,7 @@ data class ResolvedOidcConnection(
  * Implementations are responsible for resolving [ConfigReference] and [SecretReference]
  * from the [OidcClientConfig] model into actual client ID/secret strings.
  */
+@JsExportCompat
 interface OidcConnectionResolver {
     suspend fun resolve(oidcClientId: String): ResolvedOidcConnection?
 }

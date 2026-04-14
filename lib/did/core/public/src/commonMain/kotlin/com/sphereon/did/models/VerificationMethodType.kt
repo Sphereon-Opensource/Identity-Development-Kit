@@ -22,6 +22,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -82,6 +84,7 @@ enum class VerificationMethodType(
          * @param value The string value (e.g., "JsonWebKey2020")
          * @return The matching VerificationMethodType, or null if not found
          */
+        @JvmStatic
         @JsStatic
         fun fromValue(value: String): VerificationMethodType? = entries.find { it.value == value }
     }

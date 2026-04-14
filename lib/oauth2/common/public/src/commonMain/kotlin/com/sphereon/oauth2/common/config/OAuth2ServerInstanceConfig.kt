@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.config
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -24,6 +25,8 @@ import kotlinx.serialization.Serializable
  * Each instance can operate in HOSTED mode (IDK serves as the AS)
  * or EXTERNAL mode (IDK connects to this AS as an OAuth2 client).
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 @Serializable
 data class OAuth2ServerInstanceConfig(
     // Identity
@@ -98,6 +101,7 @@ data class OAuth2ServerInstanceConfig(
  *
  * Public clients use PKCE for security and do not authenticate with a client secret.
  */
+@JsExportCompat
 @Serializable
 data class PublicClientConfig(
     val allowAny: Boolean = false,

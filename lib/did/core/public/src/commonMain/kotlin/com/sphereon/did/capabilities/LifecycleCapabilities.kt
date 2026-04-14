@@ -20,6 +20,8 @@ package com.sphereon.did.capabilities
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -36,38 +38,42 @@ import kotlin.native.ObjCName
 @ObjCName("DidLifecycleCapabilities", exact = true)
 @JsExportCompat
 @Serializable
-data class LifecycleCapabilities(
-    val create: Boolean = true,
-    val update: Boolean = false,
-    val deactivate: Boolean = false,
-    val delete: Boolean = false,
-) {
-    companion object {
-        /**
-         * Capabilities for immutable DID methods (did:key, did:jwk).
-         */
-        val IMMUTABLE: LifecycleCapabilities =
-            LifecycleCapabilities(
-                create = true,
-                update = false,
-                deactivate = false,
-                delete = false,
-            )
+data class LifecycleCapabilities
+    @JvmOverloads
+    constructor(
+        val create: Boolean = true,
+        val update: Boolean = false,
+        val deactivate: Boolean = false,
+        val delete: Boolean = false,
+    ) {
+        companion object {
+            /**
+             * Capabilities for immutable DID methods (did:key, did:jwk).
+             */
+            @JvmStatic
+            val IMMUTABLE: LifecycleCapabilities =
+                LifecycleCapabilities(
+                    create = true,
+                    update = false,
+                    deactivate = false,
+                    delete = false,
+                )
+
+            /**
+             * Capabilities for fully mutable DID methods (did:web).
+             */
+            @JvmStatic
+            val FULL: LifecycleCapabilities =
+                LifecycleCapabilities(
+                    create = true,
+                    update = true,
+                    deactivate = true,
+                    delete = true,
+                )
+        }
 
         /**
-         * Capabilities for fully mutable DID methods (did:web).
+         * Checks if the method supports any modification operations.
          */
-        val FULL: LifecycleCapabilities =
-            LifecycleCapabilities(
-                create = true,
-                update = true,
-                deactivate = true,
-                delete = true,
-            )
+        fun isMutable(): Boolean = update || deactivate || delete
     }
-
-    /**
-     * Checks if the method supports any modification operations.
-     */
-    fun isMutable(): Boolean = update || deactivate || delete
-}

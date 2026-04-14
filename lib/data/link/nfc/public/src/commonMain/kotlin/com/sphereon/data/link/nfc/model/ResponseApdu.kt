@@ -18,12 +18,15 @@
 package com.sphereon.data.link.nfc.model
 
 import com.sphereon.core.api.encodeToHex
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.ByteDataReader
 import com.sphereon.util.appendByteString
 import com.sphereon.util.appendUInt8
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.buildByteString
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -32,62 +35,66 @@ import kotlin.native.ObjCName
  * @property status the status word.
  * @property payload the payload.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResponseApdu", exact = true)
-data class ResponseApdu(
-    val status: Int,
-    val payload: ByteString = ByteString(),
-) {
-    /**
-     * The upper byte of [status].
-     */
-    val sw1: Int
-        get() = status.and(SW1_MASK).shr(BYTE_SHIFT)
-
-    /**
-     * The lower byte of [status].
-     */
-    val sw2: Int
-        get() = status.and(SW2_MASK)
-
-    /**
-     * Gets the status as a hexadecimal string.
-     */
-    val statusHexString: String
-        get() = byteArrayOf(sw1.toByte(), sw2.toByte()).encodeToHex()
-
-    /**
-     * Encodes the APDU as bytes.
-     *
-     * @return the bytes of the APDU.
-     */
-    fun encode(): ByteArray =
-        buildByteString {
-            appendByteString(payload)
-            appendUInt8(sw1)
-            appendUInt8(sw2)
-        }.toByteArray()
-
-    companion object {
-        private const val SW1_MASK = 0xff00
-        private const val SW2_MASK = 0xff
-        private const val BYTE_SHIFT = 8
-        private const val STATUS_WORD_SIZE = 2
+data class ResponseApdu
+    @JvmOverloads
+    constructor(
+        val status: Int,
+        val payload: ByteString = ByteString(),
+    ) {
+        /**
+         * The upper byte of [status].
+         */
+        val sw1: Int
+            get() = status.and(SW1_MASK).shr(BYTE_SHIFT)
 
         /**
-         * Decodes an APDU.
-         *
-         * @param encoded the bytes of the APDU
-         * @return an object with the decoded fields.
+         * The lower byte of [status].
          */
-        fun decode(encoded: ByteArray): ResponseApdu {
-            require(encoded.size >= 2)
-            val reader = ByteDataReader(encoded)
-            val payload = reader.getByteString(encoded.size - STATUS_WORD_SIZE)
-            val sw1 = reader.getUInt8().toInt()
-            val sw2 = reader.getUInt8().toInt()
-            val status = sw1.shl(BYTE_SHIFT) + sw2
-            return ResponseApdu(status, payload)
+        val sw2: Int
+            get() = status.and(SW2_MASK)
+
+        /**
+         * Gets the status as a hexadecimal string.
+         */
+        val statusHexString: String
+            get() = byteArrayOf(sw1.toByte(), sw2.toByte()).encodeToHex()
+
+        /**
+         * Encodes the APDU as bytes.
+         *
+         * @return the bytes of the APDU.
+         */
+        fun encode(): ByteArray =
+            buildByteString {
+                appendByteString(payload)
+                appendUInt8(sw1)
+                appendUInt8(sw2)
+            }.toByteArray()
+
+        companion object {
+            private const val SW1_MASK = 0xff00
+            private const val SW2_MASK = 0xff
+            private const val BYTE_SHIFT = 8
+            private const val STATUS_WORD_SIZE = 2
+
+            /**
+             * Decodes an APDU.
+             *
+             * @param encoded the bytes of the APDU
+             * @return an object with the decoded fields.
+             */
+            @JvmStatic
+            fun decode(encoded: ByteArray): ResponseApdu {
+                require(encoded.size >= 2)
+                val reader = ByteDataReader(encoded)
+                val payload = reader.getByteString(encoded.size - STATUS_WORD_SIZE)
+                val sw1 = reader.getUInt8().toInt()
+                val sw2 = reader.getUInt8().toInt()
+                val status = sw1.shl(BYTE_SHIFT) + sw2
+                return ResponseApdu(status, payload)
+            }
         }
     }
-}

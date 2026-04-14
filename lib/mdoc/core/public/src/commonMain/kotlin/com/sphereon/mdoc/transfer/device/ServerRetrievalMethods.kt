@@ -23,6 +23,7 @@ import com.sphereon.cbor.StringLabel
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -34,9 +35,11 @@ data class ServerRetrievalMethods(
 ) {
     companion object {
         @JsStatic
+        @JvmStatic
         val OIDC = StringLabel("Oidc")
 
         @JsStatic
+        @JvmStatic
         val WEB_API = StringLabel("WebApi")
     }
 }

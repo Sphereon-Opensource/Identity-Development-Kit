@@ -25,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.IOException
+import kotlin.jvm.JvmStatic
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
@@ -397,6 +398,7 @@ class HttpRetry private constructor(
         private const val MS_PER_SECOND = 1000L
         private const val MAX_BACKOFF_MS = 30_000L
 
+        @JvmStatic
         fun defaultPolicy(): HttpRetry =
             HttpRetry()
                 .withRetryOnRateLimit()

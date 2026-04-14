@@ -102,6 +102,7 @@ interface KeyResolverRegistry {
  * Allows other components to access the KeyResolverRegistry from the session scope.
  */
 @ContributesTo(scope = SessionScope::class)
+@JsExportCompat
 interface KeyResolverRegistryGraph {
     val keyResolverRegistry: KeyResolverRegistry
 }

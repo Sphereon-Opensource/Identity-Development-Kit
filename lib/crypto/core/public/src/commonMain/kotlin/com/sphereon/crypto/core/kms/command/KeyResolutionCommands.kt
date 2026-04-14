@@ -25,8 +25,9 @@ import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
-
 // ============================================================================
 // ResolvePublicKey Command
 // ============================================================================
@@ -43,55 +44,58 @@ import kotlin.native.ObjCName
 @ObjCName("ResolvePublicKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class ResolvePublicKeyArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-    @kotlinx.serialization.Transient
-    val identifierMethod: IdentifierMethod? = null,
-    val trustedCerts: Array<String>? = null,
-    val verifyX509CertificateChain: Boolean? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+ResolvePublicKeyArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+        @kotlinx.serialization.Transient
+        val identifierMethod: IdentifierMethod? = null,
+        val trustedCerts: Array<String>? = null,
+        val verifyX509CertificateChain: Boolean? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as ResolvePublicKeyArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (identifierMethod != other.identifierMethod) {
+                return false
+            }
+            if (trustedCerts != null) {
+                if (other.trustedCerts == null) {
+                    return false
+                }
+                if (!trustedCerts.contentEquals(other.trustedCerts)) {
+                    return false
+                }
+            } else if (other.trustedCerts != null) {
+                return false
+            }
+            if (verifyX509CertificateChain != other.verifyX509CertificateChain) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as ResolvePublicKeyArgs
-
-        if (keyInfo != other.keyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + (identifierMethod?.hashCode() ?: 0)
+            result = 31 * result + (trustedCerts?.contentHashCode() ?: 0)
+            result = 31 * result + (verifyX509CertificateChain?.hashCode() ?: 0)
+            return result
         }
-        if (identifierMethod != other.identifierMethod) {
-            return false
-        }
-        if (trustedCerts != null) {
-            if (other.trustedCerts == null) {
-                return false
-            }
-            if (!trustedCerts.contentEquals(other.trustedCerts)) {
-                return false
-            }
-        } else if (other.trustedCerts != null) {
-            return false
-        }
-        if (verifyX509CertificateChain != other.verifyX509CertificateChain) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = keyInfo?.hashCode() ?: 0
-        result = 31 * result + (identifierMethod?.hashCode() ?: 0)
-        result = 31 * result + (trustedCerts?.contentHashCode() ?: 0)
-        result = 31 * result + (verifyX509CertificateChain?.hashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Result of a public key resolution operation.
@@ -101,10 +105,13 @@ data class ResolvePublicKeyArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolvePublicKeyResult", exact = true)
 @JsExportCompat
-data class ResolvePublicKeyResult(
-    @kotlinx.serialization.Transient
-    val resolvedKeyInfo: ResolvedKeyInfoType<*>? = null,
-)
+data class
+ResolvePublicKeyResult
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val resolvedKeyInfo: ResolvedKeyInfoType<*>? = null,
+    )
 
 /**
  * Command interface for resolving a public key.
@@ -126,6 +133,7 @@ data class ResolvePublicKeyResult(
  * }
  * ```
  */
+@JsExportCompat
 interface ResolvePublicKeyCommand : ServiceCommand<ResolvePublicKeyArgs, ResolvePublicKeyResult> {
     override val commandId: String get() = COMMAND_ID
 

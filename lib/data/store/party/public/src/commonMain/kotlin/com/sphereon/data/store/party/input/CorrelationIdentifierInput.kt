@@ -19,9 +19,11 @@
 
 package com.sphereon.data.store.party.input
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.IdentifierType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -31,43 +33,46 @@ import kotlin.uuid.Uuid
  *
  * The [id] is optional - if not provided, the system will generate one.
  */
+@JsExportCompat
 @Serializable
-data class CorrelationIdentifierCreateInput(
-    /** Optional ID - if null, system generates one */
-    val id: Uuid? = null,
-    /** The identity this identifier belongs to */
-    @SerialName("identityId")
-    val identityId: Uuid,
-    /** The type of identifier (DID, X509, VAT, etc.) */
-    @SerialName("identifierType")
-    val identifierType: IdentifierType,
-    /** The identifier value (e.g., DID string, certificate fingerprint) */
-    val value: String,
-    /** Whether this is the primary identifier for the identity */
-    @SerialName("isPrimary")
-    val isPrimary: Boolean = false,
-    /** Whether this identifier has been verified */
-    @SerialName("isVerified")
-    val isVerified: Boolean = false,
-    /** When the identifier was verified */
-    @SerialName("verifiedAt")
-    val verifiedAt: Instant? = null,
-    /** When this identifier becomes valid */
-    @SerialName("validFrom")
-    val validFrom: Instant,
-    /** When this identifier expires (null = no expiry) */
-    @SerialName("validUntil")
-    val validUntil: Instant? = null,
-    /** X.509 extension data (required for X509 identifier type) */
-    @SerialName("x509Extension")
-    val x509Extension: IdentifierX509CreateInput? = null,
-    /** Registration extension data (for VAT, LEI, etc.) */
-    @SerialName("registrationExtension")
-    val registrationExtension: IdentifierRegistrationCreateInput? = null,
-    /** Electronic address extension data (for EMAIL, PHONE, URL) */
-    @SerialName("electronicExtension")
-    val electronicExtension: IdentifierElectronicCreateInput? = null,
-)
+data class CorrelationIdentifierCreateInput
+    @JvmOverloads
+    constructor(
+        /** Optional ID - if null, system generates one */
+        val id: Uuid? = null,
+        /** The identity this identifier belongs to */
+        @SerialName("identityId")
+        val identityId: Uuid,
+        /** The type of identifier (DID, X509, VAT, etc.) */
+        @SerialName("identifierType")
+        val identifierType: IdentifierType,
+        /** The identifier value (e.g., DID string, certificate fingerprint) */
+        val value: String,
+        /** Whether this is the primary identifier for the identity */
+        @SerialName("isPrimary")
+        val isPrimary: Boolean = false,
+        /** Whether this identifier has been verified */
+        @SerialName("isVerified")
+        val isVerified: Boolean = false,
+        /** When the identifier was verified */
+        @SerialName("verifiedAt")
+        val verifiedAt: Instant? = null,
+        /** When this identifier becomes valid */
+        @SerialName("validFrom")
+        val validFrom: Instant,
+        /** When this identifier expires (null = no expiry) */
+        @SerialName("validUntil")
+        val validUntil: Instant? = null,
+        /** X.509 extension data (required for X509 identifier type) */
+        @SerialName("x509Extension")
+        val x509Extension: IdentifierX509CreateInput? = null,
+        /** Registration extension data (for VAT, LEI, etc.) */
+        @SerialName("registrationExtension")
+        val registrationExtension: IdentifierRegistrationCreateInput? = null,
+        /** Electronic address extension data (for EMAIL, PHONE, URL) */
+        @SerialName("electronicExtension")
+        val electronicExtension: IdentifierElectronicCreateInput? = null,
+    )
 
 /**
  * Input for updating an existing correlation identifier.
@@ -75,73 +80,85 @@ data class CorrelationIdentifierCreateInput(
  * The [id] is required to identify which identifier to update.
  * All other fields are optional - only non-null values will be updated.
  */
+@JsExportCompat
 @Serializable
-data class CorrelationIdentifierUpdateInput(
-    /** Required - the identifier to update */
-    val id: Uuid,
-    /** New primary flag (null = keep current) */
-    @SerialName("isPrimary")
-    val isPrimary: Boolean? = null,
-    /** New verified flag (null = keep current) */
-    @SerialName("isVerified")
-    val isVerified: Boolean? = null,
-    /** New verification time (null = keep current) */
-    @SerialName("verifiedAt")
-    val verifiedAt: Instant? = null,
-    /** New expiry time (null = keep current) */
-    @SerialName("validUntil")
-    val validUntil: Instant? = null,
-)
+data class CorrelationIdentifierUpdateInput
+    @JvmOverloads
+    constructor(
+        /** Required - the identifier to update */
+        val id: Uuid,
+        /** New primary flag (null = keep current) */
+        @SerialName("isPrimary")
+        val isPrimary: Boolean? = null,
+        /** New verified flag (null = keep current) */
+        @SerialName("isVerified")
+        val isVerified: Boolean? = null,
+        /** New verification time (null = keep current) */
+        @SerialName("verifiedAt")
+        val verifiedAt: Instant? = null,
+        /** New expiry time (null = keep current) */
+        @SerialName("validUntil")
+        val validUntil: Instant? = null,
+    )
 
 /**
  * X.509 certificate extension data for creating an identifier.
  */
+@JsExportCompat
 @Serializable
-data class IdentifierX509CreateInput(
-    /** Distinguished Name of the certificate issuer */
-    @SerialName("issuerDn")
-    val issuerDn: String? = null,
-    /** Distinguished Name of the certificate subject */
-    @SerialName("subjectDn")
-    val subjectDn: String? = null,
-    /** Certificate serial number */
-    @SerialName("serialNumber")
-    val serialNumber: String? = null,
-    /** PEM-encoded certificate */
-    @SerialName("certificatePem")
-    val certificatePem: String? = null,
-    /** Certificate validity start */
-    @SerialName("notBefore")
-    val notBefore: Instant? = null,
-    /** Certificate validity end */
-    @SerialName("notAfter")
-    val notAfter: Instant? = null,
-)
+data class IdentifierX509CreateInput
+    @JvmOverloads
+    constructor(
+        /** Distinguished Name of the certificate issuer */
+        @SerialName("issuerDn")
+        val issuerDn: String? = null,
+        /** Distinguished Name of the certificate subject */
+        @SerialName("subjectDn")
+        val subjectDn: String? = null,
+        /** Certificate serial number */
+        @SerialName("serialNumber")
+        val serialNumber: String? = null,
+        /** PEM-encoded certificate */
+        @SerialName("certificatePem")
+        val certificatePem: String? = null,
+        /** Certificate validity start */
+        @SerialName("notBefore")
+        val notBefore: Instant? = null,
+        /** Certificate validity end */
+        @SerialName("notAfter")
+        val notAfter: Instant? = null,
+    )
 
 /**
  * Business registration extension data for creating an identifier.
  */
+@JsExportCompat
 @Serializable
-data class IdentifierRegistrationCreateInput(
-    /** Type of registration (e.g., "VAT", "LEI", "KVK") */
-    @SerialName("registrationType")
-    val registrationType: String,
-    /** Authority that issued the registration */
-    @SerialName("issuingAuthority")
-    val issuingAuthority: String? = null,
-    /** Country where registration is valid (ISO 3166-1 alpha-2) */
-    @SerialName("jurisdictionCountry")
-    val jurisdictionCountry: String? = null,
-)
+data class IdentifierRegistrationCreateInput
+    @JvmOverloads
+    constructor(
+        /** Type of registration (e.g., "VAT", "LEI", "KVK") */
+        @SerialName("registrationType")
+        val registrationType: String,
+        /** Authority that issued the registration */
+        @SerialName("issuingAuthority")
+        val issuingAuthority: String? = null,
+        /** Country where registration is valid (ISO 3166-1 alpha-2) */
+        @SerialName("jurisdictionCountry")
+        val jurisdictionCountry: String? = null,
+    )
 
 /**
  * Electronic address extension data for creating an identifier.
  */
+@JsExportCompat
 @Serializable
-data class IdentifierElectronicCreateInput(
-    /** Type of electronic address (e.g., "work", "personal", "support") */
-    @SerialName("electronicType")
-    val electronicType: String,
-    /** User-friendly label (e.g., "Work Email", "Mobile Phone") */
-    val label: String? = null,
-)
+data class IdentifierElectronicCreateInput
+    @JvmOverloads
+    constructor(
+        /** Type of electronic address (e.g., "work", "personal", "support") */
+        @SerialName("electronicType")
+        val electronicType: String,
+        /** User-friendly label (e.g., "Work Email", "Mobile Phone") */
+        val label: String? = null,
+    )

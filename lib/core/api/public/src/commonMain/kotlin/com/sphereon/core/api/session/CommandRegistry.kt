@@ -17,12 +17,15 @@
 
 package com.sphereon.core.api.session
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Registry for command IDs. Used for:
  * - Command ID conformance checks
  * - Policy rule generation/export
  * - Documentation/testing
  */
+@JsExportCompat
 interface CommandRegistry {
     /**
      * Registers a command ID with its subsystem and optional tags.
@@ -79,6 +82,7 @@ interface CommandRegistry {
 /**
  * In-memory implementation of CommandRegistry.
  */
+@JsExportCompat
 class InMemoryCommandRegistry : CommandRegistry {
     private val entries = mutableMapOf<String, RegistryEntry>()
 

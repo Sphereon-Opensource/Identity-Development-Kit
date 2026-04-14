@@ -20,6 +20,7 @@ package com.sphereon.mdoc.transport
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.engagement.EngagementData
@@ -52,6 +53,7 @@ import kotlin.native.ObjCName
  *
  * @param T The type of connection identifier (UUID for BLE, String for REST API, etc.)
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IMdocTransfer", exact = true)
 interface MdocTransport<T> : AutoCloseable {
@@ -200,6 +202,7 @@ interface MdocTransport<T> : AutoCloseable {
  *
  * @param T Connection identifier type
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AbstractMdocTransfer", exact = true)
 abstract class AbstractMdocTransport<T>(

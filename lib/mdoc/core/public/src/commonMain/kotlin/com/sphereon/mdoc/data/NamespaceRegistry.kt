@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.data
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.data.device.DataElementIdentifier
 import com.sphereon.mdoc.data.device.NameSpace
 import kotlin.experimental.ExperimentalObjCName

@@ -21,6 +21,7 @@
 package com.sphereon.did.manager
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethodConfig
@@ -28,6 +29,7 @@ import com.sphereon.did.models.VerificationMethodType
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.ExperimentalJsExport
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -74,23 +76,26 @@ enum class DidRole {
 @ObjCName("DidCreateOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class DidCreateOptions(
-    val method: String,
-    val alias: String? = null,
-    // did:web specific
-    val domain: String? = null,
-    val path: List<String>? = null,
-    // Key material
-    val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
-    val verificationMethodId: String? = null,
-    val verificationMethodType: VerificationMethodType? = null,
-    val controller: String? = null,
-    val purposes: List<com.sphereon.did.models.VerificationPurpose>? = null,
-    // Additional configuration
-    val verificationMethods: List<VerificationMethodConfig> = emptyList(),
-    val services: List<DidService>? = null,
-    val methodOptions: Map<String, String> = emptyMap(),
-)
+data class DidCreateOptions
+    @JvmOverloads
+    constructor(
+        val method: String,
+        val alias: String? = null,
+        // did:web specific
+        val domain: String? = null,
+        val path: List<String>? = null,
+        // Key material
+        val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
+        val verificationMethodId: String? = null,
+        val verificationMethodType: VerificationMethodType? = null,
+        val controller: String? = null,
+        val purposes: List<com.sphereon.did.models.VerificationPurpose>? = null,
+        // Additional configuration
+        val verificationMethods: List<VerificationMethodConfig> = emptyList(),
+        val services: List<DidService>? = null,
+        @JsExportIgnoreCompat
+        val methodOptions: Map<String, String> = emptyMap(),
+    )
 
 /**
  * Options for updating an existing DID.
@@ -106,14 +111,16 @@ data class DidCreateOptions(
 @ObjCName("DidUpdateOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class DidUpdateOptions(
-    val currentDocument: DidDocument? = null,
-    val controller: String? = null,
-    val addVerificationMethods: List<com.sphereon.did.models.VerificationMethod>? = null,
-    val removeVerificationMethodIds: List<String>? = null,
-    val addServices: List<DidService>? = null,
-    val removeServiceIds: List<String>? = null,
-)
+data class DidUpdateOptions
+    @JvmOverloads
+    constructor(
+        val currentDocument: DidDocument? = null,
+        val controller: String? = null,
+        val addVerificationMethods: List<com.sphereon.did.models.VerificationMethod>? = null,
+        val removeVerificationMethodIds: List<String>? = null,
+        val addServices: List<DidService>? = null,
+        val removeServiceIds: List<String>? = null,
+    )
 
 /**
  * Options for deactivating a DID.
@@ -124,9 +131,11 @@ data class DidUpdateOptions(
 @ObjCName("DidDeactivateOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class DidDeactivateOptions(
-    val reason: String? = null,
-)
+data class DidDeactivateOptions
+    @JvmOverloads
+    constructor(
+        val reason: String? = null,
+    )
 
 /**
  * Options for adding a key to a DID.
@@ -143,15 +152,17 @@ data class DidDeactivateOptions(
 @ObjCName("AddKeyOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class AddKeyOptions(
-    val currentDocument: DidDocument? = null,
-    val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
-    val verificationMethodId: String? = null,
-    val verificationMethodType: VerificationMethodType? = null,
-    val controller: String? = null,
-    val purposes: List<com.sphereon.did.models.VerificationPurpose>? = null,
-    val config: VerificationMethodConfig? = null,
-)
+data class AddKeyOptions
+    @JvmOverloads
+    constructor(
+        val currentDocument: DidDocument? = null,
+        val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
+        val verificationMethodId: String? = null,
+        val verificationMethodType: VerificationMethodType? = null,
+        val controller: String? = null,
+        val purposes: List<com.sphereon.did.models.VerificationPurpose>? = null,
+        val config: VerificationMethodConfig? = null,
+    )
 
 /**
  * Result of creating a DID.
@@ -165,12 +176,15 @@ data class AddKeyOptions(
 @ObjCName("DidCreateResult", exact = true)
 @JsExportCompat
 @Serializable
-data class DidCreateResult(
-    val did: String,
-    val didDocument: DidDocument,
-    val verificationMethodsByPurpose: Map<com.sphereon.did.models.VerificationPurpose, List<com.sphereon.did.models.VerificationMethod>> = emptyMap(),
-    val alias: String? = null,
-)
+data class DidCreateResult
+    @JvmOverloads
+    constructor(
+        val did: String,
+        val didDocument: DidDocument,
+        @JsExportIgnoreCompat
+        val verificationMethodsByPurpose: Map<com.sphereon.did.models.VerificationPurpose, List<com.sphereon.did.models.VerificationMethod>> = emptyMap(),
+        val alias: String? = null,
+    )
 
 /**
  * Result of updating a DID.
@@ -183,11 +197,14 @@ data class DidCreateResult(
 @ObjCName("DidUpdateResult", exact = true)
 @JsExportCompat
 @Serializable
-data class DidUpdateResult(
-    val did: String,
-    val didDocument: DidDocument,
-    val verificationMethodsByPurpose: Map<com.sphereon.did.models.VerificationPurpose, List<com.sphereon.did.models.VerificationMethod>> = emptyMap(),
-)
+data class DidUpdateResult
+    @JvmOverloads
+    constructor(
+        val did: String,
+        val didDocument: DidDocument,
+        @JsExportIgnoreCompat
+        val verificationMethodsByPurpose: Map<com.sphereon.did.models.VerificationPurpose, List<com.sphereon.did.models.VerificationMethod>> = emptyMap(),
+    )
 
 /**
  * Result of deactivating a DID.
@@ -200,11 +217,13 @@ data class DidUpdateResult(
 @ObjCName("DidDeactivateResult", exact = true)
 @JsExportCompat
 @Serializable
-data class DidDeactivateResult(
-    val did: String,
-    val deactivated: Boolean = true,
-    val deactivatedDocument: DidDocument? = null,
-)
+data class DidDeactivateResult
+    @JvmOverloads
+    constructor(
+        val did: String,
+        val deactivated: Boolean = true,
+        val deactivatedDocument: DidDocument? = null,
+    )
 
 /**
  * Filter for listing DIDs.
@@ -218,12 +237,14 @@ data class DidDeactivateResult(
 @ObjCName("DidFilter", exact = true)
 @JsExportCompat
 @Serializable
-data class DidFilter(
-    val method: String? = null,
-    val alias: String? = null,
-    val role: DidRole? = null,
-    val includeDeactivated: Boolean = false,
-)
+data class DidFilter
+    @JvmOverloads
+    constructor(
+        val method: String? = null,
+        val alias: String? = null,
+        val role: DidRole? = null,
+        val includeDeactivated: Boolean = false,
+    )
 
 /**
  * Represents a managed DID with its associated data.
@@ -243,18 +264,20 @@ data class DidFilter(
 @ObjCName("ManagedDid", exact = true)
 @JsExportCompat
 @Serializable
-data class ManagedDid(
-    val id: String,
-    val did: String,
-    val method: String,
-    val alias: String? = null,
-    val document: DidDocument? = null,
-    val role: DidRole,
-    val deactivated: Boolean = false,
-    val keys: List<DidKeyMapping> = emptyList(),
-    val createdAt: String,
-    val updatedAt: String,
-)
+data class ManagedDid
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val did: String,
+        val method: String,
+        val alias: String? = null,
+        val document: DidDocument? = null,
+        val role: DidRole,
+        val deactivated: Boolean = false,
+        val keys: List<DidKeyMapping> = emptyList(),
+        val createdAt: String,
+        val updatedAt: String,
+    )
 
 /**
  * Maps a verification method to a KMS key.

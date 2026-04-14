@@ -50,6 +50,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.random.Random
 
@@ -263,12 +264,15 @@ data class IssuerSigned(
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val NAME_SPACES = StringLabel("nameSpaces")
 
         @JsStatic
+        @JvmStatic
         val ISSUER_AUTH = StringLabel("issuerAuth")
 
         @JsStatic
+        @JvmStatic
         fun toValueDigests(
             nameSpaces: IssuerSignedNameSpaces? = null,
             alg: DigestAlg = DigestAlg.SHA256,
@@ -302,6 +306,7 @@ value class RandomValue(
     companion object Decoder {
         private const val RANDOM_VALUE_SIZE = 24
 
+        @JvmStatic
         fun fromCborItem(structure: CborByteString) = RandomValue(structure.value)
     }
 }
@@ -351,15 +356,19 @@ data class IssuerSignedItem<Type : Any>(
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val DIGEST_ID = StringLabel("digestID")
 
         @JsStatic
+        @JvmStatic
         val RANDOM = StringLabel("random")
 
         @JsStatic
+        @JvmStatic
         val ELEMENT_IDENTIFIER = StringLabel("elementIdentifier")
 
         @JsStatic
+        @JvmStatic
         val ELEMENT_VALUE = StringLabel("elementValue")
 
         @JsStatic

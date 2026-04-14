@@ -16,12 +16,13 @@
  */
 
 package com.sphereon.crypto.resolution.managed
-
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.resolution.BaseIdentifierService
 
+@JsExportCompat
 interface ManagedIdentifierService : BaseIdentifierService<ManagedIdentifierOptsOrResult> {
     /**
      * Are these opts in a form this service can handle?

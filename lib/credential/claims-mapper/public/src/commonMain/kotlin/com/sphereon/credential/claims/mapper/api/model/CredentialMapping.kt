@@ -17,6 +17,7 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -35,6 +36,7 @@ import kotlinx.serialization.Serializable
  * @property claimMappings List of claim mappings for this credential.
  *   Each mapping defines how to extract and transform one claim.
  */
+@JsExportCompat
 @Serializable
 data class CredentialMapping(
     val credentialId: String,

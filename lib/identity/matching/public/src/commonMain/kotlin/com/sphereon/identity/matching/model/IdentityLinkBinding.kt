@@ -16,8 +16,11 @@
 
 package com.sphereon.identity.matching.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.matching.crypto.EncryptedPayload
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 /**
@@ -30,32 +33,37 @@ import kotlin.time.Instant
  * (for reversible access). Key version metadata is carried in each crypto field
  * for rotation support.
  */
+@JsExportCompat
 @Serializable
-data class IdentityLinkBinding(
-    val id: String,
-    val tenantId: String,
-    val matchId: String,
-    // Hash metadata (key version for dual-read rotation)
-    val holderIdentifierHash: String,
-    val holderHashKeyVersion: String,
-    val institutionIdentifierHash: String?,
-    val institutionHashKeyVersion: String?,
-    // Encrypted reversible payload
-    val encryptedInstitutionId: EncryptedPayload?,
-    val persistedAttributesEnvelope: PersistedAttributesEnvelope,
-    // Provenance
-    val providerId: String,
-    val institutionId: String?,
-    // Version metadata for staleness detection
-    val canonicalSchemaVersion: String? = null,
-    val materialProfileVersion: String? = null,
-    val selectorRuleVersion: String? = null,
-    val persistedAttributeNames: Set<String>? = null,
-    val materialFingerprints: Set<String>? = null,
-    // Assurance metadata (IDV-compatible field names)
-    val assuranceSummary: AssuranceSummary?,
-    // Lifecycle
-    val createdAt: Instant,
-    val updatedAt: Instant?,
-    val lastUsedAt: Instant?,
-)
+data class IdentityLinkBinding
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val tenantId: String,
+        val matchId: String,
+        // Hash metadata (key version for dual-read rotation)
+        val holderIdentifierHash: String,
+        val holderHashKeyVersion: String,
+        val institutionIdentifierHash: String?,
+        val institutionHashKeyVersion: String?,
+        // Encrypted reversible payload
+        val encryptedInstitutionId: EncryptedPayload?,
+        val persistedAttributesEnvelope: PersistedAttributesEnvelope,
+        // Provenance
+        val providerId: String,
+        val institutionId: String?,
+        // Version metadata for staleness detection
+        val canonicalSchemaVersion: String? = null,
+        val materialProfileVersion: String? = null,
+        val selectorRuleVersion: String? = null,
+        @JsExportIgnoreCompat
+        val persistedAttributeNames: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val materialFingerprints: Set<String>? = null,
+        // Assurance metadata (IDV-compatible field names)
+        val assuranceSummary: AssuranceSummary?,
+        // Lifecycle
+        val createdAt: Instant,
+        val updatedAt: Instant?,
+        val lastUsedAt: Instant?,
+    )

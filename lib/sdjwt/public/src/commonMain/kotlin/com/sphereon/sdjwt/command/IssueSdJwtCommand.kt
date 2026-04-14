@@ -16,12 +16,14 @@
 package com.sphereon.sdjwt.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.IssueSdJwtArgs
 import com.sphereon.sdjwt.IssueSdJwtResult
 
 /**
  * Command interface for issuing SD-JWTs.
  */
+@JsExportCompat
 interface IssueSdJwtCommand : ServiceCommand<IssueSdJwtArgs, IssueSdJwtResult> {
     override val commandId: String get() = COMMAND_ID
 

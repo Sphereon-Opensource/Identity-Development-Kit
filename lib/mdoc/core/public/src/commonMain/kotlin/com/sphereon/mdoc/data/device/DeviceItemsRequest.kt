@@ -27,6 +27,7 @@ import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JvmInline
@@ -214,12 +215,15 @@ data class DeviceItemsRequest(
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val DOC_TYPE = StringLabel("docType")
 
         @JsStatic
+        @JvmStatic
         val NAME_SPACES = StringLabel("nameSpaces")
 
         @JsStatic
+        @JvmStatic
         val REQUEST_INFO = StringLabel("requestInfo")
     }
 }

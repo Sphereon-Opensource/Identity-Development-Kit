@@ -17,15 +17,19 @@
 package com.sphereon.sdjwt
 
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * Represents a disclosure digest value.
  */
+@JsExportCompat
 data class DisclosureDigest(
     val value: String,
 ) {
@@ -37,6 +41,7 @@ data class DisclosureDigest(
          * @param disclosure The disclosure object
          * @return DisclosureDigest containing the digest value
          */
+        @JvmStatic
         fun calculate(
             digestAlg: DigestAlg,
             disclosure: Disclosure,
@@ -52,6 +57,8 @@ data class DisclosureDigest(
          * @param hashAlgorithm The hash algorithm to use (default SHA-256)
          * @return The base64url-encoded digest
          */
+        @JvmStatic
+        @JvmOverloads
         fun calculateDigest(
             encodedDisclosure: String,
             hashAlgorithm: DigestAlg = DigestAlg.SHA256,

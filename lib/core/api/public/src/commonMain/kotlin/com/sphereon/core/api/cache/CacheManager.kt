@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -46,6 +47,7 @@ import kotlin.native.ObjCName
  * val value = cache?.getApp("db.pool.size")
  * ```
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheManager", exact = true)
 interface CacheManager {

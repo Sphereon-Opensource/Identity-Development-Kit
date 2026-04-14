@@ -17,13 +17,16 @@
 package com.sphereon.oauth2.client.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.client.model.AuthorizationRequestUrlResult
 import com.sphereon.oauth2.common.model.AuthorizationErrorResponse
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 data class ParseAuthorizationResponseArgs(
     val redirectUrl: String,
 )
@@ -34,6 +37,7 @@ data class ParseAuthorizationResponseArgs(
  * Parses the query parameters from the redirect URL and validates them
  * as either a success response (with code) or error response.
  */
+@JsExportCompat
 interface ParseAuthorizationResponseCommand : ServiceCommand<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse> {
     override val commandId: String get() = COMMAND_ID
 
@@ -60,30 +64,33 @@ sealed interface ParsedAuthorizationResponse {
 /**
  * Options for creating authorization request URL
  */
-data class CreateAuthorizationRequestUrlOptions(
-    /**
-     * Authorization server metadata
-     */
-    val authorizationServerMetadata: AuthorizationServerMetadata,
-    /**
-     * Base authorization request parameters
-     */
-    val authorizationRequest: AuthorizationRequest,
-    /**
-     * Optional PKCE code verifier
-     * If not provided and PKCE is supported, one will be generated
-     */
-    val pkceCodeVerifier: String? = null,
-    /**
-     * Client authentication configuration for PAR requests
-     * Required if the authorization server requires client authentication for PAR
-     */
-    val clientAuthentication: ClientAuthenticationConfig? = null,
+@JsExportCompat
+data class CreateAuthorizationRequestUrlOptions
+    @JvmOverloads
+    constructor(
+        /**
+         * Authorization server metadata
+         */
+        val authorizationServerMetadata: AuthorizationServerMetadata,
+        /**
+         * Base authorization request parameters
+         */
+        val authorizationRequest: AuthorizationRequest,
+        /**
+         * Optional PKCE code verifier
+         * If not provided and PKCE is supported, one will be generated
+         */
+        val pkceCodeVerifier: String? = null,
+        /**
+         * Client authentication configuration for PAR requests
+         * Required if the authorization server requires client authentication for PAR
+         */
+        val clientAuthentication: ClientAuthenticationConfig? = null,
     /*
      * TODO: DPoP options (Phase 3)
      * val dpopOptions: DpopOptions? = null
      */
-)
+    )
 
 /**
  * Command for creating an authorization request URL
@@ -93,6 +100,7 @@ data class CreateAuthorizationRequestUrlOptions(
  * 2. Checks if PAR is required/supported and pushes request if needed
  * 3. Builds the final authorization URL with all parameters
  */
+@JsExportCompat
 interface CreateAuthorizationRequestUrlCommand : ServiceCommand<CreateAuthorizationRequestUrlOptions, AuthorizationRequestUrlResult> {
     override val commandId: String get() = COMMAND_ID
 

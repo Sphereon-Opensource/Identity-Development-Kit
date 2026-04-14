@@ -17,6 +17,7 @@
 package com.sphereon.conf.theme.core.palette
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -36,7 +37,9 @@ data class PaletteRef(
 @JsExportCompat
 @Serializable
 data class PaletteMapping(
+    @JsExportIgnoreCompat
     val light: Map<String, PaletteRef>,
+    @JsExportIgnoreCompat
     val dark: Map<String, PaletteRef>,
 )
 

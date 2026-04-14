@@ -19,10 +19,12 @@
 
 package com.sphereon.data.link.ble.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IHasAddress", exact = true)
 interface IHasAddress {
@@ -36,6 +38,7 @@ fun toAddress(value: String) =
         override fun toString(): String = address
     }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleDevice", exact = true)
 data class BleDevice(

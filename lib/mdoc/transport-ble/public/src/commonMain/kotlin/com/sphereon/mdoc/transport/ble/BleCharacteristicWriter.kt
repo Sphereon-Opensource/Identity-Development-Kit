@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.transport.ble
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.CharacteristicWriteError
 import com.sphereon.data.link.ble.model.HasUuidId
 import kotlin.experimental.ExperimentalObjCName
@@ -52,6 +53,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleCharacteristicWriter", exact = true)
+@JsExportCompat
 interface BleCharacteristicWriter {
     /**
      * Writes a value to a BLE characteristic.

@@ -17,10 +17,13 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocState
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementStateType", exact = true)
 sealed interface MdocEngagementStateType : MdocState {
@@ -32,6 +35,7 @@ sealed interface MdocEngagementStateType : MdocState {
         get() = MdocEngagementState.valueOf(state)
 
     companion object {
+        @JvmStatic
         val entries: Array<MdocEngagementState> by lazy { MdocEngagementState.entries.toTypedArray<MdocEngagementState>() }
     }
 }
@@ -45,6 +49,7 @@ sealed interface MdocEngagementStateType : MdocState {
  *
  * Once the state connected is achieved, Mdoc data can be sent across
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementState", exact = true)
 enum class MdocEngagementState(

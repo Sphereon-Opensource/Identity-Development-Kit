@@ -18,6 +18,7 @@ package com.sphereon.sdjwt.vc
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.KeyBindingJwt
 import com.sphereon.sdjwt.SdJwtCompact
 import com.sphereon.sdjwt.vc.command.ResolveIssuerMetadataCommand
@@ -28,6 +29,7 @@ import com.sphereon.sdjwt.vc.command.VerifySdJwtVcPresentationCommand
 /**
  * Command service interface for SD-JWT-VC verification
  */
+@JsExportCompat
 interface VerifySdJwtVcCommandService {
     suspend fun verifySdJwtVc(args: VerifySdJwtVcArgs): IdkResult<SdJwtVcVerificationResult, IdkError>
 }
@@ -35,6 +37,7 @@ interface VerifySdJwtVcCommandService {
 /**
  * Command service interface for SD-JWT-VC presentation verification
  */
+@JsExportCompat
 interface VerifySdJwtVcPresentationCommandService {
     suspend fun verifySdJwtVcPresentation(args: VerifySdJwtVcPresentationArgs): IdkResult<SdJwtVcPresentationVerificationResult, IdkError>
 }
@@ -42,6 +45,7 @@ interface VerifySdJwtVcPresentationCommandService {
 /**
  * Command service interface for resolving type metadata
  */
+@JsExportCompat
 interface ResolveTypeMetadataCommandService {
     suspend fun resolveTypeMetadata(args: ResolveTypeMetadataArgs): IdkResult<TypeMetadataResolutionResult, IdkError>
 }
@@ -49,6 +53,7 @@ interface ResolveTypeMetadataCommandService {
 /**
  * Command service interface for resolving issuer metadata
  */
+@JsExportCompat
 interface ResolveIssuerMetadataCommandService {
     suspend fun resolveIssuerMetadata(args: ResolveIssuerMetadataArgs): IdkResult<IssuerMetadataResolutionResult, IdkError>
 }
@@ -107,6 +112,7 @@ interface SdJwtVcService :
  * @property sdJwt SD-JWT string in compact format
  * @property opts Verification options
  */
+@JsExportCompat
 data class VerifySdJwtVcArgs(
     val sdJwt: String,
     val opts: SdJwtVcVerificationOpts = SdJwtVcVerificationOpts(),
@@ -119,6 +125,7 @@ data class VerifySdJwtVcArgs(
  * @property expectedNonce Verifier's expected nonce (in KB-JWT)
  * @property opts Verification options
  */
+@JsExportCompat
 data class VerifySdJwtVcPresentationArgs(
     val sdJwt: String,
     val expectedNonce: String?,
@@ -131,6 +138,7 @@ data class VerifySdJwtVcPresentationArgs(
  * @property vct Verifiable Credential Type identifier
  * @property resolver Custom resolver (optional, uses default if null)
  */
+@JsExportCompat
 data class ResolveTypeMetadataArgs(
     val vct: String,
     val resolver: TypeMetadataResolver? = null,
@@ -142,6 +150,7 @@ data class ResolveTypeMetadataArgs(
  * @property issuer Issuer identifier (HTTPS URL)
  * @property resolver Custom resolver (optional, uses default if null)
  */
+@JsExportCompat
 data class ResolveIssuerMetadataArgs(
     val issuer: String,
     val resolver: IssuerMetadataResolver? = null,
@@ -158,6 +167,7 @@ data class ResolveIssuerMetadataArgs(
  *
  * Based on draft-ietf-oauth-sd-jwt-vc-13
  */
+@JsExportCompat
 interface SdJwtVcVerifier {
     /**
      * Verify SD-JWT-VC without Key Binding

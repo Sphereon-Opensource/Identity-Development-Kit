@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.StreamingBody
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * A streaming-capable codec for encoding/decoding binary and text content.
@@ -46,6 +47,7 @@ import com.sphereon.core.api.error.IdkError
  * val result = codec.decode<MyClass>(body, typeToken<MyClass>())
  * ```
  */
+@JsExportCompat
 interface StreamingCodec {
     /**
      * The primary content type this codec handles.
@@ -101,6 +103,7 @@ interface StreamingCodec {
  * Provides lookup capabilities for finding the appropriate codec
  * based on content type.
  */
+@JsExportCompat
 interface StreamingCodecRegistry {
     /**
      * The default codec to use when content type is unknown.
@@ -135,6 +138,7 @@ interface StreamingCodecRegistry {
 /**
  * Default implementation of StreamingCodecRegistry.
  */
+@JsExportCompat
 class DefaultStreamingCodecRegistry(
     override val defaultCodec: StreamingCodec,
 ) : StreamingCodecRegistry {

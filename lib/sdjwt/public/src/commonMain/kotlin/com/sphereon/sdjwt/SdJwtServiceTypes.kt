@@ -17,7 +17,7 @@ package com.sphereon.sdjwt
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.compat.JsExportIgnoreCompat
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
@@ -43,7 +43,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SdJwtService", exact = true)
-@JsExportIgnoreCompat
 interface SdJwtService :
     IssueSdJwtCommandService,
     VerifySdJwtCommandService,
@@ -75,6 +74,7 @@ interface SdJwtService :
  * @property spec Optional SD-JWT specification (algorithm, decoy config)
  * @property opts Optional JWS creation options
  */
+@JsExportCompat
 data class IssueSdJwtArgs(
     val payload: SdJwtPayload,
     val issuer: ManagedIdentifierOptsOrResult,
@@ -89,6 +89,7 @@ data class IssueSdJwtArgs(
  * @property jwt The signed JWT graph
  * @property disclosures The disclosures for selectively disclosable claims
  */
+@JsExportCompat
 data class IssueSdJwtResult(
     val sdJwt: String,
     val jwt: String,
@@ -98,6 +99,7 @@ data class IssueSdJwtResult(
 /**
  * Service interface for issuing SD-JWTs.
  */
+@JsExportCompat
 interface IssueSdJwtCommandService {
     suspend fun issueSdJwt(args: IssueSdJwtArgs): IdkResult<IssueSdJwtResult, IdkError>
 }
@@ -115,6 +117,7 @@ interface IssueSdJwtCommandService {
  * @property expectedNonce Expected nonce for KB-JWT verification (if KB-JWT present)
  * @property validateDisclosures Whether to validate disclosure digests (default true)
  */
+@JsExportCompat
 data class VerifySdJwtArgs(
     val sdJwt: String,
     val identifier: IdentifierOptsOrResult? = null,
@@ -126,6 +129,7 @@ data class VerifySdJwtArgs(
 /**
  * Service interface for verifying SD-JWTs.
  */
+@JsExportCompat
 interface VerifySdJwtCommandService {
     suspend fun verifySdJwt(args: VerifySdJwtArgs): IdkResult<SdJwtVerificationResult, IdkError>
 }
@@ -144,6 +148,7 @@ interface VerifySdJwtCommandService {
  * @property holderKey Optional holder key for Key Binding JWT signature
  * @property kbJwtOpts Optional JWS creation options for KB-JWT
  */
+@JsExportCompat
 data class PresentSdJwtArgs(
     val sdJwt: String,
     val disclosureSelection: SdMap? = null,
@@ -159,6 +164,7 @@ data class PresentSdJwtArgs(
  * @property presentation The presentation string (JWT with selected disclosures and optional KB-JWT)
  * @property disclosedClaims The claims that were disclosed in this presentation
  */
+@JsExportCompat
 data class PresentSdJwtResult(
     val presentation: String,
     val disclosedClaims: List<String>,
@@ -167,6 +173,7 @@ data class PresentSdJwtResult(
 /**
  * Service interface for presenting SD-JWTs.
  */
+@JsExportCompat
 interface PresentSdJwtCommandService {
     suspend fun presentSdJwt(args: PresentSdJwtArgs): IdkResult<PresentSdJwtResult, IdkError>
 }

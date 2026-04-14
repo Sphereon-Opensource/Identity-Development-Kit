@@ -18,6 +18,8 @@ package com.sphereon.oauth2.client.client
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.oauth2.client.model.PkceData
@@ -26,6 +28,7 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.TokenResponse
+import kotlin.jvm.JvmOverloads
 
 /**
  * High-level OAuth 2.0 client facade
@@ -40,6 +43,7 @@ import com.sphereon.oauth2.common.model.TokenResponse
  * - Pre-Authorized Code Flow (OpenID4VCI)
  * - Token Introspection (RFC 7662)
  */
+@JsExportCompat
 interface OAuth2Client {
     /**
      * Fetches authorization server metadata using well-known discovery
@@ -77,6 +81,7 @@ interface OAuth2Client {
      * @param additionalParameters Additional request parameters
      * @return IdkResult containing authorization URL and optional PKCE/DPoP data
      */
+    @JsExportIgnoreCompat
     suspend fun initiateAuthorization(
         authorizationServerMetadata: AuthorizationServerMetadata,
         clientId: String,
@@ -224,12 +229,15 @@ interface OAuth2Client {
  * @property state The state parameter for CSRF protection
  * @property dpopContext Optional DPoP context (if DPoP was used)
  */
-data class AuthorizationResult(
-    val authorizationUrl: String,
-    val pkceData: PkceData? = null,
-    val state: String? = null,
-    val dpopContext: DpopContext? = null,
-)
+@JsExportCompat
+data class AuthorizationResult
+    @JvmOverloads
+    constructor(
+        val authorizationUrl: String,
+        val pkceData: PkceData? = null,
+        val state: String? = null,
+        val dpopContext: DpopContext? = null,
+    )
 
 /**
  * DPoP context for tracking DPoP state across OAuth flows
@@ -239,9 +247,12 @@ data class AuthorizationResult(
  * @property jwkThumbprint The JWK thumbprint (for token binding verification)
  * @property dpopNonce Optional server-provided nonce (updated after each token response)
  */
-data class DpopContext(
-    val publicJwk: Jwk,
-    val issuer: ManagedIdentifierOptsOrResult,
-    val jwkThumbprint: String,
-    val dpopNonce: String? = null,
-)
+@JsExportCompat
+data class DpopContext
+    @JvmOverloads
+    constructor(
+        val publicJwk: Jwk,
+        val issuer: ManagedIdentifierOptsOrResult,
+        val jwkThumbprint: String,
+        val dpopNonce: String? = null,
+    )

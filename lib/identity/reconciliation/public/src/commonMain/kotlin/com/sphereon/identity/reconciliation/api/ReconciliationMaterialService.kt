@@ -16,6 +16,8 @@
 
 package com.sphereon.identity.reconciliation.api
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.idv.model.AttributeBag
 import com.sphereon.identity.matching.crypto.HashedIdentifier
 import com.sphereon.identity.matching.model.IdentifierType
@@ -23,7 +25,9 @@ import com.sphereon.identity.reconciliation.model.CanonicalAttributeBag
 import com.sphereon.identity.reconciliation.model.ReconciliationMaterialProfile
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 interface ReconciliationMaterialService {
+    @JsExportIgnoreCompat
     suspend fun deriveMaterials(
         profile: ReconciliationMaterialProfile,
         holderKey: String?,
@@ -32,6 +36,7 @@ interface ReconciliationMaterialService {
         credentialScopedAttributes: Map<String, AttributeBag>? = null,
     ): List<DerivedMaterial>
 
+    @JsExportIgnoreCompat
     suspend fun deriveMaterialsWithPrevious(
         profile: ReconciliationMaterialProfile,
         holderKey: String?,
@@ -41,6 +46,7 @@ interface ReconciliationMaterialService {
     ): List<DerivedMaterial>
 }
 
+@JsExportCompat
 @Serializable
 data class DerivedMaterial(
     val hash: HashedIdentifier,

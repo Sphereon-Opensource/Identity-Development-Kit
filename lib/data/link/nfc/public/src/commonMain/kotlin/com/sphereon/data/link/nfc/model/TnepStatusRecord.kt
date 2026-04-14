@@ -17,11 +17,14 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.getUInt8
 import kotlinx.io.bytestring.ByteString
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TnepStatusRecord", exact = true)
 data class TnepStatusRecord(
@@ -39,6 +42,7 @@ data class TnepStatusRecord(
     companion object {
         private const val MAX_BYTE_VALUE = 255
 
+        @JvmStatic
         fun fromNdefRecord(record: NdefRecord): TnepStatusRecord? {
             if (record.tnf != NdefRecord.Tnf.WELL_KNOWN ||
                 record.type != NfcConst.RTD_TNEP_STATUS

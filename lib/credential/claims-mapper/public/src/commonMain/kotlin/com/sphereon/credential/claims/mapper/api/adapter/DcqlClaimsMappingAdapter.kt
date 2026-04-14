@@ -19,6 +19,7 @@ package com.sphereon.credential.claims.mapper.api.adapter
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.credential.claims.mapper.api.model.CredentialWithId
 import com.sphereon.credential.claims.mapper.api.model.MappedClaimsResult
 
@@ -39,6 +40,7 @@ import com.sphereon.credential.claims.mapper.api.model.MappedClaimsResult
  * For pure mapping without DCQL, use [com.sphereon.credential.claims.mapper.api.mapper.ClaimsMappingService].
  * For persistence without DCQL, use [com.sphereon.credential.claims.mapper.api.mapper.PersistenceClaimsMappingService].
  */
+@JsExportCompat
 interface DcqlClaimsMappingAdapter {
     /**
      * Map claims looking up configuration by DCQL query ID.

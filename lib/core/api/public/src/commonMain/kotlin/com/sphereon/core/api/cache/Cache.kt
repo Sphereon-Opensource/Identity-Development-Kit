@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Duration
@@ -25,6 +26,7 @@ import kotlin.time.Duration
  *
  * Provides basic get/put/remove operations with optional TTL support.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Cache", exact = true)
 interface Cache<K : Any, V : Any> {
@@ -98,6 +100,7 @@ interface Cache<K : Any, V : Any> {
 /**
  * Cache with batch operations for efficiency.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BatchCache", exact = true)
 interface BatchCache<K : Any, V : Any> : Cache<K, V> {
@@ -135,6 +138,7 @@ interface BatchCache<K : Any, V : Any> : Cache<K, V> {
  * All operations are scoped by namespace, tenant, and principal.
  * Provides convenience methods for each scope level.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedCache", exact = true)
 interface ScopedCache<K : Any, V : Any> : BatchCache<ScopedKey<K>, V> {

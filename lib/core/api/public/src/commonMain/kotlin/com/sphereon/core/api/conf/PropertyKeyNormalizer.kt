@@ -20,6 +20,7 @@ package com.sphereon.core.api.conf
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.BaseCommand
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -45,6 +46,7 @@ fun interface PropertyKeyDenormalizer {
  *
  * Example: "expose.private.keys" -> "exposePrivateKeys"
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CamelCaseKeyDenormalizerImpl", exact = true)
 class CamelCaseKeyDenormalizerImpl(
@@ -118,6 +120,7 @@ object NoOpKeyDenormalizer : PropertyKeyDenormalizer {
  * @property delimiter The delimiter used to separate parts of the normalized key.
  *                      Defaults to the globally defined `PROPERTY_KEY_DELIMITER`.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertyKeyNormalizerImpl", exact = true)
 class PropertyKeyNormalizerImpl(
@@ -210,6 +213,7 @@ class PropertyKeyNormalizerImpl(
  *
  * @param delimiter The delimiter used to separate parts of the normalized key.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertyKeyNormalizerCommandImpl", exact = true)
 class PropertyKeyNormalizerCommandImpl(

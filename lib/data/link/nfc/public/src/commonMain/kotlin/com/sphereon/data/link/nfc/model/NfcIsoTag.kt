@@ -17,11 +17,13 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.appendUInt16
 import com.sphereon.util.getUInt16
 import kotlinx.coroutines.delay
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.buildByteString
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Duration
 
 /**
@@ -29,6 +31,7 @@ import kotlin.time.Duration
  *
  * This is an abstract super class intended for OS-specific code to implement the [transceive] method.
  */
+@JsExportCompat
 abstract class NfcIsoTag {
     /**
      * The maximum size of an APDU that can be sent via [transceive].
@@ -161,6 +164,7 @@ abstract class NfcIsoTag {
      * @param nWait Maximum number of waiting time extensions as per NFC Forum Tag NDEF Exchange Protocol section 4.1.7.
      * @return the message that was read.
      */
+    @JvmOverloads
     suspend fun ndefReadMessage(
         wtInt: Int = 0,
         nWait: Int = 0,

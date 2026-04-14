@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.reflect.KClass
@@ -31,6 +32,7 @@ import kotlin.reflect.KClass
  * This interface adds methods for checking whether operations on protected
  * properties are allowed based on the requesting scope level.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedPropertyResolver", exact = true)
 interface ProtectedPropertyResolver : PropertyResolver {
@@ -93,6 +95,7 @@ interface ProtectedPropertyResolver : PropertyResolver {
  * @param resolverLevel The scope level of this resolver
  * @param redactionPolicy Policy for redacting sensitive values
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedPropertySourcesResolver", exact = true)
 class ProtectedPropertySourcesResolver(

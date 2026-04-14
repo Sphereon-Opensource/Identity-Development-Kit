@@ -17,7 +17,10 @@
 package com.sphereon.oauth2.client.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import io.ktor.http.Parameters
+import kotlin.jvm.JvmOverloads
 
 /**
  * Arguments for merging request object parameters with query parameters
@@ -34,14 +37,17 @@ import io.ktor.http.Parameters
  * @property verificationKey Optional public key for signature verification
  * @property decryptionKey Optional private key for decryption (if encrypted)
  */
-data class MergeRequestObjectArgs(
-    val requestObjectJwt: String,
-    val queryParameters: Parameters,
-    val issuer: String? = null,
-    val audience: String? = null,
-    val verificationKey: com.sphereon.crypto.core.KeyInfoType<*>? = null,
-    val decryptionKey: com.sphereon.crypto.core.KeyInfoType<*>? = null,
-)
+@JsExportCompat
+data class MergeRequestObjectArgs
+    @JvmOverloads
+    constructor(
+        val requestObjectJwt: String,
+        val queryParameters: Parameters,
+        val issuer: String? = null,
+        val audience: String? = null,
+        val verificationKey: com.sphereon.crypto.core.KeyInfoType<*>? = null,
+        val decryptionKey: com.sphereon.crypto.core.KeyInfoType<*>? = null,
+    )
 
 /**
  * Result of merging request object with query parameters
@@ -50,9 +56,11 @@ data class MergeRequestObjectArgs(
  * @property isEncrypted Whether the request object was encrypted
  * @property claims All JWT claims from the request object
  */
+@JsExportCompat
 data class MergedRequestObjectResult(
     val mergedParameters: Parameters,
     val isEncrypted: Boolean,
+    @property:JsExportIgnoreCompat
     val claims: Map<String, Any?>,
 )
 
@@ -68,6 +76,7 @@ data class MergedRequestObjectResult(
  *    - Other parameter duplications MUST be rejected as errors
  * 4. Returns merged parameters as Ktor Parameters
  */
+@JsExportCompat
 interface MergeRequestObjectCommand : ServiceCommand<MergeRequestObjectArgs, MergedRequestObjectResult> {
     override val commandId: String get() = COMMAND_ID
 

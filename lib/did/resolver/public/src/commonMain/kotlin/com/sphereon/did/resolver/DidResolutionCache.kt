@@ -17,6 +17,7 @@
 
 package com.sphereon.did.resolver
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.time.Duration
 
 /**
@@ -25,6 +26,7 @@ import kotlin.time.Duration
  * Implementations provide caching of resolved DID documents to reduce
  * network calls for methods like did:web that fetch from remote servers.
  */
+@JsExportCompat
 interface DidResolutionCache {
     /**
      * Gets a cached resolution result.

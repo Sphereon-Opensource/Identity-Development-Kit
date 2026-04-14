@@ -17,8 +17,10 @@
 
 package com.sphereon.crypto.core.kms.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -53,12 +55,16 @@ private const val FIFTEEN = 15
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AwsKmsClientConfig", exact = true)
 @Serializable
-data class AwsKmsClientConfig(
-    val applicationId: String = "aws-kms",
-    val region: String,
-    val credentialOpts: CredentialOpts,
-    val exponentialBackoffRetryOpts: ExponentialBackoffRetryOpts? = null,
-)
+@JsExportCompat
+data class
+AwsKmsClientConfig
+    @JvmOverloads
+    constructor(
+        val applicationId: String = "aws-kms",
+        val region: String,
+        val credentialOpts: CredentialOpts,
+        val exponentialBackoffRetryOpts: ExponentialBackoffRetryOpts? = null,
+    )
 
 /**
  * Represents the different modes of authentication and configuration used for accessing
@@ -68,6 +74,7 @@ data class AwsKmsClientConfig(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CredentialMode", exact = true)
 @Serializable
+@JsExportCompat
 enum class CredentialMode {
     /**
      * Represents the credential mode option "ACCESS_KEY".
@@ -111,11 +118,15 @@ enum class CredentialMode {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CredentialOpts", exact = true)
 @Serializable
-data class CredentialOpts(
-    val credentialMode: CredentialMode,
-    val accessKeyCredentialOpts: AccessKeyCredentialOpts? = null,
-    val profileCredentialOpts: ProfileCredentialOpts? = null,
-)
+@JsExportCompat
+data class
+CredentialOpts
+    @JvmOverloads
+    constructor(
+        val credentialMode: CredentialMode,
+        val accessKeyCredentialOpts: AccessKeyCredentialOpts? = null,
+        val profileCredentialOpts: ProfileCredentialOpts? = null,
+    )
 
 /**
  * Configuration options for implementing exponential backoff retry logic.
@@ -132,11 +143,15 @@ data class CredentialOpts(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ExponentialBackoffRetryOpts", exact = true)
 @Serializable
-data class ExponentialBackoffRetryOpts(
-    val maxRetries: Int? = 10,
-    val baseDelayInMS: Long? = ONE * SECOND,
-    val maxDelayInMS: Long? = FIFTEEN * SECOND,
-)
+@JsExportCompat
+data class
+ExponentialBackoffRetryOpts
+    @JvmOverloads
+    constructor(
+        val maxRetries: Int? = 10,
+        val baseDelayInMS: Long? = ONE * SECOND,
+        val maxDelayInMS: Long? = FIFTEEN * SECOND,
+    )
 
 /**
  * Represents the options for providing AWS Access Key credentials.
@@ -153,11 +168,15 @@ data class ExponentialBackoffRetryOpts(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AccessKeyCredentialOpts", exact = true)
 @Serializable
-data class AccessKeyCredentialOpts(
-    val accessKeyId: String,
-    val secretAccessKey: String,
-    val sessionToken: String? = null,
-)
+@JsExportCompat
+data class
+AccessKeyCredentialOpts
+    @JvmOverloads
+    constructor(
+        val accessKeyId: String,
+        val secretAccessKey: String,
+        val sessionToken: String? = null,
+    )
 
 /**
  * Represents the configuration options for AWS profile-based credentials.
@@ -168,6 +187,7 @@ data class AccessKeyCredentialOpts(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProfileCredentialOpts", exact = true)
 @Serializable
+@JsExportCompat
 data class ProfileCredentialOpts(
     val profileName: String,
 )

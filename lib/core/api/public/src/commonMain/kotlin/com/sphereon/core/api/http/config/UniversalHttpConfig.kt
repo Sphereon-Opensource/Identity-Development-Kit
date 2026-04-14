@@ -20,12 +20,14 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.TenantPathMode
 import com.sphereon.core.api.http.describe.TenantResolutionPriority
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Global defaults for Universal HTTP Adapter exposure.
  *
  * These defaults apply to all adapters unless overridden per-adapter.
  */
+@JsExportCompat
 data class UniversalHttpDefaults(
     /**
      * Default server prefix (e.g., "/api").
@@ -61,6 +63,7 @@ data class UniversalHttpDefaults(
  * Any property set here overrides the corresponding default.
  * Properties left as null inherit from [UniversalHttpDefaults].
  */
+@JsExportCompat
 data class UniversalHttpAdapterOverride(
     /**
      * Override the server prefix for this adapter.
@@ -110,6 +113,7 @@ data class UniversalHttpAdapterOverride(
  * }
  * ```
  */
+@JsExportCompat
 data class UniversalHttpConfig(
     /**
      * Global defaults applying to all adapters.

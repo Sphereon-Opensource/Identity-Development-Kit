@@ -37,8 +37,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
-
 // ============================================================================
 // Request Types
 // ============================================================================
@@ -50,12 +51,15 @@ import kotlin.native.ObjCName
 @ObjCName("CreateJwsOpts", exact = true)
 @JsExportCompat
 @Serializable
-data class CreateJwsOpts(
-    val noIssPayloadUpdate: Boolean = false,
-    val noIdentifierInHeader: Boolean = false,
-    val protectedHeader: JsonObject? = null,
-    val unprotectedHeader: JsonObject? = null,
-)
+data class
+CreateJwsOpts
+    @JvmOverloads
+    constructor(
+        val noIssPayloadUpdate: Boolean = false,
+        val noIdentifierInHeader: Boolean = false,
+        val protectedHeader: JsonObject? = null,
+        val unprotectedHeader: JsonObject? = null,
+    )
 
 /**
  * Base arguments for creating a JWS (compact serialization)
@@ -65,17 +69,20 @@ data class CreateJwsOpts(
 @ObjCName("CreateJwsArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class CreateJwsArgs(
-    // Managed identifier for signing (required, but transient so needs default)
-    @Transient
-    val issuer: ManagedIdentifierOptsOrResult? = null,
-    // Payload can be a JSON object, string, or ByteArray (required, but transient so needs default)
-    @Transient
-    val payload: Any? = null,
-    // How to resolve and use the issuer identifier
-    val mode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
-    val opts: CreateJwsOpts = CreateJwsOpts(),
-)
+data class
+CreateJwsArgs
+    @JvmOverloads
+    constructor(
+        // Managed identifier for signing (required, but transient so needs default)
+        @Transient
+        val issuer: ManagedIdentifierOptsOrResult? = null,
+        // Payload can be a JSON object, string, or ByteArray (required, but transient so needs default)
+        @Transient
+        val payload: Any? = null,
+        // How to resolve and use the issuer identifier
+        val mode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
+        val opts: CreateJwsOpts = CreateJwsOpts(),
+    )
 
 /**
  * Arguments for creating a general or flattened JSON JWS
@@ -85,19 +92,22 @@ data class CreateJwsArgs(
 @ObjCName("CreateJwsJsonArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class CreateJwsJsonArgs(
-    // Managed identifier for signing (required, but transient so needs default)
-    @Transient
-    val issuer: ManagedIdentifierOptsOrResult? = null,
-    // Payload can be a JSON object, string, or ByteArray (required, but transient so needs default)
-    @Transient
-    val payload: Any? = null,
-    // How to resolve and use the issuer identifier
-    val mode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
-    val opts: CreateJwsOpts = CreateJwsOpts(),
-    // For adding to existing signatures in general JSON format
-    val existingSignatures: List<JwsJsonSignature>? = null,
-)
+data class
+CreateJwsJsonArgs
+    @JvmOverloads
+    constructor(
+        // Managed identifier for signing (required, but transient so needs default)
+        @Transient
+        val issuer: ManagedIdentifierOptsOrResult? = null,
+        // Payload can be a JSON object, string, or ByteArray (required, but transient so needs default)
+        @Transient
+        val payload: Any? = null,
+        // How to resolve and use the issuer identifier
+        val mode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
+        val opts: CreateJwsOpts = CreateJwsOpts(),
+        // For adding to existing signatures in general JSON format
+        val existingSignatures: List<JwsJsonSignature>? = null,
+    )
 
 /**
  * Arguments for verifying a JWS
@@ -107,15 +117,18 @@ data class CreateJwsJsonArgs(
 @ObjCName("VerifyJwsArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class VerifyJwsArgs(
-    // JWS to verify (required, but transient so needs default)
-    @Transient
-    val jws: Jws? = null,
-    // Optional: provide resolved identifier for verification
-    // If not provided, will be extracted from JWS header (kid, x5c, jwk, etc.)
-    @Transient
-    val identifier: IdentifierOptsOrResult? = null,
-)
+data class
+VerifyJwsArgs
+    @JvmOverloads
+    constructor(
+        // JWS to verify (required, but transient so needs default)
+        @Transient
+        val jws: Jws? = null,
+        // Optional: provide resolved identifier for verification
+        // If not provided, will be extracted from JWS header (kid, x5c, jwk, etc.)
+        @Transient
+        val identifier: IdentifierOptsOrResult? = null,
+    )
 
 // ============================================================================
 // Command Interfaces
@@ -141,6 +154,7 @@ interface PrepareJwsCommand : ServiceCommand<CreateJwsJsonArgs, PreparedJwsObjec
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PrepareJwsCommandService", exact = true)
+@JsExportCompat
 interface PrepareJwsCommandService {
     suspend fun prepareJws(args: CreateJwsJsonArgs): IdkResult<PreparedJwsObject, IdkError>
 }
@@ -165,6 +179,7 @@ interface CreateJwsCompactCommand : ServiceCommand<CreateJwsArgs, JwtCompactResu
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJwsCompactCommandService", exact = true)
+@JsExportCompat
 interface CreateJwsCompactCommandService {
     suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError>
 }
@@ -189,6 +204,7 @@ interface CreateJwsJsonFlattenedCommand : ServiceCommand<CreateJwsJsonArgs, JwsJ
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJwsJsonFlattenedCommandService", exact = true)
+@JsExportCompat
 interface CreateJwsJsonFlattenedCommandService {
     suspend fun createJwsJsonFlattened(args: CreateJwsJsonArgs): IdkResult<JwsJsonFlattened, IdkError>
 }
@@ -213,6 +229,7 @@ interface CreateJwsJsonGeneralCommand : ServiceCommand<CreateJwsJsonArgs, JwsJso
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJwsJsonGeneralCommandService", exact = true)
+@JsExportCompat
 interface CreateJwsJsonGeneralCommandService {
     suspend fun createJwsJsonGeneral(args: CreateJwsJsonArgs): IdkResult<JwsJsonGeneral, IdkError>
 }
@@ -237,6 +254,7 @@ interface VerifyJwsCommand : ServiceCommand<VerifyJwsArgs, JwsValidationResult> 
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyJwsCommandService", exact = true)
+@JsExportCompat
 interface VerifyJwsCommandService {
     suspend fun verifyJws(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError>
 }

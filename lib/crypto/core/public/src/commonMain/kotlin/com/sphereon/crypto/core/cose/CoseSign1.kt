@@ -29,47 +29,52 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.json.cryptoJsonSerializer
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 @JsExportCompat
-data class CoseSign1Input(
-    // This value is required in the eventual to be signed object, but can be filled using key info
-    val protectedHeader: CoseHeaderCbor? = null,
-    val unprotectedHeader: CoseHeaderCbor? = null,
-    val payload: CborByteString,
-) {
-    class Builder(
-        private var protectedHeader: CoseHeaderCbor? = CoseHeaderCbor(),
-        private var unprotectedHeader: CoseHeaderCbor? = null,
-        private var payload: ByteArray? = null,
-        private var encodePayloadAsDataItem: Boolean = false,
+data class
+CoseSign1Input
+    @JvmOverloads
+    constructor(
+        // This value is required in the eventual to be signed object, but can be filled using key info
+        val protectedHeader: CoseHeaderCbor? = null,
+        val unprotectedHeader: CoseHeaderCbor? = null,
+        val payload: CborByteString,
     ) {
-        fun withProtectedHeader(protectedHeader: CoseHeaderCbor) = apply { this.protectedHeader = protectedHeader }
+        class Builder(
+            private var protectedHeader: CoseHeaderCbor? = CoseHeaderCbor(),
+            private var unprotectedHeader: CoseHeaderCbor? = null,
+            private var payload: ByteArray? = null,
+            private var encodePayloadAsDataItem: Boolean = false,
+        ) {
+            fun withProtectedHeader(protectedHeader: CoseHeaderCbor) = apply { this.protectedHeader = protectedHeader }
 
-        fun withUnprotectedHeader(unprotectedHeader: CoseHeaderCbor?) = apply { this.unprotectedHeader = unprotectedHeader }
+            fun withUnprotectedHeader(unprotectedHeader: CoseHeaderCbor?) = apply { this.unprotectedHeader = unprotectedHeader }
 
-        fun withPayload(payload: ByteArray) = apply { this.payload = payload }
+            fun withPayload(payload: ByteArray) = apply { this.payload = payload }
 
-        fun withEncodePayloadAsDataItem(encodePayloadAsDataItem: Boolean = true) = apply { this.encodePayloadAsDataItem = encodePayloadAsDataItem }
+            fun withEncodePayloadAsDataItem(encodePayloadAsDataItem: Boolean = true) = apply { this.encodePayloadAsDataItem = encodePayloadAsDataItem }
 
-        fun build(): CoseSign1Input {
-            val content =
-                if (encodePayloadAsDataItem) {
-                    payload?.let { CborEncodedItem(it, it).value.toBstr() }
-                } else {
-                    payload?.toCborByteString()
-                }
-            require(content !== null) { "Payload is required" }
+            fun build(): CoseSign1Input {
+                val content =
+                    if (encodePayloadAsDataItem) {
+                        payload?.let { CborEncodedItem(it, it).value.toBstr() }
+                    } else {
+                        payload?.toCborByteString()
+                    }
+                require(content !== null) { "Payload is required" }
 
-            return CoseSign1Input(
-                payload = content,
-                unprotectedHeader = unprotectedHeader,
-                protectedHeader = protectedHeader,
-            )
+                return CoseSign1Input(
+                    payload = content,
+                    unprotectedHeader = unprotectedHeader,
+                    protectedHeader = protectedHeader,
+                )
+            }
         }
-    }
 
-    override fun toString(): String = "CoseSign1InputCbor(protectedHeader=$protectedHeader, unprotectedHeader=$unprotectedHeader, payload=$payload)"
-}
+        override fun toString(): String = "CoseSign1InputCbor(protectedHeader=$protectedHeader, unprotectedHeader=$unprotectedHeader, payload=$payload)"
+    }
 
 @JsExportCompat
 data class CoseSign1<CborType : Any>(
@@ -136,39 +141,50 @@ sealed class SigStructure(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val asList = listOf(Signature, Signature1, CounterSignature)
 
         @JsStatic
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(value: String) = asList.firstOrNull { it.value == value } ?: throw IllegalArgumentException("Unknown signature $value")
     }
 }
 
 @JsExportCompat
-data class CoseSignatureStructureCbor(
-    val structure: CborString = CborString(SigStructure.Signature1.value),
-    val bodyProtected: CborByteString,
-    val signProtected: CborByteString? = null,
-    val externalAad: CborByteString = CborByteString(byteArrayOf()),
-    val payload: CborByteString,
-) {
-    override fun toString(): String = "CoseSignatureStructureCbor(structure=$structure, bodyProtected=$bodyProtected, signProtected=$signProtected, externalAad=$externalAad, payload=$payload)"
-}
+data class
+CoseSignatureStructureCbor
+    @JvmOverloads
+    constructor(
+        val structure: CborString = CborString(SigStructure.Signature1.value),
+        val bodyProtected: CborByteString,
+        val signProtected: CborByteString? = null,
+        val externalAad: CborByteString = CborByteString(byteArrayOf()),
+        val payload: CborByteString,
+    ) {
+        override fun toString(): String = "CoseSignatureStructureCbor(structure=$structure, bodyProtected=$bodyProtected, signProtected=$signProtected, externalAad=$externalAad, payload=$payload)"
+    }
 
 @JsExportCompat
-data class ToBeSignedJson(
-    val base64UrlValue: String,
-    val keyInfo: KeyInfoType<*>,
-    val alg: SignatureAlgorithm = keyInfo.signatureAlgorithm ?: SignatureAlgorithm.ECDSA_SHA256,
-) : JsonView() {
-    override fun toJsonString() = cryptoJsonSerializer.encodeToString(this)
+data class
+ToBeSignedJson
+    @JvmOverloads
+    constructor(
+        val base64UrlValue: String,
+        val keyInfo: KeyInfoType<*>,
+        val alg: SignatureAlgorithm = keyInfo.signatureAlgorithm ?: SignatureAlgorithm.ECDSA_SHA256,
+    ) : JsonView() {
+        override fun toJsonString() = cryptoJsonSerializer.encodeToString(this)
 
-    override fun toCbor() = ToBeSignedCbor(base64UrlValue.decodeFromBase64Url(), keyInfo = keyInfo, alg = alg)
-}
+        override fun toCbor() = ToBeSignedCbor(base64UrlValue.decodeFromBase64Url(), keyInfo = keyInfo, alg = alg)
+    }
 
 @JsExportCompat
-data class ToBeSignedCbor(
-    val value: ByteArray,
-    val keyInfo: KeyInfoType<*>,
-    val alg: SignatureAlgorithm = keyInfo.signatureAlgorithm ?: SignatureAlgorithm.ECDSA_SHA256,
-)
+data class
+ToBeSignedCbor
+    @JvmOverloads
+    constructor(
+        val value: ByteArray,
+        val keyInfo: KeyInfoType<*>,
+        val alg: SignatureAlgorithm = keyInfo.signatureAlgorithm ?: SignatureAlgorithm.ECDSA_SHA256,
+    )

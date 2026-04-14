@@ -16,6 +16,7 @@
 
 package com.sphereon.ktor.http.client.provider
 
+import com.sphereon.core.compat.JsExportCompat
 import io.ktor.http.Url
 
 /**
@@ -27,6 +28,7 @@ import io.ktor.http.Url
  * When a request URL violates the policy, the client throws [UrlValidationException]
  * before the request is sent.
  */
+@JsExportCompat
 data class UrlValidationPolicy(
     /** Allow only these schemes (e.g., "https", "http"). Empty = all allowed. */
     val allowedSchemes: Set<String> = setOf("https", "http"),
@@ -125,6 +127,7 @@ data class UrlValidationPolicy(
 /**
  * Thrown when a request URL violates the configured [UrlValidationPolicy].
  */
+@JsExportCompat
 class UrlValidationException(
     message: String,
 ) : IllegalArgumentException(message)

@@ -35,6 +35,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -58,6 +59,7 @@ data class Jwt(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun from(
             header: JwtHeader,
             payload: JwtPayload,

@@ -16,12 +16,12 @@
  */
 
 package com.sphereon.crypto.core.interop
-
 import at.asitplus.awesn1.Asn1Element
 import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.crypto.Pkcs8PrivateKeyInfo
 import at.asitplus.awesn1.crypto.SubjectPublicKeyInfo
 import at.asitplus.awesn1.encoding.parse
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
@@ -152,6 +152,7 @@ fun resolvePSSSaltSize(alg: SignatureAlgorithm): dev.whyoleg.cryptography.Binary
     }
 
 @Suppress("NON_EXPORTABLE_TYPE")
+@JsExportCompat
 data class RSADerKmpKeyInfoContext(
     val key: Jwk,
     val publicKeyBytes: ByteArray,

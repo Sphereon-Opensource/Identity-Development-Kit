@@ -46,7 +46,6 @@ import com.sphereon.crypto.core.jose.jsonToJwk
  * CoseJoseKeyMappingService is an object designed to handle the conversion
  * between different key formats used in COSE (CBOR Object Signing and Encryption) and JOSE (JSON Object Signing and Encryption).
  */
-@JsExportCompat
 object CoseJoseKeyMappingService {
     /**
      * Safely converts the given key to a JOSE JWK format.

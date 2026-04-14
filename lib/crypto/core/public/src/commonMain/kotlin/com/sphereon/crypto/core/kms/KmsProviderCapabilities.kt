@@ -26,6 +26,8 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.resolution.IIdentifierMethod
 import kotlinx.serialization.Serializable
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * Enumeration of all possible KMS provider operations.
@@ -99,61 +101,64 @@ enum class KeyStorageType {
  * @property notes Additional context or limitations for this capability
  */
 @JsExportCompat
-data class OperationCapability(
-    val operation: KmsProviderOperation,
-    val supported: Boolean,
-    val signatureAlgorithms: Array<SignatureAlgorithm> = emptyArray(),
-    val contentEncryptionAlgorithms: Array<ContentEncryptionAlgorithm> = emptyArray(),
-    val keyWrapAlgorithms: Array<KeyWrapAlgorithm> = emptyArray(),
-    val keyAgreementAlgorithms: Array<KeyAgreementAlgorithm> = emptyArray(),
-    val notes: String? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+OperationCapability
+    @JvmOverloads
+    constructor(
+        val operation: KmsProviderOperation,
+        val supported: Boolean,
+        val signatureAlgorithms: Array<SignatureAlgorithm> = emptyArray(),
+        val contentEncryptionAlgorithms: Array<ContentEncryptionAlgorithm> = emptyArray(),
+        val keyWrapAlgorithms: Array<KeyWrapAlgorithm> = emptyArray(),
+        val keyAgreementAlgorithms: Array<KeyAgreementAlgorithm> = emptyArray(),
+        val notes: String? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as OperationCapability
+
+            if (operation != other.operation) {
+                return false
+            }
+            if (supported != other.supported) {
+                return false
+            }
+            if (!signatureAlgorithms.contentEquals(other.signatureAlgorithms)) {
+                return false
+            }
+            if (!contentEncryptionAlgorithms.contentEquals(other.contentEncryptionAlgorithms)) {
+                return false
+            }
+            if (!keyWrapAlgorithms.contentEquals(other.keyWrapAlgorithms)) {
+                return false
+            }
+            if (!keyAgreementAlgorithms.contentEquals(other.keyAgreementAlgorithms)) {
+                return false
+            }
+            if (notes != other.notes) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as OperationCapability
-
-        if (operation != other.operation) {
-            return false
+        override fun hashCode(): Int {
+            var result = operation.hashCode()
+            result = 31 * result + supported.hashCode()
+            result = 31 * result + signatureAlgorithms.contentHashCode()
+            result = 31 * result + contentEncryptionAlgorithms.contentHashCode()
+            result = 31 * result + keyWrapAlgorithms.contentHashCode()
+            result = 31 * result + keyAgreementAlgorithms.contentHashCode()
+            result = 31 * result + (notes?.hashCode() ?: 0)
+            return result
         }
-        if (supported != other.supported) {
-            return false
-        }
-        if (!signatureAlgorithms.contentEquals(other.signatureAlgorithms)) {
-            return false
-        }
-        if (!contentEncryptionAlgorithms.contentEquals(other.contentEncryptionAlgorithms)) {
-            return false
-        }
-        if (!keyWrapAlgorithms.contentEquals(other.keyWrapAlgorithms)) {
-            return false
-        }
-        if (!keyAgreementAlgorithms.contentEquals(other.keyAgreementAlgorithms)) {
-            return false
-        }
-        if (notes != other.notes) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = operation.hashCode()
-        result = 31 * result + supported.hashCode()
-        result = 31 * result + signatureAlgorithms.contentHashCode()
-        result = 31 * result + contentEncryptionAlgorithms.contentHashCode()
-        result = 31 * result + keyWrapAlgorithms.contentHashCode()
-        result = 31 * result + keyAgreementAlgorithms.contentHashCode()
-        result = 31 * result + (notes?.hashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Complete capability report for a KMS provider.
@@ -179,172 +184,175 @@ data class OperationCapability(
  * @property resolutionMethods Identifier resolution methods supported (JWK, X5C, DID, KID, etc.)
  */
 @JsExportCompat
-data class KmsProviderCapabilities(
-    val providerId: String,
-    val providerType: String,
-    // Storage capabilities
-    val storageTypes: Array<KeyStorageType>,
-    val supportsKeyImport: Boolean,
-    val supportsKeyExport: Boolean,
-    val exposePrivateKeys: Boolean,
-    // Cryptographic capabilities
-    val operations: Array<OperationCapability>,
-    // Key type support
-    val supportedKeyTypes: Array<KeyTypeMapping>,
-    val supportedCurves: Array<Curve>,
-    // Algorithm support - using generic crypto types (NOT JOSE-specific)
-    val supportedCryptoAlgorithms: Array<CryptoAlg>,
-    val supportedDigestAlgorithms: Array<DigestAlg>,
-    val signatureAlgorithms: Array<SignatureAlgorithm>,
-    val contentEncryptionAlgorithms: Array<ContentEncryptionAlgorithm> = emptyArray(),
-    // Additional capabilities
-    val supportsX509: Boolean,
-    val supportsAttestation: Boolean,
-    val supportsHardwareBacking: Boolean,
-    // Public key resolution - using IIdentifierMethod interface
-    val supportsPublicKeyResolution: Boolean,
-    val resolutionMethods: Array<IIdentifierMethod>,
-) {
-    /**
-     * Checks if the provider supports a specific operation.
-     */
-    fun supportsOperation(operation: KmsProviderOperation): Boolean = operations.any { it.operation == operation && it.supported }
+data class
+KmsProviderCapabilities
+    @JvmOverloads
+    constructor(
+        val providerId: String,
+        val providerType: String,
+        // Storage capabilities
+        val storageTypes: Array<KeyStorageType>,
+        val supportsKeyImport: Boolean,
+        val supportsKeyExport: Boolean,
+        val exposePrivateKeys: Boolean,
+        // Cryptographic capabilities
+        val operations: Array<OperationCapability>,
+        // Key type support
+        val supportedKeyTypes: Array<KeyTypeMapping>,
+        val supportedCurves: Array<Curve>,
+        // Algorithm support - using generic crypto types (NOT JOSE-specific)
+        val supportedCryptoAlgorithms: Array<CryptoAlg>,
+        val supportedDigestAlgorithms: Array<DigestAlg>,
+        val signatureAlgorithms: Array<SignatureAlgorithm>,
+        val contentEncryptionAlgorithms: Array<ContentEncryptionAlgorithm> = emptyArray(),
+        // Additional capabilities
+        val supportsX509: Boolean,
+        val supportsAttestation: Boolean,
+        val supportsHardwareBacking: Boolean,
+        // Public key resolution - using IIdentifierMethod interface
+        val supportsPublicKeyResolution: Boolean,
+        val resolutionMethods: Array<IIdentifierMethod>,
+    ) {
+        /**
+         * Checks if the provider supports a specific operation.
+         */
+        fun supportsOperation(operation: KmsProviderOperation): Boolean = operations.any { it.operation == operation && it.supported }
 
-    /**
-     * Checks if the provider supports encryption operations.
-     */
-    fun supportsEncryption(): Boolean = supportsOperation(KmsProviderOperation.ENCRYPT)
+        /**
+         * Checks if the provider supports encryption operations.
+         */
+        fun supportsEncryption(): Boolean = supportsOperation(KmsProviderOperation.ENCRYPT)
 
-    /**
-     * Checks if the provider supports signature operations.
-     */
-    fun supportsSigning(): Boolean = supportsOperation(KmsProviderOperation.SIGN)
+        /**
+         * Checks if the provider supports signature operations.
+         */
+        fun supportsSigning(): Boolean = supportsOperation(KmsProviderOperation.SIGN)
 
-    /**
-     * Checks if the provider supports key agreement (e.g., ECDH).
-     */
-    fun supportsKeyAgreement(): Boolean = supportsOperation(KmsProviderOperation.KEY_AGREEMENT)
+        /**
+         * Checks if the provider supports key agreement (e.g., ECDH).
+         */
+        fun supportsKeyAgreement(): Boolean = supportsOperation(KmsProviderOperation.KEY_AGREEMENT)
 
-    /**
-     * Checks if the provider supports key wrapping operations.
-     */
-    fun supportsKeyWrap(): Boolean = supportsOperation(KmsProviderOperation.WRAP_KEY)
+        /**
+         * Checks if the provider supports key wrapping operations.
+         */
+        fun supportsKeyWrap(): Boolean = supportsOperation(KmsProviderOperation.WRAP_KEY)
 
-    /**
-     * Gets the capability details for a specific operation.
-     */
-    fun getOperationCapability(operation: KmsProviderOperation): OperationCapability? = operations.firstOrNull { it.operation == operation }
+        /**
+         * Gets the capability details for a specific operation.
+         */
+        fun getOperationCapability(operation: KmsProviderOperation): OperationCapability? = operations.firstOrNull { it.operation == operation }
 
-    /**
-     * Checks if a specific crypto algorithm is supported.
-     */
-    fun supportsCryptoAlgorithm(algorithm: CryptoAlg): Boolean = supportedCryptoAlgorithms.contains(algorithm)
+        /**
+         * Checks if a specific crypto algorithm is supported.
+         */
+        fun supportsCryptoAlgorithm(algorithm: CryptoAlg): Boolean = supportedCryptoAlgorithms.contains(algorithm)
 
-    /**
-     * Checks if a specific digest algorithm is supported.
-     */
-    fun supportsDigestAlgorithm(algorithm: DigestAlg): Boolean = supportedDigestAlgorithms.contains(algorithm)
+        /**
+         * Checks if a specific digest algorithm is supported.
+         */
+        fun supportsDigestAlgorithm(algorithm: DigestAlg): Boolean = supportedDigestAlgorithms.contains(algorithm)
 
-    /**
-     * Checks if a specific content encryption algorithm is supported.
-     */
-    fun supportsContentEncryption(algorithm: ContentEncryptionAlgorithm): Boolean = contentEncryptionAlgorithms.contains(algorithm)
+        /**
+         * Checks if a specific content encryption algorithm is supported.
+         */
+        fun supportsContentEncryption(algorithm: ContentEncryptionAlgorithm): Boolean = contentEncryptionAlgorithms.contains(algorithm)
 
-    /**
-     * Checks if a specific identifier resolution method is supported.
-     */
-    fun supportsIdentifierMethod(method: IIdentifierMethod): Boolean = resolutionMethods.any { it.methodName == method.methodName }
+        /**
+         * Checks if a specific identifier resolution method is supported.
+         */
+        fun supportsIdentifierMethod(method: IIdentifierMethod): Boolean = resolutionMethods.any { it.methodName == method.methodName }
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as KmsProviderCapabilities
+
+            if (providerId != other.providerId) {
+                return false
+            }
+            if (providerType != other.providerType) {
+                return false
+            }
+            if (!storageTypes.contentEquals(other.storageTypes)) {
+                return false
+            }
+            if (supportsKeyImport != other.supportsKeyImport) {
+                return false
+            }
+            if (supportsKeyExport != other.supportsKeyExport) {
+                return false
+            }
+            if (exposePrivateKeys != other.exposePrivateKeys) {
+                return false
+            }
+            if (!operations.contentEquals(other.operations)) {
+                return false
+            }
+            if (!supportedKeyTypes.contentEquals(other.supportedKeyTypes)) {
+                return false
+            }
+            if (!supportedCurves.contentEquals(other.supportedCurves)) {
+                return false
+            }
+            if (!supportedCryptoAlgorithms.contentEquals(other.supportedCryptoAlgorithms)) {
+                return false
+            }
+            if (!supportedDigestAlgorithms.contentEquals(other.supportedDigestAlgorithms)) {
+                return false
+            }
+            if (!signatureAlgorithms.contentEquals(other.signatureAlgorithms)) {
+                return false
+            }
+            if (!contentEncryptionAlgorithms.contentEquals(other.contentEncryptionAlgorithms)) {
+                return false
+            }
+            if (supportsX509 != other.supportsX509) {
+                return false
+            }
+            if (supportsAttestation != other.supportsAttestation) {
+                return false
+            }
+            if (supportsHardwareBacking != other.supportsHardwareBacking) {
+                return false
+            }
+            if (supportsPublicKeyResolution != other.supportsPublicKeyResolution) {
+                return false
+            }
+            if (!resolutionMethods.contentEquals(other.resolutionMethods)) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as KmsProviderCapabilities
-
-        if (providerId != other.providerId) {
-            return false
+        override fun hashCode(): Int {
+            var result = providerId.hashCode()
+            result = 31 * result + providerType.hashCode()
+            result = 31 * result + storageTypes.contentHashCode()
+            result = 31 * result + supportsKeyImport.hashCode()
+            result = 31 * result + supportsKeyExport.hashCode()
+            result = 31 * result + exposePrivateKeys.hashCode()
+            result = 31 * result + operations.contentHashCode()
+            result = 31 * result + supportedKeyTypes.contentHashCode()
+            result = 31 * result + supportedCurves.contentHashCode()
+            result = 31 * result + supportedCryptoAlgorithms.contentHashCode()
+            result = 31 * result + supportedDigestAlgorithms.contentHashCode()
+            result = 31 * result + signatureAlgorithms.contentHashCode()
+            result = 31 * result + contentEncryptionAlgorithms.contentHashCode()
+            result = 31 * result + supportsX509.hashCode()
+            result = 31 * result + supportsAttestation.hashCode()
+            result = 31 * result + supportsHardwareBacking.hashCode()
+            result = 31 * result + supportsPublicKeyResolution.hashCode()
+            result = 31 * result + resolutionMethods.contentHashCode()
+            return result
         }
-        if (providerType != other.providerType) {
-            return false
-        }
-        if (!storageTypes.contentEquals(other.storageTypes)) {
-            return false
-        }
-        if (supportsKeyImport != other.supportsKeyImport) {
-            return false
-        }
-        if (supportsKeyExport != other.supportsKeyExport) {
-            return false
-        }
-        if (exposePrivateKeys != other.exposePrivateKeys) {
-            return false
-        }
-        if (!operations.contentEquals(other.operations)) {
-            return false
-        }
-        if (!supportedKeyTypes.contentEquals(other.supportedKeyTypes)) {
-            return false
-        }
-        if (!supportedCurves.contentEquals(other.supportedCurves)) {
-            return false
-        }
-        if (!supportedCryptoAlgorithms.contentEquals(other.supportedCryptoAlgorithms)) {
-            return false
-        }
-        if (!supportedDigestAlgorithms.contentEquals(other.supportedDigestAlgorithms)) {
-            return false
-        }
-        if (!signatureAlgorithms.contentEquals(other.signatureAlgorithms)) {
-            return false
-        }
-        if (!contentEncryptionAlgorithms.contentEquals(other.contentEncryptionAlgorithms)) {
-            return false
-        }
-        if (supportsX509 != other.supportsX509) {
-            return false
-        }
-        if (supportsAttestation != other.supportsAttestation) {
-            return false
-        }
-        if (supportsHardwareBacking != other.supportsHardwareBacking) {
-            return false
-        }
-        if (supportsPublicKeyResolution != other.supportsPublicKeyResolution) {
-            return false
-        }
-        if (!resolutionMethods.contentEquals(other.resolutionMethods)) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = providerId.hashCode()
-        result = 31 * result + providerType.hashCode()
-        result = 31 * result + storageTypes.contentHashCode()
-        result = 31 * result + supportsKeyImport.hashCode()
-        result = 31 * result + supportsKeyExport.hashCode()
-        result = 31 * result + exposePrivateKeys.hashCode()
-        result = 31 * result + operations.contentHashCode()
-        result = 31 * result + supportedKeyTypes.contentHashCode()
-        result = 31 * result + supportedCurves.contentHashCode()
-        result = 31 * result + supportedCryptoAlgorithms.contentHashCode()
-        result = 31 * result + supportedDigestAlgorithms.contentHashCode()
-        result = 31 * result + signatureAlgorithms.contentHashCode()
-        result = 31 * result + contentEncryptionAlgorithms.contentHashCode()
-        result = 31 * result + supportsX509.hashCode()
-        result = 31 * result + supportsAttestation.hashCode()
-        result = 31 * result + supportsHardwareBacking.hashCode()
-        result = 31 * result + supportsPublicKeyResolution.hashCode()
-        result = 31 * result + resolutionMethods.contentHashCode()
-        return result
-    }
-}
 
 /**
  * Content Encryption Algorithms for JWE (enc header parameter).
@@ -379,6 +387,7 @@ enum class ContentEncryptionAlgorithm(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromIdentifier(identifier: String): ContentEncryptionAlgorithm? = entries.firstOrNull { it.identifier == identifier }
     }
 }
@@ -405,104 +414,108 @@ enum class ContentEncryptionAlgorithm(
  * @property providerType Specific provider type filter (software, azure, aws, etc.)
  */
 @JsExportCompat
-data class KmsProviderQuery(
-    val operation: KmsProviderOperation? = null,
-    val cryptoAlgorithm: CryptoAlg? = null,
-    val digestAlgorithm: DigestAlg? = null,
-    val signatureAlgorithm: SignatureAlgorithm? = null,
-    val contentEncryptionAlgorithm: ContentEncryptionAlgorithm? = null,
-    val curve: Curve? = null,
-    val keyType: KeyTypeMapping? = null,
-    val storageType: KeyStorageType? = null,
-    val requiresHardwareBacking: Boolean = false,
-    val requiresAttestation: Boolean = false,
-    val requiresKeyExport: Boolean = false,
-    val requiresKeyImport: Boolean = false,
-    val identifierMethod: IIdentifierMethod? = null,
-    val providerType: String? = null,
-) {
-    /**
-     * Checks if a provider's capabilities match this query.
-     */
-    fun matches(capabilities: KmsProviderCapabilities): Boolean {
-        // Check provider type filter
-        if (providerType != null && capabilities.providerType != providerType) {
-            return false
-        }
+data class
+KmsProviderQuery
+    @JvmOverloads
+    constructor(
+        val operation: KmsProviderOperation? = null,
+        val cryptoAlgorithm: CryptoAlg? = null,
+        val digestAlgorithm: DigestAlg? = null,
+        val signatureAlgorithm: SignatureAlgorithm? = null,
+        val contentEncryptionAlgorithm: ContentEncryptionAlgorithm? = null,
+        val curve: Curve? = null,
+        val keyType: KeyTypeMapping? = null,
+        val storageType: KeyStorageType? = null,
+        val requiresHardwareBacking: Boolean = false,
+        val requiresAttestation: Boolean = false,
+        val requiresKeyExport: Boolean = false,
+        val requiresKeyImport: Boolean = false,
+        val identifierMethod: IIdentifierMethod? = null,
+        val providerType: String? = null,
+    ) {
+        /**
+         * Checks if a provider's capabilities match this query.
+         */
+        fun matches(capabilities: KmsProviderCapabilities): Boolean {
+            // Check provider type filter
+            if (providerType != null && capabilities.providerType != providerType) {
+                return false
+            }
 
-        // Check operation support
-        if (operation != null && !capabilities.supportsOperation(operation)) {
-            return false
-        }
+            // Check operation support
+            if (operation != null && !capabilities.supportsOperation(operation)) {
+                return false
+            }
 
-        // Check crypto algorithm
-        if (cryptoAlgorithm != null && !capabilities.supportedCryptoAlgorithms.contains(cryptoAlgorithm)) {
-            return false
-        }
+            // Check crypto algorithm
+            if (cryptoAlgorithm != null && !capabilities.supportedCryptoAlgorithms.contains(cryptoAlgorithm)) {
+                return false
+            }
 
-        // Check digest algorithm
-        if (digestAlgorithm != null && !capabilities.supportedDigestAlgorithms.contains(digestAlgorithm)) {
-            return false
-        }
+            // Check digest algorithm
+            if (digestAlgorithm != null && !capabilities.supportedDigestAlgorithms.contains(digestAlgorithm)) {
+                return false
+            }
 
-        // Check signature algorithm (higher level - combines crypto + digest + curve)
-        if (signatureAlgorithm != null && !capabilities.signatureAlgorithms.contains(signatureAlgorithm)) {
-            return false
-        }
+            // Check signature algorithm (higher level - combines crypto + digest + curve)
+            if (signatureAlgorithm != null && !capabilities.signatureAlgorithms.contains(signatureAlgorithm)) {
+                return false
+            }
 
-        // Check content encryption algorithm
-        if (contentEncryptionAlgorithm != null && !capabilities.contentEncryptionAlgorithms.contains(contentEncryptionAlgorithm)) {
-            return false
-        }
+            // Check content encryption algorithm
+            if (contentEncryptionAlgorithm != null && !capabilities.contentEncryptionAlgorithms.contains(contentEncryptionAlgorithm)) {
+                return false
+            }
 
-        // Check curve
-        if (curve != null && !capabilities.supportedCurves.contains(curve)) {
-            return false
-        }
+            // Check curve
+            if (curve != null && !capabilities.supportedCurves.contains(curve)) {
+                return false
+            }
 
-        // Check key type
-        if (keyType != null && !capabilities.supportedKeyTypes.contains(keyType)) {
-            return false
-        }
+            // Check key type
+            if (keyType != null && !capabilities.supportedKeyTypes.contains(keyType)) {
+                return false
+            }
 
-        // Check storage type
-        if (storageType != null && !capabilities.storageTypes.contains(storageType)) {
-            return false
-        }
+            // Check storage type
+            if (storageType != null && !capabilities.storageTypes.contains(storageType)) {
+                return false
+            }
 
-        // Check hardware backing
-        if (requiresHardwareBacking && !capabilities.supportsHardwareBacking) {
-            return false
-        }
+            // Check hardware backing
+            if (requiresHardwareBacking && !capabilities.supportsHardwareBacking) {
+                return false
+            }
 
-        // Check attestation
-        if (requiresAttestation && !capabilities.supportsAttestation) {
-            return false
-        }
+            // Check attestation
+            if (requiresAttestation && !capabilities.supportsAttestation) {
+                return false
+            }
 
-        // Check key export
-        if (requiresKeyExport && !capabilities.supportsKeyExport) {
-            return false
-        }
+            // Check key export
+            if (requiresKeyExport && !capabilities.supportsKeyExport) {
+                return false
+            }
 
-        // Check key import
-        if (requiresKeyImport && !capabilities.supportsKeyImport) {
-            return false
-        }
+            // Check key import
+            if (requiresKeyImport && !capabilities.supportsKeyImport) {
+                return false
+            }
 
-        // Check identifier method
-        if (identifierMethod != null && !capabilities.supportsIdentifierMethod(identifierMethod)) {
-            return false
-        }
+            // Check identifier method
+            if (identifierMethod != null && !capabilities.supportsIdentifierMethod(identifierMethod)) {
+                return false
+            }
 
-        return true
+            return true
+        }
     }
-}
 
 /**
  * DSL builder for KmsProviderQuery.
  * Provides a fluent API for constructing queries.
  */
+@JsExportCompat
 class KmsProviderQueryBuilder {
     var operation: KmsProviderOperation? = null
     var cryptoAlgorithm: CryptoAlg? = null

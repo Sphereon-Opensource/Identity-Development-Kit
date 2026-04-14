@@ -18,26 +18,31 @@
 
 package com.sphereon.data.store.schema.registry
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class SchemaRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val namespace: String,
-    val name: String,
-    val schemaType: SchemaType,
-    val hostingMode: SchemaHostingMode,
-    val sourceUrl: String? = null,
-    val description: String? = null,
-    val contentType: String,
-    val contentHash: String? = null,
-    val sizeBytes: Long? = null,
-    /** ETag from the upstream source (for CACHED_EXTERNAL schemas). Used for conditional refresh. */
-    val sourceEtag: String? = null,
-    val createdAt: Instant,
-    val updatedAt: Instant,
-)
+data class SchemaRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val namespace: String,
+        val name: String,
+        val schemaType: SchemaType,
+        val hostingMode: SchemaHostingMode,
+        val sourceUrl: String? = null,
+        val description: String? = null,
+        val contentType: String,
+        val contentHash: String? = null,
+        val sizeBytes: Long? = null,
+        /** ETag from the upstream source (for CACHED_EXTERNAL schemas). Used for conditional refresh. */
+        val sourceEtag: String? = null,
+        val createdAt: Instant,
+        val updatedAt: Instant,
+    )

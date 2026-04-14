@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.auth.http.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.auth.model.IdvRequirementReason
 import com.sphereon.openid.oid4vp.auth.model.ReconciliationPlanType
 import kotlinx.serialization.Serializable
@@ -31,6 +32,7 @@ import kotlinx.serialization.Serializable
  * @property idvRequirementReason The typed reason for this IDV flow.
  */
 @Serializable
+@JsExportCompat
 data class IdvInitiateResponse(
     val sessionId: String,
     val redirectUrl: String? = null,
@@ -50,6 +52,7 @@ data class IdvInitiateResponse(
  * @property idvRequirementReason The typed reason for this IDV flow.
  */
 @Serializable
+@JsExportCompat
 data class IdvStatusResponse(
     val sessionId: String,
     val status: String,

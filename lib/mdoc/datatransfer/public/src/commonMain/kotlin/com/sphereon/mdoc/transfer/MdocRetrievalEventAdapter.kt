@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transfer
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -47,6 +48,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocRetrievalEventAdapter", exact = true)
+@JsExportCompat
 abstract class MdocRetrievalEventAdapter : MdocRetrievalEvent.Listener {
     override suspend fun onInitializing(event: MdocRetrievalEvent.Initializing) { // No-op
     }

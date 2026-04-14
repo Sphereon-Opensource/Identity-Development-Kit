@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -25,6 +26,7 @@ import kotlinx.serialization.Serializable
  * the result of a holder-lookup step. This enum drives selector rule matching only;
  * the resolved binding payload is carried by [ResolvedKnownHolder] in auth-bridge.
  */
+@JsExportCompat
 @Serializable
 enum class KnownHolderState {
     MATCHED_HOLDER_KEY,

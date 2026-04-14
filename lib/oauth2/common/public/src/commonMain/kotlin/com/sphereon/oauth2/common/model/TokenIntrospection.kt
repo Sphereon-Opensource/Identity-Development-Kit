@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.JsonElement
  *
  * Used in token introspection responses to indicate key binding.
  */
+@JsExportCompat
 @Serializable
 data class JwtConfirmation(
     /**
@@ -52,6 +54,8 @@ data class JwtConfirmation(
  *                         (e.g., "access_token", "refresh_token").
  * @property additionalParameters Additional parameters for extensions.
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 @Serializable
 data class TokenIntrospectionRequest(
     val token: String,
@@ -80,6 +84,8 @@ data class TokenIntrospectionRequest(
  * @property cnf Confirmation claim for proof-of-possession (RFC 7800).
  * @property additionalClaims Additional claims for extensions.
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 @Serializable
 data class TokenIntrospectionResponse(
     val active: Boolean,

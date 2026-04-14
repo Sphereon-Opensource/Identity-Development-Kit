@@ -24,6 +24,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * A command that can be compensated (rolled back) if subsequent operations fail.
@@ -35,6 +36,7 @@ import com.sphereon.core.api.events.EventSubsystems
  * @param Result The success result type
  * @param E The error type
  */
+@JsExportCompat
 interface CompensatableCommand<Arg : Any, Result : Any, E : IdkErrorType> : Command<Arg, Result, E> {
     /**
      * Compensates (rolls back) a previously executed operation.
@@ -53,6 +55,7 @@ interface CompensatableCommand<Arg : Any, Result : Any, E : IdkErrorType> : Comm
  * Represents a step in a saga.
  * Type-erased to allow heterogeneous step collections.
  */
+@JsExportCompat
 sealed interface SagaStep<E : IdkErrorType> {
     /**
      * Executes this step with the given input.
@@ -74,6 +77,7 @@ sealed interface SagaStep<E : IdkErrorType> {
 /**
  * A typed saga step that wraps a CompensatableCommand.
  */
+@JsExportCompat
 class TypedSagaStep<A : Any, R : Any, E : IdkErrorType>(
     private val command: CompensatableCommand<A, R, E>,
     private val errorMapper: CommandErrorMapper<E>,
@@ -109,6 +113,7 @@ class TypedSagaStep<A : Any, R : Any, E : IdkErrorType>(
  * @param Result The final result type
  * @param E The error type
  */
+@JsExportCompat
 class SagaCommandAdapter<Arg : Any, Result : Any, E : IdkErrorType>(
     override val id: String,
     private val steps: List<SagaStep<E>>,
@@ -200,6 +205,7 @@ fun <A : Any, R : Any> saga(
  *     .build()
  * ```
  */
+@JsExportCompat
 class SagaBuilder<A : Any, R : Any, E : IdkErrorType>(
     private val id: String,
     private val errorMapper: CommandErrorMapper<E>,

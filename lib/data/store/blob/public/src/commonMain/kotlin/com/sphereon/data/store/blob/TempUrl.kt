@@ -19,6 +19,7 @@ package com.sphereon.data.store.blob
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -29,6 +30,7 @@ import kotlin.time.Instant
  * HTTP method for temporary URL access.
  */
 @Serializable
+@JsExportCompat
 enum class TempUrlMethod {
     /** Download (read blob content) */
     GET,
@@ -52,6 +54,7 @@ enum class TempUrlMethod {
  * @param contentType Override Content-Type header in the response.
  */
 @Serializable
+@JsExportCompat
 data class TempUrlOptions(
     val expiresIn: Duration = Duration.parse("1h"),
     val method: TempUrlMethod = TempUrlMethod.GET,
@@ -77,6 +80,7 @@ data class TempUrlOptions(
  *                 IDK backends always return `true`. EDK policies may enforce `false`.
  */
 @Serializable
+@JsExportCompat
 data class TempUrlResult(
     val url: String,
     val expiresAt: Instant,
@@ -99,6 +103,7 @@ data class TempUrlResult(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TempUrlPolicy", exact = true)
+@JsExportCompat
 interface TempUrlPolicy {
     /**
      * Evaluate whether a temporary URL can be created with the given options.
@@ -122,6 +127,7 @@ interface TempUrlPolicy {
  * Default policy that approves all temp URL requests unchanged.
  * EDK replaces this with a policy-aware implementation.
  */
+@JsExportCompat
 class DefaultTempUrlPolicy : TempUrlPolicy {
     override suspend fun evaluate(
         info: BlobInfo,

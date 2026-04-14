@@ -21,8 +21,10 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -33,6 +35,7 @@ import kotlin.time.Instant
  * Interface for secret providers that resolve sensitive configuration values.
  * Providers can be backed by environment variables, in-memory maps, or cloud services.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecretProvider", exact = true)
 interface SecretProvider {
@@ -82,6 +85,7 @@ interface SecretProvider {
 /**
  * Options for secret resolution.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecretOptions", exact = true)
@@ -95,6 +99,7 @@ data class SecretOptions(
 /**
  * A resolved secret value with metadata.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecretValue", exact = true)
@@ -114,6 +119,7 @@ data class SecretValue(
     fun isExpired(): Boolean = expiresAt != null && Clock.System.now() > expiresAt
 
     companion object {
+        @JvmStatic
         fun of(
             value: String,
             providerId: String,
@@ -139,6 +145,7 @@ data class SecretValue(
 /**
  * Error type for secret resolution failures.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecretError", exact = true)
@@ -157,6 +164,7 @@ data class SecretError(
         )
 
     companion object {
+        @JvmStatic
         fun notFound(
             providerId: String,
             path: String,
@@ -169,6 +177,7 @@ data class SecretError(
             key = key,
         )
 
+        @JvmStatic
         fun providerUnavailable(providerId: String) =
             SecretError(
                 code = "PROVIDER_UNAVAILABLE",
@@ -177,6 +186,7 @@ data class SecretError(
                 path = "",
             )
 
+        @JvmStatic
         fun accessDenied(
             providerId: String,
             path: String,
@@ -187,6 +197,7 @@ data class SecretError(
             path = path,
         )
 
+        @JvmStatic
         fun timeout(
             providerId: String,
             path: String,
@@ -198,6 +209,7 @@ data class SecretError(
             path = path,
         )
 
+        @JvmStatic
         fun general(
             providerId: String,
             path: String,
@@ -216,6 +228,7 @@ data class SecretError(
 /**
  * Provider health status.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProviderHealth", exact = true)
@@ -230,6 +243,7 @@ data class ProviderHealth(
 /**
  * Policy for redacting secrets in logs and diagnostics.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecretRedactionPolicy", exact = true)
 interface SecretRedactionPolicy {
@@ -250,6 +264,7 @@ interface SecretRedactionPolicy {
 /**
  * Default redaction policy that redacts all secrets.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultSecretRedactionPolicy", exact = true)
 class DefaultSecretRedactionPolicy(
@@ -282,6 +297,7 @@ class DefaultSecretRedactionPolicy(
  * Resolves secrets from environment variables.
  * Path is interpreted as the environment variable name.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EnvSecretProvider", exact = true)
 class EnvSecretProvider : SecretProvider {
@@ -361,6 +377,7 @@ class EnvSecretProvider : SecretProvider {
  * In-memory map secret provider.
  * Useful for testing and local development.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MapSecretProvider", exact = true)
 class MapSecretProvider(
@@ -414,6 +431,7 @@ class MapSecretProvider(
 /**
  * Registry for managing multiple secret providers.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecretProviderRegistry", exact = true)
 class SecretProviderRegistry(

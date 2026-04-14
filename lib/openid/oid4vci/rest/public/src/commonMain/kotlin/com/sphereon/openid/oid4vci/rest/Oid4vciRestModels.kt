@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.rest
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vc.common.SessionError
 import kotlinx.serialization.SerialName
@@ -46,6 +47,7 @@ data class CreateCredentialOfferInput(
      * Keys are attribute names, values are JSON elements.
      */
     @SerialName("credential_subject_data")
+    @JsExportIgnoreCompat
     val credentialSubjectData: Map<String, JsonElement>? = null,
     /**
      * Business key for later status queries.

@@ -30,6 +30,7 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PublicKeyResolver", exact = true)
+@JsExportCompat
 interface PublicKeyResolver {
     /**
      * Resolves the public key asynchronously given the key information and additional optional parameters.

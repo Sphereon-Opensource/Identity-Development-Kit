@@ -18,6 +18,7 @@ package com.sphereon.core.api.http.describe
 
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * A single route definition: endpoint metadata plus handler function.
@@ -26,6 +27,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
  * - endpoint metadata is not duplicated in `describe()` and `handleRequest()`
  * - generic hosting/dispatching can introspect routes
  */
+@JsExportCompat
 data class HttpRoute(
     val endpoint: HttpEndpointDescriptor,
     val handler: suspend (GenericHttpRequest) -> GenericHttpResponse,
@@ -38,6 +40,7 @@ data class HttpRoute(
  */
 fun httpRoutes(block: HttpRoutesBuilder.() -> Unit): List<HttpRoute> = HttpRoutesBuilder().apply(block).build()
 
+@JsExportCompat
 class HttpRoutesBuilder internal constructor() {
     private val routes: MutableList<HttpRoute> = mutableListOf()
 
@@ -77,6 +80,7 @@ class HttpRoutesBuilder internal constructor() {
     internal fun build(): List<HttpRoute> = routes.toList()
 }
 
+@JsExportCompat
 class HttpRouteBuilder internal constructor(
     private val method: HttpMethod,
     private val pathPattern: String,

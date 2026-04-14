@@ -25,6 +25,7 @@ import com.sphereon.crypto.core.json.CryptoJsonSupport
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -250,6 +251,7 @@ open class VerifyResult(
          * @return A new VerifyResult instance containing the data from the given IVerifyResult.
          */
         @JsStatic
+        @JvmStatic
         fun fromDTO(dto: VerifyResultType) = with(dto) { VerifyResult(name = name, error = error, message = message, detailMessage = detailMessage, critical = critical) }
     }
 }

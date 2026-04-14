@@ -17,6 +17,8 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -44,6 +46,7 @@ import kotlinx.serialization.Serializable
  *   This allows looking up the configuration when processing a DCQL response.
  *   Only needed when using [DcqlClaimsMappingAdapter].
  */
+@JsExportCompat
 @Serializable
 data class ClaimMappingConfiguration(
     val id: String,
@@ -55,6 +58,7 @@ data class ClaimMappingConfiguration(
     /**
      * Returns all required credential IDs (non-optional credentials).
      */
+    @JsExportIgnoreCompat
     fun requiredCredentialIds(): Set<String> =
         credentialMappings
             .filter { !it.optional }
@@ -64,11 +68,13 @@ data class ClaimMappingConfiguration(
     /**
      * Returns all credential IDs referenced in this configuration.
      */
+    @JsExportIgnoreCompat
     fun allCredentialIds(): Set<String> = credentialMappings.map { it.credentialId }.toSet()
 
     /**
      * Returns all target claim paths across all credential mappings as dot-separated strings.
      */
+    @JsExportIgnoreCompat
     fun allTargetClaimPaths(): Set<String> = credentialMappings.flatMap { it.targetClaimPaths() }.toSet()
 
     /**

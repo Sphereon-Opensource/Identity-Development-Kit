@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.dcql
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -33,6 +34,7 @@ import kotlinx.serialization.Serializable
  *
  * @see DcqlCredentialQuery.meta
  */
+@JsExportCompat
 sealed interface DcqlFormatMeta
 
 /**

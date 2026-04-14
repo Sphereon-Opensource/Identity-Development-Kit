@@ -17,6 +17,8 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -47,9 +49,11 @@ import kotlin.time.Instant
  * @property claimSource Indicates whether claims originate from a canonical binding or wallet-only mapping.
  */
 @Serializable
+@JsExportCompat
 data class Oid4vpAuthResult(
     @SerialName("user_id")
     val userId: String,
+    @JsExportIgnoreCompat
     val claims: Map<String, JsonElement>,
     @SerialName("jwt_claims")
     val jwtClaims: String? = null,
@@ -101,6 +105,7 @@ data class Oid4vpAuthResult(
  * Indicates the origin of claims in an [Oid4vpAuthResult].
  */
 @Serializable
+@JsExportCompat
 enum class ClaimSource {
     /** Claims were mapped directly from wallet credential presentation only. */
     @SerialName("wallet_only")

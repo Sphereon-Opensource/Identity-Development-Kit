@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -25,6 +26,7 @@ import kotlin.time.Instant
 /**
  * Service information per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class LoTEServiceInformation(
     @SerialName("ServiceTypeIdentifier")

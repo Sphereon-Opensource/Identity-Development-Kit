@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.JwkSet
 import io.konform.validation.Validation
 import io.konform.validation.jsonschema.minItems
@@ -182,6 +183,8 @@ internal object ClientRegistrationSerializer : KSerializer<ClientRegistration> {
 }
 
 @Serializable(with = ClientRegistrationSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class ClientRegistration(
     @SerialName("client_id")
     val clientId: String,
@@ -235,6 +238,7 @@ data class ClientRegistration(
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
 )
 
+@JsExportCompat
 @Serializable
 enum class ClientType {
     CONFIDENTIAL,

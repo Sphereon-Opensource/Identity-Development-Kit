@@ -20,6 +20,7 @@
 package com.sphereon.data.link.ble.client.cmd
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.BleResponse
 import com.sphereon.data.link.ble.CharacteristicWriteError
 import com.sphereon.data.link.ble.client.BlePlatformClient
@@ -31,6 +32,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleWriteCharacteristicArgs", exact = true)
 data class BleWriteCharacteristicArgs(
@@ -40,6 +42,7 @@ data class BleWriteCharacteristicArgs(
     val writeMode: CharacteristicWriteMode = CharacteristicWriteMode.WRITE_TYPE_NO_RESPONSE,
 )
 
+@JsExportCompat
 class WriteCharacteristicCommand(
     private val client: BlePlatformClient,
 ) : BaseBleCommand<BleWriteCharacteristicArgs, BleResponse.Success>() {

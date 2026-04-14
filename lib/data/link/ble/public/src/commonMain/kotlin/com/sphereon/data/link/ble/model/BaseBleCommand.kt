@@ -19,11 +19,13 @@ package com.sphereon.data.link.ble.model
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.asErrorResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.BleErrors
 import com.sphereon.data.link.ble.BleResponse
 import kotlinx.coroutines.delay
 
+@JsExportCompat
 abstract class BaseBleCommand<Arg : Any, BleResp : BleResponse>(
     private val maxRetries: Int = 0,
     private val retryDelayMs: Long = 500,

@@ -16,8 +16,10 @@
 
 package com.sphereon.identity.reconciliation.store
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.OidcClientConfig
 
+@JsExportCompat
 interface OidcClientConfigStore {
     suspend fun findById(clientId: String): OidcClientConfig?
 

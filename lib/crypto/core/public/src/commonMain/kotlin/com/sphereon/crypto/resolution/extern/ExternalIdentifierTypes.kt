@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.cose.CoseKeyDTOType
@@ -35,6 +36,7 @@ import com.sphereon.crypto.resolution.IdentifierMethodDefaults
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import com.sphereon.crypto.resolution.IdentifierTypeUtils
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Type for external identifiers
@@ -47,6 +49,7 @@ typealias ExternalIdentifierType = Any
  * Implements [ExternalIdentifierBase] marker interface for the registry pattern.
  * External libraries can extend this to add custom identifier types.
  */
+@JsExportCompat
 abstract class ExternalIdentifierOptsOrResult(
     override val method: IIdentifierMethod? = null,
     override val identifier: Any,
@@ -62,6 +65,7 @@ abstract class ExternalIdentifierOptsOrResult(
 /**
  * Base options for external identifiers
  */
+@JsExportCompat
 abstract class ExternalIdentifierOpts(
     override val method: IIdentifierMethod? = null,
     override val identifier: ExternalIdentifierType,
@@ -74,71 +78,103 @@ abstract class ExternalIdentifierOpts(
 /**
  * Options for external DID identifiers
  */
-data class ExternalIdentifierDidOpts(
-    override val identifier: String,
+@JsExportCompat
+data class
+ExternalIdentifierDidOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
     /*    val noVerificationMethodFallback: Boolean? = null,
         val vmRelationship: String? = null,
         val localResolution: Boolean? = null,
         val uniresolverResolution: Boolean? = null,
         val resolverResolution: Boolean? = null*/
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.DID, identifier = identifier)
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.DID, identifier = identifier)
 
 /**
  * Options for external KID identifiers
  */
-data class ExternalIdentifierKidOpts(
-    override val identifier: String,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.KID, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierKidOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.KID, identifier = identifier)
 
 /**
  * Options for external JWK identifiers
  */
-data class ExternalIdentifierJwkOpts(
-    override val identifier: JwkType,
-    val x5c: ExternalIdentifierX5cOpts? = null,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.JWK, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierJwkOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: JwkType,
+        val x5c: ExternalIdentifierX5cOpts? = null,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.JWK, identifier = identifier)
 
 /**
  * Options for external COSE Key identifiers
  */
-data class ExternalIdentifierCoseKeyOpts(
-    override val identifier: CoseKeyDTOType,
-    val x5c: ExternalIdentifierX5cOpts? = null,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.COSE_KEY, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierCoseKeyOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: CoseKeyDTOType,
+        val x5c: ExternalIdentifierX5cOpts? = null,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.COSE_KEY, identifier = identifier)
 
 /**
  * Options for external OIDC Discovery identifiers
  */
-data class ExternalIdentifierOidcDiscoveryOpts(
-    override val identifier: String,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.OIDC_DISCOVERY, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierOidcDiscoveryOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.OIDC_DISCOVERY, identifier = identifier)
 
 /**
  * Options for external JWKS URL identifiers
  */
-data class ExternalIdentifierJwksUrlOpts(
-    override val identifier: String,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: AdditionalIdentifierLookup = AdditionalIdentifierLookup(),
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.JWKS_URL, identifier = identifier, context = context, lookup = lookup)
+@JsExportCompat
+data class
+ExternalIdentifierJwksUrlOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: AdditionalIdentifierLookup = AdditionalIdentifierLookup(),
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.JWKS_URL, identifier = identifier, context = context, lookup = lookup)
 
 /**
  * Options for external OIDF Entity ID identifiers
  */
-data class ExternalIdentifierOIDFEntityIdOpts(
-    override val identifier: String,
-    val trustAnchors: List<String>? = null,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.ENTITY_ID, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierOIDFEntityIdOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        val trustAnchors: List<String>? = null,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.ENTITY_ID, identifier = identifier)
 
 /**
  * Options for external X5C identifiers
  */
-data class ExternalIdentifierX5cOpts(
-    override val identifier: List<String>,
-    val verify: Boolean? = null,
-    val verificationTime: String? = null,
-    val trustAnchors: List<String>? = null,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.X5C, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierX5cOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: List<String>,
+        val verify: Boolean? = null,
+        val verificationTime: String? = null,
+        val trustAnchors: List<String>? = null,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.X5C, identifier = identifier)
 
 /**
  * Options for external CNF (Confirmation) identifiers.
@@ -159,16 +195,21 @@ data class ExternalIdentifierX5cOpts(
  * @property jwk Optional JWK extracted from CNF
  * @property jku Optional JWK Set URL extracted from CNF
  */
-data class ExternalIdentifierCnfOpts(
-    override val identifier: Map<String, Any?>,
-    val kid: String? = null,
-    val jwk: JwkType? = null,
-    val jku: String? = null,
-) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.CNF, identifier = identifier)
+@JsExportCompat
+data class
+ExternalIdentifierCnfOpts
+    @JvmOverloads
+    constructor(
+        override val identifier: Map<String, Any?>,
+        val kid: String? = null,
+        val jwk: JwkType? = null,
+        val jku: String? = null,
+    ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.CNF, identifier = identifier)
 
 /**
  * Base interface for external identifier results
  */
+@JsExportCompat
 abstract class ExternalIdentifierResult(
     open val identifierOpts: ExternalIdentifierOpts,
     override val method: IIdentifierMethod,
@@ -274,6 +315,7 @@ abstract class ExternalIdentifierResult(
 /**
  * Indicates how a CNF claim was resolved to obtain key material.
  */
+@JsExportCompat
 enum class CnfResolutionSource {
     /** Key was obtained from cnf.jwk directly */
     JWK,
@@ -290,7 +332,9 @@ enum class CnfResolutionSource {
  */
 typealias ExternalJwkInfo = ResolvedKeyInfoType<JwkType>
 /*
-data class ExternalJwkInfo(
+
+@JsExportCompat
+data class ExternalJwkInfo @JvmOverloads constructor(
     override val key: JwkType,
     override val kid: String? = null
 ) : KeyInfo<JwkType>
@@ -299,11 +343,15 @@ data class ExternalJwkInfo(
 /**
  * X509 validation result
  */
-data class X509ValidationResult(
-    val valid: Boolean,
-    val certificateChain: List<Certificate>? = null,
-    val errors: List<String>? = null,
-)
+@JsExportCompat
+data class
+X509ValidationResult
+    @JvmOverloads
+    constructor(
+        val valid: Boolean,
+        val certificateChain: List<Certificate>? = null,
+        val errors: List<String>? = null,
+    )
 
 /**
  * Type alias for trusted anchor
@@ -319,45 +367,58 @@ typealias ErrorMessage = String
  * Parsed DID
  */
 @Serializable
-data class ParsedDID(
-    val did: String,
-    val method: String,
-    val id: String,
-    val path: String? = null,
-    val fragment: String? = null,
-)
+@JsExportCompat
+data class
+ParsedDID
+    @JvmOverloads
+    constructor(
+        val did: String,
+        val method: String,
+        val id: String,
+        val path: String? = null,
+        val fragment: String? = null,
+    )
 
 /**
  * DID document
  */
 @Serializable
-data class DIDDocument(
-    val id: String,
-    val verificationMethod: List<VerificationMethod>? = null,
-    val authentication: List<String>? = null,
-    val assertionMethod: List<String>? = null,
-    val keyAgreement: List<String>? = null,
-    val capabilityInvocation: List<String>? = null,
-    val capabilityDelegation: List<String>? = null,
-    val service: List<Service>? = null,
-)
+@JsExportCompat
+data class
+DIDDocument
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val verificationMethod: List<VerificationMethod>? = null,
+        val authentication: List<String>? = null,
+        val assertionMethod: List<String>? = null,
+        val keyAgreement: List<String>? = null,
+        val capabilityInvocation: List<String>? = null,
+        val capabilityDelegation: List<String>? = null,
+        val service: List<Service>? = null,
+    )
 
 /**
  * Verification method
  */
 @Serializable
-data class VerificationMethod(
-    val id: String,
-    val type: String,
-    val controller: String,
-    val publicKeyJwk: JwkType? = null,
-    val publicKeyMultibase: String? = null,
-)
+@JsExportCompat
+data class
+VerificationMethod
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val type: String,
+        val controller: String,
+        val publicKeyJwk: JwkType? = null,
+        val publicKeyMultibase: String? = null,
+    )
 
 /**
  * Service
  */
 @Serializable
+@JsExportCompat
 data class Service(
     val id: String,
     val type: String,
@@ -372,10 +433,14 @@ typealias DidDocumentJwks = Map<String, List<JwkType>>
 /**
  * DID resolution result
  */
-data class DIDResolutionResult(
-    val didResolutionMetadata: Map<String, Any>? = null,
-    val didDocumentMetadata: Map<String, Any>? = null,
-)
+@JsExportCompat
+data class
+DIDResolutionResult
+    @JvmOverloads
+    constructor(
+        val didResolutionMetadata: Map<String, Any>? = null,
+        val didDocumentMetadata: Map<String, Any>? = null,
+    )
 
 /**
  * Type guard functions for external identifier options

@@ -20,6 +20,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.service.PublicApiCommand
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Base class for HTTP adapters that expose [ServiceCommand]s as HTTP endpoints.
@@ -56,6 +57,7 @@ import com.sphereon.core.api.service.ServiceCommand
  * @param execution The session execution context
  * @param mount The mount configuration for this adapter
  */
+@JsExportCompat
 abstract class PublicApiHttpAdapter(
     id: String,
     protected val sessionExecution: SessionExecution,

@@ -6,11 +6,13 @@
 
 package com.sphereon.trust.core.config
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
  * Provides trust configuration, typically bound from properties under `trust.*`.
  */
+@JsExportCompat
 interface TrustConfigProvider {
     fun getTrustConfig(): TrustConfig
 }
@@ -18,6 +20,7 @@ interface TrustConfigProvider {
 /**
  * Root trust configuration, bound from properties under `trust.*`.
  */
+@JsExportCompat
 @Serializable
 data class TrustConfig(
     val validation: TrustValidationConfig = TrustValidationConfig(),
@@ -26,12 +29,14 @@ data class TrustConfig(
     val cache: TrustCacheConfig = TrustCacheConfig(),
 )
 
+@JsExportCompat
 @Serializable
 data class TrustValidationConfig(
     val enabled: Boolean = true,
     val defaultCheckRevocation: Boolean = true,
 )
 
+@JsExportCompat
 @Serializable
 data class TrustAnchorsConfig(
     val x509: X509TrustConfig = X509TrustConfig(),
@@ -40,6 +45,7 @@ data class TrustAnchorsConfig(
     val did: DidTrustConfig = DidTrustConfig(),
 )
 
+@JsExportCompat
 @Serializable
 data class X509TrustConfig(
     val enabled: Boolean = false,
@@ -50,6 +56,7 @@ data class X509TrustConfig(
     val maxFailedSources: Int = 1,
 )
 
+@JsExportCompat
 @Serializable
 data class EtsiTrustConfig(
     val enabled: Boolean = false,
@@ -60,6 +67,7 @@ data class EtsiTrustConfig(
     val territories: List<String> = emptyList(),
 )
 
+@JsExportCompat
 @Serializable
 data class OidfTrustConfig(
     val enabled: Boolean = false,
@@ -68,6 +76,7 @@ data class OidfTrustConfig(
     val requiredTrustMarks: List<String> = emptyList(),
 )
 
+@JsExportCompat
 @Serializable
 data class DidTrustConfig(
     val enabled: Boolean = false,
@@ -76,6 +85,7 @@ data class DidTrustConfig(
     val allowedMethods: List<String> = emptyList(),
 )
 
+@JsExportCompat
 @Serializable
 data class RevocationConfig(
     val enabled: Boolean = true,
@@ -85,6 +95,7 @@ data class RevocationConfig(
     val timeoutMs: Long = 10000,
 )
 
+@JsExportCompat
 @Serializable
 data class TrustCacheConfig(
     val trustListTtlMinutes: Long = 60,

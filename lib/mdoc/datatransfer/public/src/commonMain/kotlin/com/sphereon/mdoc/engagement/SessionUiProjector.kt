@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.engagement
 
 import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.transfer.MdocRetrievalEvent
 import com.sphereon.mdoc.transfer.MdocRetrievalEventWithEngagement
 import kotlinx.coroutines.CoroutineScope
@@ -70,6 +71,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionUiProjector", exact = true)
+@JsExportCompat
 class SessionUiProjector(
     private val engagementEvents: Flow<MdocEngagementEvent>,
     private val retrievalEvents: Flow<MdocRetrievalEvent>,

@@ -21,6 +21,8 @@ package com.sphereon.data.link.ble.peripheral
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.log.LogManager
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.CharacteristicWriteError
 import com.sphereon.data.link.ble.client.BleEvent
@@ -41,6 +43,7 @@ import kotlin.uuid.Uuid
  * Abstract base class for BLE peripheral implementations across platforms.
  * Provides common event handling and lifecycle management.
  */
+@JsExportCompat
 abstract class AbstractBlePlatformPeripheral(
     logManager: LogManager,
     protected val scope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
@@ -50,9 +53,12 @@ abstract class AbstractBlePlatformPeripheral(
     // Event flows for BLE events
     private val mutableExternalBleEvents = MutableSharedFlow<BleEvent>(extraBufferCapacity = Int.MAX_VALUE)
     private val mutableInternalBleEvents = MutableSharedFlow<BleEvent>(extraBufferCapacity = Int.MAX_VALUE)
+
+    @JsExportIgnoreCompat
     val externalBleEvents: SharedFlow<BleEvent> = mutableExternalBleEvents.shareIn(scope, SharingStarted.Eagerly, replay = 0)
     protected val internalBleEvents: SharedFlow<BleEvent> = mutableInternalBleEvents.shareIn(scope, SharingStarted.Eagerly, replay = 0)
 
+    @JsExportIgnoreCompat
     override val bleEvents: SharedFlow<BleEvent> get() = externalBleEvents
 
     /**

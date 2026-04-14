@@ -20,8 +20,10 @@
 package com.sphereon.data.store.party.model
 
 import com.sphereon.core.api.HasId
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -55,42 +57,45 @@ import kotlin.uuid.Uuid
  * val value = x509Id.correlationIdentifier.value
  * ```
  */
+@JsExportCompat
 @Serializable
-data class IdentifierX509(
-    /** The base correlation identifier containing common fields */
-    @SerialName("correlationIdentifier")
-    val correlationIdentifier: CorrelationIdentifier,
-    /** Distinguished Name of the certificate issuer */
-    @SerialName("issuerDn")
-    val issuerDn: String? = null,
-    /** Distinguished Name of the certificate subject */
-    @SerialName("subjectDn")
-    val subjectDn: String? = null,
-    /** Serial number of the certificate */
-    @SerialName("serialNumber")
-    val serialNumber: String? = null,
-    /** The full PEM-encoded certificate */
-    @SerialName("certificatePem")
-    val certificatePem: String? = null,
-    /** Certificate validity start date */
-    @SerialName("notBefore")
-    val notBefore: Instant? = null,
-    /** Certificate validity end date */
-    @SerialName("notAfter")
-    val notAfter: Instant? = null,
-) : HasId {
-    /** Delegates to the embedded correlation identifier's ID */
-    override val id: String get() = correlationIdentifier.id
+data class IdentifierX509
+    @JvmOverloads
+    constructor(
+        /** The base correlation identifier containing common fields */
+        @SerialName("correlationIdentifier")
+        val correlationIdentifier: CorrelationIdentifier,
+        /** Distinguished Name of the certificate issuer */
+        @SerialName("issuerDn")
+        val issuerDn: String? = null,
+        /** Distinguished Name of the certificate subject */
+        @SerialName("subjectDn")
+        val subjectDn: String? = null,
+        /** Serial number of the certificate */
+        @SerialName("serialNumber")
+        val serialNumber: String? = null,
+        /** The full PEM-encoded certificate */
+        @SerialName("certificatePem")
+        val certificatePem: String? = null,
+        /** Certificate validity start date */
+        @SerialName("notBefore")
+        val notBefore: Instant? = null,
+        /** Certificate validity end date */
+        @SerialName("notAfter")
+        val notAfter: Instant? = null,
+    ) : HasId {
+        /** Delegates to the embedded correlation identifier's ID */
+        override val id: String get() = correlationIdentifier.id
 
-    /** The correlation identifier's UUID */
-    val correlationId: Uuid get() = correlationIdentifier.correlationId
+        /** The correlation identifier's UUID */
+        val correlationId: Uuid get() = correlationIdentifier.correlationId
 
-    /** Convenience accessor for the identity this identifier belongs to */
-    val identityId: Uuid get() = correlationIdentifier.identityId
+        /** Convenience accessor for the identity this identifier belongs to */
+        val identityId: Uuid get() = correlationIdentifier.identityId
 
-    /** Convenience accessor for the tenant */
-    val tenantId: String get() = correlationIdentifier.tenantId
+        /** Convenience accessor for the tenant */
+        val tenantId: String get() = correlationIdentifier.tenantId
 
-    /** Convenience accessor for the identifier value (typically subject DN or fingerprint) */
-    val value: String get() = correlationIdentifier.value
-}
+        /** Convenience accessor for the identifier value (typically subject DN or fingerprint) */
+        val value: String get() = correlationIdentifier.value
+    }

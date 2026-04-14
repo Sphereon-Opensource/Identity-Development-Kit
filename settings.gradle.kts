@@ -587,7 +587,7 @@ includeProject("services-kms-rest", "services/kms/rest")
 includeProject("services-oid4vp-verifier-rest", "services/oid4vp-verifier/rest")
 includeProject("services-oauth2-as-rest", "services/oauth2-as/rest")
 includeProject("services-oid4vci-issuer-rest", "services/oid4vci-issuer/rest")
-includeProject("services-oid4vci-holder-rest", "services/oid4vci-holder/rest")
+// services-oid4vci-holder-rest moved to EDK (vdx/edk/services/oid4vci-holder/rest)
 
 // Examples
 includeProject("examples-oid4vc-webapp-server", "examples/oid4vc/webapp/server")

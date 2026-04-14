@@ -396,6 +396,7 @@ interface ICommandExecutionListener<Arg : Any, SuccessResult : Any, ErrorResult 
     ) {}
 }
 
+@JsExportCompat
 abstract class MultiCommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
     id: String,
     isEnabled: Boolean,
@@ -419,6 +420,7 @@ abstract class MultiCommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult :
         }
 }
 
+@JsExportCompat
 abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
     override val id: String,
     /**
@@ -477,8 +479,8 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
         }
 
         // ── Structural input validation (if args implements ValidatableInput) ──
-        if (args is com.sphereon.core.api.service.contract.ValidatableInput) {
-            val validationResult = (args as com.sphereon.core.api.service.contract.ValidatableInput).validate()
+        if (args is com.sphereon.core.api.service.ValidatableInput) {
+            val validationResult = (args as com.sphereon.core.api.service.ValidatableInput).validate()
             if (validationResult.isErr) {
                 @Suppress("UNCHECKED_CAST")
                 return IdkResult.err(validationResult.error as ErrorResult)
@@ -614,6 +616,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
     }
 }
 
+@JsExportCompat
 abstract class ExecutionScopedCommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
     override val id: String,
     /**

@@ -16,9 +16,13 @@
 
 package com.sphereon.core.api.http.describe
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
+
 /**
  * Minimal, framework-agnostic HTTP method model.
  */
+@JsExportCompat
 enum class HttpMethod {
     GET,
     POST,
@@ -34,6 +38,7 @@ enum class HttpMethod {
  *
  * This intentionally avoids Java types and avoids depending on any specific HTTP framework.
  */
+@JsExportCompat
 sealed class MediaType(
     open val value: String,
 ) {
@@ -77,6 +82,7 @@ sealed class MediaType(
          * Returns the appropriate built-in MediaType if it matches, or Custom for unrecognized types.
          * Returns null if the input is null or blank.
          */
+        @JvmStatic
         fun parse(contentType: String?): MediaType? {
             if (contentType.isNullOrBlank()) {
                 return null
@@ -107,6 +113,7 @@ sealed class MediaType(
  * AFTER_SERVER_PREFIX:
  * - /api/kms/t/{tenantId}/providers/...
  */
+@JsExportCompat
 enum class TenantPathMode {
     OFF,
     BEFORE_SERVER_PREFIX,
@@ -117,6 +124,7 @@ enum class TenantPathMode {
 /**
  * Defines how to resolve the tenant when both header/JWT and path-based tenant resolution are available.
  */
+@JsExportCompat
 enum class TenantResolutionPriority {
     HEADER_THEN_PATH,
     PATH_THEN_HEADER,
@@ -129,6 +137,7 @@ enum class TenantResolutionPriority {
  * - [serverPrefix] may be empty to indicate a root mount.
  * - [adapterBasePath] should start with / and is the prefix used by adapter routes (e.g. /keys, /providers).
  */
+@JsExportCompat
 data class HttpAdapterMount(
     val serverPrefix: String,
     val adapterBasePath: String,
@@ -149,6 +158,7 @@ data class HttpAdapterMount(
  * - collision detection (ambiguous routing)
  * - alignment checks with OpenAPI artifacts (EDK)
  */
+@JsExportCompat
 data class HttpEndpointDescriptor(
     val method: HttpMethod,
     val pathPattern: String,
@@ -165,6 +175,7 @@ data class HttpEndpointDescriptor(
  * Lightweight hints for OpenAPI tooling. The open-source IDK must not depend on OpenAPI libraries; EDK provides the
  * concrete parsing/indexing and reconciliation.
  */
+@JsExportCompat
 data class OpenApiHints(
     val tags: Set<String> = emptySet(),
     val operationIdPrefix: String? = null,
@@ -174,6 +185,7 @@ data class OpenApiHints(
 /**
  * Full description of a contributed adapter: mount + endpoints.
  */
+@JsExportCompat
 data class HttpAdapterDescription(
     val id: String,
     val mount: HttpAdapterMount,

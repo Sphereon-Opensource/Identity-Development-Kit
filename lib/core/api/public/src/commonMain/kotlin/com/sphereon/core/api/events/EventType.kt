@@ -7,6 +7,8 @@ package com.sphereon.core.api.events
 
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * Extensible event type identifier using a value class.
@@ -63,6 +65,8 @@ value class EventType(
         /**
          * Create a custom event type with optional version.
          */
+        @JvmStatic
+        @JvmOverloads
         fun custom(
             name: String,
             version: String = "1.0",

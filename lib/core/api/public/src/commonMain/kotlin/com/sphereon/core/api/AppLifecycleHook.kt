@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Lifecycle hook for application-scoped components that need to start/stop
  * alongside the server.
@@ -26,6 +28,7 @@ package com.sphereon.core.api
  * Use this for components like event listeners, cache warmers, or background
  * tasks that need the server's lifecycle scope.
  */
+@JsExportCompat
 interface AppLifecycleHook {
     /** Called before transport servers start. */
     suspend fun onBeforeStart() {}

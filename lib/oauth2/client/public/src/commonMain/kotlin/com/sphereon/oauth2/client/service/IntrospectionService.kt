@@ -42,7 +42,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IntrospectionService", exact = true)
-@JsExportCompat
 interface IntrospectionService {
     suspend fun introspectToken(args: IntrospectTokenArgs): IdkResult<TokenIntrospectionResponse, IdkError>
 
@@ -54,7 +53,6 @@ interface IntrospectionService {
     /**
      * Container for all introspection commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val introspectToken: IntrospectTokenCommand
     }
@@ -63,6 +61,7 @@ interface IntrospectionService {
      * Convenience method for introspecting a token with individual parameters.
      */
     @JsName("introspectTokenWithParams")
+    @JsExportIgnoreCompat
     suspend fun introspectToken(
         authorizationServerMetadata: AuthorizationServerMetadata,
         token: String,

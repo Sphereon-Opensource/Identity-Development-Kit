@@ -16,148 +16,187 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class CreateCredentialDesignInput(
-    val bindings: List<DesignBinding>,
-    val alias: String? = null,
-    val hostingMode: DesignHostingMode = DesignHostingMode.LOCAL,
-    val credentialTemplateId: Uuid? = null,
-    val issuerDesignId: Uuid? = null,
-    val displays: List<LocalizedCredentialDisplay>,
-    val claims: List<ClaimPresentation> = emptyList(),
-    val renderVariantIds: List<Uuid> = emptyList(),
-)
+data class CreateCredentialDesignInput
+    @JvmOverloads
+    constructor(
+        val bindings: List<DesignBinding>,
+        val alias: String? = null,
+        val hostingMode: DesignHostingMode = DesignHostingMode.LOCAL,
+        val credentialTemplateId: Uuid? = null,
+        val issuerDesignId: Uuid? = null,
+        val displays: List<LocalizedCredentialDisplay>,
+        val claims: List<ClaimPresentation> = emptyList(),
+        val renderVariantIds: List<Uuid> = emptyList(),
+    )
 
+@JsExportCompat
 @Serializable
-data class UpdateCredentialDesignInput(
-    val alias: String? = null,
-    val bindings: List<DesignBinding>? = null,
-    val credentialTemplateId: Uuid? = null,
-    val issuerDesignId: Uuid? = null,
-    val displays: List<LocalizedCredentialDisplay>? = null,
-    val claims: List<ClaimPresentation>? = null,
-    val renderVariantIds: List<Uuid>? = null,
-    val hostingMode: DesignHostingMode? = null,
-)
+data class UpdateCredentialDesignInput
+    @JvmOverloads
+    constructor(
+        val alias: String? = null,
+        val bindings: List<DesignBinding>? = null,
+        val credentialTemplateId: Uuid? = null,
+        val issuerDesignId: Uuid? = null,
+        val displays: List<LocalizedCredentialDisplay>? = null,
+        val claims: List<ClaimPresentation>? = null,
+        val renderVariantIds: List<Uuid>? = null,
+        val hostingMode: DesignHostingMode? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class CreateIssuerDesignInput(
-    val bindings: List<DesignBinding>,
-    val partyId: Uuid? = null,
-    val alias: String? = null,
-    val hostingMode: DesignHostingMode = DesignHostingMode.LOCAL,
-    val displays: List<EntityLocaleDesign>,
-    val renderVariantIds: List<Uuid> = emptyList(),
-)
+data class CreateIssuerDesignInput
+    @JvmOverloads
+    constructor(
+        val bindings: List<DesignBinding>,
+        val partyId: Uuid? = null,
+        val alias: String? = null,
+        val hostingMode: DesignHostingMode = DesignHostingMode.LOCAL,
+        val displays: List<EntityLocaleDesign>,
+        val renderVariantIds: List<Uuid> = emptyList(),
+    )
 
+@JsExportCompat
 @Serializable
-data class UpdateIssuerDesignInput(
-    val alias: String? = null,
-    val bindings: List<DesignBinding>? = null,
-    val partyId: Uuid? = null,
-    val displays: List<EntityLocaleDesign>? = null,
-    val renderVariantIds: List<Uuid>? = null,
-)
+data class UpdateIssuerDesignInput
+    @JvmOverloads
+    constructor(
+        val alias: String? = null,
+        val bindings: List<DesignBinding>? = null,
+        val partyId: Uuid? = null,
+        val displays: List<EntityLocaleDesign>? = null,
+        val renderVariantIds: List<Uuid>? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class CreateVerifierDesignInput(
-    val bindings: List<DesignBinding>,
-    val partyId: Uuid? = null,
-    val alias: String? = null,
-    val hostingMode: DesignHostingMode = DesignHostingMode.LOCAL,
-    val displays: List<EntityLocaleDesign>,
-    val renderVariantIds: List<Uuid> = emptyList(),
-)
+data class CreateVerifierDesignInput
+    @JvmOverloads
+    constructor(
+        val bindings: List<DesignBinding>,
+        val partyId: Uuid? = null,
+        val alias: String? = null,
+        val hostingMode: DesignHostingMode = DesignHostingMode.LOCAL,
+        val displays: List<EntityLocaleDesign>,
+        val renderVariantIds: List<Uuid> = emptyList(),
+    )
 
+@JsExportCompat
 @Serializable
-data class UpdateVerifierDesignInput(
-    val alias: String? = null,
-    val bindings: List<DesignBinding>? = null,
-    val partyId: Uuid? = null,
-    val displays: List<EntityLocaleDesign>? = null,
-    val renderVariantIds: List<Uuid>? = null,
-)
+data class UpdateVerifierDesignInput
+    @JvmOverloads
+    constructor(
+        val alias: String? = null,
+        val bindings: List<DesignBinding>? = null,
+        val partyId: Uuid? = null,
+        val displays: List<EntityLocaleDesign>? = null,
+        val renderVariantIds: List<Uuid>? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class CreateRenderVariantInput(
-    val kind: RenderVariantKind,
-    val alias: String? = null,
-    val localeApplicability: List<String> = emptyList(),
-    val logo: AssetReference? = null,
-    val backgroundImage: AssetReference? = null,
-    val backgroundColor: String? = null,
-    val textColor: String? = null,
-    val accentColor: String? = null,
-    val svgTemplate: SvgTemplate? = null,
-    val w3cRenderMethod: W3cRenderMethodReference? = null,
-)
+data class CreateRenderVariantInput
+    @JvmOverloads
+    constructor(
+        val kind: RenderVariantKind,
+        val alias: String? = null,
+        val localeApplicability: List<String> = emptyList(),
+        val logo: AssetReference? = null,
+        val backgroundImage: AssetReference? = null,
+        val backgroundColor: String? = null,
+        val textColor: String? = null,
+        val accentColor: String? = null,
+        val svgTemplate: SvgTemplate? = null,
+        val w3cRenderMethod: W3cRenderMethodReference? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ImportExternalDesignInput(
-    val entityType: DesignEntityType,
-    val bindings: List<DesignBinding>,
-    val alias: String? = null,
-    val sourceUrl: String,
-    val sourceType: DesignSourceType,
-)
+data class ImportExternalDesignInput
+    @JvmOverloads
+    constructor(
+        val entityType: DesignEntityType,
+        val bindings: List<DesignBinding>,
+        val alias: String? = null,
+        val sourceUrl: String,
+        val sourceType: DesignSourceType,
+    )
 
+@JsExportCompat
 @Serializable
-data class ResolveCredentialDesignInput(
-    val designId: Uuid? = null,
-    val binding: DesignBinding? = null,
-    val bindingKey: DesignBindingKey? = null,
-    val bindingValue: String? = null,
-    val preferredLocales: List<String> = emptyList(),
-    val renderTarget: RenderVariantKind? = null,
-    val externalMetadata: ExternalDesignMetadata? = null,
-)
+data class ResolveCredentialDesignInput
+    @JvmOverloads
+    constructor(
+        val designId: Uuid? = null,
+        val binding: DesignBinding? = null,
+        val bindingKey: DesignBindingKey? = null,
+        val bindingValue: String? = null,
+        val preferredLocales: List<String> = emptyList(),
+        val renderTarget: RenderVariantKind? = null,
+        val externalMetadata: ExternalDesignMetadata? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ResolveEntityDesignInput(
-    val designId: Uuid? = null,
-    val binding: DesignBinding? = null,
-    val bindingKey: DesignBindingKey? = null,
-    val bindingValue: String? = null,
-    val preferredLocales: List<String> = emptyList(),
-    val externalMetadata: ExternalDesignMetadata? = null,
-)
+data class ResolveEntityDesignInput
+    @JvmOverloads
+    constructor(
+        val designId: Uuid? = null,
+        val binding: DesignBinding? = null,
+        val bindingKey: DesignBindingKey? = null,
+        val bindingValue: String? = null,
+        val preferredLocales: List<String> = emptyList(),
+        val externalMetadata: ExternalDesignMetadata? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ExternalDesignMetadata(
-    val sdJwtVctMetadata: JsonObject? = null,
-    val oid4vciCredentialConfiguration: JsonObject? = null,
-    val oid4vciIssuerMetadata: JsonObject? = null,
-    val sdJwtIssuerMetadata: JsonObject? = null,
-    val jsonSchema: JsonObject? = null,
-    val jsonLdContext: JsonObject? = null,
-    val oidcDiscovery: JsonObject? = null,
-    val openIdFederationEntity: JsonObject? = null,
-    val oauthClientRegistration: JsonObject? = null,
-    val eidasRegistryData: JsonObject? = null,
-    val eidasCatalogueData: JsonObject? = null,
-    val w3cRenderMethod: JsonObject? = null,
-    val ocaBundle: JsonObject? = null,
-    val ocaCaptureBase: JsonObject? = null,
-    val ocaOverlays: List<JsonObject> = emptyList(),
-    val ocaFile: String? = null,
-    val overlayFiles: List<String> = emptyList(),
-)
+data class ExternalDesignMetadata
+    @JvmOverloads
+    constructor(
+        val sdJwtVctMetadata: JsonObject? = null,
+        val oid4vciCredentialConfiguration: JsonObject? = null,
+        val oid4vciIssuerMetadata: JsonObject? = null,
+        val sdJwtIssuerMetadata: JsonObject? = null,
+        val jsonSchema: JsonObject? = null,
+        val jsonLdContext: JsonObject? = null,
+        val oidcDiscovery: JsonObject? = null,
+        val openIdFederationEntity: JsonObject? = null,
+        val oauthClientRegistration: JsonObject? = null,
+        val eidasRegistryData: JsonObject? = null,
+        val eidasCatalogueData: JsonObject? = null,
+        val w3cRenderMethod: JsonObject? = null,
+        val ocaBundle: JsonObject? = null,
+        val ocaCaptureBase: JsonObject? = null,
+        val ocaOverlays: List<JsonObject> = emptyList(),
+        val ocaFile: String? = null,
+        val overlayFiles: List<String> = emptyList(),
+    )
 
+@JsExportCompat
 @Serializable
-data class DesignFilter(
-    val entityType: DesignEntityType? = null,
-    val hostingMode: DesignHostingMode? = null,
-    val binding: DesignBinding? = null,
-    val bindingKey: DesignBindingKey? = null,
-    val bindingValue: String? = null,
-    val aliasContains: String? = null,
-    val sourceType: DesignSourceType? = null,
-)
+data class DesignFilter
+    @JvmOverloads
+    constructor(
+        val entityType: DesignEntityType? = null,
+        val hostingMode: DesignHostingMode? = null,
+        val binding: DesignBinding? = null,
+        val bindingKey: DesignBindingKey? = null,
+        val bindingValue: String? = null,
+        val aliasContains: String? = null,
+        val sourceType: DesignSourceType? = null,
+    )
 
+@JsExportCompat
 @Serializable
 data class UploadDesignAssetInput(
     val designId: Uuid,
@@ -187,6 +226,7 @@ data class UploadDesignAssetInput(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class GetDesignAssetInput(
     val designId: Uuid,
@@ -194,6 +234,7 @@ data class GetDesignAssetInput(
     val assetType: DesignAssetType,
 )
 
+@JsExportCompat
 @Serializable
 data class ResolvedDesignAsset(
     val data: ByteArray,

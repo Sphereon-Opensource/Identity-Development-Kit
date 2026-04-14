@@ -17,9 +17,11 @@
 
 package com.sphereon.core.api
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HasId", exact = true)
 interface HasId {

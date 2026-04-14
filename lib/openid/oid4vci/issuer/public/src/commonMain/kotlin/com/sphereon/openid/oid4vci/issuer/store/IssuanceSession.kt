@@ -16,9 +16,12 @@
 
 package com.sphereon.openid.oid4vci.issuer.store
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
+@JsExportCompat
 @Serializable
 data class IssuanceSession(
     val sessionId: String,
@@ -30,12 +33,15 @@ data class IssuanceSession(
     val subject: String? = null,
     val clientId: String? = null,
     val credentialIdentifiers: List<String> = emptyList(),
+    @JsExportIgnoreCompat
     val preSeededAttributes: Map<String, JsonElement>? = null,
+    @JsExportIgnoreCompat
     val accumulatedAttributes: Map<String, JsonElement>? = null,
     val createdAt: Long,
     val expiresAt: Long,
 )
 
+@JsExportCompat
 @Serializable
 enum class IssuanceSessionStatus {
     OFFER_CREATED,
@@ -49,6 +55,7 @@ enum class IssuanceSessionStatus {
     FAILED,
 }
 
+@JsExportCompat
 @Serializable
 data class DeferredCredentialEntry(
     val transactionId: String,
@@ -63,6 +70,7 @@ data class DeferredCredentialEntry(
     val expiresAt: Long,
 )
 
+@JsExportCompat
 @Serializable
 enum class DeferredCredentialStatus {
     PENDING,

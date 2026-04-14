@@ -18,6 +18,8 @@
 package com.sphereon.ktor.http.client.provider
 
 import com.sphereon.core.api.log.LogService
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.ktor.http.client.config.LegacySslProvider
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -34,6 +36,8 @@ import io.ktor.client.plugins.logging.LoggingConfig
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -42,63 +46,74 @@ import kotlin.native.ObjCName
  * @property engine The engine to use for the HTTP client.
  * @property sslConfig SSL configuration for the HTTP client.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("LegacyHttpClientOptions", exact = true)
-data class LegacyHttpClientOptions(
-    val engine: HttpClientEngineType,
-    val sslConfig: LegacySslProvider? = null,
-    val enableContentNegotiation: Boolean = false,
-    val contentNegotiationConfig: (ContentNegotiationConfig.() -> Unit)? = {
-        json(
-            Json {
-                encodeDefaults = true
-                ignoreUnknownKeys = true
-                prettyPrint = false
-            },
-        )
-    },
-    /**
-     * If true, will install the [HttpCache] plugin.
-     */
-    val enableHttpCache: Boolean = false,
-    /**
-     * Optional lambda to further configure the cache plugin.
-     */
-    val httpCacheConfig: (HttpCache.Config.() -> Unit)? = null,
-    val enableLogging: Boolean = true,
-    val httpClientLogger: HttpClientLogger? = null,
-    val loggingConfig: (LoggingConfig.() -> Unit)? = {
-        logger = httpClientLogger ?: Logger.DEFAULT
-        level = LogLevel.ALL
-    },
-    val defaultRequest: (DefaultRequest.DefaultRequestBuilder.() -> Unit)? = null,
-    val additionalConfig: (HttpClientConfig<*>.() -> Unit)? = null,
-) {
-    companion object {
-        fun createDefault(
-            sslConfig: LegacySslProvider? = null,
-            clientLogger: HttpClientLogger? = null,
-            loggingConfig: (LoggingConfig.() -> Unit)? = null,
-        ): LegacyHttpClientOptions =
-            LegacyHttpClientOptions(
-                engine = HttpClientEngineType.CIO,
-                sslConfig = sslConfig,
-                enableContentNegotiation = true,
-                contentNegotiationConfig = {
-                    json(
-                        Json {
-                            encodeDefaults = true
-                            ignoreUnknownKeys = true
-                            prettyPrint = false
-                        },
-                    )
+data class LegacyHttpClientOptions
+    @JvmOverloads
+    constructor(
+        val engine: HttpClientEngineType,
+        val sslConfig: LegacySslProvider? = null,
+        val enableContentNegotiation: Boolean = false,
+        @JsExportIgnoreCompat
+        val contentNegotiationConfig: (ContentNegotiationConfig.() -> Unit)? = {
+            json(
+                Json {
+                    encodeDefaults = true
+                    ignoreUnknownKeys = true
+                    prettyPrint = false
                 },
-                enableHttpCache = false,
-                enableLogging = true,
-                loggingConfig = loggingConfig,
             )
+        },
+        /**
+         * If true, will install the [HttpCache] plugin.
+         */
+        val enableHttpCache: Boolean = false,
+        /**
+         * Optional lambda to further configure the cache plugin.
+         */
+        @JsExportIgnoreCompat
+        val httpCacheConfig: (HttpCache.Config.() -> Unit)? = null,
+        val enableLogging: Boolean = true,
+        val httpClientLogger: HttpClientLogger? = null,
+        @JsExportIgnoreCompat
+        val loggingConfig: (LoggingConfig.() -> Unit)? = {
+            logger = httpClientLogger ?: Logger.DEFAULT
+            level = LogLevel.ALL
+        },
+        @JsExportIgnoreCompat
+        val defaultRequest: (DefaultRequest.DefaultRequestBuilder.() -> Unit)? = null,
+        @JsExportIgnoreCompat
+        val additionalConfig: (HttpClientConfig<*>.() -> Unit)? = null,
+    ) {
+        companion object {
+            @JvmStatic
+            @JvmOverloads
+            @JsExportIgnoreCompat
+            fun createDefault(
+                sslConfig: LegacySslProvider? = null,
+                clientLogger: HttpClientLogger? = null,
+                loggingConfig: (LoggingConfig.() -> Unit)? = null,
+            ): LegacyHttpClientOptions =
+                LegacyHttpClientOptions(
+                    engine = HttpClientEngineType.CIO,
+                    sslConfig = sslConfig,
+                    enableContentNegotiation = true,
+                    contentNegotiationConfig = {
+                        json(
+                            Json {
+                                encodeDefaults = true
+                                ignoreUnknownKeys = true
+                                prettyPrint = false
+                            },
+                        )
+                    },
+                    enableHttpCache = false,
+                    enableLogging = true,
+                    loggingConfig = loggingConfig,
+                )
+        }
     }
-}
 
 expect class LegacyHttpClientFactory {
     /**

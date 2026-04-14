@@ -16,11 +16,13 @@
 
 package com.sphereon.openid.oid4vci.issuer.proof
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.json.JsonElement
 
 /**
  * Result of a successful proof of possession verification.
  */
+@JsExportCompat
 data class VerifiedProof(
     val holderBindingKey: JsonElement,
     val holderIdentifier: String? = null,

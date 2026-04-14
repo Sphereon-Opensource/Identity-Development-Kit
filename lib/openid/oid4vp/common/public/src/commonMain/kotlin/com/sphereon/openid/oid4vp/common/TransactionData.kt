@@ -22,6 +22,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -178,8 +179,10 @@ enum class TransactionDataHashAlgorithm(
     ;
 
     companion object {
+        @JvmStatic
         fun fromValue(value: String): TransactionDataHashAlgorithm? = entries.find { it.value == value }
 
+        @JvmStatic
         fun isSupported(value: String): Boolean = fromValue(value) != null
     }
 }

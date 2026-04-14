@@ -16,21 +16,34 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class CanonicalAttributeBag(
-    val attributes: Map<String, JsonElement>,
-    val provenance: AttributeProvenanceSummary,
-    val canonicalSchemaVersion: String = "1",
-    val selectorRuleVersion: String? = null,
-    val materialProfileVersion: String? = null,
-)
+data class CanonicalAttributeBag
+    @JvmOverloads
+    constructor(
+        @JsExportIgnoreCompat
+        val attributes: Map<String, JsonElement>,
+        val provenance: AttributeProvenanceSummary,
+        val canonicalSchemaVersion: String = "1",
+        val selectorRuleVersion: String? = null,
+        val materialProfileVersion: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class AttributeProvenanceSummary(
-    val sources: Map<String, Set<String>> = emptyMap(),
-    val providerIds: Set<String> = emptySet(),
-    val walletCredentialIds: Set<String> = emptySet(),
-)
+data class AttributeProvenanceSummary
+    @JvmOverloads
+    constructor(
+        @JsExportIgnoreCompat
+        val sources: Map<String, Set<String>> = emptyMap(),
+        @JsExportIgnoreCompat
+        val providerIds: Set<String> = emptySet(),
+        @JsExportIgnoreCompat
+        val walletCredentialIds: Set<String> = emptySet(),
+    )

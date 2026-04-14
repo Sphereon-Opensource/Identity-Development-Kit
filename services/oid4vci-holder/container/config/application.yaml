@@ -1,7 +1,0 @@
-server:
-  rest:
-    port: 8080
-    auth:
-      enabled: false
-      anonymous:
-        allowed: true

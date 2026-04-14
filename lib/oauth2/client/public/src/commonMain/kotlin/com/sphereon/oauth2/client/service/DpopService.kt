@@ -19,7 +19,6 @@ package com.sphereon.oauth2.client.service
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.command.CreateDpopProofCommand
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
@@ -43,7 +42,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DpopService", exact = true)
-@JsExportCompat
 interface DpopService {
     /**
      * Provides access to underlying commands
@@ -53,7 +51,6 @@ interface DpopService {
     /**
      * Container for DPoP commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val createDpopProof: CreateDpopProofCommand
         val verifyDpopProof: VerifyDpopProofCommand

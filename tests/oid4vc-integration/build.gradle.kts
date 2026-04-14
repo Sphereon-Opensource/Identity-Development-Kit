@@ -95,7 +95,12 @@ kotlin {
                 implementation(projects.libOpenidOid4vciRestPublic)
                 implementation(projects.libOpenidOid4vciRestImpl)
                 implementation(projects.servicesOid4vciIssuerRest)
-                implementation(projects.servicesOid4vciHolderRest)
+                // services-oid4vci-holder-rest moved to EDK. Re-add via Maven coordinate
+                // (com.sphereon.idk:services-oid4vci-holder-rest:...) only after the test
+                // is moved to EDK too — referencing it from IDK creates a composite-build
+                // cycle. Until then, the holder REST adapter isn't registered in this DI
+                // graph; HTTP-level holder scenarios are skipped.
+                // implementation("com.sphereon.idk:services-oid4vci-holder-rest:0.25.0-SNAPSHOT")
 
                 // OID4VP verifier REST (HTTP adapters for wallet presentation E2E)
                 implementation(projects.servicesOid4vpVerifierRest)

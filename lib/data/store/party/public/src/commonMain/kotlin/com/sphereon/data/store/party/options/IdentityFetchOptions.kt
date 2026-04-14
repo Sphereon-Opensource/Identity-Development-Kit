@@ -17,8 +17,10 @@
 
 package com.sphereon.data.store.party.options
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Options for controlling which associations to fetch when loading identities.
@@ -44,58 +46,61 @@ import kotlinx.serialization.Serializable
  * )
  * ```
  */
+@JsExportCompat
 @Serializable
-data class IdentityFetchOptions(
-    /** Include correlation identifiers (DIDs, emails, URLs, etc.) */
-    @SerialName("includeCorrelationIdentifiers")
-    val includeCorrelationIdentifiers: Boolean = false,
-    /** Include X.509 certificate extensions on correlation identifiers */
-    @SerialName("includeX509Extensions")
-    val includeX509Extensions: Boolean = false,
-    /** Include registration extensions on correlation identifiers */
-    @SerialName("includeRegistrationExtensions")
-    val includeRegistrationExtensions: Boolean = false,
-    /** Include electronic address extensions on correlation identifiers */
-    @SerialName("includeElectronicExtensions")
-    val includeElectronicExtensions: Boolean = false,
-) {
-    companion object {
-        /** Load only core identity data (default) */
-        val MINIMAL = IdentityFetchOptions()
+data class IdentityFetchOptions
+    @JvmOverloads
+    constructor(
+        /** Include correlation identifiers (DIDs, emails, URLs, etc.) */
+        @SerialName("includeCorrelationIdentifiers")
+        val includeCorrelationIdentifiers: Boolean = false,
+        /** Include X.509 certificate extensions on correlation identifiers */
+        @SerialName("includeX509Extensions")
+        val includeX509Extensions: Boolean = false,
+        /** Include registration extensions on correlation identifiers */
+        @SerialName("includeRegistrationExtensions")
+        val includeRegistrationExtensions: Boolean = false,
+        /** Include electronic address extensions on correlation identifiers */
+        @SerialName("includeElectronicExtensions")
+        val includeElectronicExtensions: Boolean = false,
+    ) {
+        companion object {
+            /** Load only core identity data (default) */
+            val MINIMAL = IdentityFetchOptions()
 
-        /** Load identity with correlation identifiers */
-        val WITH_IDENTIFIERS = IdentityFetchOptions(includeCorrelationIdentifiers = true)
+            /** Load identity with correlation identifiers */
+            val WITH_IDENTIFIERS = IdentityFetchOptions(includeCorrelationIdentifiers = true)
 
-        /** Load identity with identifiers and all extensions */
-        val WITH_IDENTIFIERS_AND_EXTENSIONS =
-            IdentityFetchOptions(
-                includeCorrelationIdentifiers = true,
+            /** Load identity with identifiers and all extensions */
+            val WITH_IDENTIFIERS_AND_EXTENSIONS =
+                IdentityFetchOptions(
+                    includeCorrelationIdentifiers = true,
+                    includeX509Extensions = true,
+                    includeRegistrationExtensions = true,
+                    includeElectronicExtensions = true,
+                )
+
+            /** Load everything (all associations and extensions) */
+            val FULL = WITH_IDENTIFIERS_AND_EXTENSIONS
+        }
+
+        /** Builder method to include correlation identifiers */
+        fun withCorrelationIdentifiers() = copy(includeCorrelationIdentifiers = true)
+
+        /** Builder method to include X.509 extensions */
+        fun withX509Extensions() = copy(includeX509Extensions = true)
+
+        /** Builder method to include registration extensions */
+        fun withRegistrationExtensions() = copy(includeRegistrationExtensions = true)
+
+        /** Builder method to include electronic extensions */
+        fun withElectronicExtensions() = copy(includeElectronicExtensions = true)
+
+        /** Builder method to include all extensions */
+        fun withAllExtensions() =
+            copy(
                 includeX509Extensions = true,
                 includeRegistrationExtensions = true,
                 includeElectronicExtensions = true,
             )
-
-        /** Load everything (all associations and extensions) */
-        val FULL = WITH_IDENTIFIERS_AND_EXTENSIONS
     }
-
-    /** Builder method to include correlation identifiers */
-    fun withCorrelationIdentifiers() = copy(includeCorrelationIdentifiers = true)
-
-    /** Builder method to include X.509 extensions */
-    fun withX509Extensions() = copy(includeX509Extensions = true)
-
-    /** Builder method to include registration extensions */
-    fun withRegistrationExtensions() = copy(includeRegistrationExtensions = true)
-
-    /** Builder method to include electronic extensions */
-    fun withElectronicExtensions() = copy(includeElectronicExtensions = true)
-
-    /** Builder method to include all extensions */
-    fun withAllExtensions() =
-        copy(
-            includeX509Extensions = true,
-            includeRegistrationExtensions = true,
-            includeElectronicExtensions = true,
-        )
-}

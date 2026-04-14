@@ -28,6 +28,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -58,6 +59,7 @@ enum class CoseKeyTypeEnum(
     companion object {
         @JsStatic
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(value: Long): CoseKeyTypeEnum =
             entries.find { entry -> entry.value == value.toInt() }
                 ?: throw IllegalArgumentException("Unknown value $value")

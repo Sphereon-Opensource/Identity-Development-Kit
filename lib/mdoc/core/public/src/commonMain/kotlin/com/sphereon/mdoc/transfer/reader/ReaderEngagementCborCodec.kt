@@ -18,8 +18,10 @@ package com.sphereon.mdoc.transfer.reader
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.DecodedMdoc
 
+@JsExportCompat
 interface ReaderEngagementCborCodec {
     fun encode(value: ReaderEngagement): IdkResult<ByteArray, IdkError>
 

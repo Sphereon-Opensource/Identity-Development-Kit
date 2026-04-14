@@ -19,9 +19,11 @@
 
 package com.sphereon.data.store.party.filter
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.IdentifierType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -47,84 +49,87 @@ import kotlin.uuid.Uuid
  * CorrelationIdentifierFilter(valuePattern = "%@example.com")
  * ```
  */
+@JsExportCompat
 @Serializable
-data class CorrelationIdentifierFilter(
-    /** Filter by identity ID */
-    @SerialName("identityId")
-    val identityId: Uuid? = null,
-    /** Filter by identifier type (exact match) */
-    @SerialName("identifierType")
-    val identifierType: IdentifierType? = null,
-    /** Filter by multiple types (IN clause) */
-    @SerialName("identifierTypes")
-    val identifierTypes: List<IdentifierType>? = null,
-    /** Filter by value pattern (LIKE clause, use % for wildcards) */
-    @SerialName("valuePattern")
-    val valuePattern: String? = null,
-    /** Filter by exact value */
-    val value: String? = null,
-    /** Filter by primary flag */
-    @SerialName("isPrimary")
-    val isPrimary: Boolean? = null,
-    /** Filter by verified flag */
-    @SerialName("isVerified")
-    val isVerified: Boolean? = null,
-    /** Filter for currently valid identifiers only */
-    @SerialName("validOnly")
-    val validOnly: Boolean = false,
-    /** Filter by valid_from after this time */
-    @SerialName("validFromAfter")
-    val validFromAfter: Instant? = null,
-    /** Filter by valid_until before this time */
-    @SerialName("validUntilBefore")
-    val validUntilBefore: Instant? = null,
-    /** Filter identifiers created after this time */
-    @SerialName("createdAfter")
-    val createdAfter: Instant? = null,
-    /** Filter identifiers created before this time */
-    @SerialName("createdBefore")
-    val createdBefore: Instant? = null,
-    /** Include soft-deleted identifiers (default: false) */
-    @SerialName("includeDeleted")
-    val includeDeleted: Boolean = false,
-    /** Pagination and sorting */
-    val page: PageRequest = PageRequest.DEFAULT,
-) {
-    companion object {
-        /** Default filter (no filtering, default pagination) */
-        val DEFAULT = CorrelationIdentifierFilter()
+data class CorrelationIdentifierFilter
+    @JvmOverloads
+    constructor(
+        /** Filter by identity ID */
+        @SerialName("identityId")
+        val identityId: Uuid? = null,
+        /** Filter by identifier type (exact match) */
+        @SerialName("identifierType")
+        val identifierType: IdentifierType? = null,
+        /** Filter by multiple types (IN clause) */
+        @SerialName("identifierTypes")
+        val identifierTypes: List<IdentifierType>? = null,
+        /** Filter by value pattern (LIKE clause, use % for wildcards) */
+        @SerialName("valuePattern")
+        val valuePattern: String? = null,
+        /** Filter by exact value */
+        val value: String? = null,
+        /** Filter by primary flag */
+        @SerialName("isPrimary")
+        val isPrimary: Boolean? = null,
+        /** Filter by verified flag */
+        @SerialName("isVerified")
+        val isVerified: Boolean? = null,
+        /** Filter for currently valid identifiers only */
+        @SerialName("validOnly")
+        val validOnly: Boolean = false,
+        /** Filter by valid_from after this time */
+        @SerialName("validFromAfter")
+        val validFromAfter: Instant? = null,
+        /** Filter by valid_until before this time */
+        @SerialName("validUntilBefore")
+        val validUntilBefore: Instant? = null,
+        /** Filter identifiers created after this time */
+        @SerialName("createdAfter")
+        val createdAfter: Instant? = null,
+        /** Filter identifiers created before this time */
+        @SerialName("createdBefore")
+        val createdBefore: Instant? = null,
+        /** Include soft-deleted identifiers (default: false) */
+        @SerialName("includeDeleted")
+        val includeDeleted: Boolean = false,
+        /** Pagination and sorting */
+        val page: PageRequest = PageRequest.DEFAULT,
+    ) {
+        companion object {
+            /** Default filter (no filtering, default pagination) */
+            val DEFAULT = CorrelationIdentifierFilter()
 
-        /** Filter by identifier type */
-        fun byType(type: IdentifierType) = CorrelationIdentifierFilter(identifierType = type)
+            /** Filter by identifier type */
+            fun byType(type: IdentifierType) = CorrelationIdentifierFilter(identifierType = type)
 
-        /** Filter by identity */
-        fun byIdentity(identityId: Uuid) = CorrelationIdentifierFilter(identityId = identityId)
+            /** Filter by identity */
+            fun byIdentity(identityId: Uuid) = CorrelationIdentifierFilter(identityId = identityId)
 
-        /** Filter for primary identifiers only */
-        fun primaryOnly() = CorrelationIdentifierFilter(isPrimary = true)
+            /** Filter for primary identifiers only */
+            fun primaryOnly() = CorrelationIdentifierFilter(isPrimary = true)
 
-        /** Filter for verified identifiers only */
-        fun verifiedOnly() = CorrelationIdentifierFilter(isVerified = true)
+            /** Filter for verified identifiers only */
+            fun verifiedOnly() = CorrelationIdentifierFilter(isVerified = true)
 
-        /** Filter for currently valid identifiers */
-        fun validNow() = CorrelationIdentifierFilter(validOnly = true)
+            /** Filter for currently valid identifiers */
+            fun validNow() = CorrelationIdentifierFilter(validOnly = true)
 
-        /** Search by exact value */
-        fun byValue(value: String) = CorrelationIdentifierFilter(value = value)
+            /** Search by exact value */
+            fun byValue(value: String) = CorrelationIdentifierFilter(value = value)
 
-        /** Search by value pattern */
-        fun byValuePattern(pattern: String) = CorrelationIdentifierFilter(valuePattern = pattern)
+            /** Search by value pattern */
+            fun byValuePattern(pattern: String) = CorrelationIdentifierFilter(valuePattern = pattern)
+        }
+
+        /** Set pagination */
+        fun withPage(pageRequest: PageRequest) = copy(page = pageRequest)
+
+        /** Set limit */
+        fun withLimit(limit: Int) = copy(page = page.copy(limit = limit))
+
+        /** Add sorting */
+        fun withSort(
+            field: String,
+            direction: SortDirection = SortDirection.ASC,
+        ) = copy(page = page.withSort(field, direction))
     }
-
-    /** Set pagination */
-    fun withPage(pageRequest: PageRequest) = copy(page = pageRequest)
-
-    /** Set limit */
-    fun withLimit(limit: Int) = copy(page = page.copy(limit = limit))
-
-    /** Add sorting */
-    fun withSort(
-        field: String,
-        direction: SortDirection = SortDirection.ASC,
-    ) = copy(page = page.withSort(field, direction))
-}

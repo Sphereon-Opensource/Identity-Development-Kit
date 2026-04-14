@@ -21,17 +21,18 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.service.contract.ServiceCommandContract
 import com.sphereon.core.api.session.Command
 import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
 import com.sphereon.core.api.session.ICommandExecutionExtension
 import com.sphereon.core.api.session.ICommandInitExtension
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * The type of action a command performs.
  *
  * Used for structured command identity.
  */
+@JsExportCompat
 enum class ActionType {
     CREATE,
     READ,
@@ -100,24 +101,15 @@ enum class ActionType {
  */
 private const val COMMAND_ID_SEGMENT_COUNT = 3
 
+@JsExportCompat
 interface ServiceCommand<TInput : Any, TOutput : Any> :
     Command<TInput, TOutput, IdkError>,
     RegistrableServiceCommand {
-    /**
-     * App-scoped contract containing all static metadata for this command.
-     *
-     * When a contract is provided, identity and type tokens are delegated from it.
-     * Implementations that don't use contracts can override the individual properties directly.
-     */
-    val contract: ServiceCommandContract<TInput, TOutput>? get() = null
-
     /**
      * Unique identifier for registry lookup.
      *
      * Format: `{module}.{service}.{command}`
      * Examples: "kms.keys.get", "party.manager.create", "resource.booking.create"
-     *
-     * When [contract] is provided, defaults to `contract.commandId.value`.
      */
     override val commandId: String
 
@@ -127,20 +119,10 @@ interface ServiceCommand<TInput : Any, TOutput : Any> :
      */
     override val id: String get() = commandId
 
-    /**
-     * Type token for the input type.
-     *
-     * Used by codecs for deserialization. When [contract] is provided,
-     * can delegate to `contract.inputTypeToken`.
-     */
+    /** Type token for the input type. Used by codecs for deserialization. */
     val inputTypeToken: TypeToken<TInput>
 
-    /**
-     * Type token for the output type.
-     *
-     * Used by codecs for serialization. When [contract] is provided,
-     * can delegate to `contract.outputTypeToken`.
-     */
+    /** Type token for the output type. Used by codecs for serialization. */
     val outputTypeToken: TypeToken<TOutput>
 
     // ========== Structured Identity Properties ==========
@@ -176,11 +158,10 @@ interface ServiceCommand<TInput : Any, TOutput : Any> :
 
     /**
      * The semantic type of action this command performs.
-     * When [contract] is provided, delegates to `contract.actionType`.
      * Defaults to [ActionType.EXECUTE] for commands that don't specify.
      */
     val actionType: ActionType
-        get() = contract?.actionType ?: ActionType.EXECUTE
+        get() = ActionType.EXECUTE
 
     // ========== Validation ==========
 
@@ -225,6 +206,7 @@ interface ServiceCommand<TInput : Any, TOutput : Any> :
  * }
  * ```
  */
+@JsExportCompat
 interface ServiceFacade {
     /**
      * The service identifier.
@@ -275,6 +257,7 @@ interface ServiceFacade {
  * @param inputTypeToken Type token for deserializing input
  * @param outputTypeToken Type token for serializing output
  */
+@JsExportCompat
 abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any>(
     override val commandId: String,
     execution: SessionExecution,
@@ -330,6 +313,7 @@ abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any>(
  * }
  * ```
  */
+@JsExportCompat
 abstract class UnitInputServiceCommandAdapter<TOutput : Any>(
     commandId: String,
     execution: SessionExecution,

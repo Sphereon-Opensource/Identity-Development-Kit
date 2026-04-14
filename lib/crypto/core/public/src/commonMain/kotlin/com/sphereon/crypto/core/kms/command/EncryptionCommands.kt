@@ -26,8 +26,9 @@ import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
-
 // ============================================================================
 // Encrypt Command
 // ============================================================================
@@ -44,54 +45,57 @@ import kotlin.native.ObjCName
 @ObjCName("EncryptArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class EncryptArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-    val plaintext: ByteArray = byteArrayOf(),
-    val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
-    val additionalAuthenticatedData: ByteArray? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+EncryptArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+        val plaintext: ByteArray = byteArrayOf(),
+        val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
+        val additionalAuthenticatedData: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as EncryptArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (!plaintext.contentEquals(other.plaintext)) {
+                return false
+            }
+            if (algorithm != other.algorithm) {
+                return false
+            }
+            if (additionalAuthenticatedData != null) {
+                if (other.additionalAuthenticatedData == null) {
+                    return false
+                }
+                if (!additionalAuthenticatedData.contentEquals(other.additionalAuthenticatedData)) {
+                    return false
+                }
+            } else if (other.additionalAuthenticatedData != null) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as EncryptArgs
-
-        if (keyInfo != other.keyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + plaintext.contentHashCode()
+            result = 31 * result + algorithm.hashCode()
+            result = 31 * result + (additionalAuthenticatedData?.contentHashCode() ?: 0)
+            return result
         }
-        if (!plaintext.contentEquals(other.plaintext)) {
-            return false
-        }
-        if (algorithm != other.algorithm) {
-            return false
-        }
-        if (additionalAuthenticatedData != null) {
-            if (other.additionalAuthenticatedData == null) {
-                return false
-            }
-            if (!additionalAuthenticatedData.contentEquals(other.additionalAuthenticatedData)) {
-                return false
-            }
-        } else if (other.additionalAuthenticatedData != null) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = keyInfo?.hashCode() ?: 0
-        result = 31 * result + plaintext.contentHashCode()
-        result = 31 * result + algorithm.hashCode()
-        result = 31 * result + (additionalAuthenticatedData?.contentHashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Result of an encryption operation.
@@ -146,6 +150,7 @@ data class EncryptResult(
  * This command wraps the KeyManagerService.encrypt operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface EncryptCommand : ServiceCommand<EncryptArgs, EncryptResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -172,64 +177,67 @@ interface EncryptCommand : ServiceCommand<EncryptArgs, EncryptResult> {
 @ObjCName("DecryptArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class DecryptArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-    val ciphertext: ByteArray = byteArrayOf(),
-    val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
-    val iv: ByteArray = byteArrayOf(),
-    val authTag: ByteArray = byteArrayOf(),
-    val additionalAuthenticatedData: ByteArray? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+DecryptArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+        val ciphertext: ByteArray = byteArrayOf(),
+        val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
+        val iv: ByteArray = byteArrayOf(),
+        val authTag: ByteArray = byteArrayOf(),
+        val additionalAuthenticatedData: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as DecryptArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (!ciphertext.contentEquals(other.ciphertext)) {
+                return false
+            }
+            if (algorithm != other.algorithm) {
+                return false
+            }
+            if (!iv.contentEquals(other.iv)) {
+                return false
+            }
+            if (!authTag.contentEquals(other.authTag)) {
+                return false
+            }
+            if (additionalAuthenticatedData != null) {
+                if (other.additionalAuthenticatedData == null) {
+                    return false
+                }
+                if (!additionalAuthenticatedData.contentEquals(other.additionalAuthenticatedData)) {
+                    return false
+                }
+            } else if (other.additionalAuthenticatedData != null) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as DecryptArgs
-
-        if (keyInfo != other.keyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + ciphertext.contentHashCode()
+            result = 31 * result + algorithm.hashCode()
+            result = 31 * result + iv.contentHashCode()
+            result = 31 * result + authTag.contentHashCode()
+            result = 31 * result + (additionalAuthenticatedData?.contentHashCode() ?: 0)
+            return result
         }
-        if (!ciphertext.contentEquals(other.ciphertext)) {
-            return false
-        }
-        if (algorithm != other.algorithm) {
-            return false
-        }
-        if (!iv.contentEquals(other.iv)) {
-            return false
-        }
-        if (!authTag.contentEquals(other.authTag)) {
-            return false
-        }
-        if (additionalAuthenticatedData != null) {
-            if (other.additionalAuthenticatedData == null) {
-                return false
-            }
-            if (!additionalAuthenticatedData.contentEquals(other.additionalAuthenticatedData)) {
-                return false
-            }
-        } else if (other.additionalAuthenticatedData != null) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = keyInfo?.hashCode() ?: 0
-        result = 31 * result + ciphertext.contentHashCode()
-        result = 31 * result + algorithm.hashCode()
-        result = 31 * result + iv.contentHashCode()
-        result = 31 * result + authTag.contentHashCode()
-        result = 31 * result + (additionalAuthenticatedData?.contentHashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Result of a decryption operation.
@@ -265,6 +273,7 @@ data class DecryptResult(
  * This command wraps the KeyManagerService.decrypt operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface DecryptCommand : ServiceCommand<DecryptArgs, DecryptResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -288,42 +297,45 @@ interface DecryptCommand : ServiceCommand<DecryptArgs, DecryptResult> {
 @ObjCName("WrapKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class WrapKeyArgs(
-    @kotlinx.serialization.Transient
-    val wrappingKeyInfo: KeyInfoType<*>? = null,
-    val keyToWrap: ByteArray = byteArrayOf(),
-    val algorithm: KeyWrapAlgorithm = KeyWrapAlgorithm.A256KW,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+WrapKeyArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val wrappingKeyInfo: KeyInfoType<*>? = null,
+        val keyToWrap: ByteArray = byteArrayOf(),
+        val algorithm: KeyWrapAlgorithm = KeyWrapAlgorithm.A256KW,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as WrapKeyArgs
+
+            if (wrappingKeyInfo != other.wrappingKeyInfo) {
+                return false
+            }
+            if (!keyToWrap.contentEquals(other.keyToWrap)) {
+                return false
+            }
+            if (algorithm != other.algorithm) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as WrapKeyArgs
-
-        if (wrappingKeyInfo != other.wrappingKeyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = wrappingKeyInfo?.hashCode() ?: 0
+            result = 31 * result + keyToWrap.contentHashCode()
+            result = 31 * result + algorithm.hashCode()
+            return result
         }
-        if (!keyToWrap.contentEquals(other.keyToWrap)) {
-            return false
-        }
-        if (algorithm != other.algorithm) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = wrappingKeyInfo?.hashCode() ?: 0
-        result = 31 * result + keyToWrap.contentHashCode()
-        result = 31 * result + algorithm.hashCode()
-        return result
-    }
-}
 
 /**
  * Result of a key wrapping operation.
@@ -359,6 +371,7 @@ data class WrapKeyResult(
  * This command wraps the KeyManagerService.wrapKey operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface WrapKeyCommand : ServiceCommand<WrapKeyArgs, WrapKeyResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -382,42 +395,45 @@ interface WrapKeyCommand : ServiceCommand<WrapKeyArgs, WrapKeyResult> {
 @ObjCName("UnwrapKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class UnwrapKeyArgs(
-    @kotlinx.serialization.Transient
-    val unwrappingKeyInfo: KeyInfoType<*>? = null,
-    val wrappedKey: ByteArray = byteArrayOf(),
-    val algorithm: KeyWrapAlgorithm = KeyWrapAlgorithm.A256KW,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+UnwrapKeyArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val unwrappingKeyInfo: KeyInfoType<*>? = null,
+        val wrappedKey: ByteArray = byteArrayOf(),
+        val algorithm: KeyWrapAlgorithm = KeyWrapAlgorithm.A256KW,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as UnwrapKeyArgs
+
+            if (unwrappingKeyInfo != other.unwrappingKeyInfo) {
+                return false
+            }
+            if (!wrappedKey.contentEquals(other.wrappedKey)) {
+                return false
+            }
+            if (algorithm != other.algorithm) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as UnwrapKeyArgs
-
-        if (unwrappingKeyInfo != other.unwrappingKeyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = unwrappingKeyInfo?.hashCode() ?: 0
+            result = 31 * result + wrappedKey.contentHashCode()
+            result = 31 * result + algorithm.hashCode()
+            return result
         }
-        if (!wrappedKey.contentEquals(other.wrappedKey)) {
-            return false
-        }
-        if (algorithm != other.algorithm) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = unwrappingKeyInfo?.hashCode() ?: 0
-        result = 31 * result + wrappedKey.contentHashCode()
-        result = 31 * result + algorithm.hashCode()
-        return result
-    }
-}
 
 /**
  * Result of a key unwrapping operation.
@@ -453,6 +469,7 @@ data class UnwrapKeyResult(
  * This command wraps the KeyManagerService.unwrapKey operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface UnwrapKeyCommand : ServiceCommand<UnwrapKeyArgs, UnwrapKeyResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -477,14 +494,17 @@ interface UnwrapKeyCommand : ServiceCommand<UnwrapKeyArgs, UnwrapKeyResult> {
 @ObjCName("PerformKeyAgreementArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class PerformKeyAgreementArgs(
-    @kotlinx.serialization.Transient
-    val privateKeyInfo: KeyInfoType<*>? = null,
-    @kotlinx.serialization.Transient
-    val publicKeyInfo: KeyInfoType<*>? = null,
-    val algorithm: KeyAgreementAlgorithm = KeyAgreementAlgorithm.ECDH_ES,
-    val keyDataLen: Int? = null,
-)
+data class
+PerformKeyAgreementArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val privateKeyInfo: KeyInfoType<*>? = null,
+        @kotlinx.serialization.Transient
+        val publicKeyInfo: KeyInfoType<*>? = null,
+        val algorithm: KeyAgreementAlgorithm = KeyAgreementAlgorithm.ECDH_ES,
+        val keyDataLen: Int? = null,
+    )
 
 /**
  * Result of a key agreement operation.
@@ -520,6 +540,7 @@ data class PerformKeyAgreementResult(
  * This command wraps the KeyManagerService.performKeyAgreement operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface PerformKeyAgreementCommand : ServiceCommand<PerformKeyAgreementArgs, PerformKeyAgreementResult> {
     override val commandId: String get() = COMMAND_ID
 

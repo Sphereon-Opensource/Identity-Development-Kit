@@ -16,8 +16,10 @@
 
 package com.sphereon.openid.oid4vc.common
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmStatic
 
 /**
  * Credential Format shared across OpenID4VC protocols (OID4VP, OID4VCI).
@@ -29,6 +31,7 @@ import kotlinx.serialization.Serializable
  * - jwt_vp_json: JWT Verifiable Presentation
  * - vc+sd-jwt: SD-JWT Verifiable Credential (older format identifier)
  */
+@JsExportCompat
 @Serializable
 enum class CredentialFormat(
     val value: String,
@@ -104,6 +107,7 @@ enum class CredentialFormat(
          * @param value String value of credential format
          * @return CredentialFormat enum value, or null if not recognized
          */
+        @JvmStatic
         fun fromValue(value: String): CredentialFormat? = entries.find { it.value == value }
 
         /**
@@ -114,6 +118,7 @@ enum class CredentialFormat(
          * @param value String value that may contain format identifier
          * @return CredentialFormat enum value, or null if not recognized
          */
+        @JvmStatic
         fun fromValueLenient(value: String): CredentialFormat? {
             // First try exact match
             fromValue(value)?.let { return it }
@@ -140,6 +145,7 @@ enum class CredentialFormat(
          * @param presentation The presentation string to analyze
          * @return Detected CredentialFormat, or null if format cannot be determined
          */
+        @JvmStatic
         fun detectFormat(presentation: String): CredentialFormat? =
             when {
                 // SD-JWT: Contains disclosure separators (~)
@@ -160,6 +166,7 @@ enum class CredentialFormat(
          * @param format The format string to check
          * @return True if the format is recognized
          */
+        @JvmStatic
         fun isKnownFormat(format: String): Boolean = fromValueLenient(format) != null
 
         private val JWT_PATTERN = Regex("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*$")

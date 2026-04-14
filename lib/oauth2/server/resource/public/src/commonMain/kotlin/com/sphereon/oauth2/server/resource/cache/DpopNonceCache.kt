@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.resource.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Instant
@@ -44,6 +45,7 @@ import kotlin.time.Instant
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DpopNonceCache", exact = true)
+@JsExportCompat
 interface DpopNonceCache {
     /**
      * Checks if a DPoP proof jti has been used

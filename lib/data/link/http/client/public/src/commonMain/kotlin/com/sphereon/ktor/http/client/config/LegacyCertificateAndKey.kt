@@ -17,10 +17,12 @@
 
 package com.sphereon.ktor.http.client.config
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.x509.Certificate
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("LegacyCertificateAndKey", exact = true)
 interface LegacyCertificateAndKey<CertificateType : Any, KeyType : Any> {

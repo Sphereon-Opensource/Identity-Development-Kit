@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -27,6 +28,7 @@ import kotlinx.serialization.Serializable
  * - Clients to specify which method they're using
  * - Authorization Servers to validate code challenges
  */
+@JsExportCompat
 @Serializable
 enum class PkceMethod(
     val value: String,

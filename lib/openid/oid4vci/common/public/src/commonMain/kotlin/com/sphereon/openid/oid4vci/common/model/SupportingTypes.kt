@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -29,6 +30,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
  * [proofs] is optional fresh proof of possession (1.1: may be required by issuer policy).
  * [credentialResponseEncryption] optionally requests encrypted deferred response (1.1).
  */
+@JsExportCompat
 @Serializable
 data class DeferredCredentialRequest(
     @SerialName("transaction_id") val transactionId: String,
@@ -39,6 +41,7 @@ data class DeferredCredentialRequest(
 /**
  * OID4VCI 1.0 Notification Request (Section 11.1)
  */
+@JsExportCompat
 @Serializable
 data class CredentialNotification(
     @SerialName("notification_id") val notificationId: String,
@@ -49,6 +52,7 @@ data class CredentialNotification(
 /**
  * OID4VCI 1.0 Notification event types (Section 11.1)
  */
+@JsExportCompat
 @Serializable
 enum class CredentialNotificationEvent(
     val value: String,
@@ -66,6 +70,7 @@ enum class CredentialNotificationEvent(
 /**
  * OID4VCI 1.0 Nonce Endpoint Response (Section 7.2)
  */
+@JsExportCompat
 @Serializable
 data class NonceResponse(
     @SerialName("c_nonce") val cNonce: String,
@@ -82,6 +87,7 @@ data class NonceResponse(
  *
  * Use extension functions [claimsAsDescriptionObjects] (1.1) or [claimsAsMap] (1.0) for typed access.
  */
+@JsExportCompat
 @Serializable
 data class Oid4vciAuthorizationDetail(
     val type: String = "openid_credential",
@@ -97,6 +103,7 @@ data class Oid4vciAuthorizationDetail(
  * Path-based structure for specifying claims in authorization_details.
  * This is a 1.1-specific structure; 1.0 uses format-specific claim maps instead.
  */
+@JsExportCompat
 @Serializable
 data class ClaimsDescriptionObject(
     val path: List<JsonElement>,
@@ -132,6 +139,7 @@ fun Oid4vciAuthorizationDetail.claimsAsMap(): Map<String, ClaimMetadata>? {
 /**
  * OID4VCI Error Response (Section 8.3.1, 9.2.1, 11.2)
  */
+@JsExportCompat
 @Serializable
 data class Oid4vciErrorResponse(
     val error: String,

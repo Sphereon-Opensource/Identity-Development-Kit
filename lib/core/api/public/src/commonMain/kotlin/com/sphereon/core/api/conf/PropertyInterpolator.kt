@@ -21,7 +21,9 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -121,6 +123,7 @@ interface PropertyInterpolator {
 /**
  * Represents a parsed placeholder token.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PlaceholderToken", exact = true)
 @CoverageExcludedDataClass
@@ -133,6 +136,7 @@ data class PlaceholderToken(
     val path: String?,
 ) {
     companion object {
+        @JvmStatic
         fun simple(
             match: String,
             key: String,
@@ -146,6 +150,7 @@ data class PlaceholderToken(
             path = null,
         )
 
+        @JvmStatic
         fun env(
             match: String,
             key: String,
@@ -159,6 +164,7 @@ data class PlaceholderToken(
             path = null,
         )
 
+        @JvmStatic
         fun scope(
             match: String,
             scope: String,
@@ -173,6 +179,7 @@ data class PlaceholderToken(
             path = null,
         )
 
+        @JvmStatic
         fun secret(
             match: String,
             provider: String,
@@ -192,6 +199,7 @@ data class PlaceholderToken(
 /**
  * Types of placeholder patterns.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PlaceholderType", exact = true)
 enum class PlaceholderType {

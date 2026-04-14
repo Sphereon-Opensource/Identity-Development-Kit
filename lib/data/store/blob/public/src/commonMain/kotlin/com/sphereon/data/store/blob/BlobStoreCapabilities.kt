@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 
@@ -23,6 +24,7 @@ import kotlin.time.Duration
  * Declares the capabilities of a blob store backend.
  */
 @Serializable
+@JsExportCompat
 data class BlobStoreCapabilities(
     val supportsEtag: Boolean = false,
     val supportsCopy: Boolean = false,

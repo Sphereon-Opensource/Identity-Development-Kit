@@ -16,9 +16,11 @@
 
 package com.sphereon.data.store.credential.design.mapper
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.DesignBinding
 
+@JsExportCompat
 interface CredentialDesignMapper<T> {
     fun toCanonical(
         source: T,

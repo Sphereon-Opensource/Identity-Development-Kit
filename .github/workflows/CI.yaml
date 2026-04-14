@@ -71,11 +71,15 @@ jobs:
   # and dependency resolution from the JVM build. This avoids 10min cold starts per target.
   multiplatform:
     name: Multiplatform Build
+    # Heavy multiplatform build only runs on the public repo. Private CI stops at the
+    # JVM job for fast feedback (~5 min); the multiplatform matrix runs on the public
+    # repo after mirror, where it's a prerequisite for publishing.
     if: >-
-      github.event_name == 'pull_request' ||
-      github.ref == 'refs/heads/main' ||
-      github.ref == 'refs/heads/develop' ||
-      (github.event_name == 'workflow_dispatch' && inputs.full_build)
+      github.repository == 'Sphereon-Opensource/Identity-Development-Kit' &&
+      (github.event_name == 'pull_request' ||
+       github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/develop' ||
+       (github.event_name == 'workflow_dispatch' && inputs.full_build))
     runs-on: linux-x64
     timeout-minutes: 40
     needs: jvm
@@ -183,7 +187,12 @@ jobs:
   # ─── Publish: after multiplatform passes (wasmJs is never published) ───
   publish:
     name: Publish
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    # Publish only runs on the public repo (the npm/Maven publishing credentials
+    # live there; private must never publish).
+    if: >-
+      github.repository == 'Sphereon-Opensource/Identity-Development-Kit' &&
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: linux-x64
     timeout-minutes: 25
     needs: multiplatform

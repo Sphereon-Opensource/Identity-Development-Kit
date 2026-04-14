@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api.binary
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Marker type for command outputs that should be returned as raw binary bytes,
  * bypassing codec serialization in [BinaryCommandAdapter].
@@ -31,6 +33,7 @@ package com.sphereon.core.api.binary
  * @property contentType MIME type for the response (default: application/octet-stream)
  * @property headers Additional response headers (e.g., Content-Disposition, Content-Encoding)
  */
+@JsExportCompat
 data class BinaryContent(
     val data: ByteArray,
     val contentType: String = "application/octet-stream",

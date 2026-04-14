@@ -19,7 +19,6 @@ package com.sphereon.oauth2.client.service
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.client.command.CreateAuthorizationRequestUrlCommand
 import com.sphereon.oauth2.client.command.CreateAuthorizationRequestUrlOptions
 import com.sphereon.oauth2.client.command.ParseAuthorizationResponseCommand
@@ -40,7 +39,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AuthorizationService", exact = true)
-@JsExportCompat
 interface AuthorizationService {
     /**
      * Provides access to the underlying commands for advanced usage scenarios
@@ -50,7 +48,6 @@ interface AuthorizationService {
     /**
      * Container for all authorization commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val createAuthorizationRequestUrl: CreateAuthorizationRequestUrlCommand
         val parseAuthorizationResponse: ParseAuthorizationResponseCommand

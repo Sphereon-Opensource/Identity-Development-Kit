@@ -16,10 +16,12 @@
 
 package com.sphereon.oauth2.server.resource.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthenticationScheme
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.server.resource.cache.DpopNonceCache
 import com.sphereon.oauth2.server.resource.cache.TokenCache
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -41,28 +43,32 @@ import kotlin.time.Duration.Companion.minutes
  * @property requireAudienceValidation Whether to require audience validation
  * @property clockSkewTolerance Clock skew tolerance for timestamp validation
  */
-data class ResourceServerConfig(
-    val resourceServerIdentifier: String,
-    val authorizationServers: List<String>,
-    val clientAuthentication: ClientAuthenticationConfig? = null,
-    val tokenValidationStrategy: TokenValidationStrategy = TokenValidationStrategy.JWT_FIRST,
-    val allowedAuthenticationSchemes: List<AuthenticationScheme> =
-        listOf(
-            AuthenticationScheme.BEARER,
-            AuthenticationScheme.DPOP,
-        ),
-    val tokenCacheTtl: Duration = 1.hours,
-    val dpopReplayWindow: Duration = 1.minutes,
-    val dpopNonceTtl: Duration = 5.minutes,
-    val requireAudienceValidation: Boolean = true,
-    val clockSkewTolerance: Duration = Duration.ZERO,
-)
+@JsExportCompat
+data class ResourceServerConfig
+    @JvmOverloads
+    constructor(
+        val resourceServerIdentifier: String,
+        val authorizationServers: List<String>,
+        val clientAuthentication: ClientAuthenticationConfig? = null,
+        val tokenValidationStrategy: TokenValidationStrategy = TokenValidationStrategy.JWT_FIRST,
+        val allowedAuthenticationSchemes: List<AuthenticationScheme> =
+            listOf(
+                AuthenticationScheme.BEARER,
+                AuthenticationScheme.DPOP,
+            ),
+        val tokenCacheTtl: Duration = 1.hours,
+        val dpopReplayWindow: Duration = 1.minutes,
+        val dpopNonceTtl: Duration = 5.minutes,
+        val requireAudienceValidation: Boolean = true,
+        val clockSkewTolerance: Duration = Duration.ZERO,
+    )
 
 /**
  * Token validation strategy.
  *
  * Determines how the resource server validates access tokens.
  */
+@JsExportCompat
 enum class TokenValidationStrategy {
     /**
      * Try JWT verification first (fast, no network).

@@ -23,6 +23,8 @@ import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethod
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -34,9 +36,11 @@ import kotlin.native.ObjCName
 @ObjCName("DidDereferenceOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class DidDereferenceOptions(
-    val accept: String? = null,
-)
+data class DidDereferenceOptions
+    @JvmOverloads
+    constructor(
+        val accept: String? = null,
+    )
 
 /**
  * Metadata returned with DID dereferencing results.
@@ -49,28 +53,34 @@ data class DidDereferenceOptions(
 @ObjCName("DidDereferencingMetadata", exact = true)
 @JsExportCompat
 @Serializable
-data class DidDereferencingMetadata(
-    val contentType: String? = null,
-    val error: String? = null,
-    val message: String? = null,
-) {
-    companion object {
-        /**
-         * Creates metadata for successful dereferencing.
-         */
-        fun success(contentType: String = "application/did+json"): DidDereferencingMetadata = DidDereferencingMetadata(contentType = contentType)
+data class DidDereferencingMetadata
+    @JvmOverloads
+    constructor(
+        val contentType: String? = null,
+        val error: String? = null,
+        val message: String? = null,
+    ) {
+        companion object {
+            /**
+             * Creates metadata for successful dereferencing.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun success(contentType: String = "application/did+json"): DidDereferencingMetadata = DidDereferencingMetadata(contentType = contentType)
+
+            /**
+             * Creates metadata for a not-found error.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun notFound(message: String? = null): DidDereferencingMetadata = DidDereferencingMetadata(error = "notFound", message = message)
+        }
 
         /**
-         * Creates metadata for a not-found error.
+         * Checks if the dereferencing was successful.
          */
-        fun notFound(message: String? = null): DidDereferencingMetadata = DidDereferencingMetadata(error = "notFound", message = message)
+        fun isSuccess(): Boolean = error == null
     }
-
-    /**
-     * Checks if the dereferencing was successful.
-     */
-    fun isSuccess(): Boolean = error == null
-}
 
 /**
  * Result of dereferencing a DID URL.
@@ -90,71 +100,78 @@ data class DidDereferencingMetadata(
 @ObjCName("DidDereferenceResult", exact = true)
 @JsExportCompat
 @Serializable
-data class DidDereferenceResult(
-    val contentType: String,
-    val verificationMethod: VerificationMethod? = null,
-    val service: DidService? = null,
-    val didDocument: DidDocument? = null,
-    val dereferencingMetadata: DidDereferencingMetadata,
-) {
-    companion object {
-        /**
-         * Creates a result for a dereferenced verification method.
-         */
-        fun verificationMethod(vm: VerificationMethod): DidDereferenceResult =
-            DidDereferenceResult(
-                contentType = "application/did+json",
-                verificationMethod = vm,
-                dereferencingMetadata = DidDereferencingMetadata.success(),
-            )
+data class DidDereferenceResult
+    @JvmOverloads
+    constructor(
+        val contentType: String,
+        val verificationMethod: VerificationMethod? = null,
+        val service: DidService? = null,
+        val didDocument: DidDocument? = null,
+        val dereferencingMetadata: DidDereferencingMetadata,
+    ) {
+        companion object {
+            /**
+             * Creates a result for a dereferenced verification method.
+             */
+            @JvmStatic
+            fun verificationMethod(vm: VerificationMethod): DidDereferenceResult =
+                DidDereferenceResult(
+                    contentType = "application/did+json",
+                    verificationMethod = vm,
+                    dereferencingMetadata = DidDereferencingMetadata.success(),
+                )
+
+            /**
+             * Creates a result for a dereferenced service.
+             */
+            @JvmStatic
+            fun service(svc: DidService): DidDereferenceResult =
+                DidDereferenceResult(
+                    contentType = "application/did+json",
+                    service = svc,
+                    dereferencingMetadata = DidDereferencingMetadata.success(),
+                )
+
+            /**
+             * Creates a result for a full DID document.
+             */
+            @JvmStatic
+            fun document(doc: DidDocument): DidDereferenceResult =
+                DidDereferenceResult(
+                    contentType = "application/did+json",
+                    didDocument = doc,
+                    dereferencingMetadata = DidDereferencingMetadata.success(),
+                )
+
+            /**
+             * Creates a not-found error result.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun notFound(message: String? = null): DidDereferenceResult =
+                DidDereferenceResult(
+                    contentType = "application/did+json",
+                    dereferencingMetadata = DidDereferencingMetadata.notFound(message),
+                )
+        }
 
         /**
-         * Creates a result for a dereferenced service.
+         * Checks if the dereferencing was successful.
          */
-        fun service(svc: DidService): DidDereferenceResult =
-            DidDereferenceResult(
-                contentType = "application/did+json",
-                service = svc,
-                dereferencingMetadata = DidDereferencingMetadata.success(),
-            )
+        fun isSuccess(): Boolean = dereferencingMetadata.isSuccess()
 
         /**
-         * Creates a result for a full DID document.
+         * Checks if the result contains a verification method.
          */
-        fun document(doc: DidDocument): DidDereferenceResult =
-            DidDereferenceResult(
-                contentType = "application/did+json",
-                didDocument = doc,
-                dereferencingMetadata = DidDereferencingMetadata.success(),
-            )
+        fun hasVerificationMethod(): Boolean = verificationMethod != null
 
         /**
-         * Creates a not-found error result.
+         * Checks if the result contains a service.
          */
-        fun notFound(message: String? = null): DidDereferenceResult =
-            DidDereferenceResult(
-                contentType = "application/did+json",
-                dereferencingMetadata = DidDereferencingMetadata.notFound(message),
-            )
+        fun hasService(): Boolean = service != null
+
+        /**
+         * Checks if the result contains a full document.
+         */
+        fun hasDocument(): Boolean = didDocument != null
     }
-
-    /**
-     * Checks if the dereferencing was successful.
-     */
-    fun isSuccess(): Boolean = dereferencingMetadata.isSuccess()
-
-    /**
-     * Checks if the result contains a verification method.
-     */
-    fun hasVerificationMethod(): Boolean = verificationMethod != null
-
-    /**
-     * Checks if the result contains a service.
-     */
-    fun hasService(): Boolean = service != null
-
-    /**
-     * Checks if the result contains a full document.
-     */
-    fun hasDocument(): Boolean = didDocument != null
-}

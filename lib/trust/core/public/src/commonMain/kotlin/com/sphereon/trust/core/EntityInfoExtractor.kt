@@ -6,6 +6,8 @@
 
 package com.sphereon.trust.core
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.trust.core.model.DiscoveredEntityInfo
 import com.sphereon.trust.core.model.EntityDiscoveryOptions
 import com.sphereon.trust.core.model.TrustContext
@@ -20,8 +22,10 @@ import com.sphereon.trust.core.model.TrustContext
  * Implementations are registered via `@ContributesIntoSet` and used by both
  * the trust validation enrichment flow and the standalone [DiscoverEntityInfoCommand].
  */
+@JsExportCompat
 interface EntityInfoExtractor {
     /** The trust context types this extractor supports */
+    @JsExportIgnoreCompat
     val supportedContextTypes: Set<String>
 
     /** Whether this extractor supports the given context */

@@ -20,8 +20,10 @@
 package com.sphereon.data.store.party.model
 
 import com.sphereon.core.api.HasId
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -32,39 +34,42 @@ import kotlin.uuid.Uuid
  * In the "everything is a party" pattern, tenants can extend Party.
  * Tenants provide data isolation - all queries are filtered by tenant_id.
  */
+@JsExportCompat
 @Serializable
-data class Tenant(
-    /** Unique identifier for this tenant */
-    @SerialName("id")
-    val tenantId: String,
-    /** The type of tenant */
-    @SerialName("tenantType")
-    val tenantType: TenantType,
-    /** Human-readable name for this tenant */
-    val name: String,
-    /** Optional description of this tenant */
-    val description: String? = null,
-    /** The organization party that owns this tenant */
-    @SerialName("ownerPartyId")
-    val ownerPartyId: Uuid? = null,
-    /** When the tenant was created */
-    @SerialName("createdAt")
-    val createdAt: Instant,
-    /** Who created the tenant (party ID) */
-    @SerialName("createdById")
-    val createdById: Uuid? = null,
-    /** When the tenant was last updated */
-    @SerialName("updatedAt")
-    val updatedAt: Instant,
-    /** Who last updated the tenant (party ID) */
-    @SerialName("updatedById")
-    val updatedById: Uuid? = null,
-    /** When the tenant was soft-deleted (null = active) */
-    @SerialName("deletedAt")
-    val deletedAt: Instant? = null,
-    /** Who deleted the tenant (party ID) */
-    @SerialName("deletedById")
-    val deletedById: Uuid? = null,
-) : HasId {
-    override val id: String get() = tenantId
-}
+data class Tenant
+    @JvmOverloads
+    constructor(
+        /** Unique identifier for this tenant */
+        @SerialName("id")
+        val tenantId: String,
+        /** The type of tenant */
+        @SerialName("tenantType")
+        val tenantType: TenantType,
+        /** Human-readable name for this tenant */
+        val name: String,
+        /** Optional description of this tenant */
+        val description: String? = null,
+        /** The organization party that owns this tenant */
+        @SerialName("ownerPartyId")
+        val ownerPartyId: Uuid? = null,
+        /** When the tenant was created */
+        @SerialName("createdAt")
+        val createdAt: Instant,
+        /** Who created the tenant (party ID) */
+        @SerialName("createdById")
+        val createdById: Uuid? = null,
+        /** When the tenant was last updated */
+        @SerialName("updatedAt")
+        val updatedAt: Instant,
+        /** Who last updated the tenant (party ID) */
+        @SerialName("updatedById")
+        val updatedById: Uuid? = null,
+        /** When the tenant was soft-deleted (null = active) */
+        @SerialName("deletedAt")
+        val deletedAt: Instant? = null,
+        /** Who deleted the tenant (party ID) */
+        @SerialName("deletedById")
+        val deletedById: Uuid? = null,
+    ) : HasId {
+        override val id: String get() = tenantId
+    }

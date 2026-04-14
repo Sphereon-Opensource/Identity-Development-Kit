@@ -17,6 +17,9 @@
 
 package com.sphereon.core.api.error
 
+import com.sphereon.core.compat.JsExportCompat
+
+@JsExportCompat
 class NotFoundException(
     val resource: String,
     message: String? = null,

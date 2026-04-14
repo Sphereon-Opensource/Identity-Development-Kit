@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.auth.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
@@ -48,6 +49,7 @@ import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
  *
  * Implementations must be thread-safe for concurrent operations.
  */
+@JsExportCompat
 interface UniversalOid4vpService {
     /**
      * Create a new OID4VP authorization request.

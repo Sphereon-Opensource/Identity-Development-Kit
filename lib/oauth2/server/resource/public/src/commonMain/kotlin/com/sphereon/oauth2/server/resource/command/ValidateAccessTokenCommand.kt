@@ -30,6 +30,7 @@ import kotlin.native.ObjCName
  * @property requiredScope Required scope for this resource (optional, comma/space-separated)
  * @property requiredAudience Required audience for this resource (optional)
  */
+@JsExportCompat
 data class ValidateAccessTokenArgs(
     val request: ResourceRequest,
     val requiredScope: String? = null,
@@ -65,6 +66,7 @@ data class ValidateAccessTokenArgs(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ValidateAccessTokenCommand", exact = true)
+@JsExportCompat
 interface ValidateAccessTokenCommand : ServiceCommand<ValidateAccessTokenArgs, VerifiedResourceRequest> {
     override val commandId: String get() = COMMAND_ID
 

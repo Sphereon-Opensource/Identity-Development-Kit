@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.binary
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 
@@ -47,6 +48,7 @@ import kotlin.reflect.typeOf
  * @param T The type to capture
  * @property kType The Kotlin type representation
  */
+@JsExportCompat
 class TypeToken<T>
     @PublishedApi
     internal constructor(

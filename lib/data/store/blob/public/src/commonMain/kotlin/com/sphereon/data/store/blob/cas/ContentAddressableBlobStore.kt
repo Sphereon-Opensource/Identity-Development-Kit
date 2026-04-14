@@ -18,6 +18,7 @@ package com.sphereon.data.store.blob.cas
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.BlobMetadata
 import com.sphereon.data.store.blob.ResolvedBlobInfo
@@ -27,6 +28,7 @@ import com.sphereon.data.store.blob.ResolvedBlobInfo
  *
  * Blobs are stored by their content hash, enabling deduplication and integrity verification.
  */
+@JsExportCompat
 interface ContentAddressableBlobStore {
     /**
      * Store data by content address. Returns the content address descriptor.

@@ -16,16 +16,23 @@
 
 package com.sphereon.data.store.schema.registry
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class SchemaRecordFilter(
-    val schemaType: SchemaType? = null,
-    val namespace: String? = null,
-    val hostingMode: SchemaHostingMode? = null,
-    val nameContains: String? = null,
-) {
-    companion object {
-        val DEFAULT = SchemaRecordFilter()
+data class SchemaRecordFilter
+    @JvmOverloads
+    constructor(
+        val schemaType: SchemaType? = null,
+        val namespace: String? = null,
+        val hostingMode: SchemaHostingMode? = null,
+        val nameContains: String? = null,
+    ) {
+        companion object {
+            @JvmField
+            val DEFAULT = SchemaRecordFilter()
+        }
     }
-}

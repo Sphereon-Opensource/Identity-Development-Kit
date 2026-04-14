@@ -16,6 +16,9 @@
 
 package com.sphereon.core.api.http
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
+
 /**
  * Sealed class representing HTTP request/response body content.
  *
@@ -38,6 +41,7 @@ package com.sphereon.core.api.http
  * }
  * ```
  */
+@JsExportCompat
 sealed class GenericHttpBody {
     /**
      * Indicates whether this body contains any content.
@@ -164,6 +168,7 @@ sealed class GenericHttpBody {
          * Creates a [GenericHttpBody] from a nullable String.
          * Returns [Empty] if the string is null or blank.
          */
+        @JvmStatic
         fun ofText(value: String?): GenericHttpBody =
             when {
                 value.isNullOrBlank() -> Empty
@@ -174,6 +179,7 @@ sealed class GenericHttpBody {
          * Creates a [GenericHttpBody] from a nullable ByteArray.
          * Returns [Empty] if the array is null or empty.
          */
+        @JvmStatic
         fun ofBytes(value: ByteArray?): GenericHttpBody =
             when {
                 value == null || value.isEmpty() -> Empty
@@ -183,6 +189,7 @@ sealed class GenericHttpBody {
         /**
          * Creates a lazily-evaluated text body.
          */
+        @JvmStatic
         fun ofLazyText(
             supplier: () -> String?,
             charset: String = "utf-8",
@@ -191,6 +198,7 @@ sealed class GenericHttpBody {
         /**
          * Creates a lazily-evaluated binary body.
          */
+        @JvmStatic
         fun ofLazyBytes(supplier: () -> ByteArray?): GenericHttpBody = LazyBytes(supplier)
     }
 }

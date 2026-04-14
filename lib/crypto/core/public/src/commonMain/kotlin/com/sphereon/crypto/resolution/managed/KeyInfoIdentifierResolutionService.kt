@@ -16,9 +16,9 @@
  */
 
 package com.sphereon.crypto.resolution.managed
-
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 

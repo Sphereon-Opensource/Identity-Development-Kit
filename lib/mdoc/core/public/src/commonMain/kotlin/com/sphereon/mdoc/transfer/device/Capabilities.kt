@@ -19,10 +19,13 @@ package com.sphereon.mdoc.transfer.device
 import com.sphereon.cbor.CborItem
 import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.NumberLabel
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseCurve
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Capabilities", exact = true)
 data class Capabilities(
@@ -34,10 +37,19 @@ data class Capabilities(
     val additionalItems: CborMap<NumberLabel, CborItem<*>>? = null,
 ) {
     companion object {
+        @JvmStatic
         val MAC_KEYS_SUPPORT = NumberLabel(0)
+
+        @JvmStatic
         val MAC_KEY_CURVES = NumberLabel(1)
+
+        @JvmStatic
         val HANDOVER_SESSION_ESTABLISHMENT_SUPPORT = NumberLabel(2)
+
+        @JvmStatic
         val READER_AUTH_ALL_SUPPORT = NumberLabel(3)
+
+        @JvmStatic
         val EXTENDED_REQUEST_SUPPORT = NumberLabel(4)
     }
 }

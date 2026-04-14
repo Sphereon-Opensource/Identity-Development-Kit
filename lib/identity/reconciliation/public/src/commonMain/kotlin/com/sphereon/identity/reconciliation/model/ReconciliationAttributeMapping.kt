@@ -16,7 +16,9 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Rich attribute mapping model for reconciliation providers.
@@ -29,10 +31,13 @@ import kotlinx.serialization.Serializable
  * @param identifierType Optional identifier type hint (e.g., "SUBJECT_ID", "EMAIL", "INSTITUTION_ID")
  * @param required Whether this attribute must be present for reconciliation to succeed
  */
+@JsExportCompat
 @Serializable
-data class ReconciliationAttributeMapping(
-    val source: String,
-    val target: String,
-    val identifierType: String? = null,
-    val required: Boolean = false,
-)
+data class ReconciliationAttributeMapping
+    @JvmOverloads
+    constructor(
+        val source: String,
+        val target: String,
+        val identifierType: String? = null,
+        val required: Boolean = false,
+    )

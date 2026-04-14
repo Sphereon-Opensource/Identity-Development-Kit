@@ -10,6 +10,8 @@ import com.sphereon.core.api.events.EventCategory
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventType
 import com.sphereon.core.api.tracing.TraceContext
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 
 /**
  * Super interface for event emission services.
@@ -28,6 +30,7 @@ import com.sphereon.core.api.tracing.TraceContext
  * @see UserEventService for user-context scoped
  * @see SessionEventService for session-scoped
  */
+@JsExportCompat
 interface EventService {
     /**
      * Which scope this service operates in.
@@ -54,6 +57,7 @@ interface EventService {
      * @param encryptionKeyAlias Optional key alias for encryption (uses default if null)
      * @param encryptParts Which parts to encrypt (default: payload only)
      */
+    @JsExportIgnoreCompat
     suspend fun emit(
         event: Event,
         sign: Boolean = false,
@@ -72,6 +76,7 @@ interface EventService {
 /**
  * Builder interface for constructing events.
  */
+@JsExportCompat
 interface EventBuilder {
     fun type(type: EventType): EventBuilder
 

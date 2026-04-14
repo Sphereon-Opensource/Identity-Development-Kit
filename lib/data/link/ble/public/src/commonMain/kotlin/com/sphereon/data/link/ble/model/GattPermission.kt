@@ -17,9 +17,11 @@
 
 package com.sphereon.data.link.ble.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GattPermission", exact = true)
 enum class GattPermission {

@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.transport
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.engagement.EngagementData
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
@@ -38,6 +39,7 @@ import kotlin.native.ObjCName
  * @SingleIn(AppScope::class)
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("BleTransportFactory", exact = true)
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocTransportFactory", exact = true)
  * class BleTransportFactory(

@@ -19,6 +19,7 @@ package com.sphereon.ui.prompt.core
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -82,6 +83,7 @@ enum class PromptPriority(
         /**
          * Returns priorities sorted from highest to lowest priority.
          */
+        @JvmStatic
         fun sortedByPriority(): List<PromptPriority> = entries.sortedBy { it.order }
     }
 }

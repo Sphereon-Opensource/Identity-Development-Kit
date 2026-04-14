@@ -22,6 +22,7 @@ import com.sphereon.core.api.conf.getConfig
 import com.sphereon.core.api.conf.toCommandScopedBinder
 import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.context.IdkScope
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.UserScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -50,6 +51,7 @@ import kotlin.native.ObjCName
  * `by.command` maps, since command IDs contain dots that conflict with property key
  * separators. The `by.module` map works well for simple single-segment keys.
  */
+@JsExportCompat
 @Serializable
 data class LogPolicyProperties(
     val minLevel: LogLevel? = null,
@@ -61,6 +63,7 @@ data class LogPolicyProperties(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class LogPolicyByProperties(
     val scope: Map<String, String> = emptyMap(),
@@ -69,6 +72,7 @@ data class LogPolicyByProperties(
     val command: Map<String, String> = emptyMap(),
 )
 
+@JsExportCompat
 @Serializable
 data class LogPolicyDisabledProperties(
     val scopes: List<String> = emptyList(),

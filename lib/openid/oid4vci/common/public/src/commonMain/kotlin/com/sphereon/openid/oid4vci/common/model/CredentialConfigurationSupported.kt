@@ -16,12 +16,14 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.common.serializer.CredentialConfigurationSupportedSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
+@JsExportCompat
 @Serializable(with = CredentialConfigurationSupportedSerializer::class)
 data class CredentialConfigurationSupported(
     val format: String,
@@ -40,18 +42,21 @@ data class CredentialConfigurationSupported(
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
 )
 
+@JsExportCompat
 @Serializable
 data class KeyAttestationsRequired(
     @SerialName("key_storage") val keyStorage: List<String>? = null,
     @SerialName("user_authentication") val userAuthentication: List<String>? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class ProofTypeSupported(
     @SerialName("proof_signing_alg_values_supported") val proofSigningAlgValuesSupported: List<String>,
     @SerialName("key_attestations_required") val keyAttestationsRequired: KeyAttestationsRequired? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class CredentialDefinition(
     val type: List<String>? = null,
@@ -59,6 +64,7 @@ data class CredentialDefinition(
     @SerialName("credentialSubject") val credentialSubject: Map<String, ClaimMetadata>? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class ClaimMetadata(
     val mandatory: Boolean? = null,
@@ -66,12 +72,14 @@ data class ClaimMetadata(
     val display: List<ClaimDisplay>? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class ClaimDisplay(
     val name: String,
     val locale: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class CredentialResponseEncryption(
     @SerialName("alg_values_supported") val algValuesSupported: List<String>,
@@ -83,6 +91,7 @@ data class CredentialResponseEncryption(
 /**
  * OID4VCI 1.1 credential metadata within a credential configuration.
  */
+@JsExportCompat
 @Serializable
 data class CredentialMetadata(
     val display: List<DisplayProperties>? = null,
@@ -95,6 +104,7 @@ data class CredentialMetadata(
  * [path] elements can be strings (field names) or integers (array indices),
  * hence modeled as [JsonElement].
  */
+@JsExportCompat
 @Serializable
 data class CredentialMetadataClaim(
     val path: List<JsonElement>,

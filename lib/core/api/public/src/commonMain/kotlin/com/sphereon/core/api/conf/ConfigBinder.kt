@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -41,6 +42,7 @@ import kotlin.native.ObjCName
  * Interface for binding configuration properties to typed objects.
  * Uses kotlinx.serialization for type-safe deserialization.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigBinder", exact = true)
 interface ConfigBinder {
@@ -177,6 +179,7 @@ inline fun <reified T> ConfigBinder.getConfigMapResult(
 /**
  * Strategy for merging JSON objects from multiple scopes.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JsonMergeStrategy", exact = true)
 enum class JsonMergeStrategy {
@@ -193,6 +196,7 @@ enum class JsonMergeStrategy {
 /**
  * Default implementation of ConfigBinder using PropertyResolver.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultConfigBinder", exact = true)
 class DefaultConfigBinder(
@@ -683,6 +687,7 @@ fun ConfigEnvironment.toConfigBinder(
  * ConfigBinder that supports hierarchical scope merging.
  * Merges configuration from parent environments into child environments.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HierarchicalConfigBinder", exact = true)
 class HierarchicalConfigBinder(

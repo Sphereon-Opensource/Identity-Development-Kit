@@ -22,6 +22,7 @@ import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import kotlin.jvm.JvmOverloads
 
 /**
  * Signature parameters for one-step JWS/JWT signing via [com.sphereon.crypto.core.sign.SignatureService.sign].
@@ -36,12 +37,16 @@ import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
  * @property opts JWS creation options (header overrides, issuer payload update control).
  * @property payload Optional explicit JWS payload (JsonObject or String). If null, [SignInput.input] bytes are used.
  */
-data class JwsSignatureParameters(
-    override val signatureLevel: SignatureLevel = SignatureLevel.JWS,
-    override val signaturePackaging: SignaturePackaging = SignaturePackaging.ENVELOPING,
-    override val digestAlgorithm: DigestAlg? = null,
-    val issuer: ManagedIdentifierOptsOrResult,
-    val mode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
-    val opts: CreateJwsOpts = CreateJwsOpts(),
-    val payload: Any? = null,
-) : SignatureParameters
+@JsExportCompat
+data class
+JwsSignatureParameters
+    @JvmOverloads
+    constructor(
+        override val signatureLevel: SignatureLevel = SignatureLevel.JWS,
+        override val signaturePackaging: SignaturePackaging = SignaturePackaging.ENVELOPING,
+        override val digestAlgorithm: DigestAlg? = null,
+        val issuer: ManagedIdentifierOptsOrResult,
+        val mode: JwsIdentifierMode = JwsIdentifierMode.AUTO,
+        val opts: CreateJwsOpts = CreateJwsOpts(),
+        val payload: Any? = null,
+    ) : SignatureParameters

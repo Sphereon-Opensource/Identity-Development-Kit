@@ -23,6 +23,7 @@ import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -42,54 +43,57 @@ import kotlin.time.Instant
 @JsExportCompat
 // Note: @Serializable disabled due to compiler exception with ByteArray/Instant/ResolvedKeyInfoType combination
 // Use manual serialization if needed
-data class Signature(
+data class
+Signature
+    @JvmOverloads
+    constructor(
 //    @Serializable(with = Base64Serializer::class)
-    val value: ByteArray,
-    val algorithm: SignatureAlgorithm,
-    val signMode: SigningMode,
-    @Serializable(with = ResolvedKeyInfoSerializer::class)
-    val keyInfo: ResolvedKeyInfoType<*>,
-    val level: SignatureLevel,
+        val value: ByteArray,
+        val algorithm: SignatureAlgorithm,
+        val signMode: SigningMode,
+        @Serializable(with = ResolvedKeyInfoSerializer::class)
+        val keyInfo: ResolvedKeyInfoType<*>,
+        val level: SignatureLevel,
 //    @Transient
-    val date: Instant = Clock.System.now(),
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        val date: Instant = Clock.System.now(),
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other !is Signature) {
+                return false
+            }
+
+            if (!value.contentEquals(other.value)) {
+                return false
+            }
+            if (algorithm != other.algorithm) {
+                return false
+            }
+            if (signMode != other.signMode) {
+                return false
+            }
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (level != other.level) {
+                return false
+            }
+            if (date != other.date) {
+                return false
+            }
+
             return true
         }
-        if (other !is Signature) {
-            return false
-        }
 
-        if (!value.contentEquals(other.value)) {
-            return false
+        override fun hashCode(): Int {
+            var result = value.contentHashCode()
+            result = 31 * result + algorithm.hashCode()
+            result = 31 * result + signMode.hashCode()
+            result = 31 * result + keyInfo.hashCode()
+            result = 31 * result + level.hashCode()
+            result = 31 * result + date.hashCode()
+            return result
         }
-        if (algorithm != other.algorithm) {
-            return false
-        }
-        if (signMode != other.signMode) {
-            return false
-        }
-        if (keyInfo != other.keyInfo) {
-            return false
-        }
-        if (level != other.level) {
-            return false
-        }
-        if (date != other.date) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = value.contentHashCode()
-        result = 31 * result + algorithm.hashCode()
-        result = 31 * result + signMode.hashCode()
-        result = 31 * result + keyInfo.hashCode()
-        result = 31 * result + level.hashCode()
-        result = 31 * result + date.hashCode()
-        return result
-    }
-}

@@ -17,7 +17,6 @@
 
 package com.sphereon.di.context
 
-import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -37,7 +36,6 @@ import kotlin.native.ObjCName
  * However typically you will want to check the type of principal even if you are not interested. For instance a background session typically is not running as a regular user.*
  *
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UserScope", exact = true)
 public abstract class UserScope private constructor()

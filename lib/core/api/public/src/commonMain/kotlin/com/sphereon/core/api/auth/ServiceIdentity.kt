@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api.auth
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Provides the identity of the current service for outbound propagation.
  *
@@ -24,6 +26,7 @@ package com.sphereon.core.api.auth
  * The service ID is attached to outbound gRPC calls as an `X-Service-Id` header
  * so receiving services can identify the caller.
  */
+@JsExportCompat
 interface ServiceIdentity {
     val serviceId: String
 }

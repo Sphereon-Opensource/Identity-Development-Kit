@@ -16,45 +16,56 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class EntityLocaleDesign(
-    val locale: String,
-    val displayName: String? = null,
-    val description: String? = null,
-)
+data class EntityLocaleDesign
+    @JvmOverloads
+    constructor(
+        val locale: String,
+        val displayName: String? = null,
+        val description: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class IssuerDesignRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val alias: String? = null,
-    val hostingMode: DesignHostingMode,
-    val bindings: List<DesignBinding>,
-    val partyId: Uuid? = null,
-    val displays: List<EntityLocaleDesign>,
-    val renderVariantIds: List<Uuid> = emptyList(),
-    val sourceSnapshotIds: List<Uuid> = emptyList(),
-    val contentHash: String? = null,
-    val createdAt: Instant,
-    val updatedAt: Instant,
-)
+data class IssuerDesignRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val alias: String? = null,
+        val hostingMode: DesignHostingMode,
+        val bindings: List<DesignBinding>,
+        val partyId: Uuid? = null,
+        val displays: List<EntityLocaleDesign>,
+        val renderVariantIds: List<Uuid> = emptyList(),
+        val sourceSnapshotIds: List<Uuid> = emptyList(),
+        val contentHash: String? = null,
+        val createdAt: Instant,
+        val updatedAt: Instant,
+    )
 
+@JsExportCompat
 @Serializable
-data class VerifierDesignRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val alias: String? = null,
-    val hostingMode: DesignHostingMode,
-    val bindings: List<DesignBinding>,
-    val partyId: Uuid? = null,
-    val displays: List<EntityLocaleDesign>,
-    val renderVariantIds: List<Uuid> = emptyList(),
-    val sourceSnapshotIds: List<Uuid> = emptyList(),
-    val contentHash: String? = null,
-    val createdAt: Instant,
-    val updatedAt: Instant,
-)
+data class VerifierDesignRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val alias: String? = null,
+        val hostingMode: DesignHostingMode,
+        val bindings: List<DesignBinding>,
+        val partyId: Uuid? = null,
+        val displays: List<EntityLocaleDesign>,
+        val renderVariantIds: List<Uuid> = emptyList(),
+        val sourceSnapshotIds: List<Uuid> = emptyList(),
+        val contentHash: String? = null,
+        val createdAt: Instant,
+        val updatedAt: Instant,
+    )

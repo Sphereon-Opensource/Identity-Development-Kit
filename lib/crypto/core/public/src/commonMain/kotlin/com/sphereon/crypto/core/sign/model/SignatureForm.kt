@@ -24,6 +24,7 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlin.jvm.JvmStatic
 
 /**
  * Represents a digital signature form (format/standard).
@@ -48,12 +49,15 @@ open class SignatureForm(
 
     companion object {
         /** Simply sign a digest or raw bytearray using the key */
+        @JvmStatic
         val RAW = SignatureForm("RAW")
 
         /** JSON Web Signature */
+        @JvmStatic
         val JWS = SignatureForm("JWS")
 
         /** CBOR Object Signing and Encryption */
+        @JvmStatic
         val COSE = SignatureForm("COSE")
 
         private val registry = mutableMapOf<String, SignatureForm>()
@@ -61,6 +65,7 @@ open class SignatureForm(
         /**
          * All currently registered signature forms.
          */
+        @JvmStatic
         val entries: List<SignatureForm> get() = registry.values.toList()
 
         init {
@@ -71,6 +76,7 @@ open class SignatureForm(
          * Register a signature form in the global registry.
          * Used by EDK to register eIDAS forms (CAdES, PAdES, etc.).
          */
+        @JvmStatic
         fun register(form: SignatureForm): SignatureForm {
             registry[form.value] = form
             return form
@@ -80,6 +86,7 @@ open class SignatureForm(
          * Look up a signature form by its string value.
          * Returns the registered instance if found, or creates an ad-hoc instance.
          */
+        @JvmStatic
         fun fromValue(value: String): SignatureForm = registry[value] ?: SignatureForm(value)
     }
 }

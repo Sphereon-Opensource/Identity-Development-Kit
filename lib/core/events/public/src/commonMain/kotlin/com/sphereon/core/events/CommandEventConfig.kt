@@ -5,7 +5,10 @@
 
 package com.sphereon.core.events
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 
 /**
  * Configuration for automatic command event emission.
@@ -53,119 +56,125 @@ import kotlinx.serialization.Serializable
  * @see SilentCommand for commands that should never emit events
  */
 @Serializable
-data class CommandEventConfig(
-    /**
-     * Global enable/disable for all command events.
-     * If false, no command events are emitted regardless of patterns.
-     */
-    val enabled: Boolean = true,
-    /**
-     * Include patterns for command IDs.
-     * Commands matching any of these patterns will emit events
-     * (unless excluded or overridden).
-     * Default is ["**"] which matches all commands.
-     */
-    val includePatterns: List<String> = listOf("**"),
-    /**
-     * Exclude patterns for command IDs.
-     * Commands matching any of these patterns will NOT emit events.
-     * Exclusions are checked before inclusions.
-     */
-    val excludePatterns: List<String> = emptyList(),
-    /**
-     * Per-command overrides.
-     * Map of command ID to enabled status.
-     * These take precedence over patterns.
-     */
-    val commandOverrides: Map<String, Boolean> = emptyMap(),
-    /**
-     * Whether to emit events when commands succeed.
-     */
-    val emitOnSuccess: Boolean = true,
-    /**
-     * Whether to emit events when commands fail.
-     */
-    val emitOnFailure: Boolean = true,
-    /**
-     * Whether to emit COMMAND_STARTED events.
-     * Set to false to only emit completion events.
-     */
-    val emitOnStart: Boolean = true,
-    /**
-     * Whether to sign command events.
-     */
-    val signEvents: Boolean = false,
-    /**
-     * Key alias for signing (null = use default).
-     */
-    val signingKeyAlias: String? = null,
-    /**
-     * Whether to encrypt command event payloads.
-     */
-    val encryptPayload: Boolean = false,
-    /**
-     * Key alias for encryption (null = use default).
-     */
-    val encryptionKeyAlias: String? = null,
-) {
-    /**
-     * Check if events should be emitted for a command.
-     *
-     * @param commandId The command ID to check
-     * @return true if events should be emitted for this command
-     */
-    fun shouldEmit(commandId: String): Boolean {
-        // 1. Check global enabled
-        if (!enabled) {
-            return false
+@JsExportCompat
+data class CommandEventConfig
+    @JvmOverloads
+    constructor(
+        /**
+         * Global enable/disable for all command events.
+         * If false, no command events are emitted regardless of patterns.
+         */
+        val enabled: Boolean = true,
+        /**
+         * Include patterns for command IDs.
+         * Commands matching any of these patterns will emit events
+         * (unless excluded or overridden).
+         * Default is ["**"] which matches all commands.
+         */
+        val includePatterns: List<String> = listOf("**"),
+        /**
+         * Exclude patterns for command IDs.
+         * Commands matching any of these patterns will NOT emit events.
+         * Exclusions are checked before inclusions.
+         */
+        val excludePatterns: List<String> = emptyList(),
+        /**
+         * Per-command overrides.
+         * Map of command ID to enabled status.
+         * These take precedence over patterns.
+         */
+        val commandOverrides: Map<String, Boolean> = emptyMap(),
+        /**
+         * Whether to emit events when commands succeed.
+         */
+        val emitOnSuccess: Boolean = true,
+        /**
+         * Whether to emit events when commands fail.
+         */
+        val emitOnFailure: Boolean = true,
+        /**
+         * Whether to emit COMMAND_STARTED events.
+         * Set to false to only emit completion events.
+         */
+        val emitOnStart: Boolean = true,
+        /**
+         * Whether to sign command events.
+         */
+        val signEvents: Boolean = false,
+        /**
+         * Key alias for signing (null = use default).
+         */
+        val signingKeyAlias: String? = null,
+        /**
+         * Whether to encrypt command event payloads.
+         */
+        val encryptPayload: Boolean = false,
+        /**
+         * Key alias for encryption (null = use default).
+         */
+        val encryptionKeyAlias: String? = null,
+    ) {
+        /**
+         * Check if events should be emitted for a command.
+         *
+         * @param commandId The command ID to check
+         * @return true if events should be emitted for this command
+         */
+        fun shouldEmit(commandId: String): Boolean {
+            // 1. Check global enabled
+            if (!enabled) {
+                return false
+            }
+
+            // 2. Check per-command override
+            commandOverrides[commandId]?.let { return it }
+
+            // 3. Check exclude patterns first
+            if (excludePatterns.any { matchGlob(commandId, it) }) {
+                return false
+            }
+
+            // 4. Check include patterns
+            return includePatterns.any { matchGlob(commandId, it) }
         }
 
-        // 2. Check per-command override
-        commandOverrides[commandId]?.let { return it }
+        /**
+         * Check if a started event should be emitted.
+         */
+        fun shouldEmitStart(commandId: String): Boolean = emitOnStart && shouldEmit(commandId)
 
-        // 3. Check exclude patterns first
-        if (excludePatterns.any { matchGlob(commandId, it) }) {
-            return false
+        /**
+         * Check if a success event should be emitted.
+         */
+        fun shouldEmitSuccess(commandId: String): Boolean = emitOnSuccess && shouldEmit(commandId)
+
+        /**
+         * Check if a failure event should be emitted.
+         */
+        fun shouldEmitFailure(commandId: String): Boolean = emitOnFailure && shouldEmit(commandId)
+
+        companion object {
+            /**
+             * Default configuration that emits events for all commands.
+             */
+            @JvmField
+            val DEFAULT: CommandEventConfig = CommandEventConfig()
+
+            /**
+             * Configuration that disables all command events.
+             */
+            @JvmField
+            val DISABLED: CommandEventConfig = CommandEventConfig(enabled = false)
+
+            /**
+             * Configuration that only emits failure events.
+             */
+            @JvmField
+            val FAILURES_ONLY: CommandEventConfig =
+                CommandEventConfig(
+                    emitOnSuccess = false,
+                    emitOnStart = false,
+                    emitOnFailure = true,
+                )
         }
-
-        // 4. Check include patterns
-        return includePatterns.any { matchGlob(commandId, it) }
     }
-
-    /**
-     * Check if a started event should be emitted.
-     */
-    fun shouldEmitStart(commandId: String): Boolean = emitOnStart && shouldEmit(commandId)
-
-    /**
-     * Check if a success event should be emitted.
-     */
-    fun shouldEmitSuccess(commandId: String): Boolean = emitOnSuccess && shouldEmit(commandId)
-
-    /**
-     * Check if a failure event should be emitted.
-     */
-    fun shouldEmitFailure(commandId: String): Boolean = emitOnFailure && shouldEmit(commandId)
-
-    companion object {
-        /**
-         * Default configuration that emits events for all commands.
-         */
-        val DEFAULT = CommandEventConfig()
-
-        /**
-         * Configuration that disables all command events.
-         */
-        val DISABLED = CommandEventConfig(enabled = false)
-
-        /**
-         * Configuration that only emits failure events.
-         */
-        val FAILURES_ONLY =
-            CommandEventConfig(
-                emitOnSuccess = false,
-                emitOnStart = false,
-                emitOnFailure = true,
-            )
-    }
-}

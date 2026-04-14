@@ -16,9 +16,11 @@
 
 package com.sphereon.data.store.credential.design.persistence
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.SourceSnapshotRecord
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 interface SourceSnapshotRepository {
     suspend fun findById(
         tenantId: String,

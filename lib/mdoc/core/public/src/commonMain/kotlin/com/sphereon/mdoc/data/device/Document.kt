@@ -30,6 +30,7 @@ import com.sphereon.util.stringify
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -96,15 +97,19 @@ data class Document(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val DOC_TYPE = StringLabel("docType")
 
         @JsStatic
+        @JvmStatic
         val ISSUER_SIGNED = StringLabel("issuerSigned")
 
         @JsStatic
+        @JvmStatic
         val DEVICE_SIGNED = StringLabel("deviceSigned")
 
         @JsStatic
+        @JvmStatic
         val ERRORS = StringLabel("errors")
     }
 }

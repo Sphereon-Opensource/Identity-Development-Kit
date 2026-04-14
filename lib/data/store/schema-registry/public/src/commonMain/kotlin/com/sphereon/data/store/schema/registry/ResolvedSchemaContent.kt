@@ -16,9 +16,12 @@
 
 package com.sphereon.data.store.schema.registry
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Resolved schema content: the raw bytes, content type, and the associated schema record.
  */
+@JsExportCompat
 data class ResolvedSchemaContent(
     val data: ByteArray,
     val contentType: String,

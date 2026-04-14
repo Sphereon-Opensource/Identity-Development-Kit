@@ -35,6 +35,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -408,6 +409,7 @@ class JweHeader(
          * Create a JweHeader from a JSON string
          */
         @JsName("fromJsonString")
+        @JvmStatic
         fun fromJson(json: String): JweHeader {
             val jsonObject = cryptoJsonSerializer.decodeFromString<JsonObject>(json)
             return JweHeader(jsonObject)
@@ -417,6 +419,7 @@ class JweHeader(
          * Create a JweHeader from a JsonObject
          */
         @JsName("fromJsonObject")
+        @JvmStatic
         fun fromJson(json: JsonObject): JweHeader = JweHeader(json)
     }
 }

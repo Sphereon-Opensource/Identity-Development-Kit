@@ -16,12 +16,15 @@
 
 package com.sphereon.core.api.http.describe
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Metadata-only contributor for [HttpAdapterDescription].
  *
  * Host applications must be able to build a startup catalog without instantiating Session-scoped adapters.
  * This provider can be safely created in App scope and should not depend on tenant/session scoped services.
  */
+@JsExportCompat
 interface HttpAdapterDescriptorProvider {
     /**
      * Stable identifier of the adapter this provider describes.

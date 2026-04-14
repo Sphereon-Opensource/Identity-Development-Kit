@@ -19,9 +19,11 @@
 
 package com.sphereon.data.store.party.input
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.IdentityRole
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -30,18 +32,21 @@ import kotlin.uuid.Uuid
  *
  * The [id] is optional - if not provided, the system will generate one.
  */
+@JsExportCompat
 @Serializable
-data class IdentityCreateInput(
-    /** Optional ID - if null, system generates one */
-    @SerialName("partyId")
-    val id: Uuid? = null,
-    /** The role of this identity in the credential ecosystem */
-    @SerialName("identityRole")
-    val identityRole: IdentityRole,
-    /** Whether this is the default identity for the owning party */
-    @SerialName("isDefault")
-    val isDefault: Boolean = false,
-)
+data class IdentityCreateInput
+    @JvmOverloads
+    constructor(
+        /** Optional ID - if null, system generates one */
+        @SerialName("partyId")
+        val id: Uuid? = null,
+        /** The role of this identity in the credential ecosystem */
+        @SerialName("identityRole")
+        val identityRole: IdentityRole,
+        /** Whether this is the default identity for the owning party */
+        @SerialName("isDefault")
+        val isDefault: Boolean = false,
+    )
 
 /**
  * Input for updating an existing identity.
@@ -49,15 +54,18 @@ data class IdentityCreateInput(
  * The [id] is required to identify which identity to update.
  * All other fields are optional - only non-null values will be updated.
  */
+@JsExportCompat
 @Serializable
-data class IdentityUpdateInput(
-    /** Required - the identity to update */
-    @SerialName("partyId")
-    val id: Uuid,
-    /** New identity role (null = keep current) */
-    @SerialName("identityRole")
-    val identityRole: IdentityRole? = null,
-    /** New default flag (null = keep current) */
-    @SerialName("isDefault")
-    val isDefault: Boolean? = null,
-)
+data class IdentityUpdateInput
+    @JvmOverloads
+    constructor(
+        /** Required - the identity to update */
+        @SerialName("partyId")
+        val id: Uuid,
+        /** New identity role (null = keep current) */
+        @SerialName("identityRole")
+        val identityRole: IdentityRole? = null,
+        /** New default flag (null = keep current) */
+        @SerialName("isDefault")
+        val isDefault: Boolean? = null,
+    )

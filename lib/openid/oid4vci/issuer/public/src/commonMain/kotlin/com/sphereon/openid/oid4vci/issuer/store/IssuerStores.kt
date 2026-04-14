@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.issuer.store
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
 import kotlinx.serialization.Serializable
@@ -25,6 +26,7 @@ import kotlinx.serialization.Serializable
 /**
  * Store for credential offers with TTL support.
  */
+@JsExportCompat
 interface CredentialOfferStore {
     suspend fun store(
         offerId: String,
@@ -45,6 +47,7 @@ interface CredentialOfferStore {
  *
  * Nonces are issuer-owned protocol state, not routed through the AS bridge.
  */
+@JsExportCompat
 interface CredentialNonceStore {
     suspend fun create(
         nonce: String,
@@ -54,6 +57,7 @@ interface CredentialNonceStore {
     suspend fun consume(nonce: String): IdkResult<NonceEntry?, IdkError>
 }
 
+@JsExportCompat
 @Serializable
 data class NonceEntry(
     val nonce: String,
@@ -64,6 +68,7 @@ data class NonceEntry(
 /**
  * Store for issuance sessions.
  */
+@JsExportCompat
 interface CredentialIssuanceSessionStore {
     suspend fun create(session: IssuanceSession): IdkResult<IssuanceSession, IdkError>
 
@@ -79,6 +84,7 @@ interface CredentialIssuanceSessionStore {
 /**
  * Store for deferred credential entries, keyed by transaction ID.
  */
+@JsExportCompat
 interface DeferredCredentialStore {
     suspend fun create(entry: DeferredCredentialEntry): IdkResult<DeferredCredentialEntry, IdkError>
 
@@ -90,6 +96,7 @@ interface DeferredCredentialStore {
 /**
  * Store for credential notification state, providing idempotent notification processing.
  */
+@JsExportCompat
 interface NotificationStateStore {
     suspend fun recordNotification(
         notificationId: String,

@@ -17,14 +17,12 @@
 
 package com.sphereon.di.context
 
-import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionContext
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UserContext", exact = true)
-@JsExportCompat
 interface UserContext :
     TenantAware,
     PrincipalAware {
@@ -41,7 +39,6 @@ interface UserContext :
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SecuredTenantContextDetails", exact = true)
-@JsExportCompat
 interface SecuredTenantContextDetails {
     val validFrom: Long // TODO: Does this make sense at all? We are using this in a zero-trust env and why would we trust this info without a sig?
     val validUntil: Long // TODO: Does this make sense at all? We are using this in a zero-trust env and why would we trust this info without a sig?
@@ -51,14 +48,12 @@ interface SecuredTenantContextDetails {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UserSecuredContext", exact = true)
-@JsExportCompat
 interface UserSecuredContext : UserContext {
     override val secureDetails: SecuredTenantContextDetails
 }
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ContextAware", exact = true)
-@JsExportCompat
 interface ContextAware {
     val context: UserContext
 }

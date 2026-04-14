@@ -16,8 +16,11 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
 data class ReconciliationMaterialProfile(
     val id: String,
@@ -25,19 +28,24 @@ data class ReconciliationMaterialProfile(
     val materials: List<ReconciliationMaterial>,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface ReconciliationMaterial
 
 @Serializable
-data class HolderKeyMaterial(
-    val hmacDomain: String = "holder",
-) : ReconciliationMaterial
+data class HolderKeyMaterial
+    @JvmOverloads
+    constructor(
+        val hmacDomain: String = "holder",
+    ) : ReconciliationMaterial
 
 @Serializable
-data class ProviderSubjectMaterial(
-    val providerId: String,
-    val hmacDomain: String = "institution",
-) : ReconciliationMaterial
+data class ProviderSubjectMaterial
+    @JvmOverloads
+    constructor(
+        val providerId: String,
+        val hmacDomain: String = "institution",
+    ) : ReconciliationMaterial
 
 @Serializable
 data class AttributeTupleMaterial(
@@ -49,12 +57,14 @@ data class AttributeTupleMaterial(
 ) : ReconciliationMaterial
 
 @Serializable
-data class CredentialAttributeTupleMaterial(
-    val credentialQueryId: String? = null,
-    val credentialId: String? = null,
-    val attributePaths: List<String>,
-    val normalizationProfile: String,
-    val saltRef: String,
-    val hmacDomain: String,
-    val minRequiredAttributes: Int,
-) : ReconciliationMaterial
+data class CredentialAttributeTupleMaterial
+    @JvmOverloads
+    constructor(
+        val credentialQueryId: String? = null,
+        val credentialId: String? = null,
+        val attributePaths: List<String>,
+        val normalizationProfile: String,
+        val saltRef: String,
+        val hmacDomain: String,
+        val minRequiredAttributes: Int,
+    ) : ReconciliationMaterial

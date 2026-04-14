@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob.cas
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.blob.BlobDescriptor
 import kotlinx.serialization.Serializable
 
@@ -23,6 +24,7 @@ import kotlinx.serialization.Serializable
  * Descriptor for a content-addressed blob, combining the content address with the blob descriptor.
  */
 @Serializable
+@JsExportCompat
 data class ContentAddressDescriptor(
     val contentAddress: ContentAddress,
     val descriptor: BlobDescriptor,

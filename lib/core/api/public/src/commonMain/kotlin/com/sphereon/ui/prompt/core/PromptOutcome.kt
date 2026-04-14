@@ -18,7 +18,6 @@
 package com.sphereon.ui.prompt.core
 
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Instant

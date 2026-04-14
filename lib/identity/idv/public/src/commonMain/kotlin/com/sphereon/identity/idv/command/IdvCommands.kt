@@ -17,6 +17,8 @@
 package com.sphereon.identity.idv.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.idv.model.AttributeBag
 import com.sphereon.identity.idv.model.CompiledIdvGraph
 import com.sphereon.identity.idv.model.IdvExecution
@@ -33,25 +35,34 @@ import com.sphereon.identity.idv.model.InputFieldId
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
+@JsExportCompat
 @Serializable
 data class ResolveIdvUseCaseArgs(
     val tenantId: String,
     val useCaseId: IdvUseCaseId? = null,
     val context: IdvExecutionContext? = null,
+    @JsExportIgnoreCompat
     val credentialTypes: Set<String>? = null,
+    @JsExportIgnoreCompat
     val dcqlQueryIds: Set<String>? = null,
+    @JsExportIgnoreCompat
     val credentialSetIds: Set<String>? = null,
     val availableAttributes: AttributeBag? = null,
+    @JsExportIgnoreCompat
     val providerIds: Set<String>? = null,
+    @JsExportIgnoreCompat
     val formIds: Set<String>? = null,
+    @JsExportIgnoreCompat
     val customTags: Set<String>? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class CompileIdvGraphArgs(
     val useCaseDefinition: IdvUseCaseDefinition,
 )
 
+@JsExportCompat
 @Serializable
 data class StartIdvExecutionArgs(
     val useCaseId: IdvUseCaseId,
@@ -59,12 +70,14 @@ data class StartIdvExecutionArgs(
     val callbackBaseUrl: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class GetIdvExecutionArgs(
     val executionId: IdvExecutionId,
     val tenantId: String,
 )
 
+@JsExportCompat
 @Serializable
 data class CancelIdvExecutionArgs(
     val executionId: IdvExecutionId,
@@ -73,6 +86,7 @@ data class CancelIdvExecutionArgs(
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class ResumeIdvExecutionArgs(
     val executionId: IdvExecutionId,
@@ -81,6 +95,7 @@ data class ResumeIdvExecutionArgs(
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class DispatchIdvNodeArgs(
     val executionId: IdvExecutionId,
@@ -90,24 +105,29 @@ data class DispatchIdvNodeArgs(
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class SubmitIdvNodeArgs(
     val executionId: IdvExecutionId,
     val tenantId: String,
     val nodeId: IdvNodeId,
+    @JsExportIgnoreCompat
     val input: Map<InputFieldId, JsonElement>,
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class HandleIdvNodeCallbackArgs(
     val executionId: IdvExecutionId,
     val tenantId: String,
     val nodeId: IdvNodeId,
+    @JsExportIgnoreCompat
     val callbackData: Map<String, String>,
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class PollIdvNodeArgs(
     val executionId: IdvExecutionId,
@@ -116,6 +136,7 @@ data class PollIdvNodeArgs(
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class CompleteIdvNodeArgs(
     val executionId: IdvExecutionId,
@@ -125,6 +146,7 @@ data class CompleteIdvNodeArgs(
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class ApplyIdvMaterializationArgs(
     val executionId: IdvExecutionId,
@@ -133,6 +155,7 @@ data class ApplyIdvMaterializationArgs(
     val expectedVersion: Long? = null,
 )
 
+@JsExportCompat
 interface ResolveIdvUseCaseCommand : ServiceCommand<ResolveIdvUseCaseArgs, IdvUseCaseDefinition> {
     override val commandId: String get() = COMMAND_ID
 
@@ -141,6 +164,7 @@ interface ResolveIdvUseCaseCommand : ServiceCommand<ResolveIdvUseCaseArgs, IdvUs
     }
 }
 
+@JsExportCompat
 interface CompileIdvGraphCommand : ServiceCommand<CompileIdvGraphArgs, CompiledIdvGraph> {
     override val commandId: String get() = COMMAND_ID
 
@@ -149,6 +173,7 @@ interface CompileIdvGraphCommand : ServiceCommand<CompileIdvGraphArgs, CompiledI
     }
 }
 
+@JsExportCompat
 interface StartIdvExecutionCommand : ServiceCommand<StartIdvExecutionArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -157,6 +182,7 @@ interface StartIdvExecutionCommand : ServiceCommand<StartIdvExecutionArgs, IdvEx
     }
 }
 
+@JsExportCompat
 interface GetIdvExecutionCommand : ServiceCommand<GetIdvExecutionArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -165,6 +191,7 @@ interface GetIdvExecutionCommand : ServiceCommand<GetIdvExecutionArgs, IdvExecut
     }
 }
 
+@JsExportCompat
 interface CancelIdvExecutionCommand : ServiceCommand<CancelIdvExecutionArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -173,6 +200,7 @@ interface CancelIdvExecutionCommand : ServiceCommand<CancelIdvExecutionArgs, Idv
     }
 }
 
+@JsExportCompat
 interface ResumeIdvExecutionCommand : ServiceCommand<ResumeIdvExecutionArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -181,6 +209,7 @@ interface ResumeIdvExecutionCommand : ServiceCommand<ResumeIdvExecutionArgs, Idv
     }
 }
 
+@JsExportCompat
 interface DispatchIdvNodeCommand : ServiceCommand<DispatchIdvNodeArgs, IdvNodeDispatchResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -189,6 +218,7 @@ interface DispatchIdvNodeCommand : ServiceCommand<DispatchIdvNodeArgs, IdvNodeDi
     }
 }
 
+@JsExportCompat
 interface SubmitIdvNodeCommand : ServiceCommand<SubmitIdvNodeArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -197,6 +227,7 @@ interface SubmitIdvNodeCommand : ServiceCommand<SubmitIdvNodeArgs, IdvExecution>
     }
 }
 
+@JsExportCompat
 interface HandleIdvNodeCallbackCommand : ServiceCommand<HandleIdvNodeCallbackArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -205,6 +236,7 @@ interface HandleIdvNodeCallbackCommand : ServiceCommand<HandleIdvNodeCallbackArg
     }
 }
 
+@JsExportCompat
 interface PollIdvNodeCommand : ServiceCommand<PollIdvNodeArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -213,6 +245,7 @@ interface PollIdvNodeCommand : ServiceCommand<PollIdvNodeArgs, IdvExecution> {
     }
 }
 
+@JsExportCompat
 interface CompleteIdvNodeCommand : ServiceCommand<CompleteIdvNodeArgs, IdvExecution> {
     override val commandId: String get() = COMMAND_ID
 
@@ -221,6 +254,7 @@ interface CompleteIdvNodeCommand : ServiceCommand<CompleteIdvNodeArgs, IdvExecut
     }
 }
 
+@JsExportCompat
 interface ApplyIdvMaterializationCommand : ServiceCommand<ApplyIdvMaterializationArgs, IdvMaterializationResult> {
     override val commandId: String get() = COMMAND_ID
 

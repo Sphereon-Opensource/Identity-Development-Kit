@@ -20,8 +20,10 @@ package com.sphereon.mdoc.engagement
 import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.DecodedMdoc
 
+@JsExportCompat
 interface DeviceEngagementCborCodec {
     fun encode(value: DeviceEngagement): IdkResult<ByteArray, IdkError>
 

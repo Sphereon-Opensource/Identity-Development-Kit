@@ -16,9 +16,11 @@
 
 package com.sphereon.identity.reconciliation.store
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.ReconciliationSession
 import kotlin.time.Instant
 
+@JsExportCompat
 interface ReconciliationSessionStore {
     suspend fun findById(
         tenantId: String,

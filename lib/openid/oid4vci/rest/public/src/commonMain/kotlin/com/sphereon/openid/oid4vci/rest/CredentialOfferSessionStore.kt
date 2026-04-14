@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.rest
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -31,6 +32,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CredentialOfferSession", exact = true)
+@JsExportCompat
 @Serializable
 data class CredentialOfferSession(
     @SerialName("correlation_id")
@@ -54,6 +56,7 @@ data class CredentialOfferSession(
 /**
  * Store for OID4VCI backend REST API sessions.
  */
+@JsExportCompat
 interface CredentialOfferSessionStore {
     companion object {
         const val DEFAULT_TTL_SECONDS: Long = 600

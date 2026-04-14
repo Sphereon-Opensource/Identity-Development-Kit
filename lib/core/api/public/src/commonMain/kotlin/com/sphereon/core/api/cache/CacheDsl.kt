@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Duration
@@ -171,6 +172,7 @@ class CacheDefaults<K : Any, V : Any>(
 /**
  * Builder for TTL configuration.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TtlBuilder", exact = true)
 class TtlBuilder {

@@ -17,10 +17,12 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.appendUInt8
 import com.sphereon.util.getUInt8
 import kotlinx.io.bytestring.ByteStringBuilder
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -29,6 +31,7 @@ import kotlin.native.ObjCName
  * Reference: NFC Forum Connection Handover section 6.1 Handover Request Record
  *
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HandoverRequestRecord", exact = true)
 data class HandoverRequestRecord(
@@ -50,6 +53,7 @@ data class HandoverRequestRecord(
     companion object {
         private const val MAX_BYTE_VALUE = 256
 
+        @JvmStatic
         fun fromNdefRecord(record: NdefRecord): HandoverRequestRecord? {
             if (record.tnf != NdefRecord.Tnf.WELL_KNOWN ||
                 record.type != NfcConst.RTD_HANDOVER_REQUEST

@@ -16,6 +16,8 @@
 
 package com.sphereon.conf.theme.core.palette
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cbrt
@@ -31,6 +33,7 @@ import kotlin.math.sqrt
  *
  * This is a simplified implementation sufficient for palette generation.
  */
+@JsExportCompat
 data class HctColor(
     val hue: Double,
     val chroma: Double,
@@ -99,6 +102,7 @@ data class HctColor(
         /**
          * Create an HCT color from an sRGB hex string (e.g. "#6750A4").
          */
+        @JvmStatic
         fun fromHex(hex: String): HctColor {
             val argb = hexToArgb(hex)
             return fromArgb(argb)
@@ -107,6 +111,7 @@ data class HctColor(
         /**
          * Create an HCT color from an ARGB int.
          */
+        @JvmStatic
         fun fromArgb(argb: Int): HctColor {
             val r = ((argb shr SHIFT_RED) and BYTE_MASK) / CHANNEL_MAX
             val g = ((argb shr SHIFT_GREEN) and BYTE_MASK) / CHANNEL_MAX
@@ -143,6 +148,7 @@ data class HctColor(
          * Convert HCT back to an ARGB int.
          * Uses CIELAB with the given hue, chroma, and tone (L*).
          */
+        @JvmStatic
         fun toArgb(
             hue: Double,
             chroma: Double,
@@ -179,6 +185,7 @@ data class HctColor(
         /**
          * Convert an ARGB int to a hex string like "#RRGGBB".
          */
+        @JvmStatic
         fun argbToHex(argb: Int): String {
             val r = (argb shr SHIFT_RED) and BYTE_MASK
             val g = (argb shr SHIFT_GREEN) and BYTE_MASK
@@ -189,6 +196,7 @@ data class HctColor(
         /**
          * Parse a hex color string to ARGB int.
          */
+        @JvmStatic
         fun hexToArgb(hex: String): Int {
             val clean = hex.removePrefix("#")
             val value = clean.toLong(HEX_RADIX).toInt()

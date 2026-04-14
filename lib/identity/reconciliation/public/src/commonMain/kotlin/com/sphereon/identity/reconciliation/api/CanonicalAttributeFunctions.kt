@@ -16,17 +16,22 @@
 
 package com.sphereon.identity.reconciliation.api
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.CanonicalAttributeBag
 import com.sphereon.identity.reconciliation.model.CanonicalAttributeRule
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class RequiredAttributeViolation(
-    val canonicalName: String,
-    val expectedSourceHint: String? = null,
-)
+data class RequiredAttributeViolation
+    @JvmOverloads
+    constructor(
+        val canonicalName: String,
+        val expectedSourceHint: String? = null,
+    )
 
 fun validateRequiredAttributes(
     canonical: CanonicalAttributeBag,

@@ -17,6 +17,7 @@
 package com.sphereon.core.api.service
 
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Marker interface for ServiceCommands that expose a public-facing REST API.
@@ -58,6 +59,7 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
  * - EDK handles internal transport binding resolution automatically.
  * - All HTTP metadata (method, path, media types, tags, summary) lives in [httpEndpoint].
  */
+@JsExportCompat
 interface PublicApiCommand {
     /** HTTP endpoint descriptor with method, path, media types, tags, summary. */
     val httpEndpoint: HttpEndpointDescriptor

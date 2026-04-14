@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -111,6 +112,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SharedParameters", exact = true)
+@JsExportCompat
 interface SharedParameters {
     /**
      * Shared BLE UUID for central client mode (holder initiates connection).

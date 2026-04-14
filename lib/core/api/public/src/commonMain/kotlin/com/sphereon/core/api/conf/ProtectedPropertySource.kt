@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.Order
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -30,6 +31,7 @@ import kotlin.reflect.KClass
  * - Enforcement of override restrictions
  * - Enforcement of interpolation restrictions
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedPropertySource", exact = true)
 interface ProtectedPropertySource<T> : PropertySource<T> {
@@ -85,6 +87,7 @@ interface ProtectedPropertySource<T> : PropertySource<T> {
  * @param order The priority order for this source
  * @param keyParser The parser for extracting protection prefixes
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedMutableMapPropertySource", exact = true)
 open class ProtectedMutableMapPropertySource(
@@ -283,6 +286,7 @@ open class ProtectedMutableMapPropertySource(
  *
  * Environment variables are always considered to be at APP scope level.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedEnvPropertySource", exact = true)
 open class ProtectedEnvPropertySource(

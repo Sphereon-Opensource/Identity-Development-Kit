@@ -409,6 +409,7 @@ interface KeyManagerService :
  * This is a top-level interface (required for KSP/Anvil processing).
  */
 @ContributesTo(scope = SessionScope::class)
+@JsExportCompat
 interface KeyManagerServiceGraph {
     val keyManagerService: KeyManagerService
 }
@@ -421,4 +422,5 @@ fun SessionGraph.asKeyManagerServiceGraph(): KeyManagerServiceGraph = this as Ke
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ManagedKeyStoreService", exact = true)
+@JsExportCompat
 interface ManagedKeyStoreService : KeyStoreService

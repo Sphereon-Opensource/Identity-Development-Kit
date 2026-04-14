@@ -17,10 +17,12 @@
 package com.sphereon.core.api.binary
 
 import com.sphereon.core.api.http.GenericHttpBody
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
+import kotlin.jvm.JvmStatic
 
 /**
  * Transport-neutral body abstraction for streaming and binary content.
@@ -43,6 +45,7 @@ import kotlinx.io.readByteArray
  * StreamingBody is a transport-neutral superset of GenericHttpBody.
  * Use [toGenericHttpBody] and [fromGenericHttpBody] for conversion.
  */
+@JsExportCompat
 sealed class StreamingBody {
     /**
      * Indicates whether this body contains any content.
@@ -300,6 +303,7 @@ sealed class StreamingBody {
         /**
          * Creates a StreamingBody from text content.
          */
+        @JvmStatic
         fun ofText(
             value: String?,
             charset: String = "UTF-8",
@@ -312,6 +316,7 @@ sealed class StreamingBody {
         /**
          * Creates a StreamingBody from binary content.
          */
+        @JvmStatic
         fun ofBytes(value: ByteArray?): StreamingBody =
             when {
                 value == null || value.isEmpty() -> Empty
@@ -321,6 +326,7 @@ sealed class StreamingBody {
         /**
          * Creates a lazily-evaluated binary body.
          */
+        @JvmStatic
         fun ofLazyBytes(supplier: () -> ByteArray?): StreamingBody = LazyBytes(supplier)
 
         /**
@@ -329,6 +335,7 @@ sealed class StreamingBody {
          * @param flow The flow of byte array chunks
          * @param contentLength Optional known content length
          */
+        @JvmStatic
         fun ofFlow(
             flow: Flow<ByteArray>,
             contentLength: Long? = null,
@@ -337,6 +344,7 @@ sealed class StreamingBody {
         /**
          * Converts a GenericHttpBody to StreamingBody.
          */
+        @JvmStatic
         fun fromGenericHttpBody(body: GenericHttpBody): StreamingBody =
             when (body) {
                 is GenericHttpBody.Empty -> {

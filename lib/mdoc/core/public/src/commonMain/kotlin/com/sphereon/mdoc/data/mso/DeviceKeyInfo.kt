@@ -26,6 +26,7 @@ import com.sphereon.crypto.core.cose.CoseKey
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.util.stringify
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -42,10 +43,16 @@ data class DeviceKeyInfo(
     override fun toString(): String = "DeviceKeyInfo(deviceKey=$deviceKey, keyAuthorizations=$keyAuthorizations, keyInfo=$keyInfo, original=${stringify(original)})"
 
     companion object {
+        @JvmStatic
         val DEVICE_KEY = StringLabel("deviceKey")
+
+        @JvmStatic
         val KEY_AUTHORIZATIONS = StringLabel("keyAuthorizations")
+
+        @JvmStatic
         val KEY_INFO = StringLabel("keyInfo")
 
+        @JvmStatic
         fun fromKeyInfo(keyInfo: ResolvedKeyInfoType<*>): DeviceKeyInfo {
             val cborInfo = CoseJoseKeyMappingService.toResolvedCoseKeyInfo(keyInfo)
 

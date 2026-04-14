@@ -17,12 +17,14 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * Pointer to another LoTE per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class OtherLoTEPointer(
     @SerialName("ServiceDigitalIdentities")
@@ -36,6 +38,7 @@ data class OtherLoTEPointer(
 /**
  * Qualifier for a LoTE pointer per ETSI TS 119 602 JSON schema.
  */
+@JsExportCompat
 @Serializable
 data class LoTEQualifier(
     @SerialName("LoTEType")

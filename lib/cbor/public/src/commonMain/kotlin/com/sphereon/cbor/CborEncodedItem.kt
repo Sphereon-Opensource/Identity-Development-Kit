@@ -25,6 +25,8 @@ import kotlinx.io.bytestring.ByteStringBuilder
 import kotlinx.serialization.json.JsonElement
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 @JsExportCompat
 class CborHexEncodedItem(
@@ -53,6 +55,7 @@ open class CborEncodedItem<Type : Any>(
     val isOriginal: Boolean = !::_data.isInitialized
 
     @JsName("fromBytes")
+    @JvmOverloads
     constructor(value: ByteArray, data: Type? = null) : this(CborByteString(value), data)
 
     internal constructor(value: CborByteString, data: Type? = null) : this(value) {
@@ -74,6 +77,7 @@ open class CborEncodedItem<Type : Any>(
 
     fun isDataInitialized(): Boolean = this::_data.isInitialized
 
+    @JvmOverloads
     fun data(fromBytesCallback: ((ByteArray) -> Type)? = null): Type {
         if (this::_data.isInitialized) {
             return _data
@@ -122,6 +126,7 @@ open class CborEncodedItem<Type : Any>(
             }
 
         @JsStatic
+        @JvmStatic
         fun <Type : Any> toData(encoded: CborEncodedItem<Type>): Type = encoded.data()
     }
 }

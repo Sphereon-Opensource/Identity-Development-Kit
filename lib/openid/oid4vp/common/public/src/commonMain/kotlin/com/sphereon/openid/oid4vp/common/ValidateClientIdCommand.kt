@@ -20,7 +20,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.x509.Certificate
 import kotlinx.serialization.Serializable
@@ -213,6 +212,9 @@ data class ClientIdValidationError(
  *
  * This command integrates with the identifier resolution service for X.509 validation.
  */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ValidateClientIdCommand", exact = true)
+@JsExportCompat
 interface ValidateClientIdCommand : ServiceCommand<ValidateClientIdArgs, ValidateClientIdResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -226,7 +228,6 @@ interface ValidateClientIdCommand : ServiceCommand<ValidateClientIdArgs, Validat
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ValidateClientIdCommandService", exact = true)
-@JsExportIgnoreCompat
 interface ValidateClientIdCommandService {
     /**
      * Validate client_id according to its scheme.

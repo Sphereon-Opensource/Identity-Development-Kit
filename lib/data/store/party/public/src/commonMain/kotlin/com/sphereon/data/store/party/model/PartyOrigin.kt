@@ -17,6 +17,7 @@
 
 package com.sphereon.data.store.party.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -24,6 +25,7 @@ import kotlinx.serialization.Serializable
  * The origin of a party record, indicating whether it was created internally
  * or synced from an external source.
  */
+@JsExportCompat
 @Serializable
 enum class PartyOrigin {
     /** Party was synced from an outside source (IdP, external system, import, auto-discovery) */

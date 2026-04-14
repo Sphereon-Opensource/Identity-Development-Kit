@@ -22,6 +22,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -77,6 +79,7 @@ enum class VerificationPurpose(
         /**
          * All verification purposes.
          */
+        @JvmStatic
         @JsStatic
         val ALL: List<VerificationPurpose> = entries.toList()
 
@@ -86,6 +89,7 @@ enum class VerificationPurpose(
          * @param value The string value (e.g., "authentication", "assertionMethod")
          * @return The matching VerificationPurpose, or null if not found
          */
+        @JvmStatic
         @JsStatic
         fun fromValue(value: String): VerificationPurpose? = entries.find { it.value == value }
     }

@@ -16,8 +16,10 @@
 
 package com.sphereon.identity.reconciliation.store
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.ReconciliationProvider
 
+@JsExportCompat
 interface ReconciliationProviderStore {
     suspend fun findById(providerId: String): ReconciliationProvider?
 

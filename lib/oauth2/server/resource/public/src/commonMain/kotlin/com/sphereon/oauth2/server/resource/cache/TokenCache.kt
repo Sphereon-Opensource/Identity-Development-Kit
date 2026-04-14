@@ -49,6 +49,7 @@ import kotlin.time.Instant
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TokenCache", exact = true)
+@JsExportCompat
 interface TokenCache {
     /**
      * Gets a cached token payload

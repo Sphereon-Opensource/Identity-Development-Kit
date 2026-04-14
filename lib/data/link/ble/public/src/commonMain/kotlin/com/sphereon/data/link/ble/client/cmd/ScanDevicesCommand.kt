@@ -20,6 +20,7 @@
 package com.sphereon.data.link.ble.client.cmd
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.BleResponse
 import com.sphereon.data.link.ble.ScanError
 import com.sphereon.data.link.ble.client.BlePlatformClient
@@ -32,6 +33,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 class ScanDevicesArgs(
     val maxRetries: Int = 1,
     val retryDelay: Duration = 500.milliseconds,
@@ -45,6 +47,7 @@ class ScanDevicesArgs(
     override fun toString(): String = "ScanDevicesArgs(maxRetries=$maxRetries, retryDelay=$retryDelay, timeout=$timeout, maxResults=$maxResults, requestId=$requestId, filters=$filters)"
 }
 
+@JsExportCompat
 class ScanDevicesCommand(
     private val client: BlePlatformClient,
 ) : BaseBleCommand<ScanDevicesArgs, BleResponse.Devices>() {

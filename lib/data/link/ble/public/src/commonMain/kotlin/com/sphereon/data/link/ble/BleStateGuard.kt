@@ -18,9 +18,11 @@
 package com.sphereon.data.link.ble
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleStateGuard", exact = true)
 interface BleStateGuard {

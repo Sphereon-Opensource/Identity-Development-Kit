@@ -23,8 +23,9 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
-
 // ============================================================================
 // CreateRawSignature Command
 // ============================================================================
@@ -40,42 +41,45 @@ import kotlin.native.ObjCName
 @ObjCName("CreateRawSignatureArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class CreateRawSignatureArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-    val input: ByteArray = byteArrayOf(),
-    val requireX5Chain: Boolean = false,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+CreateRawSignatureArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+        val input: ByteArray = byteArrayOf(),
+        val requireX5Chain: Boolean = false,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as CreateRawSignatureArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (!input.contentEquals(other.input)) {
+                return false
+            }
+            if (requireX5Chain != other.requireX5Chain) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as CreateRawSignatureArgs
-
-        if (keyInfo != other.keyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + input.contentHashCode()
+            result = 31 * result + requireX5Chain.hashCode()
+            return result
         }
-        if (!input.contentEquals(other.input)) {
-            return false
-        }
-        if (requireX5Chain != other.requireX5Chain) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = keyInfo?.hashCode() ?: 0
-        result = 31 * result + input.contentHashCode()
-        result = 31 * result + requireX5Chain.hashCode()
-        return result
-    }
-}
 
 /**
  * Result of a signature creation operation.
@@ -125,6 +129,7 @@ data class CreateRawSignatureResult(
  * }
  * ```
  */
+@JsExportCompat
 interface CreateRawSignatureCommand : ServiceCommand<CreateRawSignatureArgs, CreateRawSignatureResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -148,42 +153,45 @@ interface CreateRawSignatureCommand : ServiceCommand<CreateRawSignatureArgs, Cre
 @ObjCName("VerifyRawSignatureArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class VerifyRawSignatureArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-    val input: ByteArray = byteArrayOf(),
-    val signature: ByteArray = byteArrayOf(),
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+VerifyRawSignatureArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+        val input: ByteArray = byteArrayOf(),
+        val signature: ByteArray = byteArrayOf(),
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as VerifyRawSignatureArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (!input.contentEquals(other.input)) {
+                return false
+            }
+            if (!signature.contentEquals(other.signature)) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as VerifyRawSignatureArgs
-
-        if (keyInfo != other.keyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + input.contentHashCode()
+            result = 31 * result + signature.contentHashCode()
+            return result
         }
-        if (!input.contentEquals(other.input)) {
-            return false
-        }
-        if (!signature.contentEquals(other.signature)) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = keyInfo?.hashCode() ?: 0
-        result = 31 * result + input.contentHashCode()
-        result = 31 * result + signature.contentHashCode()
-        return result
-    }
-}
 
 /**
  * Result of a signature verification operation.
@@ -221,6 +229,7 @@ data class VerifyRawSignatureResult(
  * }
  * ```
  */
+@JsExportCompat
 interface VerifyRawSignatureCommand : ServiceCommand<VerifyRawSignatureArgs, VerifyRawSignatureResult> {
     override val commandId: String get() = COMMAND_ID
 

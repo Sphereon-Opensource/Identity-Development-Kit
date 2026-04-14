@@ -104,6 +104,7 @@ interface KmsProviderRegistry {
  * Allows other components to access the KmsProviderRegistry from the session scope.
  */
 @ContributesTo(scope = SessionScope::class)
+@JsExportCompat
 interface KmsProviderRegistryGraph {
     val kmsProviderRegistry: KmsProviderRegistry
 }

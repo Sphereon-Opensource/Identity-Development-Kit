@@ -21,8 +21,11 @@ package com.sphereon.data.link.ble
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
-import kotlin.js.JsExport
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 
@@ -30,17 +33,22 @@ import kotlin.uuid.ExperimentalUuidApi
 @ObjCName("BleError", exact = true)
 interface BleError : IdkErrorType
 
-@JsExport
+@JsExportCompat
 sealed class BleErrors(
     override val code: String,
     override val severity: Severity,
     override val message: Message,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = mutableListOf(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = mutableMapOf(),
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
 ) : IdkError(code = code, severity = severity, message = message, causes = causes, meta = meta, exception = exception),
     BleError {
     companion object {
+        @JvmStatic
+        @JvmOverloads
         fun unknown(
             reason: String = "An unknown BLE error occurred",
             throwable: Throwable? = null,
@@ -55,6 +63,8 @@ sealed class BleErrors(
             causes = causes,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun scanFailed(
             reason: String = "Scanning failed",
             throwable: Throwable? = null,
@@ -69,6 +79,7 @@ sealed class BleErrors(
             causes = causes,
         )
 
+        @JvmStatic
         fun deviceNotFound(deviceAddress: String) =
             DeviceNotFoundError(
                 message =
@@ -78,6 +89,8 @@ sealed class BleErrors(
                     ),
             )
 
+        @JvmStatic
+        @JvmOverloads
         fun notificationFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -90,6 +103,8 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun serviceDiscoveryFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -102,6 +117,7 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
         fun notSupported(reason: String) =
             NotSupportedBleError(
                 message =
@@ -111,6 +127,8 @@ sealed class BleErrors(
                     ),
             )
 
+        @JvmStatic
+        @JvmOverloads
         fun connectionFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -123,6 +141,8 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun readCharacteristicFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -135,6 +155,8 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun writeCharacteristicFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -147,6 +169,8 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun readDescriptorFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -159,6 +183,8 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun writeDescriptorFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -171,6 +197,7 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
         fun advertiseFailed(reason: String) =
             AdvertisingError(
                 message =
@@ -185,6 +212,8 @@ sealed class BleErrors(
          * outcome when a coroutine is cancelled (e.g., during connection racing).
          * Callers should check for this using `is CancelledError` and handle gracefully.
          */
+        @JvmStatic
+        @JvmOverloads
         fun cancelled(
             reason: String = "Operation was cancelled",
             throwable: Throwable? = null,
@@ -197,6 +226,8 @@ sealed class BleErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun mtuChangeFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -213,134 +244,160 @@ sealed class BleErrors(
     override fun toString(): String = "BleError(code='$code', severity=$severity, message=$message, causes=$causes, meta=$meta, exception=${exception?.stackTraceToString()})"
 }
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UnknownBleError", exact = true)
 data class UnknownBleError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_UNKNOWN_ERROR", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NotSupportedBleError", exact = true)
 data class NotSupportedBleError(
     override val message: Message,
     override val severity: Severity = Severity.ERROR,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_NOT_SUPPORTED", severity = severity)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeviceNotFoundError", exact = true)
 data class DeviceNotFoundError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_DEVICE_NOT_FOUND", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConnectionFailedError", exact = true)
 data class ConnectionFailedError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_CONNECTION_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CharacteristicReadError", exact = true)
 data class CharacteristicReadError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_CHARACTERISTIC_READ_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CharacteristicWriteError", exact = true)
 data class CharacteristicWriteError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_CHARACTERISTIC_WRITE_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DescriptorReadError", exact = true)
 data class DescriptorReadError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_DESCRIPTOR_READ_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DescriptorWriteError", exact = true)
 data class DescriptorWriteError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_DESCRIPTOR_WRITE_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MtuChangeError", exact = true)
 data class MtuChangeError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_MTU_CHANGE_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ServiceDiscoveryError", exact = true)
 data class ServiceDiscoveryError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_SERVICE_DISCOVERY_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NotificationFailedError", exact = true)
 data class NotificationFailedError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_NOTIFICATION_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScanError", exact = true)
 data class ScanError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_SCAN_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AdvertisingError", exact = true)
 data class AdvertisingError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_ADVERTISING_FAILED", severity = Severity.ERROR)
 
@@ -351,12 +408,14 @@ data class AdvertisingError(
  * Callers should check for this type and handle gracefully (e.g., set state to
  * DISCONNECTED instead of ERROR).
  */
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CancelledError", exact = true)
 data class CancelledError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : BleErrors(message = message, exception = exception, causes = causes, meta = meta, code = "BLE_CANCELLED", severity = Severity.INFO)

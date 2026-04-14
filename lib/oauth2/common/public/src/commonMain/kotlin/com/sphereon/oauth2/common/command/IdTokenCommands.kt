@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.IdTokenValidationOptions
 import com.sphereon.oauth2.common.model.ValidatedIdToken
 
@@ -26,6 +27,7 @@ import com.sphereon.oauth2.common.model.ValidatedIdToken
  * @property idToken The ID Token JWT string
  * @property options Validation options (expected issuer, audience, nonce, etc.)
  */
+@JsExportCompat
 data class ValidateIdTokenArgs(
     val idToken: String,
     val options: IdTokenValidationOptions,
@@ -37,6 +39,7 @@ data class ValidateIdTokenArgs(
  * This command integrates with the JWT service for signature verification
  * and performs all OpenID Connect ID Token validation requirements.
  */
+@JsExportCompat
 interface ValidateIdTokenCommand : ServiceCommand<ValidateIdTokenArgs, ValidatedIdToken> {
     override val commandId: String get() = COMMAND_ID
 

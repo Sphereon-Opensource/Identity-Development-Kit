@@ -16,6 +16,7 @@
 
 package com.sphereon.sdjwt.vc
 
+import com.sphereon.core.compat.JsExportCompat
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -33,6 +34,7 @@ import kotlinx.serialization.json.Json
  * 2. Registry-based: VCT is identifier, lookup in trusted registry
  * 3. Cache-based: Previously resolved metadata
  */
+@JsExportCompat
 interface TypeMetadataResolver {
     /**
      * Resolve type metadata for the given VCT

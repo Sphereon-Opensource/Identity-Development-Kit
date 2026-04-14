@@ -16,6 +16,8 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -23,6 +25,7 @@ import kotlin.time.Instant
  * Hint for retention policy enforcement. IDK defines the model; EDK provides jurisdiction-aware enforcement.
  */
 @Serializable
+@JsExportCompat
 data class RetentionHint(
     val retainUntil: Instant? = null,
     val legalHold: Boolean = false,
@@ -36,10 +39,12 @@ data class RetentionHint(
  * Tier 2 (application): custom map, contentHash, retentionHint — indexed in BlobMetadataIndex.
  */
 @Serializable
+@JsExportCompat
 data class BlobMetadata(
     val contentType: String? = null,
     val contentEncoding: String? = null,
     val contentDisposition: String? = null,
+    @JsExportIgnoreCompat
     val custom: Map<String, String> = emptyMap(),
     val contentHash: String? = null,
     val retentionHint: RetentionHint? = null,

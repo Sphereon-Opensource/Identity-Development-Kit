@@ -16,12 +16,14 @@
 
 package com.sphereon.data.store.credential.design.persistence
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.DesignFilter
 import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 interface VerifierDesignRepository {
     suspend fun findById(
         tenantId: String,

@@ -18,10 +18,13 @@
 package com.sphereon.data.link.ble
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.coroutines.flow.Flow
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PeripheralStateManager", exact = true)
 interface PeripheralStateManager {
@@ -35,9 +38,11 @@ interface PeripheralStateManager {
         value: ByteArray,
     ): IdkResult<Unit, BleErrors>
 
+    @JsExportIgnoreCompat
     val state: Flow<PeripheralState>
 }
 
+@JsExportCompat
 sealed class PeripheralState {
     object Idle : PeripheralState()
 

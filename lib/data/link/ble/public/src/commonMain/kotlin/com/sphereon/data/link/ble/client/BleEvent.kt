@@ -19,6 +19,8 @@ package com.sphereon.data.link.ble.client
 
 import com.sphereon.core.api.events.EventType
 import com.sphereon.core.compat.DateTimeUtils
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.BleErrors
@@ -56,6 +58,7 @@ import kotlin.uuid.Uuid
  * }
  * ```
  */
+@JsExportCompat
 @OptIn(ExperimentalUuidApi::class)
 sealed interface BleEvent {
     val requestId: Uuid
@@ -131,6 +134,7 @@ sealed interface BleEvent {
     data class ScanResult(
         override val requestId: Uuid,
         override val deviceAddress: String,
+        @JsExportIgnoreCompat
         val devices: Set<BleDevice>,
     ) : AbstractBleEvent() {
         override val time: LocalDateTimeKMP = DateTimeUtils.DEFAULTS.dateTimeLocal()

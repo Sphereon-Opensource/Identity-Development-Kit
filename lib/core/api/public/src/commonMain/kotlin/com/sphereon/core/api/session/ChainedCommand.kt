@@ -24,6 +24,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionContext
 
 /**
@@ -38,6 +39,7 @@ import com.sphereon.di.session.SessionContext
  * @param FinalResult The output type of the second command
  * @param E The error type
  */
+@JsExportCompat
 class ChainedCommand<FirstArg : Any, Intermediate : Any, FinalResult : Any, E : IdkErrorType>(
     override val id: String,
     private val first: BaseCommand<FirstArg, Intermediate, E>,

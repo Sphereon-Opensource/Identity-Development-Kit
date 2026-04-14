@@ -16,12 +16,14 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * OAuth 2.0 grant types (RFC 6749)
  */
+@JsExportCompat
 @Serializable
 enum class GrantType(
     val value: String,
@@ -48,6 +50,7 @@ enum class GrantType(
 /**
  * OAuth 2.0 response types
  */
+@JsExportCompat
 @Serializable
 enum class ResponseType(
     val value: String,

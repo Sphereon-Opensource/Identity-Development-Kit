@@ -20,7 +20,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.oauth2.common.jarm.JarmConfig

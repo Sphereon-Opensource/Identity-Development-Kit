@@ -17,14 +17,18 @@
 
 package com.sphereon.data.link.nfc
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.data.link.nfc.model.CommandApdu
 import kotlinx.coroutines.flow.Flow
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NfcApduDispatcher", exact = true)
 interface NfcApduDispatcher {
+    @JsExportIgnoreCompat
     val apdus: Flow<CommandApdu>
 
     suspend fun dispatch(apdu: CommandApdu)

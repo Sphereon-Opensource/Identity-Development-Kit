@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.resource.model
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -44,6 +45,7 @@ data class ResourceRequest(
      * Must include Authorization header
      * May include DPoP header for DPoP-bound tokens
      */
+    @property:JsExportIgnoreCompat
     val headers: Map<String, String>,
     /**
      * Request body (optional)

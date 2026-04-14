@@ -32,8 +32,9 @@ import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.x509.Certificate
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
-
 // ============================================================================
 // GenerateKey Command
 // ============================================================================
@@ -52,67 +53,70 @@ import kotlin.native.ObjCName
 @ObjCName("GenerateKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class GenerateKeyArgs(
-    val providerId: String? = null,
-    val alias: String? = null,
-    @kotlinx.serialization.Transient
-    val use: JwkUse? = null,
-    @kotlinx.serialization.Transient
-    val keyOperations: Array<out KeyOperations>? = null,
-    @kotlinx.serialization.Transient
-    val alg: SignatureAlgorithm? = null,
-    @kotlinx.serialization.Transient
-    val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+GenerateKeyArgs
+    @JvmOverloads
+    constructor(
+        val providerId: String? = null,
+        val alias: String? = null,
+        @kotlinx.serialization.Transient
+        val use: JwkUse? = null,
+        @kotlinx.serialization.Transient
+        val keyOperations: Array<out KeyOperations>? = null,
+        @kotlinx.serialization.Transient
+        val alg: SignatureAlgorithm? = null,
+        @kotlinx.serialization.Transient
+        val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as GenerateKeyArgs
+
+            if (providerId != other.providerId) {
+                return false
+            }
+            if (alias != other.alias) {
+                return false
+            }
+            if (use != other.use) {
+                return false
+            }
+            if (keyOperations != null) {
+                if (other.keyOperations == null) {
+                    return false
+                }
+                if (!keyOperations.contentEquals(other.keyOperations)) {
+                    return false
+                }
+            } else if (other.keyOperations != null) {
+                return false
+            }
+            if (alg != other.alg) {
+                return false
+            }
+            if (keyVisibility != other.keyVisibility) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as GenerateKeyArgs
-
-        if (providerId != other.providerId) {
-            return false
+        override fun hashCode(): Int {
+            var result = providerId?.hashCode() ?: 0
+            result = 31 * result + (alias?.hashCode() ?: 0)
+            result = 31 * result + (use?.hashCode() ?: 0)
+            result = 31 * result + (keyOperations?.contentHashCode() ?: 0)
+            result = 31 * result + (alg?.hashCode() ?: 0)
+            result = 31 * result + (keyVisibility?.hashCode() ?: 0)
+            return result
         }
-        if (alias != other.alias) {
-            return false
-        }
-        if (use != other.use) {
-            return false
-        }
-        if (keyOperations != null) {
-            if (other.keyOperations == null) {
-                return false
-            }
-            if (!keyOperations.contentEquals(other.keyOperations)) {
-                return false
-            }
-        } else if (other.keyOperations != null) {
-            return false
-        }
-        if (alg != other.alg) {
-            return false
-        }
-        if (keyVisibility != other.keyVisibility) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = providerId?.hashCode() ?: 0
-        result = 31 * result + (alias?.hashCode() ?: 0)
-        result = 31 * result + (use?.hashCode() ?: 0)
-        result = 31 * result + (keyOperations?.contentHashCode() ?: 0)
-        result = 31 * result + (alg?.hashCode() ?: 0)
-        result = 31 * result + (keyVisibility?.hashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Result of a key generation operation.
@@ -122,10 +126,13 @@ data class GenerateKeyArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyResult", exact = true)
 @JsExportCompat
-data class GenerateKeyResult(
-    @kotlinx.serialization.Transient
-    val keyPair: ManagedKeyPair? = null,
-)
+data class
+GenerateKeyResult
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyPair: ManagedKeyPair? = null,
+    )
 
 /**
  * Command interface for generating a new cryptographic key pair.
@@ -133,6 +140,7 @@ data class GenerateKeyResult(
  * This command wraps the KeyManagerService.generateKey operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface GenerateKeyCommand : ServiceCommand<GenerateKeyArgs, GenerateKeyResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -154,9 +162,12 @@ interface GenerateKeyCommand : ServiceCommand<GenerateKeyArgs, GenerateKeyResult
 @ObjCName("ListKeysArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class ListKeysArgs(
-    val providerId: String? = null,
-)
+data class
+ListKeysArgs
+    @JvmOverloads
+    constructor(
+        val providerId: String? = null,
+    )
 
 /**
  * Result of a list keys operation.
@@ -166,25 +177,28 @@ data class ListKeysArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ListKeysResult", exact = true)
 @JsExportCompat
-data class ListKeysResult(
-    @kotlinx.serialization.Transient
-    val keys: Array<ManagedKeyReference> = emptyArray(),
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
-            return true
-        }
-        if (other == null || this::class != other::class) {
-            return false
+data class
+ListKeysResult
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keys: Array<ManagedKeyReference> = emptyArray(),
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as ListKeysResult
+
+            return keys.contentEquals(other.keys)
         }
 
-        other as ListKeysResult
-
-        return keys.contentEquals(other.keys)
+        override fun hashCode(): Int = keys.contentHashCode()
     }
-
-    override fun hashCode(): Int = keys.contentHashCode()
-}
 
 /**
  * Command interface for listing all keys in the key store.
@@ -192,6 +206,7 @@ data class ListKeysResult(
  * This command wraps the KeyManagerService.listKeys operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface ListKeysCommand : ServiceCommand<ListKeysArgs, ListKeysResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -213,10 +228,13 @@ interface ListKeysCommand : ServiceCommand<ListKeysArgs, ListKeysResult> {
 @ObjCName("GetKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class GetKeyArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-)
+data class
+GetKeyArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+    )
 
 /**
  * Result of a get key operation.
@@ -226,10 +244,13 @@ data class GetKeyArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetKeyResult", exact = true)
 @JsExportCompat
-data class GetKeyResult(
-    @kotlinx.serialization.Transient
-    val key: ManagedKeyInfoType<*>? = null,
-)
+data class
+GetKeyResult
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val key: ManagedKeyInfoType<*>? = null,
+    )
 
 /**
  * Command interface for retrieving a specific key from the key store.
@@ -237,6 +258,7 @@ data class GetKeyResult(
  * This command wraps the KeyManagerService.getKey operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface GetKeyCommand : ServiceCommand<GetKeyArgs, GetKeyResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -261,55 +283,58 @@ interface GetKeyCommand : ServiceCommand<GetKeyArgs, GetKeyResult> {
 @ObjCName("StoreKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class StoreKeyArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: ResolvedKeyInfoType<*>? = null,
-    val providerId: String = "",
-    val alias: String = "",
-    @kotlinx.serialization.Transient
-    val certChain: Array<Certificate>? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+StoreKeyArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: ResolvedKeyInfoType<*>? = null,
+        val providerId: String = "",
+        val alias: String = "",
+        @kotlinx.serialization.Transient
+        val certChain: Array<Certificate>? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as StoreKeyArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (providerId != other.providerId) {
+                return false
+            }
+            if (alias != other.alias) {
+                return false
+            }
+            if (certChain != null) {
+                if (other.certChain == null) {
+                    return false
+                }
+                if (!certChain.contentEquals(other.certChain)) {
+                    return false
+                }
+            } else if (other.certChain != null) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as StoreKeyArgs
-
-        if (keyInfo != other.keyInfo) {
-            return false
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + providerId.hashCode()
+            result = 31 * result + alias.hashCode()
+            result = 31 * result + (certChain?.contentHashCode() ?: 0)
+            return result
         }
-        if (providerId != other.providerId) {
-            return false
-        }
-        if (alias != other.alias) {
-            return false
-        }
-        if (certChain != null) {
-            if (other.certChain == null) {
-                return false
-            }
-            if (!certChain.contentEquals(other.certChain)) {
-                return false
-            }
-        } else if (other.certChain != null) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = keyInfo?.hashCode() ?: 0
-        result = 31 * result + providerId.hashCode()
-        result = 31 * result + alias.hashCode()
-        result = 31 * result + (certChain?.contentHashCode() ?: 0)
-        return result
-    }
-}
 
 /**
  * Result of a store key operation.
@@ -319,10 +344,13 @@ data class StoreKeyArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("StoreKeyResult", exact = true)
 @JsExportCompat
-data class StoreKeyResult(
-    @kotlinx.serialization.Transient
-    val key: ManagedKeyInfoType<*>? = null,
-)
+data class
+StoreKeyResult
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val key: ManagedKeyInfoType<*>? = null,
+    )
 
 /**
  * Command interface for storing a key in the key store.
@@ -330,6 +358,7 @@ data class StoreKeyResult(
  * This command wraps the KeyManagerService.storeKey operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface StoreKeyCommand : ServiceCommand<StoreKeyArgs, StoreKeyResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -351,10 +380,13 @@ interface StoreKeyCommand : ServiceCommand<StoreKeyArgs, StoreKeyResult> {
 @ObjCName("DeleteKeyArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class DeleteKeyArgs(
-    @kotlinx.serialization.Transient
-    val keyInfo: KeyInfoType<*>? = null,
-)
+data class
+DeleteKeyArgs
+    @JvmOverloads
+    constructor(
+        @kotlinx.serialization.Transient
+        val keyInfo: KeyInfoType<*>? = null,
+    )
 
 /**
  * Result of a delete key operation.
@@ -375,6 +407,7 @@ data class DeleteKeyResult(
  * This command wraps the KeyManagerService.deleteKey operation,
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
+@JsExportCompat
 interface DeleteKeyCommand : ServiceCommand<DeleteKeyArgs, DeleteKeyResult> {
     override val commandId: String get() = COMMAND_ID
 

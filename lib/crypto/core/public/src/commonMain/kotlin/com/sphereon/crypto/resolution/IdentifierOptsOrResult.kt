@@ -16,9 +16,10 @@
  */
 
 package com.sphereon.crypto.resolution
-
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.IdentifierLookupType
 
+@JsExportCompat
 abstract class IdentifierOptsOrResult(
     open val method: IIdentifierMethod? = null,
     open val identifier: Any,

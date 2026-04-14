@@ -20,6 +20,8 @@ package com.sphereon.did.capabilities
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -35,30 +37,34 @@ import kotlin.native.ObjCName
 @ObjCName("DidResolutionCapabilities", exact = true)
 @JsExportCompat
 @Serializable
-data class ResolutionCapabilities(
-    val allowsCaching: Boolean = false,
-    val allowsLocalRecord: Boolean = true,
-    val cacheTtlSeconds: Long? = null,
-) {
-    companion object {
-        /**
-         * No caching (for computed DIDs like did:key).
-         */
-        val NO_CACHING: ResolutionCapabilities =
-            ResolutionCapabilities(
-                allowsCaching = false,
-                allowsLocalRecord = true,
-                cacheTtlSeconds = null,
-            )
+data class ResolutionCapabilities
+    @JvmOverloads
+    constructor(
+        val allowsCaching: Boolean = false,
+        val allowsLocalRecord: Boolean = true,
+        val cacheTtlSeconds: Long? = null,
+    ) {
+        companion object {
+            /**
+             * No caching (for computed DIDs like did:key).
+             */
+            @JvmStatic
+            val NO_CACHING: ResolutionCapabilities =
+                ResolutionCapabilities(
+                    allowsCaching = false,
+                    allowsLocalRecord = true,
+                    cacheTtlSeconds = null,
+                )
 
-        /**
-         * Standard web caching (5 minutes TTL).
-         */
-        val WEB_CACHING: ResolutionCapabilities =
-            ResolutionCapabilities(
-                allowsCaching = true,
-                allowsLocalRecord = true,
-                cacheTtlSeconds = 300, // 5 minutes
-            )
+            /**
+             * Standard web caching (5 minutes TTL).
+             */
+            @JvmStatic
+            val WEB_CACHING: ResolutionCapabilities =
+                ResolutionCapabilities(
+                    allowsCaching = true,
+                    allowsLocalRecord = true,
+                    cacheTtlSeconds = 300, // 5 minutes
+                )
+        }
     }
-}

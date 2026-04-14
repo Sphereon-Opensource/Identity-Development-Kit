@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
 import kotlin.experimental.ExperimentalObjCName
@@ -27,6 +28,7 @@ import kotlin.native.ObjCName
  @ObjCName("for", exact = true)
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("BleConnectionMethod", exact = true)
+@JsExportCompat
  * Base interface for all connection methods.
  *
  * A connection method represents a specific way to connect and exchange data
@@ -78,6 +80,7 @@ sealed interface ConnectionMethod {
 /**
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("for", exact = true)
+@JsExportCompat
  * Base class for connection methods with typed retrieval options.
  *
  * This provides common functionality for connection methods that have

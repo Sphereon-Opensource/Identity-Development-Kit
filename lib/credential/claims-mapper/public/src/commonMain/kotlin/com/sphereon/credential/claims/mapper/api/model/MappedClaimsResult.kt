@@ -17,6 +17,8 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -38,16 +40,22 @@ import kotlinx.serialization.json.JsonElement
  * @property skippedOptionalCredentials Credential IDs for optional credentials
  *   that were not provided.
  */
+@JsExportCompat
 @Serializable
 data class MappedClaimsResult(
+    @JsExportIgnoreCompat
     val claims: Map<String, JsonElement>,
+    @JsExportIgnoreCompat
     val sourceCredentialIds: Set<String> = emptySet(),
+    @JsExportIgnoreCompat
     val appliedDefaults: Set<String> = emptySet(),
+    @JsExportIgnoreCompat
     val skippedOptionalCredentials: Set<String> = emptySet(),
 ) {
     /**
      * Returns just the claims map for simple usage.
      */
+    @JsExportIgnoreCompat
     fun toClaimsMap(): Map<String, JsonElement> = claims
 
     /**
@@ -69,6 +77,7 @@ data class MappedClaimsResult(
         /**
          * Creates a result from just a claims map.
          */
+        @JsExportIgnoreCompat
         fun fromClaims(claims: Map<String, JsonElement>): MappedClaimsResult = MappedClaimsResult(claims)
     }
 }

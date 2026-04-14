@@ -7,6 +7,8 @@ package com.sphereon.core.events
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.SingleIn
@@ -49,6 +51,7 @@ import dev.zacsweers.metro.SingleIn
  *
  * @see EventEncryptionService for event confidentiality
  */
+@JsExportCompat
 interface EventSigningService {
     /**
      * Sign an event.
@@ -96,6 +99,7 @@ interface EventSigningService {
      */
     @SingleIn(AppScope::class)
     @ContributesTo(AppScope::class)
+    @JsExportIgnoreCompat
     interface Graph {
         val eventSigningService: EventSigningService
     }

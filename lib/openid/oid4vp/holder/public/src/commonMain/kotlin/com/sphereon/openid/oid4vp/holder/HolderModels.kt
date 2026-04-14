@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.holder
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientIdValidationError
@@ -47,6 +49,7 @@ import kotlinx.serialization.json.JsonObject
  * @property verifierAttestations Parsed verifier attestations from the verifier_info parameter (per OpenID4VP 1.0 Section 5.1.1)
  */
 @Serializable
+@JsExportCompat
 data class ResolvedOid4vpRequest(
     val request: AuthorizationRequest,
     val dcqlQuery: DcqlQuery? = null,
@@ -79,6 +82,7 @@ data class ResolvedOid4vpRequest(
  * @property trustRoot Optional trust root (for federation/PKI schemes)
  */
 @Serializable
+@JsExportCompat
 data class VerifierInfo(
     val clientId: String,
     val clientIdScheme: ClientIdScheme,
@@ -109,11 +113,13 @@ data class VerifierInfo(
  * @property disclosedClaims Optional map of disclosed claims (for SD-JWT)
  */
 @Serializable
+@JsExportCompat
 data class SelectedCredential(
     val credentialQueryId: String,
     val credentialId: String,
     val presentation: String,
     val format: String,
+    @JsExportIgnoreCompat
     val disclosedClaims: Map<String, String>? = null,
 )
 

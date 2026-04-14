@@ -18,6 +18,8 @@ package com.sphereon.openid.oid4vci.issuer.attribute
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import kotlinx.serialization.json.JsonElement
@@ -27,7 +29,9 @@ import kotlinx.serialization.json.JsonElement
  *
  * IDK ships a no-op default. EDK replaces it via `@ContributesBinding`.
  */
+@JsExportCompat
 interface CredentialAttributeContributor {
+    @JsExportIgnoreCompat
     suspend fun contribute(
         session: IssuanceSession,
         tokenContext: ValidatedTokenContext,

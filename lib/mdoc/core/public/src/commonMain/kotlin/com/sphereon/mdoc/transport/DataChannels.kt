@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.Uuid
@@ -30,6 +31,7 @@ import kotlin.uuid.Uuid
  * The datatransfer module can provide an implementation that bridges events
  * to its internal event system.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DataChannelEventDispatcher", exact = true)
 interface DataChannelEventDispatcher {
@@ -93,6 +95,7 @@ interface DataChannelEventDispatcher {
  * Implementations should be thread-safe for concurrent reads if the
  * underlying transport supports it.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IncomingDataChannel", exact = true)
 interface IncomingDataChannel : AutoCloseable {
@@ -140,6 +143,7 @@ interface IncomingDataChannel : AutoCloseable {
  * Implementations should be thread-safe for concurrent writes if the
  * underlying transport supports it.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OutgoingDataChannel", exact = true)
 interface OutgoingDataChannel : AutoCloseable {

@@ -23,6 +23,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
 
 /**
  * A type-safe builder for constructing command pipelines.
@@ -43,6 +45,7 @@ import com.sphereon.core.api.events.EventSubsystems
  * @param Current The current output type (changes as commands are chained)
  * @param E The error type
  */
+@JsExportCompat
 class PipeBuilder<In : Any, Current : Any, E : IdkErrorType> private constructor(
     private val id: String,
     private val command: BaseCommand<In, Current, E>,
@@ -109,6 +112,7 @@ class PipeBuilder<In : Any, Current : Any, E : IdkErrorType> private constructor
          * @param errorMapper The error mapper for handling errors
          * @return A new PipeBuilder
          */
+        @JvmStatic
         fun <I : Any, O : Any, E : IdkErrorType> start(
             id: String,
             first: BaseCommand<I, O, E>,

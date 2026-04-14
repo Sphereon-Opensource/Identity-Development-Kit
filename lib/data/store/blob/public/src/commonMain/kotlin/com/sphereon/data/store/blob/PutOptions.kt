@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -27,6 +28,7 @@ import kotlin.native.ObjCName
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PutOptions", exact = true)
+@JsExportCompat
 data class PutOptions(
     val overwrite: Boolean = true,
     val digestAlgorithm: DigestAlg? = null,

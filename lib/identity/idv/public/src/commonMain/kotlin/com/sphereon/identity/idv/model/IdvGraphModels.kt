@@ -16,10 +16,12 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlin.time.Instant
 
+@JsExportCompat
 @Serializable
 sealed interface IdvNode {
     val nodeId: IdvNodeId
@@ -64,6 +66,7 @@ data class ThresholdNode(
     val failurePolicy: FailurePolicy = FailurePolicy.WaitForAll,
 ) : IdvNode
 
+@JsExportCompat
 @Serializable
 enum class JoinPolicy {
     All,
@@ -71,6 +74,7 @@ enum class JoinPolicy {
     BestEffort,
 }
 
+@JsExportCompat
 @Serializable
 enum class SelectionPolicy {
     UserSelect,
@@ -79,6 +83,7 @@ enum class SelectionPolicy {
     FirstAvailable,
 }
 
+@JsExportCompat
 @Serializable
 enum class FailurePolicy {
     FailFast,
@@ -86,6 +91,7 @@ enum class FailurePolicy {
     ContinueOnFailure,
 }
 
+@JsExportCompat
 @Serializable
 data class IdvDisplay(
     val name: String,
@@ -93,6 +99,7 @@ data class IdvDisplay(
     val iconUri: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class AttributeBinding(
     val source: AttributeSource,
@@ -100,11 +107,13 @@ data class AttributeBinding(
     val required: Boolean = true,
 )
 
+@JsExportCompat
 @Serializable
 data class AttributeTarget(
     val attributePath: AttributePath,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface AttributeSource
 
@@ -125,6 +134,7 @@ data class UserInputAttribute(
     val fieldLabel: String,
 ) : AttributeSource
 
+@JsExportCompat
 @Serializable
 sealed interface IdvNodeState {
     val nodeId: IdvNodeId
@@ -184,6 +194,7 @@ data class CancelledNodeState(
     val reason: String? = null,
 ) : IdvNodeState
 
+@JsExportCompat
 @Serializable
 sealed interface IdvPendingAction
 
@@ -216,12 +227,14 @@ data class CompletedAction(
     val result: IdvNodeResult,
 ) : IdvPendingAction
 
+@JsExportCompat
 @Serializable
 data class InputFormDescriptor(
     val fields: List<InputField>,
     val submitLabel: String = "Submit",
 )
 
+@JsExportCompat
 @Serializable
 data class InputField(
     val id: InputFieldId,
@@ -231,6 +244,7 @@ data class InputField(
     val options: List<InputOption>? = null,
 )
 
+@JsExportCompat
 @Serializable
 enum class InputFieldType {
     TEXT,
@@ -239,6 +253,7 @@ enum class InputFieldType {
     HIDDEN,
 }
 
+@JsExportCompat
 @Serializable
 data class InputOption(
     val value: String,

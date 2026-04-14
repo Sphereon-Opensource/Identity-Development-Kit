@@ -18,6 +18,7 @@
 package com.sphereon.core.api.http
 
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Interface for HTTP adapters that handle REST API requests.
@@ -59,6 +60,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
  * }
  * ```
  */
+@JsExportCompat
 interface HttpAdapter {
     /**
      * Stable identifier for this adapter.

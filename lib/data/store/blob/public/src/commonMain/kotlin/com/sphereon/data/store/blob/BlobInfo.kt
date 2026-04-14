@@ -16,6 +16,8 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -41,11 +43,14 @@ import kotlin.native.ObjCName
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobInfoType", exact = true)
+@JsExportCompat
 sealed interface BlobInfoType {
     val storeId: String?
     val path: String?
     val tenantId: String?
     val contentType: String?
+
+    @JsExportIgnoreCompat
     val metadata: Map<String, String>
 
     /** Extract the unresolved [BlobInfo] from any variant. */
@@ -252,6 +257,7 @@ data class ResolvedBlobInfo(
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobIdentity", exact = true)
+@JsExportCompat
 data class BlobIdentity(
     val storeId: String? = null,
     val path: String? = null,

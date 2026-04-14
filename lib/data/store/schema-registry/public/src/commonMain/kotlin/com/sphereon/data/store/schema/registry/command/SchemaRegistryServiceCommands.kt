@@ -19,10 +19,12 @@
 package com.sphereon.data.store.schema.registry.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.schema.registry.ResolvedSchemaContent
 import com.sphereon.data.store.schema.registry.SchemaRecord
 import kotlin.uuid.ExperimentalUuidApi
 
+@JsExportCompat
 interface CreateSchemaServiceCommand : ServiceCommand<CreateSchemaArgs, SchemaRecord> {
     override val commandId: String get() = COMMAND_ID
 
@@ -31,6 +33,7 @@ interface CreateSchemaServiceCommand : ServiceCommand<CreateSchemaArgs, SchemaRe
     }
 }
 
+@JsExportCompat
 interface GetSchemaServiceCommand : ServiceCommand<GetSchemaArgs, SchemaRecord> {
     override val commandId: String get() = COMMAND_ID
 
@@ -39,6 +42,7 @@ interface GetSchemaServiceCommand : ServiceCommand<GetSchemaArgs, SchemaRecord> 
     }
 }
 
+@JsExportCompat
 interface FindSchemaByNameServiceCommand : ServiceCommand<FindSchemaByNameArgs, SchemaRecord> {
     override val commandId: String get() = COMMAND_ID
 
@@ -47,6 +51,7 @@ interface FindSchemaByNameServiceCommand : ServiceCommand<FindSchemaByNameArgs, 
     }
 }
 
+@JsExportCompat
 interface ListSchemasServiceCommand : ServiceCommand<ListSchemasArgs, List<SchemaRecord>> {
     override val commandId: String get() = COMMAND_ID
 
@@ -55,6 +60,7 @@ interface ListSchemasServiceCommand : ServiceCommand<ListSchemasArgs, List<Schem
     }
 }
 
+@JsExportCompat
 interface UpdateSchemaServiceCommand : ServiceCommand<UpdateSchemaArgs, SchemaRecord> {
     override val commandId: String get() = COMMAND_ID
 
@@ -63,6 +69,7 @@ interface UpdateSchemaServiceCommand : ServiceCommand<UpdateSchemaArgs, SchemaRe
     }
 }
 
+@JsExportCompat
 interface DeleteSchemaServiceCommand : ServiceCommand<DeleteSchemaArgs, DeleteSchemaResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -71,6 +78,7 @@ interface DeleteSchemaServiceCommand : ServiceCommand<DeleteSchemaArgs, DeleteSc
     }
 }
 
+@JsExportCompat
 interface GetContentServiceCommand : ServiceCommand<GetContentArgs, ResolvedSchemaContent> {
     override val commandId: String get() = COMMAND_ID
 
@@ -79,6 +87,7 @@ interface GetContentServiceCommand : ServiceCommand<GetContentArgs, ResolvedSche
     }
 }
 
+@JsExportCompat
 interface ResolveByPathServiceCommand : ServiceCommand<ResolveByPathArgs, ResolvedSchemaContent> {
     override val commandId: String get() = COMMAND_ID
 
@@ -87,6 +96,7 @@ interface ResolveByPathServiceCommand : ServiceCommand<ResolveByPathArgs, Resolv
     }
 }
 
+@JsExportCompat
 interface ImportExternalServiceCommand : ServiceCommand<ImportExternalArgs, SchemaRecord> {
     override val commandId: String get() = COMMAND_ID
 
@@ -95,6 +105,7 @@ interface ImportExternalServiceCommand : ServiceCommand<ImportExternalArgs, Sche
     }
 }
 
+@JsExportCompat
 interface RefreshCachedServiceCommand : ServiceCommand<RefreshCachedArgs, SchemaRecord> {
     override val commandId: String get() = COMMAND_ID
 

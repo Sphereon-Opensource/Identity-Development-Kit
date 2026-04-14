@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api.codec
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Determines codec selection based on Content-Type and Accept headers.
  *
@@ -43,6 +45,7 @@ package com.sphereon.core.api.codec
  * )
  * ```
  */
+@JsExportCompat
 interface MediaTypeNegotiator {
     /**
      * Default codec when negotiation fails or no preference given.
@@ -75,6 +78,7 @@ interface MediaTypeNegotiator {
  *
  * @property codecRegistry Registry of available codecs
  */
+@JsExportCompat
 class DefaultMediaTypeNegotiator(
     private val codecRegistry: StreamingCodecRegistry,
 ) : MediaTypeNegotiator {

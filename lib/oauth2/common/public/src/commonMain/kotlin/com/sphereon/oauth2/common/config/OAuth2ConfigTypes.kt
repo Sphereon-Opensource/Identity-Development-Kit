@@ -16,11 +16,13 @@
 
 package com.sphereon.oauth2.common.config
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
  * Controls whether a feature is available and whether clients must use it.
  */
+@JsExportCompat
 @Serializable
 enum class FeaturePolicy {
     DISABLED,
@@ -34,12 +36,14 @@ val FeaturePolicy.isRequired: Boolean get() = this == FeaturePolicy.REQUIRED
 /**
  * Whether this AS config represents a hosted server or an external server.
  */
+@JsExportCompat
 @Serializable
 enum class AuthorizationServerMode {
     HOSTED,
     EXTERNAL,
 }
 
+@JsExportCompat
 @Serializable
 enum class TokenFormat {
     JWT,

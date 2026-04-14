@@ -16,8 +16,10 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -28,6 +30,7 @@ import kotlin.native.ObjCName
  * - TENANT: Isolated per tenant
  * - PRINCIPAL: Isolated per principal (user) within a tenant
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheScope", exact = true)
 enum class CacheScope {
@@ -59,6 +62,7 @@ enum class CacheScope {
  * - `config::TENANT::tenant-a::::kms.provider.type`
  * - `oauth-tokens::PRINCIPAL::tenant-a::user-123::access-token`
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedKey", exact = true)
@@ -115,6 +119,7 @@ data class ScopedKey<K : Any>(
         /**
          * Create an app-scoped key.
          */
+        @JvmStatic
         fun <K : Any> app(
             namespace: String,
             key: K,
@@ -129,6 +134,7 @@ data class ScopedKey<K : Any>(
         /**
          * Create a tenant-scoped key.
          */
+        @JvmStatic
         fun <K : Any> tenant(
             namespace: String,
             tenantId: String,
@@ -144,6 +150,7 @@ data class ScopedKey<K : Any>(
         /**
          * Create a principal-scoped key.
          */
+        @JvmStatic
         fun <K : Any> principal(
             namespace: String,
             tenantId: String,
@@ -160,6 +167,7 @@ data class ScopedKey<K : Any>(
         /**
          * Parse a string key back to a ScopedKey (for String keys only).
          */
+        @JvmStatic
         fun parseString(stringKey: String): ScopedKey<String>? {
             val parts = stringKey.split(SEPARATOR)
             if (parts.size != SCOPED_KEY_PART_COUNT) {
@@ -186,6 +194,7 @@ data class ScopedKey<K : Any>(
  * Pattern for matching scoped keys.
  * Used for bulk invalidation and key filtering.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedKeyPattern", exact = true)
@@ -232,12 +241,15 @@ data class ScopedKeyPattern(
         val ALL = ScopedKeyPattern()
 
         /** Match all keys in a namespace */
+        @JvmStatic
         fun namespace(namespace: String) = ScopedKeyPattern(namespace = namespace)
 
         /** Match all keys for a tenant */
+        @JvmStatic
         fun tenant(tenantId: String) = ScopedKeyPattern(tenantId = tenantId)
 
         /** Match all keys for a principal */
+        @JvmStatic
         fun principal(
             tenantId: String,
             principalId: String,

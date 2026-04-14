@@ -16,34 +16,42 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class LocalizedCredentialDisplay(
-    val locale: String,
-    val name: String,
-    val description: String? = null,
-    val issuerNameOverride: String? = null,
-    val preferredRenderVariantIds: List<Uuid> = emptyList(),
-)
+data class LocalizedCredentialDisplay
+    @JvmOverloads
+    constructor(
+        val locale: String,
+        val name: String,
+        val description: String? = null,
+        val issuerNameOverride: String? = null,
+        val preferredRenderVariantIds: List<Uuid> = emptyList(),
+    )
 
+@JsExportCompat
 @Serializable
-data class CredentialDesignRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val alias: String? = null,
-    val hostingMode: DesignHostingMode,
-    val bindings: List<DesignBinding>,
-    val credentialTemplateId: Uuid? = null,
-    val issuerDesignId: Uuid? = null,
-    val displays: List<LocalizedCredentialDisplay>,
-    val claims: List<ClaimPresentation> = emptyList(),
-    val renderVariantIds: List<Uuid> = emptyList(),
-    val derivedRenderHintsId: Uuid? = null,
-    val sourceSnapshotIds: List<Uuid> = emptyList(),
-    val contentHash: String? = null,
-    val createdAt: Instant,
-    val updatedAt: Instant,
-)
+data class CredentialDesignRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val alias: String? = null,
+        val hostingMode: DesignHostingMode,
+        val bindings: List<DesignBinding>,
+        val credentialTemplateId: Uuid? = null,
+        val issuerDesignId: Uuid? = null,
+        val displays: List<LocalizedCredentialDisplay>,
+        val claims: List<ClaimPresentation> = emptyList(),
+        val renderVariantIds: List<Uuid> = emptyList(),
+        val derivedRenderHintsId: Uuid? = null,
+        val sourceSnapshotIds: List<Uuid> = emptyList(),
+        val contentHash: String? = null,
+        val createdAt: Instant,
+        val updatedAt: Instant,
+    )

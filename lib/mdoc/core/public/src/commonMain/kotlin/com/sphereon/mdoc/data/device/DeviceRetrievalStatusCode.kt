@@ -20,6 +20,7 @@ package com.sphereon.mdoc.data.device
 import com.sphereon.cbor.cddl_uint
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -66,6 +67,7 @@ enum class DeviceRetrievalStatusCode(
     ;
 
     companion object {
+        @JvmStatic
         fun fromStatusCode(statusCode: cddl_uint) =
             entries.first {
                 it.statusCode == statusCode

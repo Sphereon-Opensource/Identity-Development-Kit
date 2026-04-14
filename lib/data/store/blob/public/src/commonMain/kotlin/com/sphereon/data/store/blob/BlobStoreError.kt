@@ -17,10 +17,12 @@
 package com.sphereon.data.store.blob
 
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Sealed class representing blob store errors.
  */
+@JsExportCompat
 sealed class BlobStoreError(
     val kind: Kind,
     override val message: String,

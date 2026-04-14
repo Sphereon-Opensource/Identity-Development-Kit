@@ -18,6 +18,7 @@ package com.sphereon.data.store.blob
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.cas.ContentAddress
 import com.sphereon.data.store.blob.cas.ContentAddressDescriptor
@@ -35,6 +36,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobService", exact = true)
+@JsExportCompat
 interface BlobService {
     /**
      * The default store ID used when no explicit store ID is provided.

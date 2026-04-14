@@ -16,11 +16,10 @@
 
 package com.sphereon.core.api.service
 
-import com.sphereon.core.api.service.contract.ContractCapability
-import com.sphereon.core.api.service.contract.ServiceCommandContract
-import com.sphereon.core.api.session.matchesAdvancedPattern
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
+import kotlin.jvm.JvmStatic
 
 /**
  * Non-generic marker for registry lookup and policy enforcement.
@@ -28,6 +27,7 @@ import dev.zacsweers.metro.ContributesTo
  * Any command that wants to be discoverable via [ServiceCommandRegistry] should
  * implement this interface. [ServiceCommand] extends this automatically.
  */
+@JsExportCompat
 interface RegistrableServiceCommand {
     val commandId: String
 }
@@ -39,12 +39,14 @@ interface RegistrableServiceCommand {
  * instance. This enables session-scoped commands to be registered in the DI graph
  * without eagerly instantiating them.
  */
+@JsExportCompat
 interface RegistrableServiceCommandDescriptor {
     val commandId: String
 
     fun create(): ServiceCommand<*, *>
 
     companion object {
+        @JvmStatic
         fun of(
             commandId: String,
             factory: () -> ServiceCommand<*, *>,
@@ -73,24 +75,11 @@ interface RegistrableServiceCommandDescriptor {
  * For actual command execution, use [SessionScopedCommandRegistry] which
  * resolves commands within the correct session scope.
  */
+@JsExportCompat
 interface ServiceCommandRegistry {
     fun has(commandId: String): Boolean
 
     fun listCommandIds(): List<String>
-
-    // ========== Contract queries (app-scoped discovery) ==========
-
-    /** Get contract by command ID. Returns null if not registered. */
-    fun getContract(commandId: String): ServiceCommandContract<*, *>? = null
-
-    /** All registered contracts. */
-    fun allContracts(): List<ServiceCommandContract<*, *>> = emptyList()
-
-    /** Find contracts matching a command ID pattern (supports *, **, {a,b}). */
-    fun findByPattern(pattern: String): List<ServiceCommandContract<*, *>> = allContracts().filter { matchesAdvancedPattern(pattern, it.commandId.value) }
-
-    /** Find contracts with a specific capability. */
-    fun findByCapability(capability: ContractCapability): List<ServiceCommandContract<*, *>> = allContracts().filter { capability in it.capabilities }
 }
 
 /**

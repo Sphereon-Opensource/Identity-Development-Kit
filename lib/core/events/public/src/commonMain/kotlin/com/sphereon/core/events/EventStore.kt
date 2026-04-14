@@ -7,9 +7,12 @@ package com.sphereon.core.events
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.SingleIn
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -56,6 +59,7 @@ import kotlin.uuid.Uuid
  * @see EventHub for real-time event streaming
  */
 @OptIn(ExperimentalUuidApi::class)
+@JsExportCompat
 interface EventStore {
     /**
      * Store an event.
@@ -147,6 +151,7 @@ interface EventStore {
      */
     @SingleIn(AppScope::class)
     @ContributesTo(AppScope::class)
+    @JsExportIgnoreCompat
     interface Graph {
         val eventStore: EventStore
     }
@@ -155,23 +160,26 @@ interface EventStore {
 /**
  * Configuration for event store behavior.
  */
-data class EventStoreConfig(
-    /**
-     * Maximum number of events to store (for in-memory stores).
-     * Set to 0 for unlimited (database stores).
-     */
-    val capacity: Int = 10000,
-    /**
-     * Whether to enable retention policy.
-     */
-    val retentionEnabled: Boolean = false,
-    /**
-     * Retention period in milliseconds (default: 7 days).
-     * Events older than this will be deleted.
-     */
-    val retentionPeriodMillis: Long = 7 * 24 * 60 * 60 * 1000L,
-    /**
-     * How often to run retention cleanup in milliseconds (default: 1 hour).
-     */
-    val retentionCheckIntervalMillis: Long = 60 * 60 * 1000L,
-)
+@JsExportCompat
+data class EventStoreConfig
+    @JvmOverloads
+    constructor(
+        /**
+         * Maximum number of events to store (for in-memory stores).
+         * Set to 0 for unlimited (database stores).
+         */
+        val capacity: Int = 10000,
+        /**
+         * Whether to enable retention policy.
+         */
+        val retentionEnabled: Boolean = false,
+        /**
+         * Retention period in milliseconds (default: 7 days).
+         * Events older than this will be deleted.
+         */
+        val retentionPeriodMillis: Long = 7 * 24 * 60 * 60 * 1000L,
+        /**
+         * How often to run retention cleanup in milliseconds (default: 1 hour).
+         */
+        val retentionCheckIntervalMillis: Long = 60 * 60 * 1000L,
+    )

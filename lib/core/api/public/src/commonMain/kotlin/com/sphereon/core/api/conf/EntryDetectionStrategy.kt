@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -56,6 +57,7 @@ fun interface EntryDetectionStrategy {
  * @param discriminatorSuffix The suffix that identifies the type discriminator (default: ".type")
  * @param excludedSuffixes Suffixes to exclude from detection (e.g., nested type fields like ".keystore.type")
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TypeSuffixEntryDetection", exact = true)
 class TypeSuffixEntryDetection(
@@ -87,6 +89,7 @@ class TypeSuffixEntryDetection(
  *
  * This will detect entry IDs: `["primary", "replica"]`
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TopLevelKeyEntryDetection", exact = true)
 class TopLevelKeyEntryDetection : EntryDetectionStrategy {

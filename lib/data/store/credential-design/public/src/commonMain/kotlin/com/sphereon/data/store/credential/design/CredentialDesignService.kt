@@ -18,6 +18,7 @@ package com.sphereon.data.store.credential.design
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
@@ -45,6 +46,7 @@ import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
 import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 interface CredentialDesignService {
     // Credential designs
     suspend fun createCredentialDesign(

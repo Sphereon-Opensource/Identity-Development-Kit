@@ -19,6 +19,7 @@ package com.sphereon.did.manager
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.did.capabilities.DidMethodCapabilities
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethodConfig
@@ -31,6 +32,7 @@ import com.sphereon.did.models.VerificationMethodConfig
  *
  * Note: No `I` prefix - implementation is `DidManagerServiceImpl`.
  */
+@JsExportCompat
 interface DidManager {
     // =====================
     // Registry Access

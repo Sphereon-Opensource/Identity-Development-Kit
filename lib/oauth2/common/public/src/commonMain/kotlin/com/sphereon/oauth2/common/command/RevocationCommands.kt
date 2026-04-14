@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 
@@ -29,6 +30,7 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
  * @property tokenTypeHint Optional hint about the type of token ("access_token" or "refresh_token")
  * @property revocationEndpointOverride Optional explicit endpoint URL (overrides metadata discovery)
  */
+@JsExportCompat
 data class ClientRevokeTokenArgs(
     val authorizationServerMetadata: AuthorizationServerMetadata? = null,
     val token: String,
@@ -45,6 +47,7 @@ data class ClientRevokeTokenArgs(
  * obtained token is no longer needed. Per RFC 7009, the AS responds with
  * HTTP 200 regardless of whether the revocation was successful.
  */
+@JsExportCompat
 interface ClientRevokeTokenCommand : ServiceCommand<ClientRevokeTokenArgs, Unit> {
     override val commandId: String get() = COMMAND_ID
 

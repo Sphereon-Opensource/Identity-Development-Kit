@@ -25,8 +25,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
-
 // ============================================================================
 // Header Builder
 // ============================================================================
@@ -259,11 +259,13 @@ class JwsHeaderBuilder {
         /**
          * Creates a new header builder.
          */
+        @JvmStatic
         fun create(): JwsHeaderBuilder = JwsHeaderBuilder()
 
         /**
          * Creates a new header builder from an existing JsonObject.
          */
+        @JvmStatic
         fun from(headers: JsonObject): JwsHeaderBuilder = JwsHeaderBuilder().merge(headers)
     }
 }
@@ -507,11 +509,13 @@ class JwsPayloadBuilder {
         /**
          * Creates a new payload builder.
          */
+        @JvmStatic
         fun create(): JwsPayloadBuilder = JwsPayloadBuilder()
 
         /**
          * Creates a new payload builder from an existing JsonObject.
          */
+        @JvmStatic
         fun from(payload: JsonObject): JwsPayloadBuilder = JwsPayloadBuilder().merge(payload)
     }
 }
@@ -615,6 +619,7 @@ class JwsOptsBuilder {
         /**
          * Creates a new options builder.
          */
+        @JvmStatic
         fun create(): JwsOptsBuilder = JwsOptsBuilder()
     }
 }
@@ -745,6 +750,7 @@ class CreateJwsArgsBuilder {
         /**
          * Creates a new CreateJwsArgs builder.
          */
+        @JvmStatic
         fun create(): CreateJwsArgsBuilder = CreateJwsArgsBuilder()
     }
 }
@@ -880,6 +886,7 @@ class CreateJwsJsonArgsBuilder {
         /**
          * Creates a new CreateJwsJsonArgs builder.
          */
+        @JvmStatic
         fun create(): CreateJwsJsonArgsBuilder = CreateJwsJsonArgsBuilder()
     }
 }

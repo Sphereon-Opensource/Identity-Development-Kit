@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -52,6 +53,7 @@ import kotlin.native.ObjCName
  * @param Arg The type of the input argument
  * @param Result The type of the success result
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SimpleCommand", exact = true)
 interface SimpleCommand<Arg : Any, Result : Any> {

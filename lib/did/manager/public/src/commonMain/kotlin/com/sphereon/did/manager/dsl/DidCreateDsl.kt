@@ -17,6 +17,7 @@
 
 package com.sphereon.did.manager.dsl
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -25,6 +26,7 @@ import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethodType
 import com.sphereon.did.models.VerificationPurpose
+import kotlin.jvm.JvmOverloads
 
 /**
  * DSL marker for DID creation builders.
@@ -35,6 +37,7 @@ annotation class DidCreationDsl
 /**
  * Configuration for key generation.
  */
+@JsExportCompat
 sealed class KeyConfig {
     /**
      * Configuration for auto-generating a key via KMS.
@@ -46,15 +49,17 @@ sealed class KeyConfig {
      * @property purposes Verification purposes for this key
      * @property verificationMethodId Custom ID for the verification method
      */
-    data class AutoGenerate(
-        val keyType: KeyTypeMapping,
-        val curve: Curve? = null,
-        val algorithm: SignatureAlgorithm? = null,
-        val kmsProvider: String? = null,
-        val purposes: List<VerificationPurpose> = emptyList(),
-        val verificationMethodId: String? = null,
-        val alias: String? = null,
-    ) : KeyConfig()
+    data class AutoGenerate
+        @JvmOverloads
+        constructor(
+            val keyType: KeyTypeMapping,
+            val curve: Curve? = null,
+            val algorithm: SignatureAlgorithm? = null,
+            val kmsProvider: String? = null,
+            val purposes: List<VerificationPurpose> = emptyList(),
+            val verificationMethodId: String? = null,
+            val alias: String? = null,
+        ) : KeyConfig()
 
     /**
      * Configuration for using an existing key by alias.
@@ -64,12 +69,14 @@ sealed class KeyConfig {
      * @property purposes Verification purposes for this key
      * @property verificationMethodId Custom ID for the verification method
      */
-    data class ExistingKeyByAlias(
-        val alias: String,
-        val providerId: String? = null,
-        val purposes: List<VerificationPurpose> = emptyList(),
-        val verificationMethodId: String? = null,
-    ) : KeyConfig()
+    data class ExistingKeyByAlias
+        @JvmOverloads
+        constructor(
+            val alias: String,
+            val providerId: String? = null,
+            val purposes: List<VerificationPurpose> = emptyList(),
+            val verificationMethodId: String? = null,
+        ) : KeyConfig()
 
     /**
      * Configuration for using an existing JWK directly.
@@ -78,11 +85,13 @@ sealed class KeyConfig {
      * @property purposes Verification purposes for this key
      * @property verificationMethodId Custom ID for the verification method
      */
-    data class ExistingJwk(
-        val jwk: Jwk,
-        val purposes: List<VerificationPurpose> = emptyList(),
-        val verificationMethodId: String? = null,
-    ) : KeyConfig()
+    data class ExistingJwk
+        @JvmOverloads
+        constructor(
+            val jwk: Jwk,
+            val purposes: List<VerificationPurpose> = emptyList(),
+            val verificationMethodId: String? = null,
+        ) : KeyConfig()
 }
 
 /**
@@ -494,6 +503,7 @@ class DidCreateBuilder {
  * @property options The standard DID creation options
  * @property keyConfigs The key configurations that may need KMS processing
  */
+@JsExportCompat
 data class DidCreationDslResult(
     val options: DidCreateOptions,
     val keyConfigs: List<KeyConfig>,

@@ -19,8 +19,10 @@ package com.sphereon.mdoc.experimental.oid4vp
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.engagement.ProtocolInfo
 
+@JsExportCompat
 interface Oid4vpRequestProtocolCodec {
     fun encode(value: Oid4vpRequestProtocol): IdkResult<ProtocolInfo, IdkError>
 

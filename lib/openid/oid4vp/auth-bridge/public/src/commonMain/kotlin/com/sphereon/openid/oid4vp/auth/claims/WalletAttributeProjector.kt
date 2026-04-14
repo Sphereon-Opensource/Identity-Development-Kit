@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.auth.claims
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vp.universal.VerifiedCredential
 import kotlinx.serialization.json.JsonElement
 
@@ -28,6 +30,7 @@ import kotlinx.serialization.json.JsonElement
  * 2. Canonical attribute rules (required, persist, project flags)
  * 3. Projection filtering (only project=true attributes in output)
  */
+@JsExportCompat
 interface WalletAttributeProjector {
     /**
      * Project raw wallet credentials into canonical output attributes.
@@ -35,5 +38,6 @@ interface WalletAttributeProjector {
      * @param credentials Verified credentials from the OID4VP presentation
      * @return Projected canonical attributes (only project=true attributes)
      */
+    @JsExportIgnoreCompat
     suspend fun projectWalletAttributes(credentials: List<VerifiedCredential>): Map<String, JsonElement>
 }

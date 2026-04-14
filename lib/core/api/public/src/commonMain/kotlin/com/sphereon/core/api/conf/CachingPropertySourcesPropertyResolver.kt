@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.reflect.KClass
@@ -35,6 +36,7 @@ import kotlin.time.Clock
  * Uses [SyncConfigSnapshotCache] for synchronous, non-blocking cache access that works
  * on all platforms including JavaScript.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CachingPropertySourcesPropertyResolver", exact = true)
 class CachingPropertySourcesPropertyResolver(

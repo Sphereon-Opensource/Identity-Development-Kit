@@ -21,6 +21,7 @@ package com.sphereon.mdoc.engagement
 
 import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
@@ -50,10 +51,12 @@ import com.sphereon.mdoc.transfer.reader.ReaderEngagementCborCodec
 import com.sphereon.util.stringify
 import io.ktor.http.Url
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementData", exact = true)
 class EngagementData private constructor(
@@ -518,6 +521,7 @@ class EngagementData private constructor(
             return result
         }
 
+        @JvmStatic
         fun holderBuilder(
             coseKeyCborCodec: CoseKeyCborCodec? = null,
             deviceEngagementCborCodec: DeviceEngagementCborCodec? = null,
@@ -532,6 +536,7 @@ class EngagementData private constructor(
          * Create a builder for reader engagement (reverse engagement).
          * Sets the role to MDOC_READER instead of MDOC.
          */
+        @JvmStatic
         fun readerBuilder(
             coseKeyCborCodec: CoseKeyCborCodec? = null,
             deviceEngagementCborCodec: DeviceEngagementCborCodec? = null,
@@ -543,6 +548,7 @@ class EngagementData private constructor(
             readerEngagementCborCodec = readerEngagementCborCodec,
         )
 
+        @JvmStatic
         fun holderFromDeviceKey(
             ephemeralDeviceKey: ResolvedKeyInfoType<*>,
             retrievalMethods: Set<DeviceRetrievalMethod>,
@@ -551,6 +557,7 @@ class EngagementData private constructor(
             .withRetrievalMethods(retrievalMethods)
             .build()
 
+        @JvmStatic
         fun verifierFromDeviceEngagement(
             encodedEngagement: CborEncodedItem<DeviceEngagement>,
             engagementMethods: Set<MdocEngagementMethod> = setOf(QREngagementMethod()),

@@ -33,6 +33,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.js.JsName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 @JsExportCompat
 enum class X509VerificationProfile {
@@ -56,6 +58,7 @@ fun interface X509CoroutinesCallback : X509VerifyPlatformCallback<X509Verificati
  *
  * @param T The type of the result returned by the platform specific callback
  */
+@JsExportCompat
 interface X509VerifyVerifyPlatformCallbackCoroutines :
     X509VerifyService,
     X509CoroutinesCallback,
@@ -69,6 +72,7 @@ interface X509VerifyVerifyPlatformCallbackCoroutines :
     }
 }
 
+@JsExportCompat
 interface X509VerifyService {
     suspend fun verifyCertificateChain(req: X509VerificationRequestType): X509VerificationResultType
 
@@ -216,32 +220,36 @@ interface X509VerificationRequestType {
 }
 
 @JsExportCompat
-data class X509VerificationRequest(
-    override val enabled: Boolean = true,
-    override val chainDER: Array<ByteArray>? = null,
-    override val chainPEM: Array<String>? = null,
-    override val trustedCerts: Array<String>? = null,
-    override val verificationProfile: X509VerificationProfile? = null,
-    override val verificationTime: LocalDateTimeKMP? = LocalDateTimeKMP.now(),
-) : X509VerificationRequestType {
-    companion object {
-        fun fromDto(
-            request: X509VerificationRequestType,
-            enable: Boolean = request.enabled,
-        ): X509VerificationRequest {
-            with(request) {
-                return X509VerificationRequest(
-                    enabled = enable,
-                    chainDER = chainDER,
-                    chainPEM = chainPEM,
-                    trustedCerts = trustedCerts,
-                    verificationProfile = verificationProfile,
-                    verificationTime = verificationTime,
-                )
+data class
+X509VerificationRequest
+    @JvmOverloads
+    constructor(
+        override val enabled: Boolean = true,
+        override val chainDER: Array<ByteArray>? = null,
+        override val chainPEM: Array<String>? = null,
+        override val trustedCerts: Array<String>? = null,
+        override val verificationProfile: X509VerificationProfile? = null,
+        override val verificationTime: LocalDateTimeKMP? = LocalDateTimeKMP.now(),
+    ) : X509VerificationRequestType {
+        companion object {
+            @JvmStatic
+            fun fromDto(
+                request: X509VerificationRequestType,
+                enable: Boolean = request.enabled,
+            ): X509VerificationRequest {
+                with(request) {
+                    return X509VerificationRequest(
+                        enabled = enable,
+                        chainDER = chainDER,
+                        chainPEM = chainPEM,
+                        trustedCerts = trustedCerts,
+                        verificationProfile = verificationProfile,
+                        verificationTime = verificationTime,
+                    )
+                }
             }
         }
     }
-}
 
 @JsExportCompat
 @Serializable
@@ -269,31 +277,35 @@ sealed interface X509VerificationResultType : VerifyResultType {
 
 @JsExportCompat
 @Serializable
-data class X509VerificationResult(
-    @SerialName("certificateChain")
-    override val certificateChain: Array<Certificate>,
-    @SerialName("publicKey")
-    override val publicKey: JwkType? = null,
-    @SerialName("publicKeyAlgorithm")
-    override val publicKeyAlgorithm: String? = null,
-    override val name: String = CryptoConst.X509_LITERAL,
-    @SerialName("verificationTime")
-    override val verificationTime: LocalDateTimeKMP = LocalDateTimeKMP.now(),
-    @SerialName("publicKeyParams")
-    @Transient // Transient because Any? cannot be serialized; platform-specific key params
-    override val publicKeyParams: Any? = null,
-    override val critical: Boolean,
-    override val message: String?,
-    override val detailMessage: String? = null,
-    override val error: Boolean,
-) : X509VerificationResultType,
-    HasToJsonString {
-    override fun toJsonString(): String = CryptoJsonSupport.serializer.encodeToString(this)
-}
+data class
+X509VerificationResult
+    @JvmOverloads
+    constructor(
+        @SerialName("certificateChain")
+        override val certificateChain: Array<Certificate>,
+        @SerialName("publicKey")
+        override val publicKey: JwkType? = null,
+        @SerialName("publicKeyAlgorithm")
+        override val publicKeyAlgorithm: String? = null,
+        override val name: String = CryptoConst.X509_LITERAL,
+        @SerialName("verificationTime")
+        override val verificationTime: LocalDateTimeKMP = LocalDateTimeKMP.now(),
+        @SerialName("publicKeyParams")
+        @Transient // Transient because Any? cannot be serialized; platform-specific key params
+        override val publicKeyParams: Any? = null,
+        override val critical: Boolean,
+        override val message: String?,
+        override val detailMessage: String? = null,
+        override val error: Boolean,
+    ) : X509VerificationResultType,
+        HasToJsonString {
+        override fun toJsonString(): String = CryptoJsonSupport.serializer.encodeToString(this)
+    }
 
 /**
  * The main entry point for X509 Certificate validation, delegating to a platform specific callback implemented by external developers
  */
+@JsExportCompat
 interface X509VerifyServiceUsingCallbacks<CallbackServiceType> :
     HasPlatformCallback<CallbackServiceType>,
     X509VerifyService

@@ -16,8 +16,11 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
 enum class MappingMode {
     /** Use inline attribute-mappings from config. */
@@ -27,16 +30,19 @@ enum class MappingMode {
     DERIVE_FROM_RULES,
 }
 
+@JsExportCompat
 @Serializable
-data class ReconciliationProvider(
-    val id: String,
-    val name: String? = null,
-    val oidcClientId: String,
-    val identifierAttributeName: String = "sub",
-    val enabled: Boolean = true,
-    val mappingMode: MappingMode = MappingMode.EXPLICIT,
-    val attributeMappings: List<ReconciliationAttributeMapping> = emptyList(),
-    val userInfoAttributeMappings: List<ReconciliationAttributeMapping> = emptyList(),
-    val assuranceAcr: String? = null,
-    val assuranceAmr: List<String>? = null,
-)
+data class ReconciliationProvider
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val name: String? = null,
+        val oidcClientId: String,
+        val identifierAttributeName: String = "sub",
+        val enabled: Boolean = true,
+        val mappingMode: MappingMode = MappingMode.EXPLICIT,
+        val attributeMappings: List<ReconciliationAttributeMapping> = emptyList(),
+        val userInfoAttributeMappings: List<ReconciliationAttributeMapping> = emptyList(),
+        val assuranceAcr: String? = null,
+        val assuranceAmr: List<String>? = null,
+    )

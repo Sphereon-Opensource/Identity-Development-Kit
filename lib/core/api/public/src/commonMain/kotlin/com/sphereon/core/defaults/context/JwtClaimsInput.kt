@@ -17,6 +17,7 @@
 
 package com.sphereon.core.defaults.context
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.PrincipalInput
 import com.sphereon.di.context.TenantInput
 import kotlinx.serialization.json.JsonElement
@@ -43,6 +44,7 @@ import kotlin.native.ObjCName
  * @property claims Parsed JWT claims as a map of claim name to JSON value
  * @property rawToken The original raw JWT token string (optional, for audit/logging)
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JwtClaimsInput", exact = true)
 data class JwtClaimsInput(

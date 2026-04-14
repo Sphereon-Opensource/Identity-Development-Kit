@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -52,6 +53,7 @@ enum class CoseKeyOperations(
     companion object {
         @JsStatic
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(value: Int): CoseKeyOperations =
             entries.find { entry -> entry.value == value }
                 ?: throw IllegalArgumentException("Unknown value $value")

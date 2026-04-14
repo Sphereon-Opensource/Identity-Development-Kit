@@ -16,17 +16,25 @@
 
 package com.sphereon.identity.matching.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.matching.crypto.EncryptedPayload
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
+@JsExportCompat
 @Serializable
-data class PersistedAttributesEnvelope(
-    val encrypted: EncryptedPayload,
-    val canonicalSchemaVersion: String,
-    val materialProfileVersion: String,
-    val selectorRuleVersion: String,
-    val attributeNames: Set<String>,
-    val materialFingerprints: Set<String> = emptySet(),
-    val updatedAt: Instant,
-)
+data class PersistedAttributesEnvelope
+    @JvmOverloads
+    constructor(
+        val encrypted: EncryptedPayload,
+        val canonicalSchemaVersion: String,
+        val materialProfileVersion: String,
+        val selectorRuleVersion: String,
+        @JsExportIgnoreCompat
+        val attributeNames: Set<String>,
+        @JsExportIgnoreCompat
+        val materialFingerprints: Set<String> = emptySet(),
+        val updatedAt: Instant,
+    )

@@ -17,6 +17,9 @@
 
 package com.sphereon.mdoc
 
+import com.sphereon.core.compat.JsExportCompat
+
+@JsExportCompat
 data class DecodedMdoc<T>(
     val value: T,
     val originalBytes: ByteArray,

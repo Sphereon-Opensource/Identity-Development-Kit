@@ -16,12 +16,13 @@
  */
 
 package com.sphereon.crypto.core.sign
-
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 
 /**
  * Service interface for creating and verifying raw digital signatures.
  */
+@JsExportCompat
 interface SimpleSignatureService {
     /**
      * Creates a raw signature using the specified key info and input data.

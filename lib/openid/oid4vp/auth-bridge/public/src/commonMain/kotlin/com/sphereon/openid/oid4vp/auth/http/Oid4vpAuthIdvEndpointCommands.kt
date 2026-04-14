@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * HTTP endpoint command for initiating identity verification (reconciliation) for an OID4VP session.
@@ -29,6 +30,7 @@ import com.sphereon.core.api.http.describe.MediaType
  * Creates a reconciliation session and returns an OIDC authorization URL for the user
  * to verify their institutional identity.
  */
+@JsExportCompat
 interface InitiateOid4vpIdvCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.auth.idv.initiate"
@@ -54,6 +56,7 @@ interface InitiateOid4vpIdvCommand : HttpEndpointCommand {
  *
  * Returns the current status of the reconciliation flow for the session.
  */
+@JsExportCompat
 interface GetOid4vpIdvStatusCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.auth.idv.status"

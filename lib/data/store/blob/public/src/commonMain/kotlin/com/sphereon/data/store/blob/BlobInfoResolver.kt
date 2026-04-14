@@ -18,6 +18,7 @@ package com.sphereon.data.store.blob
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -43,6 +44,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobInfoResolver", exact = true)
+@JsExportCompat
 interface BlobInfoResolver {
     /**
      * Resolve a [BlobInfoType] to its content.

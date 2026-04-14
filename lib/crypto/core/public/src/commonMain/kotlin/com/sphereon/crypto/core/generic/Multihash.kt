@@ -15,6 +15,8 @@
  */
 
 package com.sphereon.crypto.core.generic
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
 
 /**
  * Multihash algorithm registry — maps DigestAlg to multicodec hash function codes.
@@ -23,6 +25,7 @@ package com.sphereon.crypto.core.generic
  * not a hash function. We store the *result* of HMAC-SHA256 using the sha2-256 code (0x12) —
  * the multihash describes the digest algorithm, not the keying mode.
  */
+@JsExportCompat
 enum class MultihashAlgorithm(
     val code: Int,
     val digestAlg: DigestAlg,
@@ -37,8 +40,10 @@ enum class MultihashAlgorithm(
     ;
 
     companion object {
+        @JvmStatic
         fun fromCode(code: Int): MultihashAlgorithm? = entries.find { it.code == code }
 
+        @JvmStatic
         fun fromDigestAlg(alg: DigestAlg): MultihashAlgorithm? = entries.find { it.digestAlg == alg }
     }
 }

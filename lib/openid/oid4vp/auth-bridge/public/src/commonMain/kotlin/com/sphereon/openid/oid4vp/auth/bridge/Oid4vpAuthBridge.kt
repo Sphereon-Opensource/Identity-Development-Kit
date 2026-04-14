@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vp.auth.bridge
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.auth.http.model.Oid4vpAuthStatusResponse
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthResult
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthSession
@@ -26,6 +27,7 @@ import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthSession
 /**
  * Arguments for creating a new OID4VP authentication session.
  */
+@JsExportCompat
 data class CreateSessionArgs(
     /**
      * Query ID to use. If null, uses the default from configuration.
@@ -58,6 +60,7 @@ data class CreateSessionArgs(
 /**
  * Result of creating a new OID4VP authentication session.
  */
+@JsExportCompat
 data class CreateSessionResult(
     /**
      * The created session.
@@ -100,6 +103,7 @@ data class CreateSessionResult(
  *
  * Implementations must be thread-safe for concurrent session operations.
  */
+@JsExportCompat
 interface Oid4vpAuthBridge {
     /**
      * Create a new OID4VP authentication session.

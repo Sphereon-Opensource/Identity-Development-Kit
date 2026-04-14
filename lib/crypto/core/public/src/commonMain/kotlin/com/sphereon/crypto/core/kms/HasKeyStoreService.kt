@@ -15,12 +15,13 @@
  */
 
 package com.sphereon.crypto.core.kms
-
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HasKeyStoreService", exact = true)
+@JsExportCompat
 interface HasKeyStoreService {
     val keyStore: KeyStoreService
 }

@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.dsl
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vc.common.DisplayProperties
@@ -345,6 +346,7 @@ class CredentialConfigurationBuilder(
 // DisplayBuilder
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class DisplayBuilder {
     /** Human-readable name (required). */
@@ -394,6 +396,7 @@ class DisplayBuilder {
 // CredentialDefinitionBuilder  (JWT VC JSON / W3C VC)
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class CredentialDefinitionBuilder {
     private val types = mutableListOf<String>()
@@ -430,6 +433,7 @@ class CredentialDefinitionBuilder {
 // ClaimMetadataBuilder  (OID4VCI 1.0 map-based claims)
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class ClaimMetadataBuilder {
     /** Whether the claim is mandatory. */
@@ -460,6 +464,7 @@ class ClaimMetadataBuilder {
 // CredentialMetadataBuilder  (OID4VCI 1.1 credential_metadata)
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class CredentialMetadataBuilder {
     private val displayEntries = mutableListOf<DisplayProperties>()
@@ -511,6 +516,7 @@ class CredentialMetadataBuilder {
 // ClaimBuilder  (OID4VCI 1.1 path-based claim)
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class ClaimBuilder(
     private val rawPath: List<Any>,
@@ -553,6 +559,7 @@ class ClaimBuilder(
 // MetadataEncryptionBuilder  (top-level credential_response_encryption)
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class MetadataEncryptionBuilder {
     private val algValues = mutableListOf<String>()
@@ -590,6 +597,7 @@ class MetadataEncryptionBuilder {
 // CredentialEncryptionBuilder  (per-config credential_response_encryption)
 // ---------------------------------------------------------------------------
 
+@JsExportCompat
 @Oid4vciDsl
 class CredentialEncryptionBuilder {
     private val algValues = mutableListOf<String>()

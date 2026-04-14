@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * DSL marker for command building to prevent scope leakage.
@@ -53,6 +54,7 @@ annotation class CommandDslMarker
  * @param Result The command result type
  * @property id The command ID
  */
+@JsExportCompat
 @CommandDslMarker
 class CommandBuilder<Arg : Any, Result : Any>(
     private val id: String,
@@ -196,6 +198,7 @@ inline fun <reified Arg : Any, Result : Any> command(
  * @param Result The command result type
  * @property id The command ID
  */
+@JsExportCompat
 @CommandDslMarker
 class SimpleCommandBuilder<Arg : Any, Result : Any>(
     private val id: String,

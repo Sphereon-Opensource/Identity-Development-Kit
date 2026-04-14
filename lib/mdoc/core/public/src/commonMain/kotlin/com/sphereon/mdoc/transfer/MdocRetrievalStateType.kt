@@ -17,13 +17,16 @@
 
 package com.sphereon.mdoc.transfer
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocState
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("provides", exact = true)
+@JsExportCompat
  * Represents a state within the context of an mDoc transfer session. This interface provides a way
  * to define various states and their corresponding attributes, which include a state name, an ordinal
  * order, and the ability to map the current state to its engagement counterpart.
@@ -62,6 +65,7 @@ sealed interface MdocRetrievalStateType : MdocState {
          * An array of all available entries in the `MdocTransferSessionState` enumeration.
          * This provides a comprehensive list of all defined states in `MdocTransferSessionState`.
          */
+        @JvmStatic
         val entries: Array<MdocRetrievalState> by lazy { MdocRetrievalState.entries.toTypedArray<MdocRetrievalState>() }
     }
 }
@@ -72,6 +76,7 @@ sealed interface MdocRetrievalStateType : MdocState {
  *
  * @property order Defines the order or priority of the state.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocRetrievalState", exact = true)
 enum class MdocRetrievalState(

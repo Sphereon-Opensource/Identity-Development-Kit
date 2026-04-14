@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -28,6 +29,7 @@ import kotlin.native.ObjCName
 import kotlin.reflect.KClass
 import kotlin.time.Clock
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertyResolver", exact = true)
 interface PropertyResolver {
@@ -74,6 +76,7 @@ interface PropertyResolver {
 /**
  * PropertyResolver with explicit scope-aware resolution support.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopeAwarePropertyResolver", exact = true)
 interface ScopeAwarePropertyResolver : PropertyResolver {
@@ -134,6 +137,7 @@ fun redactIfNeeded(
 }
 
 // TODO: Integrate conversions instead of relying on plain casts
+@JsExportCompat
 abstract class AbstractPropertyResolver(
     protected val redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
 ) : PropertyResolver {
@@ -162,6 +166,7 @@ abstract class AbstractPropertyResolver(
     ): Map<String, String> = getSubProperties(prefixes, stripPrefix).mapValues { (key, value) -> redactIfNeeded(key, value, redact, redactionPolicy = redactionPolicy) }
 }
 
+@JsExportCompat
 class PropertySourcesPropertyResolver(
     private val propertySources: PropertySources,
     redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
@@ -481,6 +486,7 @@ class NumberPropertyValueConverterImpl : IPropertyValueConversion<Number> {
         }
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IPropertyValueConversion", exact = true)
 interface IPropertyValueConversion<T : Any> {

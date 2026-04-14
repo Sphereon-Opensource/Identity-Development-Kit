@@ -16,15 +16,23 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Configuration for CSS policy validation.
  * Controls what is allowed in custom CSS overrides.
  */
+@JsExportCompat
 @Serializable
-data class CssPolicyConfig(
-    val maxSizeBytes: Int = 50_000,
-    val allowedProperties: Set<String>? = null,
-    val blockedSelectors: Set<String> = setOf("script", "iframe", "object", "embed", "form"),
-)
+data class CssPolicyConfig
+    @JvmOverloads
+    constructor(
+        val maxSizeBytes: Int = 50_000,
+        @JsExportIgnoreCompat
+        val allowedProperties: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val blockedSelectors: Set<String> = setOf("script", "iframe", "object", "embed", "form"),
+    )

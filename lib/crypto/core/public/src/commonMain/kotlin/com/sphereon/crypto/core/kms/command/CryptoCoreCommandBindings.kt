@@ -15,8 +15,8 @@
  */
 
 package com.sphereon.crypto.core.kms.command
-
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.jose.jwe.CreateJweCompactCommand
 import com.sphereon.crypto.jose.jwe.CreateJweJsonFlattenedCommand
 import com.sphereon.crypto.jose.jwe.CreateJweJsonGeneralCommand
@@ -32,6 +32,7 @@ import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
 
 @ContributesTo(SessionScope::class)
+@JsExportCompat
 interface CryptoCoreCommandBindings {
     // JWS commands
     @Provides

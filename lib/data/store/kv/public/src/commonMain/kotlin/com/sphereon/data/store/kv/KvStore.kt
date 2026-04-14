@@ -21,6 +21,8 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.time.Duration
 
 /**
@@ -32,6 +34,7 @@ import kotlin.time.Duration
  * - Scope binding (APP/TENANT/PRINCIPAL_TENANT/SESSION) is configured in [KvStoreConfig] and
  *   affects how data is partitioned in backing storage.
  */
+@JsExportCompat
 interface KvStore {
     val config: KvStoreConfigBase
 
@@ -79,6 +82,7 @@ interface KvStore {
  * - Protocol-layer stores should use this capability when present for better performance/integration,
  *   and fall back to maintaining their own indexes when absent.
  */
+@JsExportCompat
 interface KvStoreListing : KvStore {
     /**
      * List all non-expired keys for [namespace] in the current partition.
@@ -91,6 +95,7 @@ interface KvStoreListing : KvStore {
      * Default implementation uses [listKeys] and then reads values individually.
      * Backends may override this for better performance.
      */
+    @JsExportIgnoreCompat
     suspend fun <V : Any> getAll(namespace: KvNamespace<V>): IdkResult<Map<String, V>, IdkError> {
         val keys = listKeys(namespace).getOrElse { return Err(it) }
         val result = LinkedHashMap<String, V>(keys.size)
@@ -107,6 +112,7 @@ interface KvStoreListing : KvStore {
      * Default implementation uses [listKeys] and then reads entries individually.
      * Backends may override this for better performance.
      */
+    @JsExportIgnoreCompat
     suspend fun <V : Any> getAllEntries(namespace: KvNamespace<V>): IdkResult<Map<String, KvEntry<V>>, IdkError> {
         val keys = listKeys(namespace).getOrElse { return Err(it) }
         val result = LinkedHashMap<String, KvEntry<V>>(keys.size)

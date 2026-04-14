@@ -16,8 +16,10 @@
 
 package com.sphereon.data.store.schema.registry
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 @Serializable
 enum class SchemaType(
     val defaultContentType: String,

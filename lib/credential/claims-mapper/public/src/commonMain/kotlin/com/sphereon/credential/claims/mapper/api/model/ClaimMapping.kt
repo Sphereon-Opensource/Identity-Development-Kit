@@ -17,6 +17,8 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -59,6 +61,7 @@ import kotlinx.serialization.json.JsonElement
  *   present in the credential. This is applied when the claim cannot be extracted
  *   and allows providing fallback values per mapping.
  */
+@JsExportCompat
 @Serializable
 data class ClaimMapping(
     val sourceClaimPath: List<String>,
@@ -94,6 +97,7 @@ data class ClaimMapping(
          * @param type The type of path (SOURCE or TARGET) - useful for logging context
          * @return The path as a dot-separated string (e.g., "address.street")
          */
+        @JsExportIgnoreCompat
         fun pathAsString(
             path: List<String>,
             type: ClaimPathType,

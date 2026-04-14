@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.PublicApiCommand
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -87,6 +88,7 @@ interface DeleteCredentialOfferServiceCommand :
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetCredentialOfferStatusInput", exact = true)
+@JsExportCompat
 @Serializable
 data class GetCredentialOfferStatusInput(
     @SerialName("correlation_id")
@@ -98,6 +100,7 @@ data class GetCredentialOfferStatusInput(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteCredentialOfferOutput", exact = true)
+@JsExportCompat
 @Serializable
 data class DeleteCredentialOfferOutput(
     @SerialName("correlation_id")

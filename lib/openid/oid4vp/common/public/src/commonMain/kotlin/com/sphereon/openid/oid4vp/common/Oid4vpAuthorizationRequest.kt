@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.common
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -171,6 +173,7 @@ val AuthorizationRequest.isOid4vp: Boolean
  * Provides type-safe builder methods for OID4VP-specific parameters while
  * leveraging the OAuth2 AuthorizationRequest foundation.
  */
+@JsExportCompat
 class Oid4vpAuthorizationRequestBuilder(
     private var clientId: String,
     private var redirectUri: String? = null,
@@ -203,6 +206,7 @@ class Oid4vpAuthorizationRequestBuilder(
 
     fun responseMode(mode: ResponseMode) = apply { this.responseMode = mode.value }
 
+    @JsExportIgnoreCompat
     fun responseMode(mode: String) = apply { this.responseMode = mode }
 
     fun requestUri(uri: String) = apply { this.requestUri = uri }
@@ -226,6 +230,7 @@ class Oid4vpAuthorizationRequestBuilder(
 
     fun verifierInfo(attestations: List<VerifierAttestation>) = apply { this.verifierInfo = attestations }
 
+    @JsExportIgnoreCompat
     fun verifierInfo(vararg attestations: VerifierAttestation) =
         apply {
             this.verifierInfo = attestations.toList().takeIf { it.isNotEmpty() }

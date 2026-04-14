@@ -18,6 +18,8 @@ package com.sphereon.openid.oid4vp.auth.orchestration
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.matching.model.AssuranceSummary
 import com.sphereon.identity.reconciliation.model.KnownHolderState
 import com.sphereon.openid.oid4vp.auth.model.IdvRequirementReason
@@ -38,6 +40,7 @@ import kotlinx.serialization.json.JsonElement
  * - OIDC reconciliation session lifecycle
  * - Canonical binding materialization from merged wallet + OIDC attributes
  */
+@JsExportCompat
 interface ReconciliationOrchestratorApi {
     /**
      * Check if a known identity link binding exists for the given holder key fingerprint.
@@ -54,6 +57,7 @@ interface ReconciliationOrchestratorApi {
      * @param walletAttributes Pre-canonical wallet attributes for multi-material lookup (attribute-tuple matching). Null to skip.
      * @return [ResolvedKnownHolder] if a binding exists, null if not found
      */
+    @JsExportIgnoreCompat
     suspend fun resolveKnownHolder(
         holderKeyHash: String,
         tenantId: String,
@@ -91,6 +95,7 @@ interface ReconciliationOrchestratorApi {
      * @param walletAttributes The mapped wallet credential attributes (from the OID4VP session)
      * @return [ReconciliationCallbackResult] with the resolved identity and binding
      */
+    @JsExportIgnoreCompat
     suspend fun handleCallback(
         code: String,
         state: String,
@@ -111,6 +116,7 @@ interface ReconciliationOrchestratorApi {
      * @param providerId The OIDC provider ID used by the STS
      * @return [ReconciliationCallbackResult] with the resolved identity and binding
      */
+    @JsExportIgnoreCompat
     suspend fun handleCallbackWithClaims(
         oid4vpSessionId: String,
         claims: Map<String, JsonElement>,
@@ -162,10 +168,12 @@ interface ReconciliationOrchestratorApi {
  * @property assurance Assurance metadata from the binding (ACR, AMR, etc.)
  * @property state How the holder was matched
  */
+@JsExportCompat
 data class ResolvedKnownHolder(
     val userId: String,
     val bindingId: String,
     val matchId: String,
+    @JsExportIgnoreCompat
     val canonicalAttributes: Map<String, JsonElement>,
     val assurance: AssuranceSummary? = null,
     val state: KnownHolderState = KnownHolderState.MATCHED_HOLDER_KEY,
@@ -186,6 +194,7 @@ data class ResolvedKnownHolder(
  * @property planType The selected reconciliation plan type
  * @property idvRequirementReason The typed reason for this IDV initiation
  */
+@JsExportCompat
 data class ReconciliationInitiateResult(
     val sessionId: String,
     val reconciliationSessionId: String? = null,
@@ -203,10 +212,12 @@ data class ReconciliationInitiateResult(
  * @property canonicalAttributes The merged wallet + OIDC canonical attributes
  * @property assurance Assurance metadata from the reconciliation (ACR, AMR, execution ID)
  */
+@JsExportCompat
 data class ReconciliationCallbackResult(
     val oid4vpSessionId: String,
     val matchId: String,
     val resolvedUserId: String?,
+    @JsExportIgnoreCompat
     val canonicalAttributes: Map<String, JsonElement> = emptyMap(),
     val assurance: AssuranceSummary? = null,
 )
@@ -220,6 +231,7 @@ data class ReconciliationCallbackResult(
  * @property planType The selected reconciliation plan type, when known
  * @property idvRequirementReason The typed reason for this IDV flow, when known
  */
+@JsExportCompat
 data class ReconciliationStatusResult(
     val sessionId: String,
     val status: String,

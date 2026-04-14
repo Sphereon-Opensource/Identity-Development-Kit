@@ -32,6 +32,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -371,6 +373,7 @@ data class CborItemJson(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun isCborItemValueJson(jsonElement: JsonElement): Boolean {
             if (jsonElement !is JsonObject) {
                 return false
@@ -382,6 +385,7 @@ data class CborItemJson(
         }
 
         @JsStatic
+        @JvmStatic
         fun isCborItemJson(jsonElement: JsonElement): Boolean {
             if (jsonElement !is JsonObject) {
                 return false
@@ -393,6 +397,8 @@ data class CborItemJson(
         }
 
         @JsStatic
+        @JvmStatic
+        @JvmOverloads
         fun fromJsonPrimitive(
             jsonPrimitive: JsonPrimitive,
             cddl: CDDLType,
@@ -411,6 +417,7 @@ data class CborItemJson(
         }
 
         @JsStatic
+        @JvmStatic
         fun fromJsonArray(jsonArray: JsonArray): Array<ICborItemValueJson> =
             jsonArray
                 .map {
@@ -429,12 +436,14 @@ data class CborItemJson(
                 }.toTypedArray()
 
         @JsStatic
+        @JvmStatic
         fun fromJsonObjectAsCborItemJson(jsonObject: JsonObject): ICborItemJson {
             check(isCborItemJson(jsonObject)) { "JsonObject does not contain 3 elements from a Cbor Json Item" }
             return fromJsonObjectAsValueJson(jsonObject) as ICborItemJson
         }
 
         @JsStatic
+        @JvmStatic
         fun fromJsonObjectAsValueJson(jsonObject: JsonObject): ICborItemValueJson {
             check(isCborItemValueJson(jsonObject) || isCborItemValueJson(jsonObject)) { "JsonObject does not contain 2 or 3 elements from a Cbor Json Item" }
             val value = jsonObject[VALUE_LITERAL] ?: error("value not available")
@@ -456,6 +465,7 @@ data class CborItemJson(
         }
 
         @JsStatic
+        @JvmStatic
         fun fromDTO(cborItemJson: ICborItemJson): CborItemJson = CborItemJson(cborItemJson.key, cborItemJson.value, cborItemJson.cddl)
     }
 }

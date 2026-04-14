@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -34,6 +35,7 @@ import kotlinx.serialization.Serializable
  * @property naturalPersonId The linked natural person ID (optional, UUID as string).
  */
 @Serializable
+@JsExportCompat
 data class ResolvedUser(
     @SerialName("partyId")
     val partyId: String,

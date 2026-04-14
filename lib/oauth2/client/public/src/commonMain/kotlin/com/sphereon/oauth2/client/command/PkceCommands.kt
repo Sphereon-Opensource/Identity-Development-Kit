@@ -18,8 +18,10 @@ package com.sphereon.oauth2.client.command
 
 import com.sphereon.core.api.service.EmptyResult
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.common.model.PkceMethod
+import kotlin.jvm.JvmOverloads
 
 /**
  * Arguments for creating a PKCE challenge/verifier pair
@@ -27,10 +29,13 @@ import com.sphereon.oauth2.common.model.PkceMethod
  * @property codeVerifier Optional code verifier; if not provided, one will be generated
  * @property allowedMethods Allowed PKCE methods (defaults to S256 and PLAIN)
  */
-data class CreatePkceArgs(
-    val codeVerifier: String? = null,
-    val allowedMethods: List<PkceMethod> = listOf(PkceMethod.S256, PkceMethod.PLAIN),
-)
+@JsExportCompat
+data class CreatePkceArgs
+    @JvmOverloads
+    constructor(
+        val codeVerifier: String? = null,
+        val allowedMethods: List<PkceMethod> = listOf(PkceMethod.S256, PkceMethod.PLAIN),
+    )
 
 /**
  * Arguments for verifying a PKCE challenge/verifier pair
@@ -39,6 +44,7 @@ data class CreatePkceArgs(
  * @property codeChallenge The code challenge to verify against
  * @property method The PKCE method used
  */
+@JsExportCompat
 data class VerifyPkceArgs(
     val codeVerifier: String,
     val codeChallenge: String,
@@ -48,6 +54,7 @@ data class VerifyPkceArgs(
 /**
  * Command for creating PKCE challenge/verifier pairs (RFC 7636)
  */
+@JsExportCompat
 interface CreatePkceCommand : ServiceCommand<CreatePkceArgs, PkceData> {
     override val commandId: String get() = COMMAND_ID
 
@@ -59,6 +66,7 @@ interface CreatePkceCommand : ServiceCommand<CreatePkceArgs, PkceData> {
 /**
  * Command for verifying PKCE challenge/verifier pairs (RFC 7636)
  */
+@JsExportCompat
 interface VerifyPkceCommand : ServiceCommand<VerifyPkceArgs, EmptyResult> {
     override val commandId: String get() = COMMAND_ID
 

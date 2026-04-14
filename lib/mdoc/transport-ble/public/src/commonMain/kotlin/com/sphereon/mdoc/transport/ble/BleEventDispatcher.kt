@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.Uuid
@@ -48,6 +49,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleEventDispatcher", exact = true)
+@JsExportCompat
 interface BleEventDispatcher {
     /**
      * Dispatched when session establishment data is received.

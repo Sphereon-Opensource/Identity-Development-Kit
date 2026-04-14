@@ -19,6 +19,7 @@ package com.sphereon.credential.claims.mapper.api.store
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.credential.claims.mapper.api.model.ClaimMappingConfiguration
 
 /**
@@ -31,6 +32,7 @@ import com.sphereon.credential.claims.mapper.api.model.ClaimMappingConfiguration
  * with queries. Use the base [ClaimMappingConfigurationStore] when query
  * support is not needed.
  */
+@JsExportCompat
 interface QueryConfigurationStore : ClaimMappingConfigurationStore {
     /**
      * Find a configuration by its query ID.

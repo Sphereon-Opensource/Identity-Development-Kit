@@ -17,6 +17,8 @@
 
 package com.sphereon.core.api.session
 
+import kotlin.jvm.JvmStatic
+
 /**
  * Configuration for plugin and command access control.
  * This interface replaces the mutable global RuntimePluginConfig object
@@ -80,6 +82,7 @@ interface PluginConfig {
         /**
          * Creates a PluginConfig that only allows specific plugins.
          */
+        @JvmStatic
         fun allowPlugins(vararg pluginIds: String): PluginConfig =
             object : PluginConfig {
                 override val allowedPluginIds: Set<String> = pluginIds.toSet()
@@ -89,6 +92,7 @@ interface PluginConfig {
         /**
          * Creates a PluginConfig that only allows commands matching patterns.
          */
+        @JvmStatic
         fun allowCommands(vararg patterns: String): PluginConfig =
             object : PluginConfig {
                 override val allowedPluginIds: Set<String> = emptySet()
@@ -98,6 +102,7 @@ interface PluginConfig {
         /**
          * Creates a PluginConfig with both plugin and command restrictions.
          */
+        @JvmStatic
         fun of(
             pluginIds: Set<String>,
             commandPatterns: Set<String>,

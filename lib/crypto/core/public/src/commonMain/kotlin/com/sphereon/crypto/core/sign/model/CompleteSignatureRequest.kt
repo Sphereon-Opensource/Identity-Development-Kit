@@ -16,7 +16,7 @@
  */
 
 package com.sphereon.crypto.core.sign.model
-
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 
 /**
@@ -34,6 +34,7 @@ import com.sphereon.crypto.core.KeyInfoType
  * @property digestResponse The digest response from [com.sphereon.crypto.core.sign.SignatureService.createDigest]
  * @property signatureValue The externally computed signature value (e.g. from HSM or smart card)
  */
+@JsExportCompat
 data class CompleteSignatureRequest(
     val digestResponse: DigestResponse,
     val signatureValue: ByteArray,

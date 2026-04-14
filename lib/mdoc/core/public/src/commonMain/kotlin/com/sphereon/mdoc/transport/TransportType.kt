@@ -16,6 +16,7 @@
 
 package com.sphereon.mdoc.transport
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -31,6 +32,7 @@ import kotlin.native.ObjCName
  * - **OID4VP**: OpenID for Verifiable Presentations (ISO 18013-7 Annex B)
  * - **WIFI_AWARE**: WiFi Aware (future support)
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TransportType", exact = true)
 enum class TransportType {

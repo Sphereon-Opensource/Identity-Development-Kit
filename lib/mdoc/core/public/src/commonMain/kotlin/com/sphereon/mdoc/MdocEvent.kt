@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -26,6 +27,7 @@ private const val FINAL_STATE_ORDER_THRESHOLD = 200
 /**
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("representing", exact = true)
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEvent", exact = true)
  * Super interface representing events in the mdoc interaction lifecycle.

@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import io.konform.validation.Invalid
 import io.konform.validation.Valid
 import io.konform.validation.ValidationResult
@@ -27,6 +28,8 @@ import io.konform.validation.ValidationResult
 /**
  * Validation error detail from Konform
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class ValidationErrorDetail(
     val path: String,
     val message: String,

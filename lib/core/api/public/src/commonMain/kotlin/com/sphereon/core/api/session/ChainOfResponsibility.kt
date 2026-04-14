@@ -23,6 +23,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionContext
 
 /**
@@ -119,6 +120,7 @@ fun <A : Any, R : Any, E : IdkErrorType> chainOfResponsibility(
 /**
  * Configuration for Chain of Responsibility behavior.
  */
+@JsExportCompat
 data class ChainOfResponsibilityConfig(
     /**
      * Whether to stop on the first handler that supports the request,

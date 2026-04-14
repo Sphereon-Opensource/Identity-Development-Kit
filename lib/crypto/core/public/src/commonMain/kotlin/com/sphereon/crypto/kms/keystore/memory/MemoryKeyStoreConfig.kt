@@ -36,10 +36,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.serializer
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MemoryKeyStoreConfigType", exact = true)
+@JsExportCompat
 interface MemoryKeyStoreConfigType : KeyStoreConfig
 
 object MemoryKeyStoreConfigSerializer : JsonContentPolymorphicSerializer<KeyStoreConfig>(KeyStoreConfig::class) {
@@ -55,42 +57,45 @@ object MemoryKeyStoreConfigSerializer : JsonContentPolymorphicSerializer<KeyStor
 @SerialName("memory")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MemoryKeyStoreConfig", exact = true)
-data class MemoryKeyStoreConfig(
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val id: String = "memory",
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val enabled: Boolean = true,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    override val order: Int = Order.MEDIUM.orderValue,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    @SerialName("defaultConfigValues")
-    override val defaultConfigValues: Map<String, String> = emptyMap(),
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("keyVisibility")
-    override val keyVisibility: String = KeyVisibility.PUBLIC.keyVisibility,
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("overwriteAlias")
-    override val overwriteAlias: Boolean = true,
-    /**
-     * Defines the scope binding level for this keystore instance.
-     * - APP: Single storage shared across entire application
-     * - TENANT: Storage partitioned by tenant (default and suitable for REST APIs)
-     * - PRINCIPAL_TENANT: Storage partitioned by principal + tenant
-     * - SESSION: Storage partitioned by session + principal + tenant
-     */
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @SerialName("scopeBinding")
-    val scopeBinding: String = MemoryKeyStoreScopeBinding.TENANT.value,
-) : AbstractKeyStoreConfig(),
-    MemoryKeyStoreConfigType {
-    @OptIn(InternalSerializationApi::class)
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
-    @Transient
-    override val keyStoreType: String = PredefinedKeyStoreTypes.MEMORY.keyStoreType
+data class
+MemoryKeyStoreConfig
+    @JvmOverloads
+    constructor(
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val id: String = "memory",
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val enabled: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val order: Int = Order.MEDIUM.orderValue,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        @SerialName("defaultConfigValues")
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("keyVisibility")
+        override val keyVisibility: String = KeyVisibility.PUBLIC.keyVisibility,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("overwriteAlias")
+        override val overwriteAlias: Boolean = true,
+        /**
+         * Defines the scope binding level for this keystore instance.
+         * - APP: Single storage shared across entire application
+         * - TENANT: Storage partitioned by tenant (default and suitable for REST APIs)
+         * - PRINCIPAL_TENANT: Storage partitioned by principal + tenant
+         * - SESSION: Storage partitioned by session + principal + tenant
+         */
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("scopeBinding")
+        val scopeBinding: String = MemoryKeyStoreScopeBinding.TENANT.value,
+    ) : AbstractKeyStoreConfig(),
+        MemoryKeyStoreConfigType {
+        @OptIn(InternalSerializationApi::class)
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @Transient
+        override val keyStoreType: String = PredefinedKeyStoreTypes.MEMORY.keyStoreType
 
-    //  get the discriminator as a field (the field name, objectName, is unimportant)
-    // this must be a delegated field so there's no backing field, so kxs ignores it
-    @OptIn(InternalSerializationApi::class)
-    val type: String
-        get() = this::class.serializer().descriptor.serialName
-}
+        //  get the discriminator as a field (the field name, objectName, is unimportant)
+        // this must be a delegated field so there's no backing field, so kxs ignores it
+        @OptIn(InternalSerializationApi::class)
+        val type: String
+            get() = this::class.serializer().descriptor.serialName
+    }

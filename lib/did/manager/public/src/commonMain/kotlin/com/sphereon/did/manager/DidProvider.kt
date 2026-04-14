@@ -19,6 +19,7 @@ package com.sphereon.did.manager
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.did.capabilities.DidMethodCapabilities
 import com.sphereon.did.models.DidService
 
@@ -30,6 +31,7 @@ import com.sphereon.did.models.DidService
  *
  * Note: No `I` prefix - implementations are suffixed with `Impl` (e.g., `KeyDidProviderImpl`).
  */
+@JsExportCompat
 interface DidProvider {
     /**
      * The DID method this provider handles (e.g., "key", "web", "jwk").
@@ -145,6 +147,7 @@ interface DidProvider {
  * Any class annotated with `@ContributesIntoSet(SessionScope::class, binding = binding<DidProvider>())`
  * will be automatically registered.
  */
+@JsExportCompat
 interface DidProviderRegistry {
     /**
      * Gets the provider for a specific DID method.

@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocEvent
 import com.sphereon.mdoc.transfer.MdocRetrievalEvent
 import com.sphereon.mdoc.transfer.MdocRetrievalStateType
@@ -37,6 +38,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SequencedEvent", exact = true)
+@JsExportCompat
 data class SequencedEvent(
     val event: MdocEvent,
     val sequenceNumber: Long,
@@ -84,6 +86,7 @@ data class SequencedEvent(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEventHub", exact = true)
+@JsExportCompat
 interface MdocEventHub :
     MdocEngagementEvent.Handlers,
     MdocRetrievalEvent.Handlers {

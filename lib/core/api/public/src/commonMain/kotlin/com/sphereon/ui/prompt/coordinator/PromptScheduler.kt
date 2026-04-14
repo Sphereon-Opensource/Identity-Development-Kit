@@ -57,6 +57,7 @@ sealed interface ScheduleResult {
 /**
  * A prompt that has been deferred for later presentation.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeferredPrompt", exact = true)
 data class DeferredPrompt(
@@ -73,6 +74,7 @@ data class DeferredPrompt(
  * - Notifies via onRelease callback when prompts are released
  * - Releases deferred prompts when app comes to foreground
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PromptScheduler", exact = true)
 interface PromptScheduler {
@@ -123,6 +125,7 @@ interface PromptScheduler {
 /**
  * Default implementation of PromptScheduler.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PromptSchedulerImpl", exact = true)
 class PromptSchedulerImpl(

@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -26,6 +27,7 @@ import kotlinx.serialization.Serializable
  *
  * @property value The string result value
  */
+@JsExportCompat
 @Serializable
 data class StringResult(
     val value: String,

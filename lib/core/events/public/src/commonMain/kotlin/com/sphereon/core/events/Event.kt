@@ -8,8 +8,11 @@ package com.sphereon.core.events
 import com.sphereon.core.api.events.EventCategory
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventType
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -25,6 +28,7 @@ import kotlin.uuid.Uuid
  * - Encrypted for confidentiality using [EventEncryption]
  */
 @OptIn(ExperimentalUuidApi::class)
+@JsExportCompat
 interface Event {
     /**
      * Unique event identifier.
@@ -99,6 +103,7 @@ interface Event {
  * Signature information for signed events.
  */
 @Serializable
+@JsExportCompat
 data class EventSignature(
     /**
      * Key alias used for signing.
@@ -122,6 +127,7 @@ data class EventSignature(
  * Encryption information for encrypted events.
  */
 @Serializable
+@JsExportCompat
 data class EventEncryption(
     /**
      * Key alias used for encryption.
@@ -142,6 +148,7 @@ data class EventEncryption(
     /**
      * Which parts are encrypted.
      */
+    @JsExportIgnoreCompat
     val encryptedParts: Set<EncryptedPart>,
     /**
      * The JWE compact serialization.
@@ -153,6 +160,7 @@ data class EventEncryption(
  * Parts of an event that can be encrypted.
  */
 @Serializable
+@JsExportCompat
 enum class EncryptedPart {
     PAYLOAD,
     CONTEXT,
@@ -163,18 +171,21 @@ enum class EncryptedPart {
  */
 @OptIn(ExperimentalUuidApi::class)
 @Serializable
-data class DefaultEvent(
-    override val id: Uuid,
-    override val type: EventType,
-    override val origin: String,
-    override val timestamp: Instant,
-    override val context: EventContext,
-    override val subsystem: EventSubsystem,
-    override val category: EventCategory,
-    override val payload: JsonObject,
-    override val signature: EventSignature? = null,
-    override val encryption: EventEncryption? = null,
-    override val version: String = DEFAULT_EVENT_VERSION,
-) : Event
+@JsExportCompat
+data class DefaultEvent
+    @JvmOverloads
+    constructor(
+        override val id: Uuid,
+        override val type: EventType,
+        override val origin: String,
+        override val timestamp: Instant,
+        override val context: EventContext,
+        override val subsystem: EventSubsystem,
+        override val category: EventCategory,
+        override val payload: JsonObject,
+        override val signature: EventSignature? = null,
+        override val encryption: EventEncryption? = null,
+        override val version: String = DEFAULT_EVENT_VERSION,
+    ) : Event
 
 const val DEFAULT_EVENT_VERSION: String = "v1"

@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -31,6 +32,7 @@ import kotlin.native.ObjCName
  * Backends operate on string keys and byte array values.
  * Higher-level abstractions (Cache, ScopedCache) handle serialization.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheBackend", exact = true)
 interface CacheBackend {
@@ -138,6 +140,7 @@ interface CacheBackend {
  *
  * Used by CacheManager to select appropriate backends based on requirements.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BackendCapabilities", exact = true)

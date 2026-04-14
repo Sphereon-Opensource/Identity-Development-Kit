@@ -20,9 +20,11 @@ package com.sphereon.mdoc.data.device
 import com.sphereon.cbor.cddl_bool
 import com.sphereon.cbor.cddl_bstr
 import com.sphereon.cbor.cddl_tstr
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ReaderAuthValidation", exact = true)
 data class ReaderAuthValidation(

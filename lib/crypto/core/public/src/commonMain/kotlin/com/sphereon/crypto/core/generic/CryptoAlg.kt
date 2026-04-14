@@ -16,10 +16,11 @@
  */
 
 package com.sphereon.crypto.core.generic
-
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -32,6 +33,7 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CryptoAlg", exact = true)
 @Serializable
+@JsExportCompat
 enum class CryptoAlg(
     val internalName: String,
     val oid: String,
@@ -131,6 +133,7 @@ enum class CryptoAlg(
          * @throws IllegalArgumentException If no matching CryptoAlg is found for the provided name.
          */
         @JsStatic
+        @JvmStatic
         fun from(name: String): CryptoAlg =
             entries.find { it.internalName == name }
                 ?: throw IllegalArgumentException("Algorithm $name not found")

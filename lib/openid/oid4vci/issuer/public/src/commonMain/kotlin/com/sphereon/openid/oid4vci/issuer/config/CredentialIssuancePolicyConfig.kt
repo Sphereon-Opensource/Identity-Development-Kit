@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.issuer.config
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -38,6 +39,7 @@ import kotlinx.serialization.Serializable
  * | `deferred.retry-interval-seconds` | [deferredRetryIntervalSeconds] | `5` |
  * | `encryption.response-required` | [encryptionResponseRequired] | `false` |
  */
+@JsExportCompat
 @Serializable
 data class CredentialIssuancePolicyConfig(
     /** Whether Identity Assurance Evidence (IAE) is required for this credential type. */
@@ -77,6 +79,7 @@ data class CredentialIssuancePolicyConfig(
  * Implementations read policy from ConfigService; callers fall back to defaults when no
  * implementation is present (the interface is injected as optional).
  */
+@JsExportCompat
 interface CredentialIssuancePolicyResolver {
     /**
      * Resolves the issuance policy for [credentialConfigurationId].

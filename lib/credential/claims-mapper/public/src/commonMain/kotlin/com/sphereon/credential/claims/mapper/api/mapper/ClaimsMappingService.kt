@@ -19,6 +19,8 @@ package com.sphereon.credential.claims.mapper.api.mapper
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.credential.claims.mapper.api.model.ClaimMappingConfiguration
 import com.sphereon.credential.claims.mapper.api.model.CredentialWithId
 import com.sphereon.credential.claims.mapper.api.model.MappedClaimsResult
@@ -39,6 +41,7 @@ import kotlinx.serialization.json.JsonElement
  * For persistence support, use [PersistenceClaimsMappingService].
  * For DCQL-specific lookups, use [com.sphereon.credential.claims.mapper.api.adapter.DcqlClaimsMappingAdapter].
  */
+@JsExportCompat
 interface ClaimsMappingService {
     /**
      * Map claims from credentials using an inline configuration.
@@ -76,5 +79,6 @@ interface ClaimsMappingService {
      * @param credential The credential to extract claims from
      * @return Map of all claims in the credential, or error
      */
+    @JsExportIgnoreCompat
     suspend fun extractAllClaims(credential: CredentialWithId): IdkResult<Map<String, JsonElement>, IdkError>
 }

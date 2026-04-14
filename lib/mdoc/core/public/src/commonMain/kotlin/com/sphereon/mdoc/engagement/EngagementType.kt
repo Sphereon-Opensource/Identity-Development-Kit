@@ -16,6 +16,8 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Type of engagement (QR, NFC, or TO_APP for reverse/app-to-app).
  *
@@ -40,6 +42,7 @@ package com.sphereon.mdoc.engagement
  * **Important**: These two schemes are NOT interchangeable. Each part of the standard
  * uses a specific one based on who initiates the engagement.
  */
+@JsExportCompat
 enum class EngagementType {
     /** ISO 18013-5 - NFC proximity-based engagement */
     NFC,

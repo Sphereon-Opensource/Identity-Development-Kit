@@ -16,20 +16,25 @@
 
 package com.sphereon.conf.theme.core.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Structured branding metadata extracted from resolved theme tokens.
  * Provides typed access to branding-specific values.
  */
+@JsExportCompat
 @Serializable
-data class BrandingMetadata(
-    val appName: String? = null,
-    val primaryColor: String? = null,
-    val logoUrl: String? = null,
-    val logoDarkUrl: String? = null,
-    val faviconUrl: String? = null,
-    val fontResourceId: String? = null,
-    val logoResourceId: String? = null,
-    val logoDarkResourceId: String? = null,
-)
+data class BrandingMetadata
+    @JvmOverloads
+    constructor(
+        val appName: String? = null,
+        val primaryColor: String? = null,
+        val logoUrl: String? = null,
+        val logoDarkUrl: String? = null,
+        val faviconUrl: String? = null,
+        val fontResourceId: String? = null,
+        val logoResourceId: String? = null,
+        val logoDarkResourceId: String? = null,
+    )

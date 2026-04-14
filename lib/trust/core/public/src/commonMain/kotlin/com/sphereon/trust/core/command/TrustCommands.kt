@@ -8,6 +8,8 @@ package com.sphereon.trust.core.command
 
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.trust.core.model.DiscoveredEntityInfo
 import com.sphereon.trust.core.model.EntityDiscoveryOptions
 import com.sphereon.trust.core.model.TrustAnchor
@@ -21,6 +23,7 @@ import kotlin.time.Instant
 // Discover Entity Info Command
 // ============================================================================
 
+@JsExportCompat
 interface DiscoverEntityInfoCommand : ServiceCommand<DiscoverEntityInfoArgs, DiscoverEntityInfoResult> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
@@ -30,14 +33,17 @@ interface DiscoverEntityInfoCommand : ServiceCommand<DiscoverEntityInfoArgs, Dis
     }
 }
 
+@JsExportCompat
 @Serializable
 data class DiscoverEntityInfoArgs(
     val contextType: String,
     val entityIdentifier: String,
     val options: EntityDiscoveryOptions = EntityDiscoveryOptions(enabled = true),
+    @JsExportIgnoreCompat
     val parameters: Map<String, String> = emptyMap(),
 )
 
+@JsExportCompat
 @Serializable
 data class DiscoverEntityInfoResult(
     val entities: List<DiscoveredEntityInfo>,
@@ -49,6 +55,7 @@ data class DiscoverEntityInfoResult(
 // Trust Validation Command
 // ============================================================================
 
+@JsExportCompat
 interface ValidateTrustCommand : ServiceCommand<ValidateTrustArgs, TrustValidationResult> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
@@ -58,10 +65,12 @@ interface ValidateTrustCommand : ServiceCommand<ValidateTrustArgs, TrustValidati
     }
 }
 
+@JsExportCompat
 @Serializable
 data class ValidateTrustArgs(
     val contextType: String,
     val framework: String? = null,
+    @JsExportIgnoreCompat
     val parameters: Map<String, String> = emptyMap(),
     val identifierJson: String,
     val validationTime: Instant? = null,
@@ -73,6 +82,7 @@ data class ValidateTrustArgs(
 // Get Trust Anchors Command
 // ============================================================================
 
+@JsExportCompat
 interface GetTrustAnchorsCommand : ServiceCommand<GetTrustAnchorsArgs, TrustAnchorListResult> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.LIST
@@ -82,12 +92,14 @@ interface GetTrustAnchorsCommand : ServiceCommand<GetTrustAnchorsArgs, TrustAnch
     }
 }
 
+@JsExportCompat
 @Serializable
 data class GetTrustAnchorsArgs(
     val anchorType: TrustAnchorType? = null,
     val contextType: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class TrustAnchorListResult(
     val anchors: List<TrustAnchor>,
@@ -98,6 +110,7 @@ data class TrustAnchorListResult(
 // Refresh Trust Anchors Command
 // ============================================================================
 
+@JsExportCompat
 interface RefreshTrustAnchorsCommand : ServiceCommand<RefreshTrustArgs, RefreshTrustResult> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
@@ -107,12 +120,14 @@ interface RefreshTrustAnchorsCommand : ServiceCommand<RefreshTrustArgs, RefreshT
     }
 }
 
+@JsExportCompat
 @Serializable
 data class RefreshTrustArgs(
     val anchorType: TrustAnchorType? = null,
     val forceRefresh: Boolean = false,
 )
 
+@JsExportCompat
 @Serializable
 data class RefreshTrustResult(
     val refreshed: Boolean,
@@ -124,6 +139,7 @@ data class RefreshTrustResult(
 // Check Revocation Command
 // ============================================================================
 
+@JsExportCompat
 interface CheckRevocationCommand : ServiceCommand<CheckRevocationArgs, RevocationCheckCommandResult> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
@@ -133,6 +149,7 @@ interface CheckRevocationCommand : ServiceCommand<CheckRevocationArgs, Revocatio
     }
 }
 
+@JsExportCompat
 @Serializable
 data class CheckRevocationArgs(
     val certificateDer: ByteArray,
@@ -161,6 +178,7 @@ data class CheckRevocationArgs(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class RevocationCheckCommandResult(
     val status: String,

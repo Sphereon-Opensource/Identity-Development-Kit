@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.dcql
 
+import com.sphereon.core.compat.JsExportCompat
 import io.konform.validation.Invalid
 import kotlinx.serialization.Serializable
 
@@ -61,6 +62,7 @@ import kotlinx.serialization.Serializable
  *   - For openid_federation: HTTPS URLs representing entity identifiers
  */
 @Serializable
+@JsExportCompat
 data class DcqlTrustedAuthority(
     val type: String,
     val values: List<String>,

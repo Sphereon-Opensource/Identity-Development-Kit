@@ -18,6 +18,7 @@
 package com.sphereon.core.api.conf
 
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -72,6 +73,7 @@ object ProtectionPrefixes {
  * @property isInterpolationProtected If true, property cannot be interpolated from lower scopes
  * @property definedAt The scope level where this protection was defined
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertyProtection", exact = true)
 @CoverageExcludedDataClass
@@ -112,6 +114,7 @@ data class PropertyProtection(
  * @property canonicalKey The key with protection prefixes stripped
  * @property protection The protection metadata extracted from prefixes
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParsedProtectedKey", exact = true)
 @CoverageExcludedDataClass
@@ -126,6 +129,7 @@ data class ParsedProtectedKey(
  * @property value The actual property value
  * @property protection The protection metadata for this value
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedPropertyValue", exact = true)
 @CoverageExcludedDataClass

@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -35,6 +36,7 @@ import kotlin.time.Duration
  * Provides a simpler API than working directly with CacheManager,
  * wrapping operations in IdkResult for consistent error handling.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheService", exact = true)
 interface CacheService {

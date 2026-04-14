@@ -16,6 +16,9 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
+
 /**
  * App-scoped route metadata descriptor for session-scoped commands.
  *
@@ -38,12 +41,14 @@ package com.sphereon.core.api.service
  * }
  * ```
  */
+@JsExportCompat
 interface PublicApiRouteDescriptor {
     val commandId: String
     val httpMethod: String
     val httpPath: String
 
     companion object {
+        @JvmStatic
         fun of(
             commandId: String,
             httpMethod: String,

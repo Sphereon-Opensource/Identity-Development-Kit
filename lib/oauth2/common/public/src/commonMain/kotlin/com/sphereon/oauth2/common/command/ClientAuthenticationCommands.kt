@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationResult
 
@@ -26,6 +27,7 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationResult
  * @property config The client authentication configuration
  * @property tokenEndpoint The token endpoint URL (used for JWT audience)
  */
+@JsExportCompat
 data class ApplyClientAuthenticationArgs(
     val config: ClientAuthenticationConfig,
     val tokenEndpoint: String,
@@ -45,6 +47,7 @@ data class ApplyClientAuthenticationArgs(
  * The command takes a ClientAuthenticationConfig and returns headers and body parameters
  * that should be added to the HTTP request.
  */
+@JsExportCompat
 interface ApplyClientAuthenticationCommand : ServiceCommand<ApplyClientAuthenticationArgs, ClientAuthenticationResult> {
     override val commandId: String get() = COMMAND_ID
 

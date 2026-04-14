@@ -21,22 +21,26 @@ import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.cbor.CborItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.ReaderAuthentication
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 
+@JsExportCompat
 interface SessionEstablishmentCborCodec {
     fun encode(value: SessionEstablishment): IdkResult<ByteArray, IdkError>
 
     fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<SessionEstablishment>, IdkError>
 }
 
+@JsExportCompat
 interface SessionDataCborCodec {
     fun encode(value: SessionData): IdkResult<ByteArray, IdkError>
 
     fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<SessionData>, IdkError>
 }
 
+@JsExportCompat
 interface SessionTranscriptCborCodec {
     fun encode(value: SessionTranscript): IdkResult<ByteArray, IdkError>
 
@@ -55,6 +59,7 @@ interface HandoverCborCodec {
     fun decode(item: CborItem<*>): IdkResult<Handover<*, CborItem<*>>, IdkError>
 }
 
+@JsExportCompat
 interface ReaderAuthenticationCborCodec {
     fun encode(value: ReaderAuthentication): IdkResult<ByteArray, IdkError>
 

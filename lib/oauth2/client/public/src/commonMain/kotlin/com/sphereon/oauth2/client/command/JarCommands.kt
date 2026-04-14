@@ -18,8 +18,11 @@ package com.sphereon.oauth2.client.command
 
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.StringResult
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.oauth2.common.model.AuthorizationRequest
+import kotlin.jvm.JvmOverloads
 
 /**
  * Arguments for creating a signed JAR (JWT-secured Authorization Request)
@@ -33,28 +36,31 @@ import com.sphereon.oauth2.common.model.AuthorizationRequest
  * @property audience The authorization server's issuer URL (acts as JWT audience)
  * @property expirationSeconds Optional expiration time in seconds (default: 300 = 5 minutes)
  */
-data class CreateSignedJarArgs(
-    val authorizationRequest: AuthorizationRequest,
-    val signingKey: KeyInfoType<*>,
-    val issuer: String, // client_id
-    val audience: String, // authorization server issuer
-    val expirationSeconds: Long = 300,
-    /** Explicit kid for the JWT header (e.g., DID verification method ID). */
-    val kid: String? = null,
-    /**
-     * X.509 certificate chain for the `x5c` JOSE header per RFC 7515 §4.1.6
-     * (base64-encoded DER, leaf first). Mutually exclusive with [kid] in practice;
-     * callers should set exactly one.
-     */
-    val x5c: List<String>? = null,
-    /**
-     * Whether to emit an `iss` claim in the payload. Defaults to `true` — RFC 9101 §3 lists
-     * `iss` as SHOULD and defines it as the client_id. Callers who intentionally omit `iss`
-     * (e.g. when their client-id encoding would make `iss = client_id` unhelpful to
-     * downstream validators) can set this to `false`. When true, `iss` is set to [issuer].
-     */
-    val includeIss: Boolean = true,
-)
+@JsExportCompat
+data class CreateSignedJarArgs
+    @JvmOverloads
+    constructor(
+        val authorizationRequest: AuthorizationRequest,
+        val signingKey: KeyInfoType<*>,
+        val issuer: String, // client_id
+        val audience: String, // authorization server issuer
+        val expirationSeconds: Long = 300,
+        /** Explicit kid for the JWT header (e.g., DID verification method ID). */
+        val kid: String? = null,
+        /**
+         * X.509 certificate chain for the `x5c` JOSE header per RFC 7515 §4.1.6
+         * (base64-encoded DER, leaf first). Mutually exclusive with [kid] in practice;
+         * callers should set exactly one.
+         */
+        val x5c: List<String>? = null,
+        /**
+         * Whether to emit an `iss` claim in the payload. Defaults to `true` — RFC 9101 §3 lists
+         * `iss` as SHOULD and defines it as the client_id. Callers who intentionally omit `iss`
+         * (e.g. when their client-id encoding would make `iss = client_id` unhelpful to
+         * downstream validators) can set this to `false`. When true, `iss` is set to [issuer].
+         */
+        val includeIss: Boolean = true,
+    )
 
 /**
  * Arguments for creating an encrypted JAR (nested JWT)
@@ -67,12 +73,15 @@ data class CreateSignedJarArgs(
  * @property keyEncryptionAlgorithm The algorithm for key encryption (e.g., "RSA-OAEP-256")
  * @property contentEncryptionAlgorithm The algorithm for content encryption (e.g., "A256GCM")
  */
-data class CreateEncryptedJarArgs(
-    val signedJar: String,
-    val recipientPublicKey: KeyInfoType<*>,
-    val keyEncryptionAlgorithm: String = "RSA-OAEP-256",
-    val contentEncryptionAlgorithm: String = "A256GCM",
-)
+@JsExportCompat
+data class CreateEncryptedJarArgs
+    @JvmOverloads
+    constructor(
+        val signedJar: String,
+        val recipientPublicKey: KeyInfoType<*>,
+        val keyEncryptionAlgorithm: String = "RSA-OAEP-256",
+        val contentEncryptionAlgorithm: String = "A256GCM",
+    )
 
 /**
  * Arguments for parsing and validating a JAR
@@ -83,13 +92,16 @@ data class CreateEncryptedJarArgs(
  * @property verificationKey Public key for signature verification (if signed)
  * @property decryptionKey Private key for decryption (if encrypted)
  */
-data class ParseJarArgs(
-    val jarToken: String,
-    val issuer: String,
-    val audience: String,
-    val verificationKey: KeyInfoType<*>? = null,
-    val decryptionKey: KeyInfoType<*>? = null,
-)
+@JsExportCompat
+data class ParseJarArgs
+    @JvmOverloads
+    constructor(
+        val jarToken: String,
+        val issuer: String,
+        val audience: String,
+        val verificationKey: KeyInfoType<*>? = null,
+        val decryptionKey: KeyInfoType<*>? = null,
+    )
 
 /**
  * Result of parsing a JAR token
@@ -98,9 +110,11 @@ data class ParseJarArgs(
  * @property isEncrypted Whether the JAR was encrypted
  * @property claims Additional JWT claims from the JAR
  */
+@JsExportCompat
 data class ParsedJarResult(
     val authorizationRequest: AuthorizationRequest,
     val isEncrypted: Boolean,
+    @property:JsExportIgnoreCompat
     val claims: Map<String, Any?>,
 )
 
@@ -113,6 +127,7 @@ data class ParsedJarResult(
  * 3. Signs the JWT using the client's private key
  * 4. Returns the compact JWS serialization
  */
+@JsExportCompat
 interface CreateSignedJarCommand : ServiceCommand<CreateSignedJarArgs, StringResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -131,6 +146,7 @@ interface CreateSignedJarCommand : ServiceCommand<CreateSignedJarArgs, StringRes
  *
  * The result is a nested JWT: JWE(JWS(authorization_request))
  */
+@JsExportCompat
 interface CreateEncryptedJarCommand : ServiceCommand<CreateEncryptedJarArgs, StringResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -149,6 +165,7 @@ interface CreateEncryptedJarCommand : ServiceCommand<CreateEncryptedJarArgs, Str
  * 4. Validates JWT claims (iss, aud, exp)
  * 5. Extracts authorization request parameters
  */
+@JsExportCompat
 interface ParseJarCommand : ServiceCommand<ParseJarArgs, ParsedJarResult> {
     override val commandId: String get() = COMMAND_ID
 

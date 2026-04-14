@@ -24,6 +24,7 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlin.jvm.JvmStatic
 
 /**
  * Represents a digital signature compliance level, associated with a [SignatureForm].
@@ -51,8 +52,13 @@ open class SignatureLevel(
     override fun toString(): String = value
 
     companion object {
+        @JvmStatic
         val RAW = SignatureLevel("RAW", SignatureForm.RAW)
+
+        @JvmStatic
         val JWS = SignatureLevel("JWS", SignatureForm.JWS)
+
+        @JvmStatic
         val COSE = SignatureLevel("COSE", SignatureForm.COSE)
 
         private val registry = mutableMapOf<String, SignatureLevel>()
@@ -60,6 +66,7 @@ open class SignatureLevel(
         /**
          * All currently registered signature levels.
          */
+        @JvmStatic
         val entries: List<SignatureLevel> get() = registry.values.toList()
 
         init {
@@ -70,6 +77,7 @@ open class SignatureLevel(
          * Register a signature level in the global registry.
          * Used by EDK to register eIDAS levels.
          */
+        @JvmStatic
         fun register(level: SignatureLevel): SignatureLevel {
             registry[level.value] = level
             return level
@@ -79,6 +87,7 @@ open class SignatureLevel(
          * Look up a signature level by its string value.
          * Returns null if not registered.
          */
+        @JvmStatic
         fun fromValue(value: String): SignatureLevel? = registry[value]
     }
 }

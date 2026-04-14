@@ -25,6 +25,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import com.github.michaelbull.result.Err as resultErr
 import com.github.michaelbull.result.Ok as resultOk
@@ -155,11 +156,13 @@ open class IdkResult<out V, out E>
             /**
              * Creates a successful IdkResult from a value
              */
+            @JvmStatic
             fun <V, E> ok(value: V): IdkResult<V, E> = Ok(value).asResult()
 
             /**
              * Creates a failed IdkResult from an error
              */
+            @JvmStatic
             fun <V, E> err(error: E): IdkResult<V, E> = Err(error).asResult()
         }
     }
@@ -399,6 +402,7 @@ internal class IdkResultEarlyReturn(
 /**
  * Scope for [idkResult] blocks providing [bind] syntax.
  */
+@JsExportCompat
 class IdkResultScope
     @PublishedApi
     internal constructor() {

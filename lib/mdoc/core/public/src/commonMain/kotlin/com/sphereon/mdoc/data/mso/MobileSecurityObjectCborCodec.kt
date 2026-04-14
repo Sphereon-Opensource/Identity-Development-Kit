@@ -20,8 +20,10 @@ package com.sphereon.mdoc.data.mso
 import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.DecodedMdoc
 
+@JsExportCompat
 interface MobileSecurityObjectCborCodec {
     fun encode(value: MobileSecurityObject): IdkResult<ByteArray, IdkError>
 

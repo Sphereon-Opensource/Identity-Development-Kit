@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.credential.design.command
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
@@ -32,15 +33,18 @@ import com.sphereon.data.store.credential.design.model.UpdateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.UpdateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.Uuid
 
 // Credential Design CRUD
+@JsExportCompat
 @Serializable
 data class CreateCredentialDesignArgs(
     val tenantId: String,
     val input: CreateCredentialDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class GetCredentialDesignArgs(
     val tenantId: String,
@@ -48,18 +52,21 @@ data class GetCredentialDesignArgs(
 )
 
 // Shared args for entity-agnostic operations
+@JsExportCompat
 @Serializable
 data class GetDesignArgs(
     val tenantId: String,
     val id: Uuid,
 )
 
+@JsExportCompat
 @Serializable
 data class FindByBindingArgs(
     val tenantId: String,
     val binding: DesignBinding,
 )
 
+@JsExportCompat
 @Serializable
 data class FindByBindingKeyArgs(
     val tenantId: String,
@@ -67,12 +74,16 @@ data class FindByBindingKeyArgs(
     val bindingValue: String,
 )
 
+@JsExportCompat
 @Serializable
-data class ListDesignsArgs(
-    val tenantId: String,
-    val filter: DesignFilter = DesignFilter(),
-)
+data class ListDesignsArgs
+    @JvmOverloads
+    constructor(
+        val tenantId: String,
+        val filter: DesignFilter = DesignFilter(),
+    )
 
+@JsExportCompat
 @Serializable
 data class UpdateCredentialDesignArgs(
     val tenantId: String,
@@ -80,6 +91,7 @@ data class UpdateCredentialDesignArgs(
     val input: UpdateCredentialDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class DeleteDesignArgs(
     val tenantId: String,
@@ -87,12 +99,14 @@ data class DeleteDesignArgs(
 )
 
 // Issuer Design
+@JsExportCompat
 @Serializable
 data class CreateIssuerDesignArgs(
     val tenantId: String,
     val input: CreateIssuerDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class UpdateIssuerDesignArgs(
     val tenantId: String,
@@ -101,12 +115,14 @@ data class UpdateIssuerDesignArgs(
 )
 
 // Verifier Design
+@JsExportCompat
 @Serializable
 data class CreateVerifierDesignArgs(
     val tenantId: String,
     val input: CreateVerifierDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class UpdateVerifierDesignArgs(
     val tenantId: String,
@@ -115,18 +131,21 @@ data class UpdateVerifierDesignArgs(
 )
 
 // Render Variants
+@JsExportCompat
 @Serializable
 data class CreateRenderVariantArgs(
     val tenantId: String,
     val input: CreateRenderVariantInput,
 )
 
+@JsExportCompat
 @Serializable
 data class GetRenderVariantArgs(
     val tenantId: String,
     val id: Uuid,
 )
 
+@JsExportCompat
 @Serializable
 data class UpdateRenderVariantArgs(
     val tenantId: String,
@@ -134,12 +153,16 @@ data class UpdateRenderVariantArgs(
     val input: CreateRenderVariantInput,
 )
 
+@JsExportCompat
 @Serializable
-data class ListRenderVariantsArgs(
-    val tenantId: String,
-    val filter: DesignFilter = DesignFilter(),
-)
+data class ListRenderVariantsArgs
+    @JvmOverloads
+    constructor(
+        val tenantId: String,
+        val filter: DesignFilter = DesignFilter(),
+    )
 
+@JsExportCompat
 @Serializable
 data class DeleteRenderVariantArgs(
     val tenantId: String,
@@ -147,12 +170,14 @@ data class DeleteRenderVariantArgs(
 )
 
 // Import / Refresh
+@JsExportCompat
 @Serializable
 data class ImportExternalDesignArgs(
     val tenantId: String,
     val input: ImportExternalDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class RefreshDesignArgs(
     val tenantId: String,
@@ -160,12 +185,14 @@ data class RefreshDesignArgs(
 )
 
 // Snapshots
+@JsExportCompat
 @Serializable
 data class GetSourceSnapshotArgs(
     val tenantId: String,
     val snapshotId: Uuid,
 )
 
+@JsExportCompat
 @Serializable
 data class RefreshSourceSnapshotArgs(
     val tenantId: String,
@@ -173,18 +200,21 @@ data class RefreshSourceSnapshotArgs(
 )
 
 // Resolution
+@JsExportCompat
 @Serializable
 data class ResolveCredentialDesignArgs(
     val tenantId: String,
     val input: ResolveCredentialDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class ResolveIssuerDesignArgs(
     val tenantId: String,
     val input: ResolveEntityDesignInput,
 )
 
+@JsExportCompat
 @Serializable
 data class ResolveVerifierDesignArgs(
     val tenantId: String,
@@ -192,12 +222,14 @@ data class ResolveVerifierDesignArgs(
 )
 
 // Assets
+@JsExportCompat
 @Serializable
 data class UploadDesignAssetArgs(
     val tenantId: String,
     val input: UploadDesignAssetInput,
 )
 
+@JsExportCompat
 @Serializable
 data class GetDesignAssetArgs(
     val tenantId: String,

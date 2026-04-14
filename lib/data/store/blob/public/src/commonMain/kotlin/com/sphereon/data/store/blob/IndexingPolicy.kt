@@ -16,12 +16,14 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
  * Per-tenant indexing configuration. EDK enforces this; IDK defines the model.
  */
 @Serializable
+@JsExportCompat
 data class IndexingPolicy(
     val enabled: Boolean = true,
     val indexContentHash: Boolean = true,

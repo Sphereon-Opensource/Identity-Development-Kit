@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -29,6 +30,7 @@ import kotlinx.serialization.Serializable
  * - none: Public client (no authentication)
  * - attest_jwt_client_auth: Client attestation JWT (draft-ietf-oauth-attestation-based-client-auth)
  */
+@JsExportCompat
 @Serializable
 enum class ClientAuthenticationMethod(
     val value: String,
@@ -51,6 +53,7 @@ enum class ClientAuthenticationMethod(
  *
  * Used for client_secret_basic and client_secret_post authentication methods
  */
+@JsExportCompat
 data class ClientCredentials(
     val clientId: String,
     val clientSecret: String,
@@ -61,6 +64,7 @@ data class ClientCredentials(
  *
  * Used for client_secret_jwt and private_key_jwt authentication methods
  */
+@JsExportCompat
 data class ClientAssertion(
     val clientId: String,
     // e.g., "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
@@ -75,6 +79,7 @@ data class ClientAssertion(
  * Used for attest_jwt_client_auth authentication method
  * (draft-ietf-oauth-attestation-based-client-auth)
  */
+@JsExportCompat
 data class ClientAttestation(
     val clientAttestationJwt: String,
     val clientAttestationPopJwt: String,
@@ -153,6 +158,8 @@ sealed interface ClientAuthenticationConfig {
  *
  * Contains the modified headers and body parameters
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class ClientAuthenticationResult(
     val headers: Map<String, String>,
     val bodyParameters: Map<String, String>,

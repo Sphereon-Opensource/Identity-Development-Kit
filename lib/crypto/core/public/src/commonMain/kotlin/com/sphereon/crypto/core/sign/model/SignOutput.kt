@@ -18,6 +18,7 @@
 package com.sphereon.crypto.core.sign.model
 
 import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 /**
@@ -36,6 +37,7 @@ import kotlin.time.Instant
  * @property name Optional name for the output document
  * @property mimeType MIME type of the signed document
  */
+@JsExportCompat
 interface SignOutput {
     val signedData: ByteArray
     val signatureLevel: SignatureLevel
@@ -48,51 +50,55 @@ interface SignOutput {
 /**
  * Default data class implementation of [SignOutput] for RAW/JWS/COSE signing in IDK.
  */
-data class SignOutputData(
-    override val signedData: ByteArray,
-    override val signatureLevel: SignatureLevel,
-    override val signingTime: Instant,
-    override val signatureId: String? = null,
-    override val name: String? = null,
-    override val mimeType: String? = null,
-) : SignOutput {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+@JsExportCompat
+data class
+SignOutputData
+    @JvmOverloads
+    constructor(
+        override val signedData: ByteArray,
+        override val signatureLevel: SignatureLevel,
+        override val signingTime: Instant,
+        override val signatureId: String? = null,
+        override val name: String? = null,
+        override val mimeType: String? = null,
+    ) : SignOutput {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other !is SignOutputData) {
+                return false
+            }
+
+            if (!signedData.contentEquals(other.signedData)) {
+                return false
+            }
+            if (signatureLevel != other.signatureLevel) {
+                return false
+            }
+            if (signingTime != other.signingTime) {
+                return false
+            }
+            if (signatureId != other.signatureId) {
+                return false
+            }
+            if (name != other.name) {
+                return false
+            }
+            if (mimeType != other.mimeType) {
+                return false
+            }
+
             return true
         }
-        if (other !is SignOutputData) {
-            return false
-        }
 
-        if (!signedData.contentEquals(other.signedData)) {
-            return false
+        override fun hashCode(): Int {
+            var result = signedData.contentHashCode()
+            result = 31 * result + signatureLevel.hashCode()
+            result = 31 * result + signingTime.hashCode()
+            result = 31 * result + (signatureId?.hashCode() ?: 0)
+            result = 31 * result + (name?.hashCode() ?: 0)
+            result = 31 * result + (mimeType?.hashCode() ?: 0)
+            return result
         }
-        if (signatureLevel != other.signatureLevel) {
-            return false
-        }
-        if (signingTime != other.signingTime) {
-            return false
-        }
-        if (signatureId != other.signatureId) {
-            return false
-        }
-        if (name != other.name) {
-            return false
-        }
-        if (mimeType != other.mimeType) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = signedData.contentHashCode()
-        result = 31 * result + signatureLevel.hashCode()
-        result = 31 * result + signingTime.hashCode()
-        result = 31 * result + (signatureId?.hashCode() ?: 0)
-        result = 31 * result + (name?.hashCode() ?: 0)
-        result = 31 * result + (mimeType?.hashCode() ?: 0)
-        return result
-    }
-}

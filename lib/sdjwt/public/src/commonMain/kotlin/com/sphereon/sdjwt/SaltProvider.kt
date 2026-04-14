@@ -17,7 +17,9 @@
 package com.sphereon.sdjwt
 
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.compat.JsExportCompat
 import dev.whyoleg.cryptography.random.CryptographyRandom
+import kotlin.jvm.JvmOverloads
 
 /**
  * Default implementation of SaltProvider using cryptographically secure random number generation
@@ -25,6 +27,7 @@ import dev.whyoleg.cryptography.random.CryptographyRandom
  * This implementation uses the cryptography-kotlin library's CryptographyRandom
  * which provides platform-specific secure random generation
  */
+@JsExportCompat
 class DefaultSaltProvider : SaltProvider {
     /**
      * Generate a cryptographically secure random salt
@@ -63,29 +66,32 @@ class DefaultSaltProvider : SaltProvider {
  *
  * @param prefix Optional prefix for generated salts (useful for distinguishing test scenarios)
  */
-class DeterministicSaltProvider(
-    private val prefix: String = "test",
-) : SaltProvider {
-    private var counter = 0
+@JsExportCompat
+class DeterministicSaltProvider
+    @JvmOverloads
+    constructor(
+        private val prefix: String = "test",
+    ) : SaltProvider {
+        private var counter = 0
 
-    /**
-     * Generate a deterministic salt for testing
-     *
-     * @param length Ignored - salts are generated with consistent length
-     * @return Base64url-encoded deterministic salt
-     */
-    override fun generateSalt(length: Int): String {
-        val salt = "${prefix}_salt_${counter++}"
-        return salt.encodeToByteArray().encodeToBase64Url()
-    }
+        /**
+         * Generate a deterministic salt for testing
+         *
+         * @param length Ignored - salts are generated with consistent length
+         * @return Base64url-encoded deterministic salt
+         */
+        override fun generateSalt(length: Int): String {
+            val salt = "${prefix}_salt_${counter++}"
+            return salt.encodeToByteArray().encodeToBase64Url()
+        }
 
-    /**
-     * Reset the counter (useful between tests)
-     */
-    fun reset() {
-        counter = 0
+        /**
+         * Reset the counter (useful between tests)
+         */
+        fun reset() {
+            counter = 0
+        }
     }
-}
 
 /**
  * Salt provider that allows pre-configured salts
@@ -95,6 +101,7 @@ class DeterministicSaltProvider(
  *
  * @param configuredSalts List of pre-configured base64url-encoded salts
  */
+@JsExportCompat
 class ConfiguredSaltProvider(
     private val configuredSalts: List<String>,
 ) : SaltProvider {

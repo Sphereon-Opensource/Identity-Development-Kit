@@ -22,90 +22,98 @@ import com.sphereon.cbor.CborString
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 @JsExportCompat
-data class CoseMac0InputCbor(
-    val protectedHeader: CoseHeaderCbor = CoseHeaderCbor(),
-    val unprotectedHeader: CoseHeaderCbor? = null,
-    val externalAad: ByteArray = byteArrayOf(),
-    val payload: ByteArray? = null,
-    val detachedPayload: ByteArray? = null,
-) {
-    companion object
-
-    class Builder(
-        private var protectedHeader: CoseHeaderCbor = CoseHeaderCbor(),
-        private var unprotectedHeader: CoseHeaderCbor? = null,
-        private var payload: ByteArray? = null,
-        private var detachedPayload: ByteArray? = null,
-        private var externalAad: ByteArray? = null,
+data class
+CoseMac0InputCbor
+    @JvmOverloads
+    constructor(
+        val protectedHeader: CoseHeaderCbor = CoseHeaderCbor(),
+        val unprotectedHeader: CoseHeaderCbor? = null,
+        val externalAad: ByteArray = byteArrayOf(),
+        val payload: ByteArray? = null,
+        val detachedPayload: ByteArray? = null,
     ) {
-        fun withProtectedHeader(protectedHeader: CoseHeaderCbor) = apply { this.protectedHeader = protectedHeader }
+        companion object
 
-        fun withUnprotectedHeader(unprotectedHeader: CoseHeaderCbor) = apply { this.unprotectedHeader = unprotectedHeader }
+        class Builder(
+            private var protectedHeader: CoseHeaderCbor = CoseHeaderCbor(),
+            private var unprotectedHeader: CoseHeaderCbor? = null,
+            private var payload: ByteArray? = null,
+            private var detachedPayload: ByteArray? = null,
+            private var externalAad: ByteArray? = null,
+        ) {
+            fun withProtectedHeader(protectedHeader: CoseHeaderCbor) = apply { this.protectedHeader = protectedHeader }
 
-        fun withPayload(payload: ByteArray) = apply { this.payload = payload }
+            fun withUnprotectedHeader(unprotectedHeader: CoseHeaderCbor) = apply { this.unprotectedHeader = unprotectedHeader }
 
-        fun withDetachedPayload(detachedPayload: ByteArray) = apply { this.detachedPayload = detachedPayload }
+            fun withPayload(payload: ByteArray) = apply { this.payload = payload }
 
-        fun withExternalAad(externalAad: ByteArray) = apply { this.externalAad = externalAad }
+            fun withDetachedPayload(detachedPayload: ByteArray) = apply { this.detachedPayload = detachedPayload }
 
-        fun build(): CoseMac0InputCbor =
-            CoseMac0InputCbor(
-                payload = payload,
-                detachedPayload = detachedPayload,
-                protectedHeader = protectedHeader,
-                unprotectedHeader = unprotectedHeader,
-                externalAad = externalAad ?: byteArrayOf(),
-            )
+            fun withExternalAad(externalAad: ByteArray) = apply { this.externalAad = externalAad }
+
+            fun build(): CoseMac0InputCbor =
+                CoseMac0InputCbor(
+                    payload = payload,
+                    detachedPayload = detachedPayload,
+                    protectedHeader = protectedHeader,
+                    unprotectedHeader = unprotectedHeader,
+                    externalAad = externalAad ?: byteArrayOf(),
+                )
+        }
     }
-}
 
 @JsExportCompat
-data class CoseMac0Cbor(
-    val protectedHeader: CoseHeaderCbor,
-    val unprotectedHeader: CoseHeaderCbor?,
-    val payload: CborByteString? = null,
-    val tag: CborByteString,
-) {
-    fun detachedPayloadCopy(): CoseMac0Cbor = this.copy(payload = null)
+data class
+CoseMac0Cbor
+    @JvmOverloads
+    constructor(
+        val protectedHeader: CoseHeaderCbor,
+        val unprotectedHeader: CoseHeaderCbor?,
+        val payload: CborByteString? = null,
+        val tag: CborByteString,
+    ) {
+        fun detachedPayloadCopy(): CoseMac0Cbor = this.copy(payload = null)
 
-    override fun hashCode(): Int {
-        var result = protectedHeader.hashCode()
-        result = 31 * result + (unprotectedHeader?.hashCode() ?: 0)
-        result = 31 * result + (payload?.hashCode() ?: 0)
-        result = 31 * result + tag.hashCode()
-        return result
-    }
+        override fun hashCode(): Int {
+            var result = protectedHeader.hashCode()
+            result = 31 * result + (unprotectedHeader?.hashCode() ?: 0)
+            result = 31 * result + (payload?.hashCode() ?: 0)
+            result = 31 * result + tag.hashCode()
+            return result
+        }
 
-    override fun toString(): String = "CoseMac0Cbor(protectedHeader=$protectedHeader, unprotectedHeader=$unprotectedHeader, payload=$payload, signature=$tag)"
+        override fun toString(): String = "CoseMac0Cbor(protectedHeader=$protectedHeader, unprotectedHeader=$unprotectedHeader, payload=$payload, signature=$tag)"
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as CoseMac0Cbor
+
+            if (protectedHeader != other.protectedHeader) {
+                return false
+            }
+            if (unprotectedHeader != other.unprotectedHeader) {
+                return false
+            }
+            if (payload != other.payload) {
+                return false
+            }
+            if (tag != other.tag) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
-
-        other as CoseMac0Cbor
-
-        if (protectedHeader != other.protectedHeader) {
-            return false
-        }
-        if (unprotectedHeader != other.unprotectedHeader) {
-            return false
-        }
-        if (payload != other.payload) {
-            return false
-        }
-        if (tag != other.tag) {
-            return false
-        }
-
-        return true
     }
-}
 
 typealias COSE_Mac0 = CoseMac0Cbor
 
@@ -119,18 +127,23 @@ sealed class MacContext(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val asList = listOf(Mac, Mac0)
 
         @JsStatic
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(value: String) = asList.firstOrNull { it.value == value } ?: throw IllegalArgumentException("Unknown signature $value")
     }
 }
 
 @JsExportCompat
-data class CoseMacStructureCbor(
-    val context: CborString = CborString(MacContext.Mac0.value),
-    val protected: CborByteString = CborByteString(byteArrayOf()),
-    val externalAad: CborByteString = CborByteString(byteArrayOf()),
-    val payload: CborByteString,
-)
+data class
+CoseMacStructureCbor
+    @JvmOverloads
+    constructor(
+        val context: CborString = CborString(MacContext.Mac0.value),
+        val protected: CborByteString = CborByteString(byteArrayOf()),
+        val externalAad: CborByteString = CborByteString(byteArrayOf()),
+        val payload: CborByteString,
+    )

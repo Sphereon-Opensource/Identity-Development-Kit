@@ -19,6 +19,7 @@ package com.sphereon.crypto.core.sign.model
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
+import kotlin.jvm.JvmOverloads
 
 /**
  * Extension point interface for signature parameters.
@@ -29,6 +30,7 @@ import com.sphereon.crypto.core.generic.DigestAlg
  * Developers pass parameters via [SignInput.parameters] to control signing behavior.
  * When null, the implementation uses defaults appropriate for its form (e.g. RAW).
  */
+@JsExportCompat
 interface SignatureParameters {
     val signatureLevel: SignatureLevel
     val signaturePackaging: SignaturePackaging
@@ -38,9 +40,13 @@ interface SignatureParameters {
 /**
  * Simple signature parameters for RAW/JWS/COSE signing in IDK.
  */
-data class RawSignatureParameters(
-    override val signatureLevel: SignatureLevel = SignatureLevel.RAW,
-    override val signaturePackaging: SignaturePackaging = SignaturePackaging.DETACHED,
-    override val digestAlgorithm: DigestAlg? = DigestAlg.SHA256,
-    val requireX5Chain: Boolean = false,
-) : SignatureParameters
+@JsExportCompat
+data class
+RawSignatureParameters
+    @JvmOverloads
+    constructor(
+        override val signatureLevel: SignatureLevel = SignatureLevel.RAW,
+        override val signaturePackaging: SignaturePackaging = SignaturePackaging.DETACHED,
+        override val digestAlgorithm: DigestAlg? = DigestAlg.SHA256,
+        val requireX5Chain: Boolean = false,
+    ) : SignatureParameters

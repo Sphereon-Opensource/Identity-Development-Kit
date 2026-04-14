@@ -17,11 +17,14 @@
 
 package com.sphereon.crypto.kms.keystore.memory
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.session.SessionContext
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -30,63 +33,79 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("StoragePartitionKey", exact = true)
-data class StoragePartitionKey(
-    val keystoreId: String,
-    val tenantId: String? = null,
-    val principalId: String? = null,
-    val sessionId: String? = null,
-) {
-    companion object {
-        fun appLevel(keystoreId: String) = StoragePartitionKey(keystoreId = keystoreId)
+@JsExportCompat
+data class
+StoragePartitionKey
+    @JvmOverloads
+    constructor(
+        val keystoreId: String,
+        val tenantId: String? = null,
+        val principalId: String? = null,
+        val sessionId: String? = null,
+    ) {
+        companion object {
+            @JvmStatic
+            fun appLevel(keystoreId: String) = StoragePartitionKey(keystoreId = keystoreId)
 
-        fun forTenant(
-            keystoreId: String,
-            tenantId: String,
-        ) = StoragePartitionKey(keystoreId = keystoreId, tenantId = tenantId)
+            @JvmStatic
+            fun forTenant(
+                keystoreId: String,
+                tenantId: String,
+            ) = StoragePartitionKey(keystoreId = keystoreId, tenantId = tenantId)
 
-        fun forTenantFromContext(
-            keystoreId: String,
-            context: UserContext,
-        ) = forTenant(keystoreId, context.tenant.tenantId)
+            @JvmStatic
+            fun forTenantFromContext(
+                keystoreId: String,
+                context: UserContext,
+            ) = forTenant(keystoreId, context.tenant.tenantId)
 
-        fun forPrincipalTenant(
-            keystoreId: String,
-            tenantId: String,
-            principalId: String,
-        ) = StoragePartitionKey(keystoreId = keystoreId, tenantId = tenantId, principalId = principalId)
+            @JvmStatic
+            fun forPrincipalTenant(
+                keystoreId: String,
+                tenantId: String,
+                principalId: String,
+            ) = StoragePartitionKey(keystoreId = keystoreId, tenantId = tenantId, principalId = principalId)
 
-        fun forPrincipalTenantFromContext(
-            keystoreId: String,
-            context: UserContext,
-        ) = forPrincipalTenant(keystoreId, context.tenant.tenantId, context.principal.toString())
+            @JvmStatic
+            fun forPrincipalTenantFromContext(
+                keystoreId: String,
+                context: UserContext,
+            ) = forPrincipalTenant(keystoreId, context.tenant.tenantId, context.principal.toString())
 
-        fun forSession(
-            keystoreId: String,
-            tenantId: String,
-            principalId: String,
-            sessionId: String,
-        ) = StoragePartitionKey(keystoreId = keystoreId, tenantId = tenantId, principalId = principalId, sessionId = sessionId)
+            @JvmStatic
+            fun forSession(
+                keystoreId: String,
+                tenantId: String,
+                principalId: String,
+                sessionId: String,
+            ) = StoragePartitionKey(keystoreId = keystoreId, tenantId = tenantId, principalId = principalId, sessionId = sessionId)
 
-        fun forSessionFromContext(
-            keystoreId: String,
-            context: SessionContext,
-        ) = forSession(keystoreId, context.context.tenant.tenantId, context.context.principal.toString(), context.sessionId)
+            @JvmStatic
+            fun forSessionFromContext(
+                keystoreId: String,
+                context: SessionContext,
+            ) = forSession(keystoreId, context.context.tenant.tenantId, context.context.principal.toString(), context.sessionId)
+        }
     }
-}
 
 /**
  * Holds the actual storage for a single partition (keys, certificate chains, and certificates).
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("StoragePartition", exact = true)
-data class StoragePartition(
-    val keys: MutableMap<String, ManagedKeyInfoType<*>> = mutableMapOf(),
-    val certificateChains: MutableMap<String, Array<Certificate>> = mutableMapOf(),
-    val certificates: MutableMap<String, Certificate> = mutableMapOf(),
-)
+@JsExportCompat
+data class
+StoragePartition
+    @JvmOverloads
+    constructor(
+        val keys: MutableMap<String, ManagedKeyInfoType<*>> = mutableMapOf(),
+        val certificateChains: MutableMap<String, Array<Certificate>> = mutableMapOf(),
+        val certificates: MutableMap<String, Certificate> = mutableMapOf(),
+    )
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MemoryKeyStoreBackingStorage", exact = true)
+@JsExportCompat
 interface MemoryKeyStoreBackingStorage {
     /**
      * Gets or creates a storage partition for the given key.

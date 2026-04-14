@@ -17,6 +17,7 @@
 
 package com.sphereon.ktor.http.client.config
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -26,6 +27,7 @@ import kotlin.native.ObjCName
  * Implement this interface to supply custom SSL parameters such as
  * key stores, trust managers, and SSL contexts for secure connections.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("LegacySslProvider", exact = true)
 interface LegacySslProvider {

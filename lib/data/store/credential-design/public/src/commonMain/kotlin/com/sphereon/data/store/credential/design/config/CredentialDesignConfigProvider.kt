@@ -16,11 +16,13 @@
 
 package com.sphereon.data.store.credential.design.config
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.CredentialDesignModuleConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignRefreshConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignValidationConfig
 import com.sphereon.data.store.credential.design.model.DesignResolutionPolicy
 
+@JsExportCompat
 interface CredentialDesignConfigProvider {
     fun getConfig(): CredentialDesignModuleConfig
 

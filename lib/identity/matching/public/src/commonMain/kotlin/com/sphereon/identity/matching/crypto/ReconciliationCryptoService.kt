@@ -16,6 +16,8 @@
 
 package com.sphereon.identity.matching.crypto
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Provides domain-separated HMAC hashing and AES-256-GCM encryption
  * for identity reconciliation.
@@ -27,6 +29,7 @@ package com.sphereon.identity.matching.crypto
  *
  * Supports key rotation via dual-read methods that hash with the previous key version.
  */
+@JsExportCompat
 interface ReconciliationCryptoService {
     /** HMAC-SHA256 with domain-separated Key A for holder key identifiers */
     suspend fun hashHolderKey(holderKey: String): HashedIdentifier

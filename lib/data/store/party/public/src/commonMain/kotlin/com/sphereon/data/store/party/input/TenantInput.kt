@@ -19,9 +19,11 @@
 
 package com.sphereon.data.store.party.input
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.TenantType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -30,21 +32,24 @@ import kotlin.uuid.Uuid
  *
  * The [id] is optional - if not provided, the system will generate one.
  */
+@JsExportCompat
 @Serializable
-data class TenantCreateInput(
-    /** Optional ID - if null, system generates one */
-    val id: String? = null,
-    /** The type of tenant */
-    @SerialName("tenantType")
-    val tenantType: TenantType,
-    /** Human-readable name for this tenant */
-    val name: String,
-    /** Optional description of this tenant */
-    val description: String? = null,
-    /** The organization party that owns this tenant */
-    @SerialName("ownerPartyId")
-    val ownerPartyId: Uuid? = null,
-)
+data class TenantCreateInput
+    @JvmOverloads
+    constructor(
+        /** Optional ID - if null, system generates one */
+        val id: String? = null,
+        /** The type of tenant */
+        @SerialName("tenantType")
+        val tenantType: TenantType,
+        /** Human-readable name for this tenant */
+        val name: String,
+        /** Optional description of this tenant */
+        val description: String? = null,
+        /** The organization party that owns this tenant */
+        @SerialName("ownerPartyId")
+        val ownerPartyId: Uuid? = null,
+    )
 
 /**
  * Input for updating an existing tenant.
@@ -52,15 +57,18 @@ data class TenantCreateInput(
  * The [id] is required to identify which tenant to update.
  * All other fields are optional - only non-null values will be updated.
  */
+@JsExportCompat
 @Serializable
-data class TenantUpdateInput(
-    /** Required - the tenant to update */
-    val id: String,
-    /** New name (null = keep current) */
-    val name: String? = null,
-    /** New description (null = keep current) */
-    val description: String? = null,
-    /** New owner party ID (null = keep current) */
-    @SerialName("ownerPartyId")
-    val ownerPartyId: Uuid? = null,
-)
+data class TenantUpdateInput
+    @JvmOverloads
+    constructor(
+        /** Required - the tenant to update */
+        val id: String,
+        /** New name (null = keep current) */
+        val name: String? = null,
+        /** New description (null = keep current) */
+        val description: String? = null,
+        /** New owner party ID (null = keep current) */
+        @SerialName("ownerPartyId")
+        val ownerPartyId: Uuid? = null,
+    )

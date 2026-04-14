@@ -16,23 +16,28 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @Serializable
-data class RenderVariantRecord(
-    val id: Uuid,
-    val tenantId: String,
-    val kind: RenderVariantKind,
-    val alias: String? = null,
-    val localeApplicability: List<String> = emptyList(),
-    val sourceSnapshotId: Uuid? = null,
-    val logo: AssetReference? = null,
-    val backgroundImage: AssetReference? = null,
-    val backgroundColor: String? = null,
-    val textColor: String? = null,
-    val accentColor: String? = null,
-    val svgTemplate: SvgTemplate? = null,
-    val w3cRenderMethod: W3cRenderMethodReference? = null,
-    val pdfTemplate: AssetReference? = null,
-)
+data class RenderVariantRecord
+    @JvmOverloads
+    constructor(
+        val id: Uuid,
+        val tenantId: String,
+        val kind: RenderVariantKind,
+        val alias: String? = null,
+        val localeApplicability: List<String> = emptyList(),
+        val sourceSnapshotId: Uuid? = null,
+        val logo: AssetReference? = null,
+        val backgroundImage: AssetReference? = null,
+        val backgroundColor: String? = null,
+        val textColor: String? = null,
+        val accentColor: String? = null,
+        val svgTemplate: SvgTemplate? = null,
+        val w3cRenderMethod: W3cRenderMethodReference? = null,
+        val pdfTemplate: AssetReference? = null,
+    )

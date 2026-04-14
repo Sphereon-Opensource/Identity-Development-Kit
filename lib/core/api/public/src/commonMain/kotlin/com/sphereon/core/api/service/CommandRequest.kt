@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Marker interface for command input types.
  *
@@ -32,6 +34,7 @@ package com.sphereon.core.api.service
  * ) : CommandRequest
  * ```
  */
+@JsExportCompat
 interface CommandRequest
 
 /**

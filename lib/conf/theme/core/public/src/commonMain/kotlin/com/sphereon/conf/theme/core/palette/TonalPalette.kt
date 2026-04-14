@@ -17,11 +17,15 @@
 package com.sphereon.conf.theme.core.palette
 
 import com.sphereon.conf.theme.core.model.TonalPaletteResult
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmStatic
 
 /**
  * Generates a 13-tone tonal palette from a given hue and chroma,
  * following Material Design 3 tone stops.
  */
+@JsExportCompat
 class TonalPalette(
     val hue: Double,
     val chroma: Double,
@@ -78,11 +82,13 @@ class TonalPalette(
         private const val TONE_100 = 100
 
         /** Standard M3 tone stops */
+        @JvmField
         val TONE_STOPS = intArrayOf(0, TONE_10, TONE_20, TONE_30, TONE_40, TONE_50, TONE_60, TONE_70, TONE_80, TONE_90, TONE_95, TONE_99, TONE_100)
 
         /**
          * Create a tonal palette from a seed color in hex.
          */
+        @JvmStatic
         fun fromHex(hex: String): TonalPalette {
             val hct = HctColor.fromHex(hex)
             return TonalPalette(hct.hue, hct.chroma)

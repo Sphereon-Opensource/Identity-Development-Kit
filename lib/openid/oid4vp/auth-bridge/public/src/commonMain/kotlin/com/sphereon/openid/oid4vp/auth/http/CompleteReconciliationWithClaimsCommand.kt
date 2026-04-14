@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * HTTP endpoint command for completing reconciliation with pre-extracted OIDC claims.
@@ -39,6 +40,7 @@ import com.sphereon.core.api.http.describe.MediaType
  * }
  * ```
  */
+@JsExportCompat
 interface CompleteReconciliationWithClaimsCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.auth.reconciliation.complete-with-claims"

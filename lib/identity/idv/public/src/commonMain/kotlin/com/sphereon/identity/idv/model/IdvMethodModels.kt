@@ -17,11 +17,14 @@
 package com.sphereon.identity.idv.model
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.data.store.party.model.IdentifierType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
+@JsExportCompat
 @Serializable
 sealed interface IdvMethodDefinition {
     val id: IdvMethodId
@@ -31,36 +34,49 @@ sealed interface IdvMethodDefinition {
     val compliance: IdvComplianceProfile
 }
 
+@JsExportCompat
 @Serializable
 data class IdvAssuranceProfile(
     val maxAssurance: EidasAssuranceLevel,
     val maxAal: AuthAssuranceLevel,
+    @JsExportIgnoreCompat
     val amrCapabilities: Set<AuthMethodReference>,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvOutputProfile(
+    @JsExportIgnoreCompat
     val producedIdentifierTypes: Set<IdentifierType>,
+    @JsExportIgnoreCompat
     val producedAttributes: Set<AttributePath>,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvComplianceProfile(
+    @JsExportIgnoreCompat
     val regulatoryFrameworks: Set<TrustFrameworkType> = emptySet(),
     val trustFramework: TrustFrameworkType? = null,
     val evidenceStrength: EvidenceStrength? = null,
     val proofingScenario: ProofingScenario? = null,
     val padLevel: Int? = null,
     val requiresExplicitConsent: Boolean = false,
+    @JsExportIgnoreCompat
     val restrictedIdentifiers: Set<IdentifierType> = emptySet(),
+    @JsExportIgnoreCompat
     val applicableTerritories: Set<String>? = null,
+    @JsExportIgnoreCompat
     val territoryRestrictions: Map<String, TerritoryRestriction> = emptyMap(),
 )
 
+@JsExportCompat
 @Serializable
 data class TerritoryRestriction(
     val prohibited: Boolean = false,
+    @JsExportIgnoreCompat
     val requiresLegalBasis: Set<IdentifierType> = emptySet(),
+    @JsExportIgnoreCompat
     val additionalRequirements: Set<String> = emptySet(),
 )
 
@@ -128,6 +144,7 @@ data class AttributeMatchMethodDefinition(
     val hashBeforeLookup: Boolean = true,
 ) : IdvMethodDefinition
 
+@JsExportCompat
 @Serializable
 data class AttributeMapping(
     val sourceAttribute: AttributePath,
@@ -136,6 +153,7 @@ data class AttributeMapping(
     val required: Boolean = false,
 )
 
+@JsExportCompat
 interface IdvMethodDriver {
     val methodType: IdvMethodType
 
@@ -150,6 +168,7 @@ interface IdvMethodDriver {
     suspend fun cancel(work: CancelWork): IdkResult<CancelOutcome, IdvError>
 }
 
+@JsExportCompat
 @Serializable
 data class DispatchWork(
     val executionId: IdvExecutionId,
@@ -159,6 +178,7 @@ data class DispatchWork(
     val callbackBaseUrl: String,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface DispatchOutcome
 
@@ -172,15 +192,18 @@ data class ImmediateResult(
     val result: IdvNodeResult,
 ) : DispatchOutcome
 
+@JsExportCompat
 @Serializable
 data class SubmitWork(
     val executionId: IdvExecutionId,
     val nodeId: IdvNodeId,
     val methodDefinition: IdvMethodDefinition,
+    @JsExportIgnoreCompat
     val input: Map<InputFieldId, JsonElement>,
     val driverState: JsonObject? = null,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface SubmitOutcome
 
@@ -199,15 +222,18 @@ data class SubmitFailed(
     val error: IdvError,
 ) : SubmitOutcome
 
+@JsExportCompat
 @Serializable
 data class CallbackWork(
     val executionId: IdvExecutionId,
     val nodeId: IdvNodeId,
     val methodDefinition: IdvMethodDefinition,
+    @JsExportIgnoreCompat
     val callbackData: Map<String, String>,
     val driverState: JsonObject? = null,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface CallbackOutcome
 
@@ -226,6 +252,7 @@ data class CallbackFailed(
     val error: IdvError,
 ) : CallbackOutcome
 
+@JsExportCompat
 @Serializable
 data class PollWork(
     val executionId: IdvExecutionId,
@@ -234,6 +261,7 @@ data class PollWork(
     val driverState: JsonObject? = null,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface PollOutcome
 
@@ -252,6 +280,7 @@ data class PollFailed(
     val error: IdvError,
 ) : PollOutcome
 
+@JsExportCompat
 @Serializable
 data class CancelWork(
     val executionId: IdvExecutionId,
@@ -260,6 +289,7 @@ data class CancelWork(
     val driverState: JsonObject? = null,
 )
 
+@JsExportCompat
 @Serializable
 sealed interface CancelOutcome
 

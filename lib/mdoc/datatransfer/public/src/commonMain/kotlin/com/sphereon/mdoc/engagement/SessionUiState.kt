@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.engagement
 
 import com.sphereon.core.api.encodeToHex
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.data.device.DeviceRequestCborCodec
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -27,6 +28,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UiPhase", exact = true)
+@JsExportCompat
 enum class UiPhase {
     /** Engagement phase: QR display, NFC handover preparation */
     ENGAGEMENT,
@@ -44,6 +46,7 @@ enum class UiPhase {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NfcMode", exact = true)
+@JsExportCompat
 enum class NfcMode {
     /** No NFC engagement exists - NFC not available or not enabled */
     DISABLED,
@@ -63,6 +66,7 @@ enum class NfcMode {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("QrMode", exact = true)
+@JsExportCompat
 sealed class QrMode {
     /** No QR engagement active, no scanning in progress */
     data object NONE : QrMode()
@@ -115,6 +119,7 @@ sealed class QrMode {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TerminalOutcome", exact = true)
+@JsExportCompat
 enum class TerminalOutcome {
     /** Transfer completed successfully - data was shared */
     SUCCESS,
@@ -167,6 +172,7 @@ enum class TerminalOutcome {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionUiState", exact = true)
+@JsExportCompat
 data class SessionUiState(
     val phase: UiPhase,
     val substateLabel: String,
@@ -276,6 +282,7 @@ data class SessionUiState(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParsedDeviceRequest", exact = true)
+@JsExportCompat
 data class ParsedDeviceRequest(
     val version: String,
     val documents: List<ParsedDocumentRequest>,
@@ -334,6 +341,7 @@ data class ParsedDeviceRequest(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParsedDocumentRequest", exact = true)
+@JsExportCompat
 data class ParsedDocumentRequest(
     val docType: String,
     val nameSpaces: Map<String, Set<String>>,
@@ -378,6 +386,7 @@ fun SessionUiState.getParsedDeviceRequest(deviceRequestCborCodec: DeviceRequestC
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionEvent", exact = true)
+@JsExportCompat
 sealed interface SessionEvent {
     /** QR code is being shown - QR visibility is managed via engagement state, not separate hide events */
     data object QrShow : SessionEvent

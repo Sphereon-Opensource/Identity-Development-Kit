@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.UserScope
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionScope
@@ -42,6 +43,7 @@ import kotlin.native.ObjCName
  * // ^ TInput=GetKeyInput, TOutput=KeyInfo — compiler enforced
  * ```
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CommandExecutor", exact = true)
 interface CommandExecutor {

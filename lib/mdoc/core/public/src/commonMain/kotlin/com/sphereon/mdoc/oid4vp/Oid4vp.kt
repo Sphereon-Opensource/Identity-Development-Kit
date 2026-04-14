@@ -47,6 +47,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
@@ -108,6 +109,7 @@ data class Oid4VPPresentationDefinition(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromDTO(presentationDefinition: IOid4VPPresentationDefinition) =
             with(presentationDefinition) {
                 Oid4VPPresentationDefinition(
@@ -150,6 +152,7 @@ data class Oid4VPInputDescriptor(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromDTO(inputDescriptor: IOid4VPInputDescriptor): Oid4VPInputDescriptor =
             with(inputDescriptor) {
                 Oid4VPInputDescriptor(
@@ -160,6 +163,7 @@ data class Oid4VPInputDescriptor(
             }
 
         @JsStatic
+        @JvmStatic
         fun fromJsonObject(jsonObject: JsonObject): Oid4VPInputDescriptor =
             with(jsonObject) {
                 Oid4VPInputDescriptor(
@@ -212,6 +216,7 @@ data class Oid4VPFormat(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromDTO(dto: IOid4VPFormat) =
             with(dto) {
                 Oid4VPFormat(
@@ -256,6 +261,7 @@ data class Oid4VPSupportedAlgorithm(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromDTO(dto: IOid4VPSupportedAlgorithm) = with(dto) { Oid4VPSupportedAlgorithm(alg = alg) }
     }
 }
@@ -311,6 +317,7 @@ data class Oid4VPConstraints(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromDTO(constraints: IOid4VPConstraints) =
             with(constraints) {
                 Oid4VPConstraints(
@@ -358,6 +365,7 @@ data class Oid4VPConstraintField(
     companion object {
         @JsStatic
         @JsName("fromElementIdentifiers")
+        @JvmStatic
         fun fromElementIdentifiers(
             nameSpace: String,
             elementIdentifiers: Array<String>,
@@ -366,6 +374,7 @@ data class Oid4VPConstraintField(
 
         @JsStatic
         @JsName("fromIssuerSignedItemCbor")
+        @JvmStatic
         fun fromIssuerSignedItem(
             nameSpace: String,
             issuerSignedItem: IssuerSignedItem<*>,
@@ -378,10 +387,12 @@ data class Oid4VPConstraintField(
 
         @JsStatic
         @JsName("fromDTO")
+        @JvmStatic
         fun fromDTO(dto: IOid4VPConstraintField) = with(dto) { Oid4VPConstraintField(intent_to_retain = intent_to_retain, path = path) }
 
         @JsStatic
         @JsName("fromDataElementDef")
+        @JvmStatic
         fun fromDataElementDef(
             dataElementDef: AbstractDataElementDef,
             intentToRetain: Boolean,
@@ -439,6 +450,7 @@ enum class Oid4VPFormatIdentifier(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String) = entries.find { value == it.value }
     }
 }
@@ -496,6 +508,7 @@ data class Oid4VPPresentationSubmission(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromPresentationDefinition(
             pd: IOid4VPPresentationDefinition,
             id: String = Uuid.v4String(),
@@ -507,6 +520,7 @@ data class Oid4VPPresentationSubmission(
             )
 
         @JsStatic
+        @JvmStatic
         fun fromDTO(dto: IOid4VPPresentationSubmission) =
             with(dto) {
                 Oid4VPPresentationSubmission(
@@ -538,6 +552,7 @@ data class Oid4vpSubmissionDescriptor(
 ) : IOid4vpSubmissionDescriptor {
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromInputDescriptor(descriptor: IOid4VPInputDescriptor): Oid4vpSubmissionDescriptor =
             with(descriptor) {
                 val formatId =
@@ -560,6 +575,7 @@ data class Oid4vpSubmissionDescriptor(
             }
 
         @JsStatic
+        @JvmStatic
         fun fromDTO(dto: IOid4vpSubmissionDescriptor) = with(dto) { Oid4vpSubmissionDescriptor(id = id, format = format, path = path) }
     }
 }

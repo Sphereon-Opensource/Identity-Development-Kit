@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.compat.JsExportCompat
 
 // ============================================================================
 // Internal Session API Commands (for OAuth2 integration)
@@ -33,6 +34,7 @@ import com.sphereon.core.api.http.describe.MediaType
  * Creates a new authentication session, returning a QR code for the user's wallet
  * to scan and initiate credential presentation.
  */
+@JsExportCompat
 interface CreateOid4vpAuthSessionCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.auth.create-session"
@@ -59,6 +61,7 @@ interface CreateOid4vpAuthSessionCommand : HttpEndpointCommand {
  * Returns the current status of an authentication session. Used by clients
  * to poll for verification completion after the user scans the QR code.
  */
+@JsExportCompat
 interface GetOid4vpAuthStatusCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.auth.session.status"
@@ -84,6 +87,7 @@ interface GetOid4vpAuthStatusCommand : HttpEndpointCommand {
  * Exchanges a verified authentication session for user identity and claims.
  * Can only be called when the session status is VERIFIED.
  */
+@JsExportCompat
 interface CompleteOid4vpAuthCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vp.auth.session.complete"

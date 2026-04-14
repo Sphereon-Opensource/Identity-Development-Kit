@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -27,6 +28,7 @@ import kotlin.native.ObjCName
  * - [DotPrefixProtectionParser]: Handles dot-separated prefixes (e.g., "final.db.host")
  * - [EnvPrefixProtectionParser]: Handles underscore-separated prefixes (e.g., "FINAL_DB_HOST")
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectionKeyParser", exact = true)
 interface ProtectionKeyParser {
@@ -51,6 +53,7 @@ interface ProtectionKeyParser {
  *
  * Parsing is case-insensitive.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DotPrefixProtectionParser", exact = true)
 class DotPrefixProtectionParser : ProtectionKeyParser {
@@ -102,6 +105,7 @@ class DotPrefixProtectionParser : ProtectionKeyParser {
  *
  * Parsing is case-insensitive.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EnvPrefixProtectionParser", exact = true)
 class EnvPrefixProtectionParser : ProtectionKeyParser {

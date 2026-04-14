@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -28,6 +29,7 @@ import kotlinx.serialization.Serializable
  * lives in the core module so it can be reused across domains (keys, DIDs, parties, etc.)
  * without pulling in domain-specific dependencies.
  */
+@JsExportCompat
 @Serializable
 enum class Origin {
     /** Resource was synced from an outside source (IdP, external system, import, auto-discovery) */

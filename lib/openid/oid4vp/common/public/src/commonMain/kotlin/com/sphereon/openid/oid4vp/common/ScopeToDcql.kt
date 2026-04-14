@@ -17,12 +17,14 @@
 package com.sphereon.openid.oid4vp.common
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import io.konform.validation.Validation
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /*
@@ -188,6 +190,7 @@ class ScopeRegistry(
         /**
          * Create an empty scope registry.
          */
+        @JvmStatic
         fun empty(): ScopeRegistry = ScopeRegistry()
     }
 }
@@ -413,6 +416,7 @@ class ScopeResolver(
          *
          * This function assumes the caller has validated uniqueness.
          */
+        @JvmStatic
         fun mergeDcqlQueries(queries: List<DcqlQuery>): DcqlQuery {
             require(queries.isNotEmpty()) { "Cannot merge empty list of DCQL queries" }
             if (queries.size == 1) {
@@ -464,6 +468,7 @@ val validateScopeDefinition =
 /**
  * Builder for creating ScopeDefinition instances.
  */
+@JsExportCompat
 class ScopeDefinitionBuilder {
     private var scopeValue: String = ""
     private var description: String? = null
@@ -524,6 +529,7 @@ inline fun buildScopeDefinition(block: ScopeDefinitionBuilder.() -> Unit): Scope
 /**
  * Builder for creating ScopeRegistry instances.
  */
+@JsExportCompat
 class ScopeRegistryBuilder {
     private val definitions = mutableListOf<ScopeDefinition>()
 
@@ -538,6 +544,7 @@ class ScopeRegistryBuilder {
     /**
      * Add a scope definition using the builder DSL.
      */
+    @JsExportIgnoreCompat
     fun scope(block: ScopeDefinitionBuilder.() -> Unit) =
         apply {
             definitions.add(buildScopeDefinition(block))

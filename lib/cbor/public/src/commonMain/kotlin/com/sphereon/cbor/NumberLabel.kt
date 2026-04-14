@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.math.abs
 
 @JsExportCompat
@@ -62,6 +63,7 @@ class NumberLabel(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromCborItem(structure: CborItem<*>): NumberLabel {
             val generic = CoseLabel.fromCborItem(structure)
             require(generic is NumberLabel) { "Label passed in was not convertable a NumberLabel" }

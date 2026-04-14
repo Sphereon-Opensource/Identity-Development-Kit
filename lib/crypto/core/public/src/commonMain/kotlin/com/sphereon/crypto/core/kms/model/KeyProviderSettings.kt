@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.Uuid
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -34,8 +35,11 @@ import kotlin.native.ObjCName
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeyProviderSettings", exact = true)
-data class KeyProviderSettings(
-    val id: String = Uuid.v4String(),
-    val config: KeyProviderConfig,
-    val passwordInputCallback: PasswordInputCallback? = null,
-)
+data class
+KeyProviderSettings
+    @JvmOverloads
+    constructor(
+        val id: String = Uuid.v4String(),
+        val config: KeyProviderConfig,
+        val passwordInputCallback: PasswordInputCallback? = null,
+    )

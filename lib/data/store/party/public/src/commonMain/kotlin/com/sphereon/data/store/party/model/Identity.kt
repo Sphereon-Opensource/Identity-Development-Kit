@@ -19,8 +19,10 @@
 
 package com.sphereon.data.store.party.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -33,36 +35,39 @@ import kotlin.uuid.Uuid
  * In the "everything is a party" pattern, Identity extends Party. The [partyId] serves
  * as both the primary key and the foreign key to the party table when persistence is used.
  */
+@JsExportCompat
 @Serializable
-data class Identity(
-    /** Party ID - serves as the primary key */
-    @SerialName("partyId")
-    val partyId: Uuid,
-    /** Tenant this identity belongs to */
-    @SerialName("tenantId")
-    val tenantId: String,
-    /** The role of this identity in the credential ecosystem */
-    @SerialName("identityRole")
-    val identityRole: IdentityRole,
-    /** Whether this is the default identity for the owning party */
-    @SerialName("isDefault")
-    val isDefault: Boolean = false,
-    /** When the identity was created */
-    @SerialName("createdAt")
-    val createdAt: Instant,
-    /** Who created the identity (party ID) */
-    @SerialName("createdById")
-    val createdById: Uuid? = null,
-    /** When the identity was last updated */
-    @SerialName("updatedAt")
-    val updatedAt: Instant,
-    /** Who last updated the identity (party ID) */
-    @SerialName("updatedById")
-    val updatedById: Uuid? = null,
-    /** When the identity was soft-deleted (null if not deleted) */
-    @SerialName("deletedAt")
-    val deletedAt: Instant? = null,
-    /** Who deleted the identity (party ID) */
-    @SerialName("deletedById")
-    val deletedById: Uuid? = null,
-)
+data class Identity
+    @JvmOverloads
+    constructor(
+        /** Party ID - serves as the primary key */
+        @SerialName("partyId")
+        val partyId: Uuid,
+        /** Tenant this identity belongs to */
+        @SerialName("tenantId")
+        val tenantId: String,
+        /** The role of this identity in the credential ecosystem */
+        @SerialName("identityRole")
+        val identityRole: IdentityRole,
+        /** Whether this is the default identity for the owning party */
+        @SerialName("isDefault")
+        val isDefault: Boolean = false,
+        /** When the identity was created */
+        @SerialName("createdAt")
+        val createdAt: Instant,
+        /** Who created the identity (party ID) */
+        @SerialName("createdById")
+        val createdById: Uuid? = null,
+        /** When the identity was last updated */
+        @SerialName("updatedAt")
+        val updatedAt: Instant,
+        /** Who last updated the identity (party ID) */
+        @SerialName("updatedById")
+        val updatedById: Uuid? = null,
+        /** When the identity was soft-deleted (null if not deleted) */
+        @SerialName("deletedAt")
+        val deletedAt: Instant? = null,
+        /** Who deleted the identity (party ID) */
+        @SerialName("deletedById")
+        val deletedById: Uuid? = null,
+    )

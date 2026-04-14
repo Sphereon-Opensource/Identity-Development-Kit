@@ -16,6 +16,7 @@
  */
 
 package com.sphereon.crypto.core
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Represents an exception that occurs within the Public Key Infrastructure (PKI) context.
@@ -26,6 +27,7 @@ package com.sphereon.crypto.core
  *
  * @param message A descriptive message providing more details about the exception.
  */
+@JsExportCompat
 class PKIException(
     message: String,
 ) : Exception(message)
@@ -35,6 +37,7 @@ class PKIException(
  *
  * @param message The detail message describing the reason for the exception.
  */
+@JsExportCompat
 class SigningException(
     message: String,
 ) : Exception(message)
@@ -45,6 +48,7 @@ class SigningException(
  * @param message A descriptive message for the exception.
  * @param cause The underlying cause of the exception, if available.
  */
+@JsExportCompat
 class TimestampException(
     message: String? = null,
     override val cause: Throwable? = null,
@@ -56,6 +60,7 @@ class TimestampException(
  *
  * @param message A descriptive message detailing the reason behind the exception.
  */
+@JsExportCompat
 class SignClientException(
     message: String,
     override val cause: Throwable? = null,

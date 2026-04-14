@@ -20,8 +20,8 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
-
 // ============================================================================
 // JWE Header Builder
 // ============================================================================
@@ -234,11 +234,13 @@ class JweHeaderBuilder {
         /**
          * Creates a new header builder.
          */
+        @JvmStatic
         fun create(): JweHeaderBuilder = JweHeaderBuilder()
 
         /**
          * Creates a new header builder from an existing JweHeader.
          */
+        @JvmStatic
         fun from(header: JweHeader): JweHeaderBuilder {
             val builder = JweHeaderBuilder()
             header.alg?.let { builder.alg(it) }
@@ -364,6 +366,7 @@ class JweOptsBuilder {
         /**
          * Creates a new options builder.
          */
+        @JvmStatic
         fun create(): JweOptsBuilder = JweOptsBuilder()
     }
 }
@@ -481,6 +484,7 @@ class PrepareJweArgsBuilder {
         /**
          * Creates a new PrepareJweArgs builder.
          */
+        @JvmStatic
         fun create(): PrepareJweArgsBuilder = PrepareJweArgsBuilder()
     }
 }
@@ -539,6 +543,7 @@ class CreateJweCompactArgsBuilder {
         /**
          * Creates a new CreateJweCompactArgs builder.
          */
+        @JvmStatic
         fun create(): CreateJweCompactArgsBuilder = CreateJweCompactArgsBuilder()
     }
 }
@@ -596,6 +601,7 @@ class CreateJweJsonArgsBuilder {
         /**
          * Creates a new CreateJweJsonArgs builder.
          */
+        @JvmStatic
         fun create(): CreateJweJsonArgsBuilder = CreateJweJsonArgsBuilder()
     }
 }
@@ -693,6 +699,7 @@ class CreateJweJsonGeneralArgsBuilder {
         /**
          * Creates a new CreateJweJsonGeneralArgs builder.
          */
+        @JvmStatic
         fun create(): CreateJweJsonGeneralArgsBuilder = CreateJweJsonGeneralArgsBuilder()
     }
 }
@@ -751,6 +758,7 @@ class DecryptJweArgsBuilder {
         /**
          * Creates a new DecryptJweArgs builder.
          */
+        @JvmStatic
         fun create(): DecryptJweArgsBuilder = DecryptJweArgsBuilder()
     }
 }

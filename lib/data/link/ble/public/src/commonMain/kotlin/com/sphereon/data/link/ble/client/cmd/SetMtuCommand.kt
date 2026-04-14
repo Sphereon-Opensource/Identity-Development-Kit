@@ -20,6 +20,7 @@
 package com.sphereon.data.link.ble.client.cmd
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.BleResponse
 import com.sphereon.data.link.ble.client.BlePlatformClient
@@ -27,6 +28,7 @@ import com.sphereon.data.link.ble.model.BaseBleCommand
 import com.sphereon.di.session.SessionContext
 import kotlin.uuid.ExperimentalUuidApi
 
+@JsExportCompat
 class SetMtuCommand(
     private val client: BlePlatformClient,
 ) : BaseBleCommand<Int, BleResponse.Success>() {

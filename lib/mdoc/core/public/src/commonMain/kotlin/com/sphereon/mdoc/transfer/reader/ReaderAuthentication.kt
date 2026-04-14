@@ -32,6 +32,7 @@ import com.sphereon.mdoc.engagement.DeviceEngagement
 import com.sphereon.mdoc.oid4vp.oid4vpHandoverFromClientIdAndResponseUri
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -43,6 +44,7 @@ data class ReaderAuthentication(
 ) {
     companion object {
         @JsStatic
+        @JvmStatic
         val READER_AUTHENTICATION = CborString("ReaderAuthentication")
     }
 }
@@ -66,9 +68,11 @@ data class SessionTranscript(
         const val HANDOVER = 2
 
         @JsStatic
+        @JvmStatic
         fun fromOid4vpHandover(handover: OID4VPHandover): SessionTranscript = SessionTranscript(handover = handover as Handover<*, CborItem<*>>, original = null)
 
         @JsStatic
+        @JvmStatic
         fun fromOid4vpClientIdAndResponseUri(
             clientId: String,
             responseUri: String,
@@ -177,6 +181,7 @@ data class OID4VPHandover(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromClientIdAndResponseUri(
             clientId: String,
             responseUri: String,

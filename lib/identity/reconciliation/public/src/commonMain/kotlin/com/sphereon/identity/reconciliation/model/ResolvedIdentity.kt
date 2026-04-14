@@ -16,13 +16,20 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class ResolvedIdentity(
-    val externalSubject: String,
-    val externalIssuer: String,
-    val claims: Map<String, JsonElement> = emptyMap(),
-    val internalIdentityId: String? = null,
-)
+data class ResolvedIdentity
+    @JvmOverloads
+    constructor(
+        val externalSubject: String,
+        val externalIssuer: String,
+        @JsExportIgnoreCompat
+        val claims: Map<String, JsonElement> = emptyMap(),
+        val internalIdentityId: String? = null,
+    )

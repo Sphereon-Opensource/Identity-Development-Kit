@@ -17,9 +17,11 @@
 
 package com.sphereon.data.link.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlePermissionsHelper", exact = true)
 interface BlePermissionsHelper {

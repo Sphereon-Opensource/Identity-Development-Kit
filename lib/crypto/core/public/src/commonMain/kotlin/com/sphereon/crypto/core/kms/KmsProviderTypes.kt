@@ -40,6 +40,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -62,6 +65,7 @@ enum class PredefinedKmsProviderTypes : WithKmsProviderType {
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String): PredefinedKmsProviderTypes =
             entries.firstOrNull { it.kmsProviderType == value.lowercase() }
                 ?: throw IllegalArgumentException("Unknown kms provider type: $value")
@@ -73,18 +77,22 @@ enum class PredefinedKmsProviderTypes : WithKmsProviderType {
 @SerialName("KmsProviderConfig")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KmsProviderConfig", exact = true)
-data class KmsProviderConfig(
-    override val kmsProviderType: String,
-    override val id: String,
-    override val enabled: Boolean = true,
-    override val order: Int = Order.MEDIUM.orderValue,
-    override val exposePrivateKeysDuringGeneration: Boolean = false,
-    override val persistKeysDuringGeneration: Boolean = true,
-    override val defaultConfigValues: Map<String, String> = emptyMap(),
-) : AbstractKmsProviderConfig(),
-    KmsProviderConfigBase
+data class
+KmsProviderConfig
+    @JvmOverloads
+    constructor(
+        override val kmsProviderType: String,
+        override val id: String,
+        override val enabled: Boolean = true,
+        override val order: Int = Order.MEDIUM.orderValue,
+        override val exposePrivateKeysDuringGeneration: Boolean = false,
+        override val persistKeysDuringGeneration: Boolean = true,
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+    ) : AbstractKmsProviderConfig(),
+        KmsProviderConfigBase
 
 @Serializable
+@JsExportCompat
 abstract class AbstractKmsProviderConfig {
     @SerialName("type")
     abstract val kmsProviderType: String
@@ -115,6 +123,7 @@ interface KmsProviderConfigBase {
     val defaultConfigValues: Map<String, String>
 }
 
+@JsExportCompat
 interface KmsProviderFactory : WithKmsProviderType {
     fun create(
         config: KmsProviderConfigBase,

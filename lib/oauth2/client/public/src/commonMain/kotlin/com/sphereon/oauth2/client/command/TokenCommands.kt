@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.client.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.TokenRequest
 import com.sphereon.oauth2.common.model.TokenResponse
 
@@ -26,6 +27,7 @@ import com.sphereon.oauth2.common.model.TokenResponse
  * @property tokenEndpoint The token endpoint URL (HTTPS URL)
  * @property request The token request with grant-specific parameters
  */
+@JsExportCompat
 data class ExchangeTokenArgs(
     val tokenEndpoint: String,
     val request: TokenRequest,
@@ -45,6 +47,7 @@ data class ExchangeTokenArgs(
  * - Resource Indicators (RFC 8707)
  * - DPoP (RFC 9449)
  */
+@JsExportCompat
 interface ExchangeTokenCommand : ServiceCommand<ExchangeTokenArgs, TokenResponse> {
     override val commandId: String get() = COMMAND_ID
 

@@ -27,6 +27,7 @@ import org.kotlincrypto.hash.sha2.SHA512
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -196,6 +197,7 @@ enum class DigestAlg(
          * @return true if the digest algorithm is null or represents 'NONE', false otherwise.
          */
         @JsStatic
+        @JvmStatic
         fun isNone(digestAlg: DigestAlg?): Boolean = digestAlg == null || digestAlg == NONE
 
         /**
@@ -207,6 +209,7 @@ enum class DigestAlg(
          */
         @JsStatic
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(name: String): DigestAlg =
             entries.find { entry -> entry.internalName == name || entry.httpHeaderId == name || entry.javaName == name }
                 ?: throw IllegalArgumentException("Unknown value $name")

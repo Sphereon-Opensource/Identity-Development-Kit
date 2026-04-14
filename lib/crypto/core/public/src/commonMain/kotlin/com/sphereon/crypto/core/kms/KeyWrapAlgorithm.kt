@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.CryptoAlg
 import kotlinx.serialization.Serializable
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 
 /**
  * Key Wrap Algorithms for JWE (alg header parameter when used for key encryption).
@@ -68,6 +69,7 @@ enum class KeyWrapAlgorithm(
          * @return The matching KeyWrapAlgorithm, or null if not found
          */
         @JsStatic
+        @JvmStatic
         fun fromIdentifier(identifier: String): KeyWrapAlgorithm? = entries.firstOrNull { it.identifier == identifier }
     }
 }

@@ -20,6 +20,7 @@ package com.sphereon.data.store.schema.registry
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -29,6 +30,7 @@ import kotlin.uuid.Uuid
  *
  * EDK extends this with [versioning support][com.sphereon.data.store.schema.registry.persistence.VersionedSchemaRegistryService].
  */
+@JsExportCompat
 interface SchemaRegistryService {
     suspend fun createSchema(
         tenantId: String,

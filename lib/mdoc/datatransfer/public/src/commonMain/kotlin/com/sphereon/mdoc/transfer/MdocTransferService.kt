@@ -19,6 +19,7 @@ package com.sphereon.mdoc.transfer
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.cose.CoseKeyCborCodec
@@ -61,6 +62,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EngagementType", exact = true)
+@JsExportCompat
 enum class EngagementType {
     /** ISO 18013-5 - NFC proximity-based engagement */
     NFC,
@@ -80,6 +82,7 @@ enum class EngagementType {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementMethod", exact = true)
+@JsExportCompat
 interface MdocEngagementMethod {
     val type: EngagementType
 }
@@ -96,12 +99,14 @@ interface MdocEngagementMethod {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("QREngagementMethod", exact = true)
+@JsExportCompat
 data class QREngagementMethod(
     val scheme: String = "mdoc:",
 ) : MdocEngagementMethod {
     override val type: EngagementType = EngagementType.QR
 }
 
+@JsExportCompat
 class NfcEngagementMethod : MdocEngagementMethod {
     override val type: EngagementType = EngagementType.NFC
 }
@@ -124,6 +129,7 @@ class NfcEngagementMethod : MdocEngagementMethod {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Oid4vpEngagementMethod", exact = true)
+@JsExportCompat
 data class Oid4vpEngagementMethod(
     val authorizationRequestUri: String,
 ) : MdocEngagementMethod {
@@ -151,6 +157,7 @@ data class Oid4vpEngagementMethod(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ReaderEngagementMethod", exact = true)
+@JsExportCompat
 data class ReaderEngagementMethod(
     val readerEngagement: ReaderEngagement,
     private val readerEngagementCborCodec: ReaderEngagementCborCodec? = null,
@@ -181,6 +188,7 @@ data class ReaderEngagementMethod(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocTransferService", exact = true)
+@JsExportCompat
 interface MdocTransferService {
     /**
      * Monad-first API: starts a QR engagement and returns an IdkResult with the engagement URI on success.
@@ -223,6 +231,7 @@ interface MdocTransferService {
 // }
 //
 
+@JsExportCompat
 enum class DataInstanceType {
     SINGLETON,
     PER_ENGAGEMENT,
@@ -246,6 +255,7 @@ internal object SingletonTransfer : TransferInstance {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AbstractMdocTransferService", exact = true)
+@JsExportCompat
 abstract class AbstractMdocTransferService(
     val keyManager: KeyManagerService,
     val retrievalMethods: Array<DeviceRetrievalMethod>,

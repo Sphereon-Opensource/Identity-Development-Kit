@@ -25,6 +25,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.errorResponse
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 
 private const val HTTP_NOT_IMPLEMENTED = 501
 
@@ -43,6 +44,7 @@ private const val HTTP_NOT_IMPLEMENTED = 501
  * @param endpoint The HTTP endpoint descriptor with method, path, etc.
  * @param execution The session execution context
  */
+@JsExportCompat
 class ServiceCommandEndpoint(
     private val serviceCommand: ServiceCommand<*, *>,
     override val endpoint: HttpEndpointDescriptor,

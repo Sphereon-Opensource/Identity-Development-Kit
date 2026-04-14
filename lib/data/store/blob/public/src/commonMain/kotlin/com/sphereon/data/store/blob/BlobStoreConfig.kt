@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -34,6 +35,7 @@ object BlobStoreBackends {
  * Scope binding for blob store instances — determines how stores are partitioned.
  */
 @Serializable
+@JsExportCompat
 enum class BlobStoreScopeBinding {
     APP,
     TENANT,
@@ -47,6 +49,7 @@ enum class BlobStoreScopeBinding {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobStoreConfigBase", exact = true)
+@JsExportCompat
 interface BlobStoreConfigBase {
     val backendId: String
     val id: String
@@ -59,6 +62,7 @@ interface BlobStoreConfigBase {
  * Subclasses add backend-specific typed fields.
  */
 @Serializable
+@JsExportCompat
 abstract class AbstractBlobStoreConfig {
     abstract val backendId: String
     abstract val id: String
@@ -76,6 +80,7 @@ abstract class AbstractBlobStoreConfig {
 @SerialName("BlobStoreConfig")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobStoreConfig", exact = true)
+@JsExportCompat
 data class BlobStoreConfig(
     override val id: String,
     @SerialName("scopebinding")
@@ -101,6 +106,7 @@ data class BlobStoreConfig(
 @SerialName("memory")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemoryBlobStoreConfig", exact = true)
+@JsExportCompat
 data class InMemoryBlobStoreConfig(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     override val id: String = "memory",
@@ -132,6 +138,7 @@ data class InMemoryBlobStoreConfig(
 @SerialName("filesystem")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("FileSystemBlobStoreConfig", exact = true)
+@JsExportCompat
 data class FileSystemBlobStoreConfig(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     override val id: String = "filesystem",

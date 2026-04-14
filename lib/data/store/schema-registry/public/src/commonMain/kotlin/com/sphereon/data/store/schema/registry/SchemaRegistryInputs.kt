@@ -16,33 +16,44 @@
 
 package com.sphereon.data.store.schema.registry
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class CreateSchemaInput(
-    val namespace: String = "",
-    val name: String,
-    val schemaType: SchemaType,
-    val hostingMode: SchemaHostingMode = SchemaHostingMode.PUBLIC_HOSTED,
-    val description: String? = null,
-    val contentType: String? = null,
-    val contentBase64: String? = null,
-    val contentText: String? = null,
-)
+data class CreateSchemaInput
+    @JvmOverloads
+    constructor(
+        val namespace: String = "",
+        val name: String,
+        val schemaType: SchemaType,
+        val hostingMode: SchemaHostingMode = SchemaHostingMode.PUBLIC_HOSTED,
+        val description: String? = null,
+        val contentType: String? = null,
+        val contentBase64: String? = null,
+        val contentText: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class UpdateSchemaInput(
-    val description: String? = null,
-    val contentBase64: String? = null,
-    val contentText: String? = null,
-    val hostingMode: SchemaHostingMode? = null,
-)
+data class UpdateSchemaInput
+    @JvmOverloads
+    constructor(
+        val description: String? = null,
+        val contentBase64: String? = null,
+        val contentText: String? = null,
+        val hostingMode: SchemaHostingMode? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ImportExternalInput(
-    val namespace: String = "",
-    val name: String,
-    val schemaType: SchemaType,
-    val sourceUrl: String,
-    val description: String? = null,
-)
+data class ImportExternalInput
+    @JvmOverloads
+    constructor(
+        val namespace: String = "",
+        val name: String,
+        val schemaType: SchemaType,
+        val sourceUrl: String,
+        val description: String? = null,
+    )

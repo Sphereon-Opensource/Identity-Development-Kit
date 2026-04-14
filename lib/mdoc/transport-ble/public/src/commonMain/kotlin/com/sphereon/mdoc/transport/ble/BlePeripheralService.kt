@@ -20,6 +20,7 @@
 package com.sphereon.mdoc.transport.ble
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.model.GattService
@@ -60,6 +61,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlePeripheralService", exact = true)
+@JsExportCompat
 interface BlePeripheralService : AutoCloseable {
     /**
      * The role of this party (MDOC or MDOC_READER).
@@ -137,6 +139,7 @@ interface BlePeripheralService : AutoCloseable {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HkdfProvider", exact = true)
+@JsExportCompat
 interface HkdfProvider {
     /**
      * Derive key material using HKDF-SHA256.

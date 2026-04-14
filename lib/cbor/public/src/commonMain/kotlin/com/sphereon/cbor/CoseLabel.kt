@@ -20,6 +20,7 @@ package com.sphereon.cbor
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
@@ -73,6 +74,7 @@ sealed class CoseLabel<Type>(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromCborItem(cborItem: CborItem<*>): CoseLabel<out Comparable<*>> =
             when (cborItem) {
                 is CborUInt -> NumberLabel(cborItem.value.toInt())

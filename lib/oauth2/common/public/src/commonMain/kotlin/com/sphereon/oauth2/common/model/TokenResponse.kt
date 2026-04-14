@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -124,6 +125,8 @@ internal object TokenResponseSerializer : KSerializer<TokenResponse> {
  * - Custom extensions via additionalParameters
  */
 @Serializable(with = TokenResponseSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class TokenResponse(
     @SerialName("access_token") val accessToken: String,
     @SerialName("token_type") val tokenType: String,
@@ -147,6 +150,7 @@ data class TokenResponse(
 /**
  * OAuth 2.0 Token Error Response (RFC 6749 Section 5.2)
  */
+@JsExportCompat
 @Serializable
 data class TokenErrorResponse(
     val error: String,
@@ -299,6 +303,8 @@ internal object TokenRequestSerializer : KSerializer<TokenRequest> {
  * - Custom extensions via additionalParameters
  */
 @Serializable(with = TokenRequestSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class TokenRequest(
     @SerialName("grant_type") val grantType: String,
     // authorization_code grant

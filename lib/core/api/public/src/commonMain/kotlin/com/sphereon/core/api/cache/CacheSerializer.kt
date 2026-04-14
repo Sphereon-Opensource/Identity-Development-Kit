@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
@@ -28,6 +29,7 @@ import kotlin.native.ObjCName
  * Enables type-safe serialization of cache entries for distributed backends
  * that require byte array or string representation.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheSerializer", exact = true)
 interface CacheSerializer<T : Any> {

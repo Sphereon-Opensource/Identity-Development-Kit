@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -23,6 +24,7 @@ import kotlinx.serialization.Serializable
  * Type of user account.
  */
 @Serializable
+@JsExportCompat
 enum class UserType {
     @SerialName("INTERNAL")
     INTERNAL,

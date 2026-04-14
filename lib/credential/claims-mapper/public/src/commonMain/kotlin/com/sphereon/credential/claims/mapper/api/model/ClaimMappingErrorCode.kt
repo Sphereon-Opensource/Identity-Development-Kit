@@ -16,12 +16,14 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * Error codes for claim mapping operations.
  */
+@JsExportCompat
 @Serializable
 enum class ClaimMappingErrorCode {
     /**

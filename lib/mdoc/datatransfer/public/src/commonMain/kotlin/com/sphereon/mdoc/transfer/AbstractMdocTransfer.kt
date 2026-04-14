@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.transfer
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.engagement.MdocEngagementState
 import com.sphereon.mdoc.engagement.MdocEngagementStateType
@@ -41,6 +42,7 @@ import kotlin.native.ObjCName
  * Core abstract base class for all mdoc transfer implementations.
  * Provides common state management, logging, and lifecycle operations.
  */
+@JsExportCompat
 sealed class AbstractMdocTransfer<OpenResult : Any>(
     override val connectionMethod: ConnectionMethod,
     val execution: SessionExecution,

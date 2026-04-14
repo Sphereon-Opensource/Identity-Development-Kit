@@ -25,6 +25,7 @@ import com.sphereon.core.api.asOkResult
 import com.sphereon.core.api.session.CommandAdapter
 import com.sphereon.core.api.session.CommandErrorMapper
 import com.sphereon.core.api.session.CommandId
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.BleErrors
 import com.sphereon.data.link.ble.BleResponse
@@ -32,6 +33,7 @@ import com.sphereon.data.link.ble.model.IHasAddress
 import com.sphereon.di.session.SessionContext
 import kotlin.uuid.ExperimentalUuidApi
 
+@JsExportCompat
 class FilterDeviceFromScanResultCommand(
     val device: IHasAddress,
     val maxRetries: Int? = 1,

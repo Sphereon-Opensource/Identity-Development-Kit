@@ -16,9 +16,9 @@
  */
 
 package com.sphereon.crypto.resolution.extern
-
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
@@ -76,6 +76,7 @@ interface CnfExternalIdentifierResolutionService : ExternalIdentifierService {
  * creating a direct dependency from lib-crypto-core to lib-did-resolver.
  * Implementations are provided by lib-did-resolver-impl or similar modules.
  */
+@JsExportCompat
 interface VerificationMethodKeyResolver {
     /**
      * Resolves a DID verification method and extracts its public key JWK.

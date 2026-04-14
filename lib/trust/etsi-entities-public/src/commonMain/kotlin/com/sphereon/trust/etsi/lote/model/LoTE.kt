@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -28,6 +29,7 @@ import kotlin.time.Instant
  * Based on ETSI TS 119 602 (November 2025) specification.
  * Schema repository: https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities
  */
+@JsExportCompat
 @Serializable
 data class LoTE(
     @SerialName("ListAndSchemeInformation")
@@ -39,6 +41,7 @@ data class LoTE(
 /**
  * List and scheme information for a LoTE per ETSI TS 119 602.
  */
+@JsExportCompat
 @Serializable
 data class ListAndSchemeInformation(
     @SerialName("LoTEVersionIdentifier")

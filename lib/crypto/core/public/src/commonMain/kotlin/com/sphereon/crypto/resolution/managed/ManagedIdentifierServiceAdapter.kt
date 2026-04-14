@@ -16,7 +16,6 @@
  */
 
 package com.sphereon.crypto.resolution.managed
-
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.asErrorResult
 import com.sphereon.core.api.asOkResult
@@ -25,10 +24,12 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.Command
 import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.resolution.IIdentifierMethod
 import com.sphereon.di.Order
 
+@JsExportCompat
 abstract class ManagedIdentifierServiceAdapter<ResultType : ManagedIdentifierResult<KeyType>>(
     override val supportedIdentifierMethods: List<IIdentifierMethod>,
     execution: SessionExecution,

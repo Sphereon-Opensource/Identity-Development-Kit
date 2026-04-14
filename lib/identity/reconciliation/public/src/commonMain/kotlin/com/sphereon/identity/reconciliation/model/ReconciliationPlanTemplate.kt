@@ -16,20 +16,28 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class ReconciliationPlanTemplate(
-    val decision: ReconciliationDecision,
-    val providerId: String? = null,
-    val methodId: String? = null,
-    val materialProfileId: String? = null,
-    val requiredAttributeNames: Set<String> = emptySet(),
-    val minimumAssurance: String? = null,
-    val bindingPolicy: BindingPolicy = BindingPolicy.REUSE_OR_CREATE,
-    val failReason: String? = null,
-)
+data class ReconciliationPlanTemplate
+    @JvmOverloads
+    constructor(
+        val decision: ReconciliationDecision,
+        val providerId: String? = null,
+        val methodId: String? = null,
+        val materialProfileId: String? = null,
+        @JsExportIgnoreCompat
+        val requiredAttributeNames: Set<String> = emptySet(),
+        val minimumAssurance: String? = null,
+        val bindingPolicy: BindingPolicy = BindingPolicy.REUSE_OR_CREATE,
+        val failReason: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
 enum class ReconciliationDecision {
     SKIP_RECONCILIATION,

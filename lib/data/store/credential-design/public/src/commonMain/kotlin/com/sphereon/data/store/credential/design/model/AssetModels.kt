@@ -16,36 +16,47 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.blob.BlobInfo
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class AssetReference(
-    val uri: String,
-    val integrity: String? = null,
-    val altText: String? = null,
-    val contentType: String? = null,
-    val localBlob: BlobInfo? = null,
-)
+data class AssetReference
+    @JvmOverloads
+    constructor(
+        val uri: String,
+        val integrity: String? = null,
+        val altText: String? = null,
+        val contentType: String? = null,
+        val localBlob: BlobInfo? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class SvgTemplate(
-    val uri: String,
-    val integrity: String? = null,
-    val orientation: SvgOrientation? = null,
-    val colorScheme: SvgColorScheme? = null,
-    val contrast: SvgContrast? = null,
-    val localBlob: BlobInfo? = null,
-)
+data class SvgTemplate
+    @JvmOverloads
+    constructor(
+        val uri: String,
+        val integrity: String? = null,
+        val orientation: SvgOrientation? = null,
+        val colorScheme: SvgColorScheme? = null,
+        val contrast: SvgContrast? = null,
+        val localBlob: BlobInfo? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class W3cRenderMethodReference(
-    val type: String,
-    val renderSuite: String? = null,
-    val uri: String,
-    val mediaType: String? = null,
-    val name: String? = null,
-    val description: String? = null,
-    val digestMultibase: String? = null,
-    val renderProperties: List<String>? = null,
-)
+data class W3cRenderMethodReference
+    @JvmOverloads
+    constructor(
+        val type: String,
+        val renderSuite: String? = null,
+        val uri: String,
+        val mediaType: String? = null,
+        val name: String? = null,
+        val description: String? = null,
+        val digestMultibase: String? = null,
+        val renderProperties: List<String>? = null,
+    )

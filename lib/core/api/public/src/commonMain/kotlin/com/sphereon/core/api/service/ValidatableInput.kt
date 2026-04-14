@@ -1,7 +1,8 @@
-package com.sphereon.core.api.service.contract
+package com.sphereon.core.api.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Optional interface for input types that declare structural validation rules.
@@ -13,6 +14,7 @@ import com.sphereon.core.api.error.IdkError
  * For config-dependent or context-dependent validation, use
  * [ServiceCommand.validateArgs] instead.
  */
+@JsExportCompat
 interface ValidatableInput {
     fun validate(): IdkResult<Unit, IdkError>
 }

@@ -16,14 +16,17 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Duration
 
 /**
  * Arguments for cache get operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheGetArgs", exact = true)
@@ -50,17 +53,20 @@ data class CacheGetArgs(
     }
 
     companion object {
+        @JvmStatic
         fun app(
             namespace: String,
             key: String,
         ) = CacheGetArgs(namespace, CacheScope.APP, null, null, key)
 
+        @JvmStatic
         fun tenant(
             namespace: String,
             tenantId: String,
             key: String,
         ) = CacheGetArgs(namespace, CacheScope.TENANT, tenantId, null, key)
 
+        @JvmStatic
         fun principal(
             namespace: String,
             tenantId: String,
@@ -73,6 +79,7 @@ data class CacheGetArgs(
 /**
  * Result of cache get operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheGetResult", exact = true)
@@ -82,11 +89,13 @@ data class CacheGetResult(
     val fromBackend: String,
 ) {
     companion object {
+        @JvmStatic
         fun hit(
             value: String,
             backend: String,
         ) = CacheGetResult(value, true, backend)
 
+        @JvmStatic
         fun miss(backend: String) = CacheGetResult(null, false, backend)
     }
 }
@@ -94,6 +103,7 @@ data class CacheGetResult(
 /**
  * Arguments for cache put operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CachePutArgs", exact = true)
@@ -107,6 +117,7 @@ data class CachePutArgs(
     val ttlMs: Long? = null,
 ) {
     companion object {
+        @JvmStatic
         fun app(
             namespace: String,
             key: String,
@@ -114,6 +125,7 @@ data class CachePutArgs(
             ttl: Duration? = null,
         ) = CachePutArgs(namespace, CacheScope.APP, null, null, key, value, ttl?.inWholeMilliseconds)
 
+        @JvmStatic
         fun tenant(
             namespace: String,
             tenantId: String,
@@ -122,6 +134,7 @@ data class CachePutArgs(
             ttl: Duration? = null,
         ) = CachePutArgs(namespace, CacheScope.TENANT, tenantId, null, key, value, ttl?.inWholeMilliseconds)
 
+        @JvmStatic
         fun principal(
             namespace: String,
             tenantId: String,
@@ -136,6 +149,7 @@ data class CachePutArgs(
 /**
  * Result of cache put operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CachePutResult", exact = true)
@@ -147,6 +161,7 @@ data class CachePutResult(
 /**
  * Arguments for cache remove operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheRemoveArgs", exact = true)
@@ -158,17 +173,20 @@ data class CacheRemoveArgs(
     val key: String,
 ) {
     companion object {
+        @JvmStatic
         fun app(
             namespace: String,
             key: String,
         ) = CacheRemoveArgs(namespace, CacheScope.APP, null, null, key)
 
+        @JvmStatic
         fun tenant(
             namespace: String,
             tenantId: String,
             key: String,
         ) = CacheRemoveArgs(namespace, CacheScope.TENANT, tenantId, null, key)
 
+        @JvmStatic
         fun principal(
             namespace: String,
             tenantId: String,
@@ -181,6 +199,7 @@ data class CacheRemoveArgs(
 /**
  * Result of cache remove operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheRemoveResult", exact = true)
@@ -192,6 +211,7 @@ data class CacheRemoveResult(
 /**
  * Arguments for cache invalidation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheInvalidateArgs", exact = true)
@@ -206,17 +226,22 @@ data class CacheInvalidateArgs(
     val keyPattern: String? = null,
 ) {
     companion object {
+        @JvmStatic
         fun all() = CacheInvalidateArgs()
 
+        @JvmStatic
         fun namespace(namespace: String) = CacheInvalidateArgs(namespace = namespace)
 
+        @JvmStatic
         fun tenant(tenantId: String) = CacheInvalidateArgs(tenantId = tenantId)
 
+        @JvmStatic
         fun principal(
             tenantId: String,
             principalId: String,
         ) = CacheInvalidateArgs(tenantId = tenantId, principalId = principalId)
 
+        @JvmStatic
         fun pattern(
             namespace: String,
             pattern: String,
@@ -227,6 +252,7 @@ data class CacheInvalidateArgs(
 /**
  * Result of cache invalidation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheInvalidateResult", exact = true)

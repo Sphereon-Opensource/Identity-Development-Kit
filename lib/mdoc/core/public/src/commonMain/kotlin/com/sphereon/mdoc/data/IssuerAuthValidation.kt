@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.data
 
 import com.sphereon.core.compat.DateTimeUtils
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.core.compat.getDateTime
 import com.sphereon.crypto.core.KeyInfoType
@@ -34,6 +35,7 @@ import kotlin.native.ObjCName
 /**
  * Defines the verification steps for issuer authentication (MSO).
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IssuerAuthValidation", exact = true)
 interface IssuerAuthValidation {

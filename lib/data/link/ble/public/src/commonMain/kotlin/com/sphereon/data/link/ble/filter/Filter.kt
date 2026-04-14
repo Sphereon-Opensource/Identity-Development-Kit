@@ -19,7 +19,10 @@
 
 package com.sphereon.data.link.ble.filter
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.and
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -44,6 +47,7 @@ import kotlin.uuid.Uuid
  *   = Support provided by Kable via flow filter
  * ✓✓* = Supported natively if the only filter type used, otherwise falls back to flow filter
  */
+@JsExportCompat
 public sealed class Filter {
     /**
      * | Platform   | Supported       | Details                                                                                      |
@@ -132,6 +136,7 @@ public sealed class Filter {
          */
         public val dataMask: ByteArray? = null,
     ) : Filter() {
+        @JvmOverloads
         public constructor(id: ByteArray, data: ByteArray? = null, dataMask: ByteArray? = null) : this(id.toShort(), data, dataMask)
 
         init {

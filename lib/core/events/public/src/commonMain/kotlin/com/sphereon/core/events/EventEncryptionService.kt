@@ -7,6 +7,8 @@ package com.sphereon.core.events
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.SingleIn
@@ -65,6 +67,7 @@ import dev.zacsweers.metro.SingleIn
  * @see EventSigningService for event authenticity
  * @see EncryptedPart for specifying what to encrypt
  */
+@JsExportCompat
 interface EventEncryptionService {
     /**
      * Encrypt specified parts of an event.
@@ -79,6 +82,7 @@ interface EventEncryptionService {
      * @param parts Which parts of the event to encrypt (default: PAYLOAD only)
      * @return Encrypted event with EventEncryption populated
      */
+    @JsExportIgnoreCompat
     suspend fun encrypt(
         event: Event,
         keyAlias: String? = null,
@@ -120,6 +124,7 @@ interface EventEncryptionService {
      * @param event The event to check
      * @return Set of encrypted parts, or empty set if not encrypted
      */
+    @JsExportIgnoreCompat
     fun getEncryptedParts(event: Event): Set<EncryptedPart> = event.encryption?.encryptedParts ?: emptySet()
 
     /**
@@ -127,6 +132,7 @@ interface EventEncryptionService {
      */
     @SingleIn(AppScope::class)
     @ContributesTo(AppScope::class)
+    @JsExportIgnoreCompat
     interface Graph {
         val eventEncryptionService: EventEncryptionService
     }

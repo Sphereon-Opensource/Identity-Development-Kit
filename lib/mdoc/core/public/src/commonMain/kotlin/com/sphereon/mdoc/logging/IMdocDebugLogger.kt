@@ -15,6 +15,7 @@
  */
 package com.sphereon.mdoc.logging
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -26,6 +27,7 @@ import kotlin.native.ObjCName
  *
  * Implementations should be injected via DI in session scope.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IMdocDebugLogger", exact = true)
 interface IMdocDebugLogger {

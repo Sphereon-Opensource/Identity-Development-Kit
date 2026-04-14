@@ -17,8 +17,10 @@
 package com.sphereon.identity.reconciliation.api
 
 import com.sphereon.core.api.conf.PropertyResolver
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.CanonicalAttributeRule
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode
+import kotlin.jvm.JvmOverloads
 
 /**
  * Binds canonical attribute rules from configuration via [PropertyResolver].
@@ -37,68 +39,71 @@ import com.sphereon.identity.reconciliation.model.CanonicalMergeMode
  * @param knownProviderIds Provider IDs to check for source-aliases (avoids needing a `names` sub-key)
  * @param prefix Config prefix (default: `identity.reconciliation.attribute-rules`)
  */
-class CanonicalAttributeRulesConfigBinder(
-    private val configService: PropertyResolver,
-    private val knownProviderIds: Set<String> = emptySet(),
-    private val prefix: String = PREFIX,
-) {
-    companion object {
-        const val PREFIX = "identity.reconciliation.attribute-rules"
-    }
-
-    fun bind(): List<CanonicalAttributeRule> {
-        val rules = mutableListOf<CanonicalAttributeRule>()
-        var index = 0
-        while (true) {
-            val rulePrefix = "$prefix[$index]"
-            val canonicalName =
-                configService.getPropertyAsString("$rulePrefix.canonical-name", null)
-                    ?: break
-
-            val mergeModeStr =
-                configService
-                    .getPropertyAsString("$rulePrefix.merge-mode", null)
-                    ?.replace('-', '_')
-                    ?.uppercase()
-                    ?: error("Missing 'merge-mode' for canonical attribute rule: $canonicalName (at index $index)")
-
-            val mergeMode =
-                runCatching { CanonicalMergeMode.valueOf(mergeModeStr) }.getOrElse {
-                    error(
-                        "Invalid merge-mode '$mergeModeStr' for attribute rule '$canonicalName'. " +
-                            "Allowed: ${CanonicalMergeMode.entries.joinToString(", ") { it.name }}",
-                    )
-                }
-
-            rules.add(
-                CanonicalAttributeRule(
-                    canonicalName = canonicalName,
-                    mergeMode = mergeMode,
-                    required = configService.getPropertyAsString("$rulePrefix.required", "false")?.toBoolean() == true,
-                    persist = configService.getPropertyAsString("$rulePrefix.persist", "false")?.toBoolean() == true,
-                    project = configService.getPropertyAsString("$rulePrefix.project", "false")?.toBoolean() == true,
-                    sourceAliases = readSourceAliases(rulePrefix),
-                ),
-            )
-            index++
+@JsExportCompat
+class CanonicalAttributeRulesConfigBinder
+    @JvmOverloads
+    constructor(
+        private val configService: PropertyResolver,
+        private val knownProviderIds: Set<String> = emptySet(),
+        private val prefix: String = PREFIX,
+    ) {
+        companion object {
+            const val PREFIX = "identity.reconciliation.attribute-rules"
         }
 
-        // Validate uniqueness
-        val duplicates = rules.groupBy { it.canonicalName }.filterValues { it.size > 1 }.keys
-        require(duplicates.isEmpty()) {
-            "Duplicate canonical-name(s) in attribute rules: ${duplicates.joinToString(", ")}"
+        fun bind(): List<CanonicalAttributeRule> {
+            val rules = mutableListOf<CanonicalAttributeRule>()
+            var index = 0
+            while (true) {
+                val rulePrefix = "$prefix[$index]"
+                val canonicalName =
+                    configService.getPropertyAsString("$rulePrefix.canonical-name", null)
+                        ?: break
+
+                val mergeModeStr =
+                    configService
+                        .getPropertyAsString("$rulePrefix.merge-mode", null)
+                        ?.replace('-', '_')
+                        ?.uppercase()
+                        ?: error("Missing 'merge-mode' for canonical attribute rule: $canonicalName (at index $index)")
+
+                val mergeMode =
+                    runCatching { CanonicalMergeMode.valueOf(mergeModeStr) }.getOrElse {
+                        error(
+                            "Invalid merge-mode '$mergeModeStr' for attribute rule '$canonicalName'. " +
+                                "Allowed: ${CanonicalMergeMode.entries.joinToString(", ") { it.name }}",
+                        )
+                    }
+
+                rules.add(
+                    CanonicalAttributeRule(
+                        canonicalName = canonicalName,
+                        mergeMode = mergeMode,
+                        required = configService.getPropertyAsString("$rulePrefix.required", "false")?.toBoolean() == true,
+                        persist = configService.getPropertyAsString("$rulePrefix.persist", "false")?.toBoolean() == true,
+                        project = configService.getPropertyAsString("$rulePrefix.project", "false")?.toBoolean() == true,
+                        sourceAliases = readSourceAliases(rulePrefix),
+                    ),
+                )
+                index++
+            }
+
+            // Validate uniqueness
+            val duplicates = rules.groupBy { it.canonicalName }.filterValues { it.size > 1 }.keys
+            require(duplicates.isEmpty()) {
+                "Duplicate canonical-name(s) in attribute rules: ${duplicates.joinToString(", ")}"
+            }
+
+            return rules
         }
 
-        return rules
+        private fun readSourceAliases(rulePrefix: String): Map<String, String> {
+            val aliasPrefix = "$rulePrefix.source-aliases"
+            return knownProviderIds
+                .mapNotNull { providerId ->
+                    configService
+                        .getPropertyAsString("$aliasPrefix.$providerId", null)
+                        ?.let { providerId to it }
+                }.toMap()
+        }
     }
-
-    private fun readSourceAliases(rulePrefix: String): Map<String, String> {
-        val aliasPrefix = "$rulePrefix.source-aliases"
-        return knownProviderIds
-            .mapNotNull { providerId ->
-                configService
-                    .getPropertyAsString("$aliasPrefix.$providerId", null)
-                    ?.let { providerId to it }
-            }.toMap()
-    }
-}

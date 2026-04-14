@@ -24,6 +24,7 @@ import kotlinx.io.bytestring.ByteStringBuilder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 
 @JsExportCompat
 open class CborByteString(
@@ -54,6 +55,7 @@ open class CborByteString(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromCborItem(value: CborItem<*>) = value.toBstr()
     }
 }

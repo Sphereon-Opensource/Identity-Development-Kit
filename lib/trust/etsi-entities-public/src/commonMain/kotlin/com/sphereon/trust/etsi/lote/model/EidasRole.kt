@@ -17,6 +17,9 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
+
 /**
  * Enumerates the eIDAS 2.0 roles that can be verified against EU trust lists.
  *
@@ -27,6 +30,7 @@ package com.sphereon.trust.etsi.lote.model
  *
  * Per ETSI TS 119 602 Annex C (LoTEType) and Annex D (service types).
  */
+@JsExportCompat
 enum class EidasRole(
     /** 602 LoTEType URI used to identify the relevant LoTE in the LOTL */
     val loTEType: String,
@@ -81,6 +85,7 @@ enum class EidasRole(
          * Finds the EidasRole matching a given LoTEType URI.
          * Returns null if no role matches.
          */
+        @JvmStatic
         fun fromLoTEType(loTEType: String): EidasRole? = entries.firstOrNull { it.loTEType == loTEType }
 
         /**
@@ -88,6 +93,7 @@ enum class EidasRole(
          * (checks both 602 issuance/revocation and 612 legacy types).
          * Returns null if no role matches.
          */
+        @JvmStatic
         fun fromServiceType(serviceType: String): EidasRole? =
             entries.firstOrNull { role ->
                 role.issuanceServiceType == serviceType ||

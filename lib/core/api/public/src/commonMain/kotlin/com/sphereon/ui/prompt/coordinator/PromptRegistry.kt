@@ -68,6 +68,7 @@ interface PromptRegistry {
 /**
  * Default implementation of PromptRegistry with built-in type pairings.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultPromptRegistry", exact = true)
 class DefaultPromptRegistry : PromptRegistry {

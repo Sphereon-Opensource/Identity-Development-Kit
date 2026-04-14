@@ -36,6 +36,7 @@ import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethodType
 import com.sphereon.mdoc.transfer.device.ServerRetrievalMethods
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -59,24 +60,31 @@ sealed class DeviceEngagement {
 
     companion object Decoder {
         @JsStatic
+        @JvmStatic
         val VERSION = NumberLabel(0)
 
         @JsStatic
+        @JvmStatic
         val SECURITY = NumberLabel(1)
 
         @JsStatic
+        @JvmStatic
         val DEVICE_RETRIEVAL_METHODS = NumberLabel(2)
 
         @JsStatic
+        @JvmStatic
         val SERVER_RETRIEVAL_METHOD = NumberLabel(3) // We do not support it to begin with!
 
         @JsStatic
+        @JvmStatic
         val PROTOCOL_INFO = NumberLabel(4)
 
         @JsStatic
+        @JvmStatic
         val ORIGIN_INFOS = NumberLabel(5) // v1.1
 
         @JsStatic
+        @JvmStatic
         val CAPABILITIES = NumberLabel(6) // v1.1
     }
 

@@ -20,6 +20,7 @@ import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.cbor.CborItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.DecodedMdoc
 
 interface IssuerSignedItemCborCodec {

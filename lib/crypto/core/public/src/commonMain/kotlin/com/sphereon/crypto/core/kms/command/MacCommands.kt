@@ -17,9 +17,11 @@
 package com.sphereon.crypto.core.kms.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import kotlinx.serialization.Serializable
-
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmOverloads
 // ============================================================================
 // GenerateMac Command (AWS KMS GenerateMac pattern)
 // ============================================================================
@@ -36,34 +38,38 @@ import kotlinx.serialization.Serializable
  * @property providerId Optional KMS provider to use (defaults to key's provider)
  */
 @Serializable
-data class GenerateMacArgs(
-    val keyId: String,
-    val message: ByteArray,
-    val digestAlgorithm: DigestAlg = DigestAlg.SHA256,
-    val providerId: String? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
-            return true
+@JsExportCompat
+data class
+GenerateMacArgs
+    @JvmOverloads
+    constructor(
+        val keyId: String,
+        val message: ByteArray,
+        val digestAlgorithm: DigestAlg = DigestAlg.SHA256,
+        val providerId: String? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+            other as GenerateMacArgs
+            return keyId == other.keyId &&
+                message.contentEquals(other.message) &&
+                digestAlgorithm == other.digestAlgorithm &&
+                providerId == other.providerId
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
-        other as GenerateMacArgs
-        return keyId == other.keyId &&
-            message.contentEquals(other.message) &&
-            digestAlgorithm == other.digestAlgorithm &&
-            providerId == other.providerId
-    }
 
-    override fun hashCode(): Int {
-        var result = keyId.hashCode()
-        result = 31 * result + message.contentHashCode()
-        result = 31 * result + digestAlgorithm.hashCode()
-        result = 31 * result + (providerId?.hashCode() ?: 0)
-        return result
+        override fun hashCode(): Int {
+            var result = keyId.hashCode()
+            result = 31 * result + message.contentHashCode()
+            result = 31 * result + digestAlgorithm.hashCode()
+            result = 31 * result + (providerId?.hashCode() ?: 0)
+            return result
+        }
     }
-}
 
 /**
  * Result of a MAC generation operation.
@@ -76,6 +82,7 @@ data class GenerateMacArgs(
  * @property digestAlgorithm The hash algorithm that was used
  */
 @Serializable
+@JsExportCompat
 data class GenerateMacResult(
     val mac: ByteArray,
     val macMultibase: String,
@@ -109,6 +116,7 @@ data class GenerateMacResult(
  * HMAC key; consumers provide the message and receive the MAC result.
  * MAC output is multihash-encoded (self-describing hash format).
  */
+@JsExportCompat
 interface GenerateMacCommand : ServiceCommand<GenerateMacArgs, GenerateMacResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -131,37 +139,41 @@ interface GenerateMacCommand : ServiceCommand<GenerateMacArgs, GenerateMacResult
  * @property providerId Optional KMS provider to use
  */
 @Serializable
-data class VerifyMacArgs(
-    val keyId: String,
-    val message: ByteArray,
-    val mac: ByteArray,
-    val digestAlgorithm: DigestAlg = DigestAlg.SHA256,
-    val providerId: String? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
-            return true
+@JsExportCompat
+data class
+VerifyMacArgs
+    @JvmOverloads
+    constructor(
+        val keyId: String,
+        val message: ByteArray,
+        val mac: ByteArray,
+        val digestAlgorithm: DigestAlg = DigestAlg.SHA256,
+        val providerId: String? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+            other as VerifyMacArgs
+            return keyId == other.keyId &&
+                message.contentEquals(other.message) &&
+                mac.contentEquals(other.mac) &&
+                digestAlgorithm == other.digestAlgorithm &&
+                providerId == other.providerId
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
-        other as VerifyMacArgs
-        return keyId == other.keyId &&
-            message.contentEquals(other.message) &&
-            mac.contentEquals(other.mac) &&
-            digestAlgorithm == other.digestAlgorithm &&
-            providerId == other.providerId
-    }
 
-    override fun hashCode(): Int {
-        var result = keyId.hashCode()
-        result = 31 * result + message.contentHashCode()
-        result = 31 * result + mac.contentHashCode()
-        result = 31 * result + digestAlgorithm.hashCode()
-        result = 31 * result + (providerId?.hashCode() ?: 0)
-        return result
+        override fun hashCode(): Int {
+            var result = keyId.hashCode()
+            result = 31 * result + message.contentHashCode()
+            result = 31 * result + mac.contentHashCode()
+            result = 31 * result + digestAlgorithm.hashCode()
+            result = 31 * result + (providerId?.hashCode() ?: 0)
+            return result
+        }
     }
-}
 
 /**
  * Result of a MAC verification operation.
@@ -169,6 +181,7 @@ data class VerifyMacArgs(
  * @property isValid Whether the MAC is valid
  */
 @Serializable
+@JsExportCompat
 data class VerifyMacResult(
     val isValid: Boolean,
 )
@@ -176,6 +189,7 @@ data class VerifyMacResult(
 /**
  * Command for verifying a MAC via the KMS.
  */
+@JsExportCompat
 interface VerifyMacCommand : ServiceCommand<VerifyMacArgs, VerifyMacResult> {
     override val commandId: String get() = COMMAND_ID
 

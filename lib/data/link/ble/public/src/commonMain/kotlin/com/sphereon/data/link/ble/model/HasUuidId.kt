@@ -19,11 +19,13 @@
 
 package com.sphereon.data.link.ble.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HasUuidId", exact = true)
 interface HasUuidId {

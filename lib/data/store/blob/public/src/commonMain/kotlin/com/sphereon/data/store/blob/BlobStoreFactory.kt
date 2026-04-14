@@ -17,6 +17,7 @@
 package com.sphereon.data.store.blob
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Factory for creating [BlobStore] instances from configuration.
@@ -25,6 +26,7 @@ import com.sphereon.core.api.context.SessionExecution
  * Each factory handles a specific backend type (memory, filesystem, etc.) and receives
  * a typed [BlobStoreConfigBase] deserialized by the polymorphic config binder.
  */
+@JsExportCompat
 interface BlobStoreFactory {
     val backendId: String
 

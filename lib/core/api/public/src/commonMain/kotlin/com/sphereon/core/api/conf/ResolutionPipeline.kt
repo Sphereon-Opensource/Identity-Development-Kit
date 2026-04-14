@@ -21,9 +21,11 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.concurrent.Volatile
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.reflect.KClass
 import kotlin.time.Clock
@@ -34,6 +36,7 @@ import kotlin.time.Instant
  * Core configuration resolution pipeline interface.
  * Provides unified property resolution with metadata for diagnostics.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigResolutionPipeline", exact = true)
 interface ConfigResolutionPipeline {
@@ -115,6 +118,7 @@ suspend inline fun <reified T : Any> ConfigResolutionPipeline.resolve(
  * Context for property resolution operations.
  * Contains scope information and resolution options.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolutionContext", exact = true)
@@ -128,12 +132,14 @@ data class ResolutionContext(
     val options: ResolutionOptions = ResolutionOptions(),
 ) {
     companion object {
+        @JvmStatic
         fun app(profiles: List<String> = listOf("default")) =
             ResolutionContext(
                 level = ConfigLevel.APP,
                 activeProfiles = profiles,
             )
 
+        @JvmStatic
         fun tenant(
             tenantId: String,
             profiles: List<String> = listOf("default"),
@@ -143,6 +149,7 @@ data class ResolutionContext(
             activeProfiles = profiles,
         )
 
+        @JvmStatic
         fun principal(
             tenantId: String,
             principalId: String,
@@ -159,6 +166,7 @@ data class ResolutionContext(
 /**
  * Options controlling resolution behavior.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolutionOptions", exact = true)
@@ -179,6 +187,7 @@ data class ResolutionOptions(
  * @property value The resolved value
  * @property metadata Resolution metadata for diagnostics
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolvedValue", exact = true)
@@ -188,6 +197,7 @@ data class ResolvedValue<T>(
     val metadata: ResolutionMetadata,
 ) {
     companion object {
+        @JvmStatic
         fun <T> of(
             value: T,
             source: String,
@@ -220,6 +230,7 @@ data class ResolvedValue<T>(
  * Metadata about how a property value was resolved.
  * Useful for debugging and diagnostics.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolutionMetadata", exact = true)
@@ -245,6 +256,7 @@ data class ResolutionMetadata(
  * @param resolverLevel The scope level of this pipeline, used for protection enforcement
  * @param snapshotCache Optional cache for prefix-based query results
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultConfigResolutionPipeline", exact = true)
 class DefaultConfigResolutionPipeline(

@@ -19,10 +19,12 @@
 
 package com.sphereon.data.store.party.input
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.PartyOrigin
 import com.sphereon.data.store.party.model.PartyType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -31,26 +33,29 @@ import kotlin.uuid.Uuid
  *
  * The [id] is optional - if not provided, the system will generate one.
  */
+@JsExportCompat
 @Serializable
-data class PartyCreateInput(
-    /** Optional ID - if null, system generates one */
-    val id: Uuid? = null,
-    /** The type of party */
-    @SerialName("partyType")
-    val partyType: PartyType,
-    /** Origin of the party (external/managed) */
-    val origin: PartyOrigin,
-    /** User-friendly display name */
-    @SerialName("displayName")
-    val displayName: String,
-    /** Optional URI for the party (DID, URL, etc.) */
-    val uri: String? = null,
-    /** Primary jurisdiction for this party (ISO 3166-1 code or region, e.g. "EU", "US", "NL") */
-    val jurisdiction: String? = null,
-    /** Reference to the owning party */
-    @SerialName("ownerId")
-    val ownerId: Uuid? = null,
-)
+data class PartyCreateInput
+    @JvmOverloads
+    constructor(
+        /** Optional ID - if null, system generates one */
+        val id: Uuid? = null,
+        /** The type of party */
+        @SerialName("partyType")
+        val partyType: PartyType,
+        /** Origin of the party (external/managed) */
+        val origin: PartyOrigin,
+        /** User-friendly display name */
+        @SerialName("displayName")
+        val displayName: String,
+        /** Optional URI for the party (DID, URL, etc.) */
+        val uri: String? = null,
+        /** Primary jurisdiction for this party (ISO 3166-1 code or region, e.g. "EU", "US", "NL") */
+        val jurisdiction: String? = null,
+        /** Reference to the owning party */
+        @SerialName("ownerId")
+        val ownerId: Uuid? = null,
+    )
 
 /**
  * Input for updating an existing party.
@@ -58,18 +63,21 @@ data class PartyCreateInput(
  * The [id] is required to identify which party to update.
  * All other fields are optional - only non-null values will be updated.
  */
+@JsExportCompat
 @Serializable
-data class PartyUpdateInput(
-    /** Required - the party to update */
-    val id: Uuid,
-    /** New display name (null = keep current) */
-    @SerialName("displayName")
-    val displayName: String? = null,
-    /** New URI (null = keep current) */
-    val uri: String? = null,
-    /** New jurisdiction (null = keep current) */
-    val jurisdiction: String? = null,
-    /** New owner ID (null = keep current) */
-    @SerialName("ownerId")
-    val ownerId: Uuid? = null,
-)
+data class PartyUpdateInput
+    @JvmOverloads
+    constructor(
+        /** Required - the party to update */
+        val id: Uuid,
+        /** New display name (null = keep current) */
+        @SerialName("displayName")
+        val displayName: String? = null,
+        /** New URI (null = keep current) */
+        val uri: String? = null,
+        /** New jurisdiction (null = keep current) */
+        val jurisdiction: String? = null,
+        /** New owner ID (null = keep current) */
+        @SerialName("ownerId")
+        val ownerId: Uuid? = null,
+    )

@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -348,6 +349,8 @@ internal object IdTokenPayloadSerializer : KSerializer<IdTokenPayload> {
  * @property additionalClaims Additional custom claims not defined in the standard (serialized at top level)
  */
 @Serializable(with = IdTokenPayloadSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class IdTokenPayload(
     // Required claims (OpenID Connect Core Section 2)
     val iss: String,
@@ -392,6 +395,7 @@ data class IdTokenPayload(
 /**
  * Address claim structure (OpenID Connect Core 1.0 Section 5.1.1)
  */
+@JsExportCompat
 @Serializable
 data class AddressClaim(
     val formatted: String? = null,
@@ -407,6 +411,7 @@ data class AddressClaim(
  *
  * Contains the validated payload and metadata about the validation process
  */
+@JsExportCompat
 data class ValidatedIdToken(
     /**
      * The validated ID Token payload
@@ -435,6 +440,7 @@ data class ValidatedIdToken(
  *
  * Specifies what validations to perform on the ID Token
  */
+@JsExportCompat
 data class IdTokenValidationOptions(
     /**
      * Expected issuer (iss claim)

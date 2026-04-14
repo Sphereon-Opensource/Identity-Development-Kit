@@ -22,6 +22,8 @@ import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -50,155 +52,156 @@ import kotlin.native.ObjCName
 @ObjCName("ParsedDid", exact = true)
 @JsExportCompat
 @Serializable
-data class ParsedDid(
-    val scheme: String,
-    val method: String,
-    val methodSpecificId: String,
-    val path: String? = null,
-    val query: Map<String, String>? = null,
-    val fragment: String? = null,
-) {
-    companion object {
-        private val DID_REGEX =
-            Regex(
-                """^did:([a-z0-9]+):([^/?#]+)(/[^?#]*)?(\?[^#]*)?(#.*)?$""",
-                RegexOption.IGNORE_CASE,
-            )
+data class ParsedDid
+    @JvmOverloads
+    constructor(
+        val scheme: String,
+        val method: String,
+        val methodSpecificId: String,
+        val path: String? = null,
+        val query: Map<String, String>? = null,
+        val fragment: String? = null,
+    ) {
+        companion object {
+            private val DID_REGEX =
+                Regex(
+                    """^did:([a-z0-9]+):([^/?#]+)(/[^?#]*)?(\?[^#]*)?(#.*)?$""",
+                    RegexOption.IGNORE_CASE,
+                )
 
-        /**
-         * Parses a DID or DID URL string.
-         *
-         * @param did The DID string to parse
-         * @return ParsedDid object
-         * @throws IllegalArgumentException if the DID is invalid
-         */
-        @JsStatic
-        @JsExportIgnoreCompat
-        fun parse(did: String): ParsedDid {
-            val match =
-                DID_REGEX.matchEntire(did)
-                    ?: throw IllegalArgumentException("Invalid DID format: $did")
+            /**
+             * Parses a DID or DID URL string.
+             *
+             * @param did The DID string to parse
+             * @return ParsedDid object
+             * @throws IllegalArgumentException if the DID is invalid
+             */
+            @JvmStatic
+            @JsStatic
+            fun parse(did: String): ParsedDid {
+                val match =
+                    DID_REGEX.matchEntire(did)
+                        ?: throw IllegalArgumentException("Invalid DID format: $did")
 
-            val method = match.groupValues[1]
-            val methodSpecificId = match.groupValues[2]
-            val pathPart = match.groupValues[3].takeIf { it.isNotEmpty() }?.removePrefix("/")
-            val queryPart = match.groupValues[4].takeIf { it.isNotEmpty() }?.removePrefix("?")
-            val fragmentPart = match.groupValues[5].takeIf { it.isNotEmpty() }?.removePrefix("#")
+                val method = match.groupValues[1]
+                val methodSpecificId = match.groupValues[2]
+                val pathPart = match.groupValues[3].takeIf { it.isNotEmpty() }?.removePrefix("/")
+                val queryPart = match.groupValues[4].takeIf { it.isNotEmpty() }?.removePrefix("?")
+                val fragmentPart = match.groupValues[5].takeIf { it.isNotEmpty() }?.removePrefix("#")
 
-            val queryParams = queryPart?.let { parseQueryString(it) }
+                val queryParams = queryPart?.let { parseQueryString(it) }
 
-            return ParsedDid(
-                scheme = "did",
-                method = method,
-                methodSpecificId = methodSpecificId,
-                path = pathPart,
-                query = queryParams,
-                fragment = fragmentPart,
-            )
+                return ParsedDid(
+                    scheme = "did",
+                    method = method,
+                    methodSpecificId = methodSpecificId,
+                    path = pathPart,
+                    query = queryParams,
+                    fragment = fragmentPart,
+                )
+            }
+
+            /**
+             * Attempts to parse a DID string, returning null if invalid.
+             *
+             * @param did The DID string to parse
+             * @return ParsedDid object or null if invalid
+             */
+            @JvmStatic
+            @JsStatic
+            fun tryParse(did: String): ParsedDid? =
+                try {
+                    parse(did)
+                } catch (_: IllegalArgumentException) {
+                    null
+                }
+
+            /**
+             * Checks if a string is a valid DID format.
+             *
+             * @param did The string to check
+             * @return true if the string is a valid DID format
+             */
+            @JvmStatic
+            @JsStatic
+            fun isValidDid(did: String): Boolean = DID_REGEX.matches(did)
+
+            private fun parseQueryString(query: String): Map<String, String> =
+                query
+                    .split("&")
+                    .filter { it.isNotEmpty() }
+                    .associate { param ->
+                        val parts = param.split("=", limit = 2)
+                        val key = parts[0]
+                        val value =
+                            if (parts.size > 1) {
+                                parts[1]
+                            } else {
+                                ""
+                            }
+                        key to value
+                    }
         }
 
         /**
-         * Attempts to parse a DID string, returning null if invalid.
-         *
-         * @param did The DID string to parse
-         * @return ParsedDid object or null if invalid
+         * Returns the base DID without path, query, or fragment.
+         * Example: "did:example:123#key-1" -> "did:example:123"
          */
-        @JsStatic
-        @JsExportIgnoreCompat
-        fun tryParse(did: String): ParsedDid? =
-            try {
-                parse(did)
-            } catch (_: IllegalArgumentException) {
-                null
-            }
+        val did: String
+            get() = "did:$method:$methodSpecificId"
 
         /**
-         * Checks if a string is a valid DID format.
-         *
-         * @param did The string to check
-         * @return true if the string is a valid DID format
+         * Returns the full DID URL including all components.
          */
-        @JsStatic
-        fun isValidDid(did: String): Boolean = DID_REGEX.matches(did)
-
-        private fun parseQueryString(query: String): Map<String, String> =
-            query
-                .split("&")
-                .filter { it.isNotEmpty() }
-                .associate { param ->
-                    val parts = param.split("=", limit = 2)
-                    val key = parts[0]
-                    val value =
-                        if (parts.size > 1) {
-                            parts[1]
-                        } else {
-                            ""
-                        }
-                    key to value
+        val didUrl: String
+            get() =
+                buildString {
+                    append(did)
+                    path?.let { append("/$it") }
+                    query?.let { params ->
+                        append("?")
+                        append(params.entries.joinToString("&") { "${it.key}=${it.value}" })
+                    }
+                    fragment?.let { append("#$it") }
                 }
+
+        /**
+         * Checks if this is a DID URL (has path, query, or fragment).
+         */
+        val isDidUrl: Boolean
+            get() = path != null || query != null || fragment != null
+
+        /**
+         * Gets the value of a query parameter.
+         *
+         * @param key The query parameter key
+         * @return The value or null if not present
+         */
+        fun getQueryParam(key: String): String? = query?.get(key)
+
+        /**
+         * Creates a new ParsedDid with a different fragment.
+         *
+         * @param newFragment The new fragment value
+         * @return A new ParsedDid with the updated fragment
+         */
+        fun withFragment(newFragment: String?): ParsedDid = copy(fragment = newFragment)
+
+        /**
+         * Creates a new ParsedDid with an additional or updated query parameter.
+         *
+         * @param key The query parameter key
+         * @param value The query parameter value
+         * @return A new ParsedDid with the updated query
+         */
+        fun withQueryParam(
+            key: String,
+            value: String,
+        ): ParsedDid {
+            val newQuery = (query ?: emptyMap()).toMutableMap()
+            newQuery[key] = value
+            return copy(query = newQuery)
+        }
+
+        override fun toString(): String = didUrl
     }
-
-    /**
-     * Returns the base DID without path, query, or fragment.
-     * Example: "did:example:123#key-1" -> "did:example:123"
-     */
-    val did: String
-        get() = "did:$method:$methodSpecificId"
-
-    /**
-     * Returns the full DID URL including all components.
-     */
-    val didUrl: String
-        get() =
-            buildString {
-                append(did)
-                path?.let { append("/$it") }
-                query?.let { params ->
-                    append("?")
-                    append(params.entries.joinToString("&") { "${it.key}=${it.value}" })
-                }
-                fragment?.let { append("#$it") }
-            }
-
-    /**
-     * Checks if this is a DID URL (has path, query, or fragment).
-     */
-    val isDidUrl: Boolean
-        get() = path != null || query != null || fragment != null
-
-    /**
-     * Gets the value of a query parameter.
-     *
-     * @param key The query parameter key
-     * @return The value or null if not present
-     */
-    fun getQueryParam(key: String): String? = query?.get(key)
-
-    /**
-     * Creates a new ParsedDid with a different fragment.
-     *
-     * @param newFragment The new fragment value
-     * @return A new ParsedDid with the updated fragment
-     */
-    @JsExportIgnoreCompat
-    fun withFragment(newFragment: String?): ParsedDid = copy(fragment = newFragment)
-
-    /**
-     * Creates a new ParsedDid with an additional or updated query parameter.
-     *
-     * @param key The query parameter key
-     * @param value The query parameter value
-     * @return A new ParsedDid with the updated query
-     */
-    @JsExportIgnoreCompat
-    fun withQueryParam(
-        key: String,
-        value: String,
-    ): ParsedDid {
-        val newQuery = (query ?: emptyMap()).toMutableMap()
-        newQuery[key] = value
-        return copy(query = newQuery)
-    }
-
-    override fun toString(): String = didUrl
-}

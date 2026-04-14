@@ -20,6 +20,8 @@ package com.sphereon.did.capabilities
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -35,8 +37,10 @@ import kotlin.native.ObjCName
 @ObjCName("DidMethodMetadata", exact = true)
 @JsExportCompat
 @Serializable
-data class MethodMetadata(
-    val description: String? = null,
-    val specificationUrl: String? = null,
-    val version: String? = null,
-)
+data class MethodMetadata
+    @JvmOverloads
+    constructor(
+        val description: String? = null,
+        val specificationUrl: String? = null,
+        val version: String? = null,
+    )

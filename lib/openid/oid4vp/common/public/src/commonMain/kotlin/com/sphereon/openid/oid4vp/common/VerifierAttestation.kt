@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.common
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import io.konform.validation.Validation
 import io.konform.validation.constraints.minLength
 import kotlinx.serialization.SerialName
@@ -204,6 +205,7 @@ val validateVerifierAttestations: Validation<List<VerifierAttestation>> =
 /**
  * Builder for creating verifier attestations.
  */
+@JsExportCompat
 class VerifierAttestationBuilder {
     private var format: String = ""
     private var data: VerifierAttestationData? = null
@@ -225,6 +227,7 @@ class VerifierAttestationBuilder {
     /**
      * Set the attestation data as a JSON object.
      */
+    @JsExportIgnoreCompat
     fun data(obj: JsonObject) =
         apply {
             this.data = VerifierAttestationData.ObjectData(obj)
@@ -241,6 +244,7 @@ class VerifierAttestationBuilder {
     /**
      * Set the credential IDs this attestation applies to.
      */
+    @JsExportIgnoreCompat
     fun credentialIds(ids: List<String>) =
         apply {
             this.credentialIds = ids.takeIf { it.isNotEmpty() }

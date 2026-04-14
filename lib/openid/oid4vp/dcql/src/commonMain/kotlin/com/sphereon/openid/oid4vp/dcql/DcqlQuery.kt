@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.dcql
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -59,6 +61,7 @@ import kotlinx.serialization.json.JsonObject
  * @see DcqlCredentialSetQuery
  */
 @Serializable
+@JsExportCompat
 data class DcqlQuery(
     val credentials: List<DcqlCredentialQuery>? = null,
     val credential_sets: List<DcqlCredentialSetQuery>? = null,
@@ -120,6 +123,7 @@ data class DcqlQuery(
  * @see MdocMeta
  */
 @Serializable
+@JsExportCompat
 data class DcqlCredentialQuery(
     val id: String,
     val format: String? = null,
@@ -220,6 +224,7 @@ data class DcqlCredentialQuery(
  * @see DcqlCredentialQuery
  */
 @Serializable
+@JsExportCompat
 data class DcqlClaimQuery(
     val path: List<String>,
     val values: List<JsonElement>? = null,
@@ -250,6 +255,7 @@ data class DcqlClaimQuery(
  * @see DcqlCredentialQuery
  */
 @Serializable
+@JsExportCompat
 data class DcqlClaimSet(
     val id: String,
     val claims: List<String>,
@@ -286,6 +292,7 @@ data class DcqlClaimSet(
  * @see DcqlQuery
  */
 @Serializable
+@JsExportCompat
 data class DcqlCredentialSetQuery(
     val required: Boolean = false,
     val options: List<DcqlCredentialSetOption>,
@@ -315,6 +322,7 @@ data class DcqlCredentialSetQuery(
  * @see DcqlCredentialSetQuery
  */
 @Serializable
+@JsExportCompat
 data class DcqlCredentialSetOption(
     val credential_ids: List<String>,
 )

@@ -44,6 +44,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 
 @OptIn(ExperimentalSerializationApi::class)
 internal object KeyTypeSerializer : KSerializer<KeyTypeMapping> {
@@ -150,6 +151,7 @@ sealed class KeyTypeMapping(
          * @return IdkResult containing the JOSE key type, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJose(cose: CoseKeyTypeEnum): IdkResult<JwaKeyType, IdkError> =
             asList
                 .find { it.coseKeyType == cose || it.coseKeyType.toString() == cose.toString() }
@@ -162,6 +164,7 @@ sealed class KeyTypeMapping(
          * @return IdkResult containing the COSE key type, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCose(jose: JwaKeyType): IdkResult<CoseKeyTypeEnum, IdkError> =
             asList
                 .find { it.joseKeyType == jose || it.joseKeyType.toString() == jose.toString() }
@@ -174,6 +177,7 @@ sealed class KeyTypeMapping(
          * @return IdkResult containing the KeyTypeMapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromJose(jose: JwaKeyType): IdkResult<KeyTypeMapping, IdkError> =
             asList
                 .find { it.joseKeyType == jose || it.joseKeyType.toString() == jose.toString() }
@@ -185,6 +189,7 @@ sealed class KeyTypeMapping(
          * @return IdkResult containing the KeyTypeMapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromCose(cose: CoseKeyTypeEnum): IdkResult<KeyTypeMapping, IdkError> =
             asList
                 .find { it.coseKeyType == cose || it.coseKeyType.toString() == cose.toString() }
@@ -200,6 +205,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException If the provided `CoseKeyType` does not have a corresponding JOSE key type.
          */
         @JsStatic
+        @JvmStatic
         fun toJose(cose: CoseKeyTypeEnum) =
             tryToJose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -213,6 +219,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException If the provided JWA key type cannot be found.
          */
         @JsStatic
+        @JvmStatic
         fun toCose(jose: JwaKeyType) =
             tryToCose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -225,6 +232,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException if the given `jose` key type is not found.
          */
         @JsStatic
+        @JvmStatic
         fun fromJose(jose: JwaKeyType) =
             tryFromJose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -237,6 +245,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException if the specified CoseKeyType is not found in the list.
          */
         @JsStatic
+        @JvmStatic
         fun fromCose(cose: CoseKeyTypeEnum) =
             tryFromCose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -247,6 +256,7 @@ sealed class KeyTypeMapping(
          * @return IdkResult containing the JOSE key type, or an error if conversion is not possible.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJoseKty(kty: Any): IdkResult<JwaKeyType, IdkError> =
             when (kty) {
                 is String -> {
@@ -282,6 +292,7 @@ sealed class KeyTypeMapping(
          * @return IdkResult containing the COSE key type, or an error if conversion is not possible.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCoseKty(kty: Any): IdkResult<CoseKeyTypeEnum, IdkError> =
             when (kty) {
                 is Long -> {
@@ -325,6 +336,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException if the given kty cannot be converted to a JwaKeyType
          */
         @JsStatic
+        @JvmStatic
         fun toJoseKty(kty: Any): JwaKeyType =
             tryToJoseKty(kty).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -338,6 +350,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException if the key type cannot be converted.
          */
         @JsStatic
+        @JvmStatic
         fun toCoseKty(kty: Any): CoseKeyTypeEnum =
             tryToCoseKty(kty).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -351,6 +364,7 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException If the COSE key type is unknown.
          */
         @JsStatic
+        @JvmStatic
         fun toJoseKtyFromCose(kty: Number) = toJose(CoseKeyTypeEnum.fromValue(kty.toLong()))
 
         /**
@@ -360,9 +374,11 @@ sealed class KeyTypeMapping(
          * @throws IllegalArgumentException If the provided `kty` is not a valid JOSE key type.
          */
         @JsStatic
+        @JvmStatic
         fun toCoseKtyFromJose(kty: String) = toCose(JwaKeyType.fromValue(kty))
 
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String?): KeyTypeMapping? =
             asList.firstOrNull {
                 val name = it::class.simpleName
@@ -688,6 +704,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the JOSE algorithm, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJose(cose: CoseAlgorithm?): IdkResult<JwaAlgorithm, IdkError> {
             if (cose == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "COSE algorithm is null"))
@@ -711,6 +728,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the COSE algorithm, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCose(jose: JwaAlgorithm?): IdkResult<CoseAlgorithm, IdkError> {
             if (jose == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JOSE algorithm is null"))
@@ -734,6 +752,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the SignatureAlgorithm mapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromJose(jose: JwaAlgorithm?): IdkResult<SignatureAlgorithm, IdkError> {
             if (jose == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JOSE algorithm is null"))
@@ -749,6 +768,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the SignatureAlgorithm mapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromCose(cose: CoseAlgorithm?): IdkResult<SignatureAlgorithm, IdkError> {
             if (cose == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "COSE algorithm is null"))
@@ -764,6 +784,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the JwaAlgorithm, or an error if conversion is not possible.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJoseAlg(alg: Any?): IdkResult<JwaAlgorithm, IdkError> {
             if (alg == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Algorithm is null"))
@@ -801,6 +822,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the CoseAlgorithm, or an error if conversion is not possible.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCoseAlg(alg: Any?): IdkResult<CoseAlgorithm, IdkError> {
             if (alg == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Algorithm is null"))
@@ -839,6 +861,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the JOSE algorithm, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJoseAlgFromCose(algorithm: Int?): IdkResult<JwaAlgorithm, IdkError> {
             if (algorithm == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Algorithm is null"))
@@ -854,6 +877,7 @@ sealed class SignatureAlgorithm(
          * @return IdkResult containing the COSE algorithm, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCoseAlgFromJose(algorithm: String?): IdkResult<CoseAlgorithm, IdkError> {
             if (algorithm == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Algorithm is null"))
@@ -873,6 +897,7 @@ sealed class SignatureAlgorithm(
          * @throws IllegalArgumentException if the given COSE algorithm does not have a corresponding JOSE algorithm.
          */
         @JsStatic
+        @JvmStatic
         fun toJose(cose: CoseAlgorithm?) =
             tryToJose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -886,6 +911,7 @@ sealed class SignatureAlgorithm(
          * @return The corresponding COSE algorithm.
          */
         @JsStatic
+        @JvmStatic
         fun toCose(jose: JwaAlgorithm?) =
             tryToCose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -898,6 +924,7 @@ sealed class SignatureAlgorithm(
          * @throws IllegalArgumentException if the algorithm is not found.
          */
         @JsStatic
+        @JvmStatic
         fun fromJose(jose: JwaAlgorithm?) =
             tryFromJose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -910,6 +937,7 @@ sealed class SignatureAlgorithm(
          * @throws IllegalArgumentException if the algorithm is not found.
          */
         @JsStatic
+        @JvmStatic
         fun fromCose(cose: CoseAlgorithm?) =
             tryFromCose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -923,6 +951,7 @@ sealed class SignatureAlgorithm(
          * @throws IllegalArgumentException if the provided algorithm cannot be converted to a `JwaAlgorithm`.
          */
         @JsStatic
+        @JvmStatic
         fun toJoseAlg(alg: Any?): JwaAlgorithm =
             tryToJoseAlg(alg).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -936,6 +965,7 @@ sealed class SignatureAlgorithm(
          * @throws IllegalArgumentException If the algorithm cannot be converted to a `CoseAlgorithm`.
          */
         @JsStatic
+        @JvmStatic
         fun toCoseAlg(alg: Any?): CoseAlgorithm =
             tryToCoseAlg(alg).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -949,6 +979,7 @@ sealed class SignatureAlgorithm(
          * @return The equivalent JOSE algorithm.
          */
         @JsStatic
+        @JvmStatic
         fun toJoseAlgFromCose(algorithm: Int?) =
             tryToJoseAlgFromCose(algorithm).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -962,12 +993,14 @@ sealed class SignatureAlgorithm(
          * @return The corresponding COSE algorithm.
          */
         @JsStatic
+        @JvmStatic
         fun toCoseAlgFromJose(algorithm: String?): CoseAlgorithm =
             tryToCoseAlgFromJose(algorithm).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
             }
 
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String): SignatureAlgorithm? = asList.find { it::class.simpleName == value }
     }
 }
@@ -1099,6 +1132,7 @@ sealed class Curve(
          * @return IdkResult containing the Curve mapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromJose(jose: JwaCurve?): IdkResult<Curve, IdkError> {
             if (jose == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JOSE curve is null"))
@@ -1114,6 +1148,7 @@ sealed class Curve(
          * @return IdkResult containing the Curve mapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromCose(cose: CoseCurve?): IdkResult<Curve, IdkError> {
             if (cose == null) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "COSE curve is null"))
@@ -1129,6 +1164,7 @@ sealed class Curve(
          * @return IdkResult containing the JOSE curve, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJose(cose: CoseCurve?): IdkResult<JwaCurve, IdkError> =
             tryFromCose(cose).let { result ->
                 when {
@@ -1142,6 +1178,7 @@ sealed class Curve(
          * @return IdkResult containing the COSE curve, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCose(jose: JwaCurve?): IdkResult<CoseCurve, IdkError> =
             tryFromJose(jose).let { result ->
                 when {
@@ -1153,12 +1190,14 @@ sealed class Curve(
         // Throwing variants - for backwards compatibility
 
         @JsStatic
+        @JvmStatic
         fun fromJose(jose: JwaCurve?) =
             tryFromJose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
             }
 
         @JsStatic
+        @JvmStatic
         fun fromCose(cose: CoseCurve?) =
             tryFromCose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -1172,6 +1211,7 @@ sealed class Curve(
          * @return The corresponding JOSE curve.
          */
         @JsStatic
+        @JvmStatic
         fun toJose(cose: CoseCurve) = fromCose(cose).joseCurve
 
         /**
@@ -1182,6 +1222,7 @@ sealed class Curve(
          * @return The corresponding CoseCurve.
          */
         @JsStatic
+        @JvmStatic
         fun toCose(jose: JwaCurve) = fromJose(jose).coseCurve
     }
 }
@@ -1385,6 +1426,7 @@ sealed class KeyOperations(
          * @return IdkResult containing the KeyOperations mapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromJose(jose: JoseKeyOperations): IdkResult<KeyOperations, IdkError> =
             asList
                 .find { it.joseKeyOperations == jose || it.joseKeyOperations.toString() == jose.toString() }
@@ -1396,6 +1438,7 @@ sealed class KeyOperations(
          * @return IdkResult containing the KeyOperations mapping, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromCose(cose: CoseKeyOperations): IdkResult<KeyOperations, IdkError> =
             asList
                 .find { it.coseKeyOperations == cose || it.coseKeyOperations.toString() == cose.toString() }
@@ -1407,6 +1450,7 @@ sealed class KeyOperations(
          * @return IdkResult containing the JOSE key operation, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToJose(cose: CoseKeyOperations): IdkResult<JoseKeyOperations, IdkError> =
             tryFromCose(cose).let { result ->
                 when {
@@ -1420,6 +1464,7 @@ sealed class KeyOperations(
          * @return IdkResult containing the COSE key operation, or an error if not found.
          */
         @JsStatic
+        @JvmStatic
         fun tryToCose(jose: JoseKeyOperations): IdkResult<CoseKeyOperations, IdkError> =
             tryFromJose(jose).let { result ->
                 when {
@@ -1433,6 +1478,7 @@ sealed class KeyOperations(
          * @return IdkResult containing the KeyOperations instance, or an error if not recognized.
          */
         @JsStatic
+        @JvmStatic
         fun tryFromValue(value: String): IdkResult<KeyOperations, IdkError> =
             when (value) {
                 "sign" -> Ok(SIGN)
@@ -1458,6 +1504,7 @@ sealed class KeyOperations(
          * @throws IllegalArgumentException if the provided `JoseKeyOperations` value does not map to any `KeyOperationsMapping` instance.
          */
         @JsStatic
+        @JvmStatic
         fun fromJose(jose: JoseKeyOperations) =
             tryFromJose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -1471,6 +1518,7 @@ sealed class KeyOperations(
          * @return The corresponding KeyOperation object.
          */
         @JsStatic
+        @JvmStatic
         fun fromCose(cose: CoseKeyOperations) =
             tryFromCose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -1484,6 +1532,7 @@ sealed class KeyOperations(
          * @return The equivalent JOSE key operation.
          */
         @JsStatic
+        @JvmStatic
         fun toJose(cose: CoseKeyOperations) =
             tryToJose(cose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
@@ -1497,18 +1546,21 @@ sealed class KeyOperations(
          * @throws IllegalArgumentException if the specified JOSE key operation is not found.
          */
         @JsStatic
+        @JvmStatic
         fun toCose(jose: JoseKeyOperations) =
             tryToCose(jose).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
             }
 
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String): KeyOperations =
             tryFromValue(value).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
             }
 
         @JsStatic
+        @JvmStatic
         fun toValue(value: KeyOperations): String =
             when (value) {
                 SIGN -> "sign"

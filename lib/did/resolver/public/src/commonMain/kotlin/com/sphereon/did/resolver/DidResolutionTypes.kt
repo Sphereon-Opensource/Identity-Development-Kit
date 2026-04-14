@@ -18,12 +18,15 @@
 package com.sphereon.did.resolver
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationPurpose
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -39,53 +42,61 @@ import kotlin.native.ObjCName
 @ObjCName("DidResolutionMetadata", exact = true)
 @JsExportCompat
 @Serializable
-data class DidResolutionMetadata(
-    val contentType: String? = null,
-    val error: String? = null,
-    val message: String? = null,
-) {
-    companion object {
-        /**
-         * Error code for DID not found.
-         */
-        const val ERROR_NOT_FOUND: String = "notFound"
+data class DidResolutionMetadata
+    @JvmOverloads
+    constructor(
+        val contentType: String? = null,
+        val error: String? = null,
+        val message: String? = null,
+    ) {
+        companion object {
+            /**
+             * Error code for DID not found.
+             */
+            const val ERROR_NOT_FOUND: String = "notFound"
+
+            /**
+             * Error code for invalid DID format.
+             */
+            const val ERROR_INVALID_DID: String = "invalidDid"
+
+            /**
+             * Error code for unsupported method.
+             */
+            const val ERROR_METHOD_NOT_SUPPORTED: String = "methodNotSupported"
+
+            /**
+             * Error code for internal resolver error.
+             */
+            const val ERROR_INTERNAL_ERROR: String = "internalError"
+
+            /**
+             * Creates metadata for successful resolution.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun success(contentType: String = "application/did+json"): DidResolutionMetadata = DidResolutionMetadata(contentType = contentType)
+
+            /**
+             * Creates metadata for a not-found error.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun notFound(message: String? = null): DidResolutionMetadata = DidResolutionMetadata(error = ERROR_NOT_FOUND, message = message)
+
+            /**
+             * Creates metadata for an invalid DID error.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun invalidDid(message: String? = null): DidResolutionMetadata = DidResolutionMetadata(error = ERROR_INVALID_DID, message = message)
+        }
 
         /**
-         * Error code for invalid DID format.
+         * Checks if the resolution was successful.
          */
-        const val ERROR_INVALID_DID: String = "invalidDid"
-
-        /**
-         * Error code for unsupported method.
-         */
-        const val ERROR_METHOD_NOT_SUPPORTED: String = "methodNotSupported"
-
-        /**
-         * Error code for internal resolver error.
-         */
-        const val ERROR_INTERNAL_ERROR: String = "internalError"
-
-        /**
-         * Creates metadata for successful resolution.
-         */
-        fun success(contentType: String = "application/did+json"): DidResolutionMetadata = DidResolutionMetadata(contentType = contentType)
-
-        /**
-         * Creates metadata for a not-found error.
-         */
-        fun notFound(message: String? = null): DidResolutionMetadata = DidResolutionMetadata(error = ERROR_NOT_FOUND, message = message)
-
-        /**
-         * Creates metadata for an invalid DID error.
-         */
-        fun invalidDid(message: String? = null): DidResolutionMetadata = DidResolutionMetadata(error = ERROR_INVALID_DID, message = message)
+        fun isSuccess(): Boolean = error == null
     }
-
-    /**
-     * Checks if the resolution was successful.
-     */
-    fun isSuccess(): Boolean = error == null
-}
 
 /**
  * Document metadata returned with resolved DID documents.
@@ -102,18 +113,20 @@ data class DidResolutionMetadata(
 @ObjCName("DidDocumentMetadata", exact = true)
 @JsExportCompat
 @Serializable
-data class DidDocumentMetadata(
-    val created: String? = null,
-    val updated: String? = null,
-    val deactivated: Boolean? = null,
-    val versionId: String? = null,
-    val nextVersionId: String? = null,
-) {
-    /**
-     * Checks if the DID is active (not deactivated).
-     */
-    fun isActive(): Boolean = deactivated != true
-}
+data class DidDocumentMetadata
+    @JvmOverloads
+    constructor(
+        val created: String? = null,
+        val updated: String? = null,
+        val deactivated: Boolean? = null,
+        val versionId: String? = null,
+        val nextVersionId: String? = null,
+    ) {
+        /**
+         * Checks if the DID is active (not deactivated).
+         */
+        fun isActive(): Boolean = deactivated != true
+    }
 
 /**
  * Complete result of resolving a DID.
@@ -129,81 +142,89 @@ data class DidDocumentMetadata(
 @ObjCName("DidResolutionResult", exact = true)
 @JsExportCompat
 @Serializable
-data class DidResolutionResult(
-    val didDocument: DidDocument?,
-    val didResolutionMetadata: DidResolutionMetadata,
-    val didDocumentMetadata: DidDocumentMetadata = DidDocumentMetadata(),
-    val verificationMethodsByPurpose: Map<VerificationPurpose, List<VerificationMethod>> = emptyMap(),
-) {
-    companion object {
-        /**
-         * Creates a successful resolution result.
-         */
-        fun success(
-            document: DidDocument,
-            metadata: DidDocumentMetadata = DidDocumentMetadata(),
-        ): DidResolutionResult {
-            val vmByPurpose = document.getVerificationMethodsByPurpose()
-            return DidResolutionResult(
-                didDocument = document,
-                didResolutionMetadata = DidResolutionMetadata.success(),
-                didDocumentMetadata = metadata,
-                verificationMethodsByPurpose = vmByPurpose,
-            )
+data class DidResolutionResult
+    @JvmOverloads
+    constructor(
+        val didDocument: DidDocument?,
+        val didResolutionMetadata: DidResolutionMetadata,
+        val didDocumentMetadata: DidDocumentMetadata = DidDocumentMetadata(),
+        @JsExportIgnoreCompat
+        val verificationMethodsByPurpose: Map<VerificationPurpose, List<VerificationMethod>> = emptyMap(),
+    ) {
+        companion object {
+            /**
+             * Creates a successful resolution result.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun success(
+                document: DidDocument,
+                metadata: DidDocumentMetadata = DidDocumentMetadata(),
+            ): DidResolutionResult {
+                val vmByPurpose = document.getVerificationMethodsByPurpose()
+                return DidResolutionResult(
+                    didDocument = document,
+                    didResolutionMetadata = DidResolutionMetadata.success(),
+                    didDocumentMetadata = metadata,
+                    verificationMethodsByPurpose = vmByPurpose,
+                )
+            }
+
+            /**
+             * Creates a not-found error result.
+             */
+            @JvmStatic
+            fun notFound(did: String): DidResolutionResult =
+                DidResolutionResult(
+                    didDocument = null,
+                    didResolutionMetadata = DidResolutionMetadata.notFound("DID not found: $did"),
+                )
+
+            /**
+             * Creates an error result.
+             */
+            @JvmStatic
+            @JvmOverloads
+            fun error(
+                errorCode: String,
+                message: String? = null,
+            ): DidResolutionResult =
+                DidResolutionResult(
+                    didDocument = null,
+                    didResolutionMetadata = DidResolutionMetadata(error = errorCode, message = message),
+                )
         }
 
         /**
-         * Creates a not-found error result.
+         * Checks if the resolution was successful.
          */
-        fun notFound(did: String): DidResolutionResult =
-            DidResolutionResult(
-                didDocument = null,
-                didResolutionMetadata = DidResolutionMetadata.notFound("DID not found: $did"),
-            )
+        fun isSuccess(): Boolean = didResolutionMetadata.isSuccess() && didDocument != null
 
         /**
-         * Creates an error result.
+         * Gets all authentication verification methods.
          */
-        fun error(
-            errorCode: String,
-            message: String? = null,
-        ): DidResolutionResult =
-            DidResolutionResult(
-                didDocument = null,
-                didResolutionMetadata = DidResolutionMetadata(error = errorCode, message = message),
-            )
+        fun getAuthenticationMethods(): List<VerificationMethod> = verificationMethodsByPurpose[VerificationPurpose.AUTHENTICATION] ?: emptyList()
+
+        /**
+         * Gets all assertion method verification methods (for signing credentials).
+         */
+        fun getAssertionMethods(): List<VerificationMethod> = verificationMethodsByPurpose[VerificationPurpose.ASSERTION_METHOD] ?: emptyList()
+
+        /**
+         * Gets all key agreement verification methods (for encryption).
+         */
+        fun getKeyAgreementMethods(): List<VerificationMethod> = verificationMethodsByPurpose[VerificationPurpose.KEY_AGREEMENT] ?: emptyList()
+
+        /**
+         * Finds a verification method by kid (key ID / fragment).
+         */
+        fun getVerificationMethodByKid(kid: String): VerificationMethod? = didDocument?.getVerificationMethodById(kid)
+
+        /**
+         * Finds a service by ID.
+         */
+        fun getServiceById(serviceId: String): DidService? = didDocument?.getServiceById(serviceId)
     }
-
-    /**
-     * Checks if the resolution was successful.
-     */
-    fun isSuccess(): Boolean = didResolutionMetadata.isSuccess() && didDocument != null
-
-    /**
-     * Gets all authentication verification methods.
-     */
-    fun getAuthenticationMethods(): List<VerificationMethod> = verificationMethodsByPurpose[VerificationPurpose.AUTHENTICATION] ?: emptyList()
-
-    /**
-     * Gets all assertion method verification methods (for signing credentials).
-     */
-    fun getAssertionMethods(): List<VerificationMethod> = verificationMethodsByPurpose[VerificationPurpose.ASSERTION_METHOD] ?: emptyList()
-
-    /**
-     * Gets all key agreement verification methods (for encryption).
-     */
-    fun getKeyAgreementMethods(): List<VerificationMethod> = verificationMethodsByPurpose[VerificationPurpose.KEY_AGREEMENT] ?: emptyList()
-
-    /**
-     * Finds a verification method by kid (key ID / fragment).
-     */
-    fun getVerificationMethodByKid(kid: String): VerificationMethod? = didDocument?.getVerificationMethodById(kid)
-
-    /**
-     * Finds a service by ID.
-     */
-    fun getServiceById(serviceId: String): DidService? = didDocument?.getServiceById(serviceId)
-}
 
 /**
  * Resolution options.
@@ -216,11 +237,13 @@ data class DidResolutionResult(
 @ObjCName("DidResolutionOptions", exact = true)
 @JsExportCompat
 @Serializable
-data class DidResolutionOptions(
-    val accept: String? = null,
-    val noCache: Boolean = false,
-    val filter: DidResolutionFilter? = null,
-)
+data class DidResolutionOptions
+    @JvmOverloads
+    constructor(
+        val accept: String? = null,
+        val noCache: Boolean = false,
+        val filter: DidResolutionFilter? = null,
+    )
 
 /**
  * DSL for filtering resolution results.
@@ -238,38 +261,45 @@ data class DidResolutionOptions(
 @ObjCName("DidResolutionFilter", exact = true)
 @JsExportCompat
 @Serializable
-data class DidResolutionFilter(
-    val purposes: List<VerificationPurpose>? = null,
-    val keyTypes: List<String>? = null,
-    val verificationMethodTypes: List<String>? = null,
-    val serviceTypes: List<String>? = null,
-    val kid: String? = null,
-    val serviceId: String? = null,
-) {
-    companion object {
-        /**
-         * Creates a filter for authentication methods.
-         */
-        fun forAuthentication(): DidResolutionFilter = DidResolutionFilter(purposes = listOf(VerificationPurpose.AUTHENTICATION))
+data class DidResolutionFilter
+    @JvmOverloads
+    constructor(
+        val purposes: List<VerificationPurpose>? = null,
+        val keyTypes: List<String>? = null,
+        val verificationMethodTypes: List<String>? = null,
+        val serviceTypes: List<String>? = null,
+        val kid: String? = null,
+        val serviceId: String? = null,
+    ) {
+        companion object {
+            /**
+             * Creates a filter for authentication methods.
+             */
+            @JvmStatic
+            fun forAuthentication(): DidResolutionFilter = DidResolutionFilter(purposes = listOf(VerificationPurpose.AUTHENTICATION))
 
-        /**
-         * Creates a filter for assertion methods (signing credentials).
-         */
-        fun forAssertionMethod(): DidResolutionFilter = DidResolutionFilter(purposes = listOf(VerificationPurpose.ASSERTION_METHOD))
+            /**
+             * Creates a filter for assertion methods (signing credentials).
+             */
+            @JvmStatic
+            fun forAssertionMethod(): DidResolutionFilter = DidResolutionFilter(purposes = listOf(VerificationPurpose.ASSERTION_METHOD))
 
-        /**
-         * Creates a filter for key agreement methods (encryption).
-         */
-        fun forKeyAgreement(): DidResolutionFilter = DidResolutionFilter(purposes = listOf(VerificationPurpose.KEY_AGREEMENT))
+            /**
+             * Creates a filter for key agreement methods (encryption).
+             */
+            @JvmStatic
+            fun forKeyAgreement(): DidResolutionFilter = DidResolutionFilter(purposes = listOf(VerificationPurpose.KEY_AGREEMENT))
 
-        /**
-         * Creates a filter for a specific kid.
-         */
-        fun forKid(kid: String): DidResolutionFilter = DidResolutionFilter(kid = kid)
+            /**
+             * Creates a filter for a specific kid.
+             */
+            @JvmStatic
+            fun forKid(kid: String): DidResolutionFilter = DidResolutionFilter(kid = kid)
 
-        /**
-         * Creates a filter for a specific service.
-         */
-        fun forService(serviceId: String): DidResolutionFilter = DidResolutionFilter(serviceId = serviceId)
+            /**
+             * Creates a filter for a specific service.
+             */
+            @JvmStatic
+            fun forService(serviceId: String): DidResolutionFilter = DidResolutionFilter(serviceId = serviceId)
+        }
     }
-}

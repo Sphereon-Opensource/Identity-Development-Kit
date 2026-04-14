@@ -31,6 +31,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Instant
 
@@ -77,15 +78,18 @@ class LocalDateTimeKMP(
     ) = delegate.toInstant(utils.timeZone(timeZoneId))
 
     companion object {
+        @JvmStatic
         @JsStatic
         fun now() = nowWithTimezone()
 
+        @JvmStatic
         @JsStatic
         fun nowWithTimezone(
             utils: DateTimeUtils = DateTimeUtils.DEFAULTS,
             timeZoneId: String? = null,
         ) = utils.dateTime(timeZoneId)
 
+        @JvmStatic
         @JsStatic
         fun fromString(value: String): LocalDateTimeKMP {
             val datetime: LocalDateTime =

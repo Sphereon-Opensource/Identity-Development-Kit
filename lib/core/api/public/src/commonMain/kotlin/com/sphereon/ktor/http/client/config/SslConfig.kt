@@ -17,10 +17,12 @@
 
 package com.sphereon.ktor.http.client.config
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SslConfig", exact = true)
 data class SslConfig(
@@ -28,6 +30,7 @@ data class SslConfig(
     val server: ServerSslConfig = ServerSslConfig(),
 )
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ClientSslConfig", exact = true)
 data class ClientSslConfig(
@@ -46,12 +49,14 @@ data class ClientSslConfig(
     fun allCertificates() = (perHostCertificate + ("" to defaultCertificate))
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ServerSslConfig", exact = true)
 data class ServerSslConfig(
     val ca: CaOpts = CaOpts(),
 )
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CaOpts", exact = true)
 data class CaOpts(
@@ -59,6 +64,7 @@ data class CaOpts(
     val additionalCAs: Set<KeystoreCertificateOpts> = setOf(),
 )
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeystoreCertificateOpts", exact = true)
 data class KeystoreCertificateOpts(

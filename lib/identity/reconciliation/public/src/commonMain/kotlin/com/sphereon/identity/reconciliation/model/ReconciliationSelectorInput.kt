@@ -16,21 +16,32 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.idv.model.AttributeBag
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class ReconciliationSelectorInput(
-    val tenantId: String,
-    val entryPointType: String? = null,
-    val queryId: String? = null,
-    val triggerType: String? = null,
-    val dcqlCredentialQueryIds: Set<String> = emptySet(),
-    val dcqlCredentialSetRefs: Set<String> = emptySet(),
-    val presentedCredentialIds: Set<String> = emptySet(),
-    val presentedCredentialTypes: Set<String> = emptySet(),
-    val issuers: Set<String> = emptySet(),
-    val availableAttributes: AttributeBag? = null,
-    val knownHolderState: KnownHolderState? = null,
-    val requestedProjection: String? = null,
-)
+data class ReconciliationSelectorInput
+    @JvmOverloads
+    constructor(
+        val tenantId: String,
+        val entryPointType: String? = null,
+        val queryId: String? = null,
+        val triggerType: String? = null,
+        @JsExportIgnoreCompat
+        val dcqlCredentialQueryIds: Set<String> = emptySet(),
+        @JsExportIgnoreCompat
+        val dcqlCredentialSetRefs: Set<String> = emptySet(),
+        @JsExportIgnoreCompat
+        val presentedCredentialIds: Set<String> = emptySet(),
+        @JsExportIgnoreCompat
+        val presentedCredentialTypes: Set<String> = emptySet(),
+        @JsExportIgnoreCompat
+        val issuers: Set<String> = emptySet(),
+        val availableAttributes: AttributeBag? = null,
+        val knownHolderState: KnownHolderState? = null,
+        val requestedProjection: String? = null,
+    )

@@ -19,7 +19,9 @@ package com.sphereon.core.api.binary
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.currentTimeMillis
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmStatic
 
 /**
  * Serializable error envelope for transport across all codecs (JSON, Protobuf, CBOR).
@@ -58,6 +60,7 @@ import kotlinx.serialization.Serializable
  * @property traceId Optional trace ID for distributed tracing
  * @property path Optional request path that caused the error
  */
+@JsExportCompat
 @Serializable
 data class BinaryError(
     val code: String,
@@ -133,6 +136,7 @@ data class BinaryError(
          * @param traceId Optional trace ID for distributed tracing
          * @param path Optional request path
          */
+        @JvmStatic
         fun fromIdkError(
             error: IdkErrorType,
             traceId: String? = null,
@@ -149,6 +153,7 @@ data class BinaryError(
         /**
          * Creates an unauthorized error (401).
          */
+        @JvmStatic
         fun unauthorized(
             message: String = "Unauthorized",
             traceId: String? = null,
@@ -162,6 +167,7 @@ data class BinaryError(
         /**
          * Creates a forbidden error (403).
          */
+        @JvmStatic
         fun forbidden(
             message: String = "Forbidden",
             traceId: String? = null,
@@ -175,6 +181,7 @@ data class BinaryError(
         /**
          * Creates a not found error (404).
          */
+        @JvmStatic
         fun notFound(
             message: String = "Not found",
             resource: String? = null,
@@ -190,6 +197,7 @@ data class BinaryError(
         /**
          * Creates a bad request error (400).
          */
+        @JvmStatic
         fun badRequest(
             message: String = "Bad request",
             traceId: String? = null,
@@ -203,6 +211,7 @@ data class BinaryError(
         /**
          * Creates an internal server error (500).
          */
+        @JvmStatic
         fun internalError(
             message: String = "Internal server error",
             traceId: String? = null,
@@ -216,6 +225,7 @@ data class BinaryError(
         /**
          * Creates a service unavailable error (503).
          */
+        @JvmStatic
         fun serviceUnavailable(
             message: String = "Service unavailable",
             traceId: String? = null,
@@ -229,6 +239,7 @@ data class BinaryError(
         /**
          * Maps a BinaryError code to an HTTP status code.
          */
+        @JvmStatic
         fun codeToHttpStatus(code: String): Int =
             when (code) {
                 "UNAUTHORIZED" -> HTTP_UNAUTHORIZED
@@ -247,6 +258,7 @@ data class BinaryError(
         /**
          * Maps an HTTP status code to a BinaryError code.
          */
+        @JvmStatic
         fun httpStatusToCode(status: Int): String =
             when (status) {
                 HTTP_BAD_REQUEST -> "BAD_REQUEST"

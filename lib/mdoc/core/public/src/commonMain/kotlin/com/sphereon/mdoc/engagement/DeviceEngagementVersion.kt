@@ -21,6 +21,7 @@ import com.sphereon.cbor.CborString
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @Serializable
@@ -39,6 +40,7 @@ value class DeviceEngagementVersion(
     override fun toString(): String = version
 
     companion object Decoder {
+        @JvmStatic
         fun fromCborItem(structure: CborString): DeviceEngagementVersion = DeviceEngagementVersion(structure.value)
     }
 }

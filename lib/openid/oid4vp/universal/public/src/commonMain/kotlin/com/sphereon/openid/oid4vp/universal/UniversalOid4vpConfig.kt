@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.universal
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -35,6 +36,7 @@ import kotlinx.serialization.Serializable
  *                           "https://verifier.example.com/oid4vp/request-uri/{correlationId}".
  *                           If null, request URIs are returned as relative paths.
  */
+@JsExportCompat
 @Serializable
 data class UniversalOid4vpConfig(
     val externalBaseUrl: String? = null,
@@ -48,6 +50,7 @@ data class UniversalOid4vpConfig(
 /**
  * Provider interface for [UniversalOid4vpConfig].
  */
+@JsExportCompat
 interface UniversalOid4vpConfigProvider {
     fun getConfig(): UniversalOid4vpConfig
 }

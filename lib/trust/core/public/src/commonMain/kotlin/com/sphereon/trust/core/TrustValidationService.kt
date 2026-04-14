@@ -6,6 +6,7 @@
 
 package com.sphereon.trust.core
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.trust.core.model.TrustAnchor
 import com.sphereon.trust.core.model.TrustContext
 import com.sphereon.trust.core.model.TrustValidationRequest
@@ -21,6 +22,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TrustValidationService", exact = true)
+@JsExportCompat
 interface TrustValidationService {
     fun getId(): String
 

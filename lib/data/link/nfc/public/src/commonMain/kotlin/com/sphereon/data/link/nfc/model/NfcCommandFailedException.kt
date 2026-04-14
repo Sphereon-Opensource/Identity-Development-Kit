@@ -17,11 +17,14 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Exception thrown if an NFC command doesn't return success.
  *
  * @property status the status word from the [ResponseApdu], never [NfcConst.RESPONSE_STATUS_SUCCESS].
  */
+@JsExportCompat
 class NfcCommandFailedException(
     message: String,
     val status: Int,

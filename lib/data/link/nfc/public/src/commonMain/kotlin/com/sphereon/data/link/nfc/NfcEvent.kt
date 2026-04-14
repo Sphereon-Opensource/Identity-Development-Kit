@@ -18,6 +18,7 @@
 package com.sphereon.data.link.nfc
 
 import com.sphereon.core.api.events.EventType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.nfc.model.NfcError
 import com.sphereon.data.link.nfc.model.NfcErrors
 import kotlinx.serialization.json.JsonObject
@@ -46,6 +47,7 @@ import kotlinx.serialization.json.put
  * )
  * ```
  */
+@JsExportCompat
 sealed interface NfcEvent {
     /** The core event type corresponding to this NFC event. */
     val eventType: EventType

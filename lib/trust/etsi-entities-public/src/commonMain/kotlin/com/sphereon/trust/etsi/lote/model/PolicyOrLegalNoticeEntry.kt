@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -24,6 +25,7 @@ import kotlinx.serialization.Serializable
  *
  * Can contain either a textual notice or a URI pointing to a policy document.
  */
+@JsExportCompat
 @Serializable
 data class PolicyOrLegalNoticeEntry(
     val lang: String? = null,

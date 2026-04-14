@@ -16,6 +16,7 @@
 
 package com.sphereon.sdjwt.vc
 
+import com.sphereon.core.compat.JsExportCompat
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -33,6 +34,7 @@ import kotlinx.serialization.json.Json
  * - Issuer URL must be HTTPS
  * - Returns issuer identifier and JWK Set (inline or URI)
  */
+@JsExportCompat
 interface IssuerMetadataResolver {
     /**
      * Resolve issuer metadata for the given issuer URL

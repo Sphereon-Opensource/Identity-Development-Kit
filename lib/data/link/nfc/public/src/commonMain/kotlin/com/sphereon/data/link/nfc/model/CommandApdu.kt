@@ -17,6 +17,7 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.ByteDataReader
 import com.sphereon.util.appendUInt16
 import com.sphereon.util.appendUInt8
@@ -26,6 +27,7 @@ import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.ByteStringBuilder
 import kotlinx.io.bytestring.append
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -38,6 +40,7 @@ import kotlin.native.ObjCName
  * @property payload Payload.
  * @property le Maximum length of response data field.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CommandApdu", exact = true)
 data class CommandApdu(
@@ -112,6 +115,7 @@ data class CommandApdu(
          * @param encoded the bytes of the APDU
          * @return an object with the decoded fields.
          */
+        @JvmStatic
         @OptIn(ExperimentalStdlibApi::class)
         fun decode(encoded: ByteArray): CommandApdu {
             require(encoded.size >= APDU_HEADER_SIZE)

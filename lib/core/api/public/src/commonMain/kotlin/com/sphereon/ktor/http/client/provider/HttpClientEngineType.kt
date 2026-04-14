@@ -17,12 +17,14 @@
 
 package com.sphereon.ktor.http.client.provider
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
  * Supported HTTP engine types.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HttpClientEngineType", exact = true)
 enum class HttpClientEngineType {

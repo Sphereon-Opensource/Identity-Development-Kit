@@ -16,12 +16,14 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
  * Wrapper to attach a scope to an existing PropertySource.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedPropertySourceWrapper", exact = true)
 class ScopedPropertySourceWrapper<T>(

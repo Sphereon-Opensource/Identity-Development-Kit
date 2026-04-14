@@ -18,6 +18,7 @@ package com.sphereon.data.store.blob.cas
 
 import com.sphereon.core.api.decodeFromHex
 import com.sphereon.core.api.encodeToHex
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.Multibase
 import com.sphereon.crypto.core.generic.MultibaseEncoding
@@ -32,6 +33,7 @@ import kotlinx.serialization.Serializable
  * Uses the existing [MultihashCodec] and [DigestAlg] from crypto-core-public.
  */
 @Serializable
+@JsExportCompat
 data class ContentAddress(
     val algorithm: DigestAlg,
     val digest: ByteArray,

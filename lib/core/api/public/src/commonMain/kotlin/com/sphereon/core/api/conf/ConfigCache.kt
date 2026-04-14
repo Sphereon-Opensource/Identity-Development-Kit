@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -26,6 +27,7 @@ import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -42,6 +44,7 @@ import kotlin.time.Instant
  */
 private const val SESSION_ID_INSERT_INDEX = 3
 
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigCacheKey", exact = true)
@@ -66,6 +69,7 @@ data class ConfigCacheKey(
     }
 
     companion object {
+        @JvmStatic
         fun app(key: String) =
             ConfigCacheKey(
                 scope = ConfigLevel.APP,
@@ -75,6 +79,7 @@ data class ConfigCacheKey(
                 key = key,
             )
 
+        @JvmStatic
         fun tenant(
             tenantId: String,
             key: String,
@@ -86,6 +91,7 @@ data class ConfigCacheKey(
             key = key,
         )
 
+        @JvmStatic
         fun principal(
             tenantId: String,
             principalId: String,
@@ -98,6 +104,7 @@ data class ConfigCacheKey(
             key = key,
         )
 
+        @JvmStatic
         fun fromContext(
             context: ResolutionContext,
             key: String,
@@ -221,6 +228,7 @@ data class CachedConfigValue(
     }
 
     companion object {
+        @JvmStatic
         fun of(
             resolved: ResolvedValue<*>,
             ttl: Duration? = null,
@@ -234,6 +242,7 @@ data class CachedConfigValue(
             )
         }
 
+        @JvmStatic
         fun negative(
             key: String,
             scope: ConfigLevel,
@@ -267,6 +276,7 @@ data class CachedConfigValue(
  * Scope-aware configuration cache interface.
  * Lives at AppScope but stores values for all scope levels.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedConfigCache", exact = true)
 interface ScopedConfigCache {
@@ -336,6 +346,7 @@ interface ScopedConfigCache {
 /**
  * Cache statistics.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheStats", exact = true)
@@ -364,6 +375,7 @@ data class CacheStats(
  * Snapshot cache for prefix-based queries.
  * Caches entire prefix query results for efficient bulk reads.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigSnapshotCache", exact = true)
 interface ConfigSnapshotCache {
@@ -399,6 +411,7 @@ interface ConfigSnapshotCache {
 /**
  * Key for snapshot cache entries.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SnapshotKey", exact = true)
@@ -420,6 +433,7 @@ data class SnapshotKey(
 /**
  * A cached snapshot of configuration values.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigSnapshot", exact = true)
@@ -515,6 +529,7 @@ object NoOpSnapshotCache : ConfigSnapshotCache {
  * In-memory cache implementation using a simple map with TTL.
  * Suitable for single-instance deployments or testing.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemoryConfigCache", exact = true)
 class InMemoryConfigCache(
@@ -679,6 +694,7 @@ class InMemoryConfigCache(
 /**
  * In-memory snapshot cache implementation.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemorySnapshotCache", exact = true)
 class InMemorySnapshotCache(
@@ -811,6 +827,7 @@ class InMemorySnapshotCache(
  * functions cannot be used (e.g., PropertyResolver interface methods).
  * Uses atomicfu for thread-safe access on all platforms including JS.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SyncConfigSnapshotCache", exact = true)
 interface SyncConfigSnapshotCache {
@@ -874,6 +891,7 @@ object NoOpSyncSnapshotCache : SyncConfigSnapshotCache {
  *
  * Thread-safe and works on all platforms including JS without blocking.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemorySyncSnapshotCache", exact = true)
 class InMemorySyncSnapshotCache(
@@ -1032,6 +1050,7 @@ class InMemorySyncSnapshotCache(
 /**
  * Configuration for caching behavior.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheConfig", exact = true)
@@ -1049,6 +1068,7 @@ data class CacheConfig(
 /**
  * TTL configuration per scope level.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TtlConfig", exact = true)
@@ -1069,6 +1089,7 @@ data class TtlConfig(
 /**
  * Cache eviction policy.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EvictionPolicy", exact = true)
 enum class EvictionPolicy {
@@ -1222,6 +1243,7 @@ class DefaultSyncConfigSnapshotCache : SyncConfigSnapshotCache by createSyncConf
  *
  * This follows the two-phase initialization pattern already used by PropertySourceBootstrap.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigCacheWarmup", exact = true)
 interface ConfigCacheWarmup {
@@ -1282,6 +1304,7 @@ interface ConfigCacheWarmup {
  * val snapshot = adapter.getSnapshot(key)  // Returns warmed-up data
  * ```
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AsyncToSyncCacheAdapter", exact = true)
 class AsyncToSyncCacheAdapter(

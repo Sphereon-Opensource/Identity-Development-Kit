@@ -16,12 +16,15 @@
 
 package com.sphereon.openid.oid4vci.issuer.format
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Key reference mode for the signing key identifier in issued credentials.
  *
  * Determines how the issuer's signing key is referenced in the JWT protected header,
  * enabling verifiers to discover and resolve the public key for signature verification.
  */
+@JsExportCompat
 sealed class SigningKeyMode {
     /**
      * DID-based kid: creates a DID using the specified [method], extracts the

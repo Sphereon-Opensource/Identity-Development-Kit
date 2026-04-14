@@ -18,6 +18,7 @@
 
 package com.sphereon.data.store.schema.registry.persistence
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.schema.registry.SchemaRecord
 import com.sphereon.data.store.schema.registry.SchemaRecordFilter
 import kotlin.uuid.ExperimentalUuidApi
@@ -29,6 +30,7 @@ import kotlin.uuid.Uuid
  * IDK provides a blob-store-backed implementation. EDK provides SQL implementations
  * (PostgreSQL, MySQL) that replace it via `@ContributesBinding(replaces=[...])`.
  */
+@JsExportCompat
 interface SchemaRecordRepository {
     suspend fun findById(
         tenantId: String,

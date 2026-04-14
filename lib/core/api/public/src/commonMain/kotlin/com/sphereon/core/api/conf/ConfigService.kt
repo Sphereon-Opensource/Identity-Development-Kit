@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.UserScope
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -102,6 +103,7 @@ interface PrincipalConfigService : ConfigService {
  * Main interface for configuration service operations.
  * Provides methods for retrieving and managing configuration properties.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigService", exact = true)
 interface ConfigService : ConfigEnvironment {
@@ -147,6 +149,7 @@ class PrincipalConfigServiceImpl(
 ) : AbstractConfigService(environment),
     PrincipalConfigService
 
+@JsExportCompat
 abstract class AbstractConfigService(
     protected val configEnvironment: ConfigEnvironment,
 ) : ConfigService {

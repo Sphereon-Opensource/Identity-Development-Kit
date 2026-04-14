@@ -20,7 +20,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -122,6 +121,9 @@ data class VerifierAttestationValidationError(
  * 7. Validate required claims are present (iss, sub, exp, cnf, cnf.jwk)
  * 8. Validate cnf.jwk matches the JAR signer key (key binding verification)
  */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifyVerifierAttestationCommand", exact = true)
+@JsExportCompat
 interface VerifyVerifierAttestationCommand : ServiceCommand<VerifyVerifierAttestationArgs, VerifyVerifierAttestationResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -135,7 +137,6 @@ interface VerifyVerifierAttestationCommand : ServiceCommand<VerifyVerifierAttest
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyVerifierAttestationCommandService", exact = true)
-@JsExportIgnoreCompat
 interface VerifyVerifierAttestationCommandService {
     /**
      * Verify a verifier attestation JWT.

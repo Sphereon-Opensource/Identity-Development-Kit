@@ -20,6 +20,7 @@ package com.sphereon.mdoc.engagement
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.DateTimeUtils
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.mdoc.MdocEvent
 import com.sphereon.mdoc.MdocRole
@@ -34,6 +35,7 @@ import kotlin.uuid.Uuid
  * Represents an engagement event during the lifecycle of a secure mobile engagement process.
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("is", exact = true)
+@JsExportCompat
  * This sealed interface is extended by a variety of specific engagement events, which describe
  * distinct phases or states of the process.
  *

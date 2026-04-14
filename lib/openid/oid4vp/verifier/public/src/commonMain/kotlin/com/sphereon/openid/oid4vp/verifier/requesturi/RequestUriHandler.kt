@@ -19,7 +19,6 @@ package com.sphereon.openid.oid4vp.verifier.requesturi
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import kotlinx.serialization.Serializable
@@ -49,7 +48,6 @@ interface RequestUriHandler {
  * Not exported to JS as it contains non-exportable crypto key types.
  */
 
-@JsExportIgnoreCompat
 interface RequestObjectSigningConfig {
     suspend fun resolveSigningKey(): KeyInfoType<*>
 
@@ -127,7 +125,6 @@ private class DisabledRequestObjectSigningConfig(
  * in `client_id`), the identifier that follows, and which JOSE header the signer
  * attaches to the JAR (`kid` vs `x5c`).
  */
-@JsExportIgnoreCompat
 sealed class VerifierSignerBinding {
     /** Prefix + identifier combined, e.g. `decentralized_identifier:did:jwk:eyJr...`. */
     abstract val clientId: String

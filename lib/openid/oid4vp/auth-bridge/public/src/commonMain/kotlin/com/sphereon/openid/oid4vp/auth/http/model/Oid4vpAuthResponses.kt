@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.auth.http.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vp.auth.bridge.CreateSessionResult
 import com.sphereon.openid.oid4vp.auth.model.IdvRequirementReason
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthErrorCode
@@ -24,6 +26,7 @@ import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthSession
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthSessionStatus
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlin.jvm.JvmStatic
 
 /**
  * Response from creating a new OID4VP authentication session.
@@ -38,6 +41,7 @@ import kotlinx.serialization.json.JsonElement
  * @property expiresAt Session expiration timestamp (Unix milliseconds).
  */
 @Serializable
+@JsExportCompat
 data class CreateOid4vpAuthSessionResponse(
     val sessionId: String,
     val correlationId: String? = null,
@@ -52,6 +56,7 @@ data class CreateOid4vpAuthSessionResponse(
         /**
          * Creates a response from a [CreateSessionResult] domain model.
          */
+        @JvmStatic
         fun from(result: CreateSessionResult): CreateOid4vpAuthSessionResponse =
             CreateOid4vpAuthSessionResponse(
                 sessionId = result.session.sessionId,
@@ -81,10 +86,12 @@ data class CreateOid4vpAuthSessionResponse(
  * @property idvMessage Message explaining why identity verification is required (when status is IDV_REQUIRED).
  */
 @Serializable
+@JsExportCompat
 data class Oid4vpAuthStatusResponse(
     val sessionId: String,
     val correlationId: String? = null,
     val status: Oid4vpAuthSessionStatus,
+    @JsExportIgnoreCompat
     val mappedClaims: Map<String, JsonElement>? = null,
     val errorMessage: String? = null,
     val errorCode: String? = null,
@@ -101,6 +108,7 @@ data class Oid4vpAuthStatusResponse(
          *   When provided, these are used instead of raw credential claims.
          *   When null and session has verified data, falls back to raw credential claims.
          */
+        @JvmStatic
         fun from(
             session: Oid4vpAuthSession,
             mappedClaims: Map<String, JsonElement>? = null,
@@ -139,9 +147,11 @@ data class Oid4vpAuthStatusResponse(
  * @property amr Authentication Methods References.
  */
 @Serializable
+@JsExportCompat
 data class CompleteOid4vpAuthResponse(
     val userId: String,
     val jwtClaims: String? = null,
+    @JsExportIgnoreCompat
     val claims: Map<String, JsonElement>,
     val isNewUser: Boolean,
     val authenticatedAt: Long,
@@ -152,6 +162,7 @@ data class CompleteOid4vpAuthResponse(
         /**
          * Creates a response from an [Oid4vpAuthResult] domain model.
          */
+        @JvmStatic
         fun from(result: Oid4vpAuthResult): CompleteOid4vpAuthResponse =
             CompleteOid4vpAuthResponse(
                 userId = result.userId,
@@ -173,6 +184,7 @@ data class CompleteOid4vpAuthResponse(
  * @property errorDetails Additional error details.
  */
 @Serializable
+@JsExportCompat
 data class Oid4vpAuthErrorResponse(
     val error: Oid4vpAuthErrorCode,
     val errorDescription: String,

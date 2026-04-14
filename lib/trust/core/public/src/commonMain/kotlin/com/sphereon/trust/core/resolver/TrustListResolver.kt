@@ -6,6 +6,8 @@
 
 package com.sphereon.trust.core.resolver
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -14,6 +16,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TrustListResolver", exact = true)
+@JsExportCompat
 interface TrustListResolver {
     fun getId(): String
 
@@ -27,16 +30,19 @@ interface TrustListResolver {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolutionOptions", exact = true)
+@JsExportCompat
 data class ResolutionOptions(
     val timeoutMs: Long = 30000,
     val useCache: Boolean = true,
     val maxCacheAgeMs: Long = 3600000,
     val verifySignature: Boolean = true,
+    @JsExportIgnoreCompat
     val customOptions: Map<String, String> = emptyMap(),
 )
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TrustListData", exact = true)
+@JsExportCompat
 data class TrustListData(
     val data: ByteArray,
     val sourceUri: String,

@@ -17,6 +17,7 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -42,6 +43,7 @@ import kotlinx.serialization.json.JsonObject
  *   If the holder has already decoded the SD-JWT disclosures, the resulting
  *   claims can be provided here to avoid re-parsing.
  */
+@JsExportCompat
 @Serializable
 data class CredentialWithId(
     val credentialId: String,

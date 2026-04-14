@@ -22,6 +22,7 @@ import kotlinx.io.bytestring.ByteStringBuilder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 
 @JsExportCompat
 class StringLabel(
@@ -41,6 +42,7 @@ class StringLabel(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromCborItem(structure: CborItem<*>): StringLabel {
             val generic = CoseLabel.fromCborItem(structure)
             require(generic is StringLabel) { "Label passed in was not convertable a StringLabel" }

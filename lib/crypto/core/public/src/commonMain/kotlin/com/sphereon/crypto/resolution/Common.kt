@@ -17,44 +17,60 @@
 
 package com.sphereon.crypto.resolution
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.IdentifierLookupType
 import com.sphereon.crypto.core.KeyDTOType
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.cose.CoseKeyDTOType
 import com.sphereon.crypto.core.jose.JwkDTOType
+import kotlin.jvm.JvmOverloads
 
-data class IdentifierContext(
-    val issuer: String? = null,
-    val clientId: String? = null,
-    val clientIdScheme: String? = null,
-    val metadata: Map<String, String> = emptyMap(),
-)
+@JsExportCompat
+data class
+IdentifierContext
+    @JvmOverloads
+    constructor(
+        val issuer: String? = null,
+        val clientId: String? = null,
+        val clientIdScheme: String? = null,
+        val metadata: Map<String, String> = emptyMap(),
+    )
 
-data class AdditionalIdentifierLookup(
-    // Always resolve, even if we already resolved before
-    override val noCache: Boolean = false,
-    override val kid: String? = null,
-    override val alias: String? = null,
-    override val opts: Map<String, String> = emptyMap(),
-    override val providerId: String? = null,
-) : IdentifierLookupType
+@JsExportCompat
+data class
+AdditionalIdentifierLookup
+    @JvmOverloads
+    constructor(
+        // Always resolve, even if we already resolved before
+        override val noCache: Boolean = false,
+        override val kid: String? = null,
+        override val alias: String? = null,
+        override val opts: Map<String, String> = emptyMap(),
+        override val providerId: String? = null,
+    ) : IdentifierLookupType
 
 /**
  * Simplified Identifier representation
  */
-data class DIDIdentifier(
-    val did: String,
-    val keys: List<KeyType>,
-    val controllerKeyId: String? = null,
-)
+@JsExportCompat
+data class
+DIDIdentifier
+    @JvmOverloads
+    constructor(
+        val did: String,
+        val keys: List<KeyType>,
+        val controllerKeyId: String? = null,
+    )
 
 /**
  * Type of identifier method
  */
+@JsExportCompat
 interface IIdentifierMethod {
     val methodName: String
 }
 
+@JsExportCompat
 enum class IdentifierMethodDefaults : IIdentifierMethod {
     DID,
     JWK,

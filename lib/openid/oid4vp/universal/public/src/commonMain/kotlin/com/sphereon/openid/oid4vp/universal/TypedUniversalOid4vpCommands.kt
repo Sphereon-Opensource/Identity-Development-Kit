@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.universal
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -30,6 +31,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetAuthRequestStatusServiceCommand", exact = true)
+@JsExportCompat
 interface GetAuthRequestStatusServiceCommand : ServiceCommand<GetAuthRequestStatusInput, GetAuthorizationRequestStatusOutput> {
     companion object {
         const val COMMAND_ID = "oid4vp.universal.status"
@@ -48,6 +50,7 @@ interface GetAuthRequestStatusServiceCommand : ServiceCommand<GetAuthRequestStat
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateAuthRequestServiceCommand", exact = true)
+@JsExportCompat
 interface CreateAuthRequestServiceCommand : ServiceCommand<CreateAuthorizationRequestInput, CreateAuthorizationRequestOutput> {
     companion object {
         const val COMMAND_ID = "oid4vp.universal.create"
@@ -66,6 +69,7 @@ interface CreateAuthRequestServiceCommand : ServiceCommand<CreateAuthorizationRe
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteAuthRequestServiceCommand", exact = true)
+@JsExportCompat
 interface DeleteAuthRequestServiceCommand : ServiceCommand<GetAuthRequestStatusInput, DeleteAuthRequestOutput> {
     companion object {
         const val COMMAND_ID = "oid4vp.universal.delete"
@@ -79,6 +83,7 @@ interface DeleteAuthRequestServiceCommand : ServiceCommand<GetAuthRequestStatusI
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteAuthRequestOutput", exact = true)
+@JsExportCompat
 @kotlinx.serialization.Serializable
 data class DeleteAuthRequestOutput(
     val correlationId: String,

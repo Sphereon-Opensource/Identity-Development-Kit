@@ -20,6 +20,8 @@ package com.sphereon.did.capabilities
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -35,30 +37,34 @@ import kotlin.native.ObjCName
 @ObjCName("DidServiceManagementCapabilities", exact = true)
 @JsExportCompat
 @Serializable
-data class ServiceManagementCapabilities(
-    val addition: Boolean = false,
-    val replacement: Boolean = false,
-    val removal: Boolean = false,
-) {
-    companion object {
-        /**
-         * No service management support.
-         */
-        val NONE: ServiceManagementCapabilities = ServiceManagementCapabilities()
+data class ServiceManagementCapabilities
+    @JvmOverloads
+    constructor(
+        val addition: Boolean = false,
+        val replacement: Boolean = false,
+        val removal: Boolean = false,
+    ) {
+        companion object {
+            /**
+             * No service management support.
+             */
+            @JvmStatic
+            val NONE: ServiceManagementCapabilities = ServiceManagementCapabilities()
+
+            /**
+             * Full service management support.
+             */
+            @JvmStatic
+            val FULL: ServiceManagementCapabilities =
+                ServiceManagementCapabilities(
+                    addition = true,
+                    replacement = true,
+                    removal = true,
+                )
+        }
 
         /**
-         * Full service management support.
+         * Checks if any service management operations are supported.
          */
-        val FULL: ServiceManagementCapabilities =
-            ServiceManagementCapabilities(
-                addition = true,
-                replacement = true,
-                removal = true,
-            )
+        fun supportsServiceManagement(): Boolean = addition || replacement || removal
     }
-
-    /**
-     * Checks if any service management operations are supported.
-     */
-    fun supportsServiceManagement(): Boolean = addition || replacement || removal
-}

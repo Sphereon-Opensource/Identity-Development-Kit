@@ -18,6 +18,7 @@ package com.sphereon.mdoc.transport.restapi
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -28,6 +29,7 @@ import kotlin.native.ObjCName
  *
  * @param uri The HTTPS URI where DeviceResponse should be POSTed
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RestApiHandle", exact = true)
 data class RestApiHandle(
@@ -37,6 +39,7 @@ data class RestApiHandle(
 /**
  * REST API-specific errors.
  */
+@JsExportCompat
 sealed class RestApiError(
     val errorMessage: String,
     val errorCause: Throwable? = null,

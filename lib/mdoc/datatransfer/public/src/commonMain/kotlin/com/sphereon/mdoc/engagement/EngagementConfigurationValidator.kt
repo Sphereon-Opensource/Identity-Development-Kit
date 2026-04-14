@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.transfer.device.BleOptions
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethodType
 import kotlin.experimental.ExperimentalObjCName
@@ -31,6 +32,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EngagementConfigValidationResult", exact = true)
+@JsExportCompat
 data class EngagementConfigValidationResult(
     val isValid: Boolean,
     val errors: List<String>,

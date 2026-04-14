@@ -19,6 +19,7 @@ package com.sphereon.mdoc.transfer
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Duration
@@ -33,6 +34,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocTransferError", exact = true)
+@JsExportCompat
 sealed class MdocTransferError(
     message: String,
 ) : Exception(message) {

@@ -16,8 +16,10 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 @Serializable
 enum class ReconciliationSessionStatus {
     CREATED,

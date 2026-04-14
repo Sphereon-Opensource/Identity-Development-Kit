@@ -21,6 +21,7 @@ import com.sphereon.core.api.Base64UrlSerializer
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -31,38 +32,41 @@ import kotlin.native.ObjCName
 @ObjCName("OrigData", exact = true)
 @JsExportCompat
 @Serializable
-data class OrigData(
-    @Serializable(with = Base64UrlSerializer::class) val value: ByteArray,
-    val mimeType: String? = null,
-    val name: String? = "document",
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+OrigData
+    @JvmOverloads
+    constructor(
+        @Serializable(with = Base64UrlSerializer::class) val value: ByteArray,
+        val mimeType: String? = null,
+        val name: String? = "document",
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as OrigData
+
+            if (!value.contentEquals(other.value)) {
+                return false
+            }
+            if (mimeType != other.mimeType) {
+                return false
+            }
+            if (name != other.name) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as OrigData
-
-        if (!value.contentEquals(other.value)) {
-            return false
+        override fun hashCode(): Int {
+            var result = value.contentHashCode()
+            result = 31 * result + (mimeType?.hashCode() ?: 0)
+            result = 31 * result + (name?.hashCode() ?: 0)
+            return result
         }
-        if (mimeType != other.mimeType) {
-            return false
-        }
-        if (name != other.name) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = value.contentHashCode()
-        result = 31 * result + (mimeType?.hashCode() ?: 0)
-        result = 31 * result + (name?.hashCode() ?: 0)
-        return result
-    }
-}

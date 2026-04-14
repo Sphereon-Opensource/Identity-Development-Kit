@@ -18,6 +18,8 @@ package com.sphereon.oauth2.common.token
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.JsonElement
  * Performs payload decoding only — no signature verification.
  * Used by reconciliation and potentially STS for claim extraction.
  */
+@JsExportCompat
 interface OidcTokenClaimExtractor {
     /**
      * Decode all claims from a JWT payload.
@@ -33,6 +36,7 @@ interface OidcTokenClaimExtractor {
      * @param jwt The compact JWT string (header.payload.signature)
      * @return All claims as a map, or error if the JWT is malformed
      */
+    @JsExportIgnoreCompat
     fun extractAllClaims(jwt: String): IdkResult<Map<String, JsonElement>, IdkError>
 
     /**

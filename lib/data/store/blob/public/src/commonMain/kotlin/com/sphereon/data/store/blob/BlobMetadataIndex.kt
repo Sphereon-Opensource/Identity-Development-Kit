@@ -18,6 +18,8 @@ package com.sphereon.data.store.blob
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -29,6 +31,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobMetadataIndex", exact = true)
+@JsExportCompat
 interface BlobMetadataIndex {
     /**
      * Index a blob descriptor for later search.
@@ -60,8 +63,10 @@ interface BlobMetadataIndex {
  * Query criteria for metadata search.
  */
 @kotlinx.serialization.Serializable
+@JsExportCompat
 data class MetadataSearchQuery(
     val contentType: String? = null,
+    @JsExportIgnoreCompat
     val customMetadata: Map<String, String> = emptyMap(),
     val pathPrefix: String? = null,
     val maxResults: Int = 100,

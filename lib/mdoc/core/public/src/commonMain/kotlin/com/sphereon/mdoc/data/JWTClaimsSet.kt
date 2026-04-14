@@ -17,9 +17,11 @@
 
 package com.sphereon.mdoc.data
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JWTClaimsSet", exact = true)
 interface JWTClaimsSet {

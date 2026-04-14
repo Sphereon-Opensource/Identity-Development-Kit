@@ -16,8 +16,10 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -27,6 +29,7 @@ import kotlin.time.Duration.Companion.minutes
  *
  * Determines which backend(s) should be used for caching.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheLocality", exact = true)
 enum class CacheLocality {
@@ -49,6 +52,7 @@ enum class CacheLocality {
  * Allows different expiration times based on the data's scope.
  * Typically, app-level data can be cached longer than user-specific data.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheTtlConfig", exact = true)
@@ -113,6 +117,7 @@ data class CacheTtlConfig(
  * )
  * ```
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CacheRequirements", exact = true)
@@ -144,6 +149,7 @@ data class CacheRequirements(
          * Simple local-only cache (fastest, no sharing).
          * Use for data that doesn't need to be shared across instances.
          */
+        @JvmStatic
         fun localOnly(namespace: String) =
             CacheRequirements(
                 namespace = namespace,
@@ -154,6 +160,7 @@ data class CacheRequirements(
          * Distributed-only cache (shared state required).
          * Use for data that MUST be consistent across instances (e.g., OAuth tokens).
          */
+        @JvmStatic
         fun distributedOnly(namespace: String) =
             CacheRequirements(
                 namespace = namespace,
@@ -164,6 +171,7 @@ data class CacheRequirements(
          * Local with distributed fallback (read-through).
          * Local cache is checked first, distributed on miss.
          */
+        @JvmStatic
         fun localWithFallback(namespace: String) =
             CacheRequirements(
                 namespace = namespace,
@@ -175,6 +183,7 @@ data class CacheRequirements(
          * Hybrid with write-through (eventual consistency).
          * Writes go to both local and distributed.
          */
+        @JvmStatic
         fun hybridWriteThrough(namespace: String) =
             CacheRequirements(
                 namespace = namespace,

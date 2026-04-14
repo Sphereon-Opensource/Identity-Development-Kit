@@ -17,6 +17,7 @@
 
 package com.sphereon.crypto.core.kms
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
@@ -32,6 +33,7 @@ import kotlinx.datetime.atTime
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.experimental.ExperimentalObjCRefinement
+import kotlin.jvm.JvmOverloads
 import kotlin.native.HiddenFromObjC
 import kotlin.time.Clock
 
@@ -102,26 +104,31 @@ interface CertificateService {
     }
 }
 
+@JsExportCompat
 data class CertificateResult(
     val certificate: Certificate,
     val keyInfo: ResolvedKeyInfoType<out KeyType>,
 )
 
-data class CertificateOptions(
-    val subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
-    val subject: X509DistinguishedNameElements,
-    val issuerKeyInfo: KeyInfoType<KeyType> = subjectKeyInfo,
-    val issuer: X509DistinguishedNameElements = subject,
-    val serialNumber: Int = 1,
-    val notBefore: LocalDateTimeKMP = LocalDateTimeKMP.now(),
-    val notAfter: LocalDateTimeKMP =
-        LocalDateTimeKMP.fromString(
-            Clock.System
-                .now()
-                .toLocalDateTime(TimeZone.UTC)
-                .date
-                .plus(365, DateTimeUnit.DAY)
-                .atTime(0, 0)
-                .toString(),
-        ),
-)
+@JsExportCompat
+data class
+CertificateOptions
+    @JvmOverloads
+    constructor(
+        val subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
+        val subject: X509DistinguishedNameElements,
+        val issuerKeyInfo: KeyInfoType<KeyType> = subjectKeyInfo,
+        val issuer: X509DistinguishedNameElements = subject,
+        val serialNumber: Int = 1,
+        val notBefore: LocalDateTimeKMP = LocalDateTimeKMP.now(),
+        val notAfter: LocalDateTimeKMP =
+            LocalDateTimeKMP.fromString(
+                Clock.System
+                    .now()
+                    .toLocalDateTime(TimeZone.UTC)
+                    .date
+                    .plus(365, DateTimeUnit.DAY)
+                    .atTime(0, 0)
+                    .toString(),
+            ),
+    )

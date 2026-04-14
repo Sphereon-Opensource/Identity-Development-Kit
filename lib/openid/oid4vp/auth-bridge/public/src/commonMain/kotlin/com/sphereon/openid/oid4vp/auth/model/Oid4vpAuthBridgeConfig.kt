@@ -17,6 +17,7 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -53,6 +54,7 @@ import kotlinx.serialization.Serializable
  * @property userApiRequestTimeoutMs Request timeout in milliseconds for User API calls (default: 60000).
  */
 @Serializable
+@JsExportCompat
 data class Oid4vpAuthBridgeConfig(
     val defaultQueryId: String? = null,
     /**

@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api.http.describe
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * DSL entry point for creating an [HttpAdapterDescription] without noisy `listOf(...)` / `setOf(...)`.
  */
@@ -24,6 +26,7 @@ fun httpAdapterDescription(
     block: HttpAdapterDescriptionBuilder.() -> Unit,
 ): HttpAdapterDescription = HttpAdapterDescriptionBuilder(id).apply(block).build()
 
+@JsExportCompat
 class HttpAdapterDescriptionBuilder internal constructor(
     private val id: String,
 ) {
@@ -58,6 +61,7 @@ class HttpAdapterDescriptionBuilder internal constructor(
     }
 }
 
+@JsExportCompat
 class HttpAdapterMountBuilder {
     var serverPrefix: String = ""
     var adapterBasePath: String = "/"
@@ -75,6 +79,7 @@ class HttpAdapterMountBuilder {
         )
 }
 
+@JsExportCompat
 class HttpEndpointDescriptorBuilder internal constructor(
     private val method: HttpMethod,
     private val pathPattern: String,
@@ -117,6 +122,7 @@ class HttpEndpointDescriptorBuilder internal constructor(
         )
 }
 
+@JsExportCompat
 class OpenApiHintsBuilder {
     private val tags: MutableSet<String> = linkedSetOf()
     private var operationIdPrefix: String? = null

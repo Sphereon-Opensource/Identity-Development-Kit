@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -26,6 +27,7 @@ import kotlin.native.ObjCName
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ListOptions", exact = true)
+@JsExportCompat
 data class ListOptions(
     val prefix: String? = null,
     val delimiter: String? = "/",

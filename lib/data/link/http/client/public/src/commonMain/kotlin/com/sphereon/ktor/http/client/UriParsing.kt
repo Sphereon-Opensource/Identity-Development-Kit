@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.session.Command
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import io.ktor.http.Parameters
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -109,11 +110,13 @@ data class ParsedUri(
      * - `foo=bar&foo=baz` → parameters.getAll("foo") = ["bar", "baz"]
      * - `foo=` → parameters["foo"] = ""
      */
+    @JsExportIgnoreCompat
     val queryParameters: Parameters,
 ) {
     /**
      * Alias for queryParameters to maintain compatibility
      */
+    @JsExportIgnoreCompat
     val parameters: Parameters
         get() = queryParameters
 
@@ -195,6 +198,7 @@ interface ParseUriQueryCommand : Command<String, ParsedUri, IdkError> {
 /**
  * Command service interface for parsing URIs
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParseUriQueryCommandService", exact = true)
 interface ParseUriQueryCommandService {

@@ -16,6 +16,7 @@
 package com.sphereon.sdjwt.vc.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.vc.SdJwtVcPresentationVerificationResult
 import com.sphereon.sdjwt.vc.SdJwtVcVerificationResult
 import com.sphereon.sdjwt.vc.VerifySdJwtVcArgs
@@ -24,6 +25,7 @@ import com.sphereon.sdjwt.vc.VerifySdJwtVcPresentationArgs
 /**
  * Command for verifying SD-JWT-VC credentials
  */
+@JsExportCompat
 interface VerifySdJwtVcCommand : ServiceCommand<VerifySdJwtVcArgs, SdJwtVcVerificationResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -35,6 +37,7 @@ interface VerifySdJwtVcCommand : ServiceCommand<VerifySdJwtVcArgs, SdJwtVcVerifi
 /**
  * Command for verifying SD-JWT-VC presentations (with KB-JWT)
  */
+@JsExportCompat
 interface VerifySdJwtVcPresentationCommand : ServiceCommand<VerifySdJwtVcPresentationArgs, SdJwtVcPresentationVerificationResult> {
     override val commandId: String get() = COMMAND_ID
 

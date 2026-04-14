@@ -17,6 +17,7 @@
 package com.sphereon.core.api
 
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -135,6 +136,7 @@ open class StateManager<T : Any>(
 /**
  * Common state types that can be used across different managers.
  */
+@JsExportCompat
 sealed class CommonState {
     object Idle : CommonState()
 
@@ -158,6 +160,7 @@ sealed class CommonState {
  *
  * @param T The state type
  */
+@JsExportCompat
 abstract class StateTransitionValidator<T : Any> {
     /**
      * Validates if a transition from current state to new state is allowed.

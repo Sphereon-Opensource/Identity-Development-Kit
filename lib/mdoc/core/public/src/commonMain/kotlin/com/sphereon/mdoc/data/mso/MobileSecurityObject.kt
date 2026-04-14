@@ -29,6 +29,7 @@ import com.sphereon.util.stringify
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @Serializable
@@ -131,11 +132,22 @@ data class MobileSecurityObject(
         })"
 
     companion object {
+        @JvmStatic
         val VERSION = StringLabel("version")
+
+        @JvmStatic
         val DIGEST_ALGORITHM = StringLabel("digestAlgorithm")
+
+        @JvmStatic
         val VALUE_DIGESTS = StringLabel("valueDigests")
+
+        @JvmStatic
         val DEVICE_KEY_INFO = StringLabel("deviceKeyInfo")
+
+        @JvmStatic
         val DOC_TYPE = StringLabel("docType")
+
+        @JvmStatic
         val VALIDITY_INFO = StringLabel("validityInfo")
     }
 }

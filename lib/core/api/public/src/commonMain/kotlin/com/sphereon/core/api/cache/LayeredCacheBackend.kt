@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -31,6 +32,7 @@ import kotlin.native.ObjCName
  * - Local (fast) as primary + Distributed (shared) as secondary
  * - Memory (volatile) as primary + Persistent (durable) as secondary
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("LayeredCacheBackend", exact = true)
 class LayeredCacheBackend(

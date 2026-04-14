@@ -18,10 +18,13 @@ package com.sphereon.conf.theme.core.token
 
 import com.sphereon.conf.theme.core.model.ThemeToken
 import com.sphereon.conf.theme.core.model.ThemeTokenType
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmOverloads
 
 /**
  * DSL builder for constructing theme token lists.
  */
+@JsExportCompat
 class TokenBuilder {
     private val tokens = mutableListOf<ThemeToken>()
 
@@ -102,6 +105,7 @@ class TokenBuilder {
         tokens.add(ThemeToken(key = key, value = value, type = ThemeTokenType.STRING))
     }
 
+    @JvmOverloads
     fun token(
         key: String,
         value: String,

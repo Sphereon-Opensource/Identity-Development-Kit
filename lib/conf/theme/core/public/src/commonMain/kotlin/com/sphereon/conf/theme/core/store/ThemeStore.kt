@@ -19,11 +19,14 @@ package com.sphereon.conf.theme.core.store
 import com.sphereon.conf.theme.core.model.ThemeDefinition
 import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.model.ThemeVariant
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmOverloads
 
 /**
  * Storage abstraction for theme definitions.
  * Implementations may be in-memory, settings-backed, or database-backed.
  */
+@JsExportCompat
 interface ThemeStore {
     suspend fun getDefinition(
         tenant: String,
@@ -175,15 +178,19 @@ interface ThemeStore {
 /**
  * Simple data holder for custom CSS content retrieved from the store.
  */
-data class CustomCssData(
-    val css: String,
-    val contentHash: String,
-    val version: Long = 1,
-)
+@JsExportCompat
+data class CustomCssData
+    @JvmOverloads
+    constructor(
+        val css: String,
+        val contentHash: String,
+        val version: Long = 1,
+    )
 
 /**
  * Simple data holder for media asset content retrieved from the store.
  */
+@JsExportCompat
 data class MediaAssetData(
     val assetId: String,
     val contentType: String,

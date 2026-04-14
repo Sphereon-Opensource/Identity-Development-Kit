@@ -17,7 +17,9 @@
 package com.sphereon.core.api.http.dispatch
 
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.HasOrder
+import kotlin.jvm.JvmStatic
 
 /**
  * Startup, metadata-only index of contributed HTTP adapters.
@@ -31,6 +33,7 @@ import com.sphereon.di.HasOrder
  *
  * The codebase standard is to depend on interfaces (not concrete implementations).
  */
+@JsExportCompat
 interface HttpAdapterCatalog : HasOrder {
     val descriptions: List<HttpAdapterDescription>
     val diagnostics: HttpAdapterCatalogDiagnostics
@@ -45,10 +48,12 @@ interface HttpAdapterCatalog : HasOrder {
     fun requireNoCollisions()
 }
 
+@JsExportCompat
 data class HttpAdapterCatalogDiagnostics(
     val collisions: List<HttpAdapterCatalogCollision>,
 ) {
     companion object {
+        @JvmStatic
         fun from(descriptions: List<HttpAdapterDescription>): HttpAdapterCatalogDiagnostics {
             val collisions = mutableListOf<HttpAdapterCatalogCollision>()
 
@@ -109,12 +114,14 @@ data class HttpAdapterCatalogDiagnostics(
     }
 }
 
+@JsExportCompat
 enum class HttpAdapterCatalogCollisionType {
     DUPLICATE_ADAPTER_ID,
     OVERLAPPING_ENDPOINT,
     DUPLICATE_ENDPOINT_IN_ADAPTER,
 }
 
+@JsExportCompat
 data class HttpAdapterCatalogCollision(
     val type: HttpAdapterCatalogCollisionType,
     val message: String,

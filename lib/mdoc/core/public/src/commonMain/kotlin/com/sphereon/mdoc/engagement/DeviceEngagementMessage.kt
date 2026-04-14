@@ -23,6 +23,7 @@ import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.StringLabel
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -32,6 +33,7 @@ data class DeviceEngagementMessage(
     val deviceEngagementBytes: CborEncodedItem<DeviceEngagement>,
 ) {
     companion object {
+        @JvmStatic
         val DEVICE_ENGAGEMENT_BYTES = StringLabel("deviceEngagementBytes")
     }
 }

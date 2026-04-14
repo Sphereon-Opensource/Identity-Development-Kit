@@ -18,6 +18,7 @@ package com.sphereon.core.api.http.codec
 
 import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.HasOrder
 import com.sphereon.di.Order
 import kotlin.reflect.KClass
@@ -62,6 +63,7 @@ import kotlin.reflect.KClass
  * }
  * ```
  */
+@JsExportCompat
 interface HttpBodyCodec : HasOrder {
     /**
      * Media types this codec can handle.
@@ -113,6 +115,7 @@ interface HttpBodyCodec : HasOrder {
 /**
  * Exception thrown when codec operations fail.
  */
+@JsExportCompat
 class CodecException(
     message: String,
     cause: Throwable? = null,
@@ -134,6 +137,7 @@ class CodecException(
  * and the highest-priority one (lowest [getOrder] value) wins. Use [com.sphereon.di.selectByOrder]
  * to select the winning implementation from a `Set<HttpBodyCodecRegistry>`.
  */
+@JsExportCompat
 interface HttpBodyCodecRegistry : HasOrder {
     /**
      * All registered codecs.

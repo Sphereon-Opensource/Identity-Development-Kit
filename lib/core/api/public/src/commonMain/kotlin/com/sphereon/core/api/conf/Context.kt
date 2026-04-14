@@ -17,9 +17,12 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 enum class ConfigScope(
     scopeKey: String,
 ) {
@@ -29,6 +32,7 @@ enum class ConfigScope(
     SERVICE("services"),
 }
 
+@JsExportCompat
 enum class ConfigSource(
     key: String,
 ) {
@@ -54,6 +58,7 @@ enum class ConfigSource(
  * @property key The string identifier for this level
  * @property level The numeric level for comparison (lower = higher scope)
  */
+@JsExportCompat
 enum class ConfigLevel(
     val key: String,
     val level: Int,
@@ -78,6 +83,7 @@ enum class ConfigLevel(
          * @param value The string to parse
          * @return The matching ConfigLevel, or null if not found
          */
+        @JvmStatic
         fun fromString(value: String): ConfigLevel? =
             entries.find {
                 it.key.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true)
@@ -89,6 +95,7 @@ enum class ConfigLevel(
          * @param level The numeric level (10, 20, or 30)
          * @return The matching ConfigLevel, or null if not found
          */
+        @JvmStatic
         fun fromLevel(level: Int): ConfigLevel? = entries.find { it.level == level }
     }
 }
@@ -101,6 +108,7 @@ enum class ConfigLevel(
  *
  */
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigContext", exact = true)
 @CoverageExcludedDataClass
@@ -109,6 +117,7 @@ data class ConfigContext(
     val source: ConfigSource,
 )
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigContextHierarchy", exact = true)
 @CoverageExcludedDataClass

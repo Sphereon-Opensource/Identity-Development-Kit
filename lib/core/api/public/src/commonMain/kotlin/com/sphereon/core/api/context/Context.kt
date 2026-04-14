@@ -25,6 +25,7 @@ import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.core.api.session.CommandLifecycleInterceptorChain
 import com.sphereon.core.api.session.EmptyInterceptorChain
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.UserScope
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
@@ -53,6 +54,7 @@ interface SessionExecution {
     }
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ContextConfig", exact = true)
 interface ContextConfig {
@@ -81,6 +83,7 @@ class ContextConfigImpl(
         }
 }
 
+@JsExportCompat
 enum class IdkScope {
     APP,
     USER,

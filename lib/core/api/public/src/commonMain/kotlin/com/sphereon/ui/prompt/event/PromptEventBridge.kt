@@ -29,6 +29,7 @@ import kotlin.native.ObjCName
  *
  * This can be integrated with the core EventHub for unified event handling.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PromptEventBridge", exact = true)
 interface PromptEventBridge {
@@ -46,6 +47,7 @@ interface PromptEventBridge {
 /**
  * Default implementation of PromptEventBridge.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultPromptEventBridge", exact = true)
 class DefaultPromptEventBridge : PromptEventBridge {

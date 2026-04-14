@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vc.common
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -27,6 +28,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("QrCodeService", exact = true)
+@JsExportCompat
 interface QrCodeService {
     /**
      * Generate a QR code as a data URI.

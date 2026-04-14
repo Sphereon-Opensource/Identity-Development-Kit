@@ -210,6 +210,8 @@ internal object AuthorizationErrorResponseSerializer : KSerializer<Authorization
  * @property additionalParameters Additional extension parameters (auto-captured)
  */
 @Serializable(with = PushedAuthorizationRequestSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class PushedAuthorizationRequest(
     @SerialName("request_uri")
     val requestUri: String,
@@ -228,6 +230,8 @@ data class PushedAuthorizationRequest(
  * @property additionalParameters Additional extension parameters (auto-captured)
  */
 @Serializable(with = PushedAuthorizationResponseSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class PushedAuthorizationResponse(
     @SerialName("request_uri")
     val requestUri: String,
@@ -262,6 +266,8 @@ data class AuthorizationResponse(
  * @property additionalParameters Additional extension parameters (auto-captured)
  */
 @Serializable(with = AuthorizationErrorResponseSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class AuthorizationErrorResponse(
     val error: String,
     @SerialName("error_description")

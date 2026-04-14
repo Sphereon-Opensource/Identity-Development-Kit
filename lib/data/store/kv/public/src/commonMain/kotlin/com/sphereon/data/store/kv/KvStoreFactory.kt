@@ -18,6 +18,7 @@
 package com.sphereon.data.store.kv
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Factory for creating [KvStore] instances with the correct scope binding.
@@ -27,6 +28,7 @@ import com.sphereon.core.api.context.SessionExecution
  *   request-scoped object lifetimes (for example REST session-per-request).
  * - partition by tenant/principal/session identifiers derived from [SessionExecution] when needed.
  */
+@JsExportCompat
 interface KvStoreFactory {
     /**
      * Identifier for selecting this factory at runtime (for example "memory" or "kottage").

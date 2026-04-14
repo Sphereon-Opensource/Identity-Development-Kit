@@ -17,6 +17,7 @@
 
 package com.sphereon.ktor.http.client.support
 
+import com.sphereon.core.compat.JsExportCompat
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
@@ -68,6 +69,7 @@ suspend fun HttpResponse.ensureSuccess(): HttpResponse {
  * @property message Descriptive error message
  * @property responseBody The raw response body (if available)
  */
+@JsExportCompat
 class HttpException(
     val statusCode: Int,
     override val message: String,

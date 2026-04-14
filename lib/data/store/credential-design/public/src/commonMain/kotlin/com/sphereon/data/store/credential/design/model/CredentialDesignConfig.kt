@@ -16,48 +16,64 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
 enum class IssuerMetadataPreference { OID4VCI_FIRST, SD_JWT_FIRST, MERGE, LOCAL_ONLY }
 
+@JsExportCompat
 @Serializable
 enum class CredentialMetadataPreference { SD_JWT_FIRST, OID4VCI_FIRST, MERGE, LOCAL_ONLY }
 
+@JsExportCompat
 @Serializable
-data class DesignResolutionPolicy(
-    val schemaHintsEnabled: Boolean = true,
-    val jsonLdContextHintsEnabled: Boolean = true,
-    val markdownRenderingEnabled: Boolean = false,
-    val issuerMetadataPreference: IssuerMetadataPreference = IssuerMetadataPreference.OID4VCI_FIRST,
-    val credentialMetadataPreference: CredentialMetadataPreference = CredentialMetadataPreference.SD_JWT_FIRST,
-    val preferIntegrityProtectedSources: Boolean = true,
-    val allowRemoteTemplateFetch: Boolean = false,
-    val allowRemoteAssetFetch: Boolean = false,
-)
+data class DesignResolutionPolicy
+    @JvmOverloads
+    constructor(
+        val schemaHintsEnabled: Boolean = true,
+        val jsonLdContextHintsEnabled: Boolean = true,
+        val markdownRenderingEnabled: Boolean = false,
+        val issuerMetadataPreference: IssuerMetadataPreference = IssuerMetadataPreference.OID4VCI_FIRST,
+        val credentialMetadataPreference: CredentialMetadataPreference = CredentialMetadataPreference.SD_JWT_FIRST,
+        val preferIntegrityProtectedSources: Boolean = true,
+        val allowRemoteTemplateFetch: Boolean = false,
+        val allowRemoteAssetFetch: Boolean = false,
+    )
 
+@JsExportCompat
 @Serializable
-data class CredentialDesignRefreshConfig(
-    val enabled: Boolean = false,
-    val defaultTtlSeconds: Long = 86400,
-    val rehostRemoteAssets: Boolean = true,
-    val maxAssetSizeBytes: Long = 5_000_000,
-)
+data class CredentialDesignRefreshConfig
+    @JvmOverloads
+    constructor(
+        val enabled: Boolean = false,
+        val defaultTtlSeconds: Long = 86400,
+        val rehostRemoteAssets: Boolean = true,
+        val maxAssetSizeBytes: Long = 5_000_000,
+    )
 
+@JsExportCompat
 @Serializable
-data class CredentialDesignValidationConfig(
-    val maxBindingsPerDesign: Int = 16,
-    val maxDisplaysPerDesign: Int = 64,
-    val maxClaimsPerDesign: Int = 256,
-    val maxRenderVariantsPerDesign: Int = 32,
-    val maxEntryCodesPerClaim: Int = 1024,
-    val failOnUnknownSourceType: Boolean = true,
-    val validateOnRead: Boolean = false,
-)
+data class CredentialDesignValidationConfig
+    @JvmOverloads
+    constructor(
+        val maxBindingsPerDesign: Int = 16,
+        val maxDisplaysPerDesign: Int = 64,
+        val maxClaimsPerDesign: Int = 256,
+        val maxRenderVariantsPerDesign: Int = 32,
+        val maxEntryCodesPerClaim: Int = 1024,
+        val failOnUnknownSourceType: Boolean = true,
+        val validateOnRead: Boolean = false,
+    )
 
+@JsExportCompat
 @Serializable
-data class CredentialDesignModuleConfig(
-    val policy: DesignResolutionPolicy = DesignResolutionPolicy(),
-    val refresh: CredentialDesignRefreshConfig = CredentialDesignRefreshConfig(),
-    val validation: CredentialDesignValidationConfig = CredentialDesignValidationConfig(),
-)
+data class CredentialDesignModuleConfig
+    @JvmOverloads
+    constructor(
+        val policy: DesignResolutionPolicy = DesignResolutionPolicy(),
+        val refresh: CredentialDesignRefreshConfig = CredentialDesignRefreshConfig(),
+        val validation: CredentialDesignValidationConfig = CredentialDesignValidationConfig(),
+    )

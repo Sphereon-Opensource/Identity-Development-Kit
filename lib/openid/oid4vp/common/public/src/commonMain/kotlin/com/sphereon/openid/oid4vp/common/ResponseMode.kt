@@ -16,8 +16,11 @@
 
 package com.sphereon.openid.oid4vp.common
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * Response Mode for OpenID4VP
@@ -27,6 +30,7 @@ import kotlinx.serialization.Serializable
  * OpenID4VP primarily uses direct_post for cross-device flows."
  */
 @Serializable
+@JsExportCompat
 enum class ResponseMode(
     val value: String,
 ) {
@@ -97,6 +101,7 @@ enum class ResponseMode(
          * @param value String value of response mode
          * @return ResponseMode enum value, or null if not recognized
          */
+        @JvmStatic
         fun fromValue(value: String): ResponseMode? = entries.find { it.value == value }
 
         /**
@@ -106,6 +111,8 @@ enum class ResponseMode(
          * @param default Default value if not recognized
          * @return ResponseMode enum value
          */
+        @JvmStatic
+        @JvmOverloads
         fun fromValueOrDefault(
             value: String,
             default: ResponseMode = FRAGMENT,

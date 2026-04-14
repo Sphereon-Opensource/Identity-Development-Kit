@@ -16,7 +16,7 @@
  */
 
 package com.sphereon.crypto.core.sign.model
-
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 
 /**
@@ -26,6 +26,7 @@ import com.sphereon.crypto.core.KeyInfoType
  * @property keyInfo Key information (for certificate inclusion during digest preparation)
  * @property parameters Signature parameters controlling the signing behavior
  */
+@JsExportCompat
 data class DigestRequest(
     val input: SignInput,
     val keyInfo: KeyInfoType<*>,

@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.CreateDpopProofOptions
 import com.sphereon.oauth2.common.model.DpopProofResult
@@ -29,6 +30,7 @@ import com.sphereon.oauth2.common.model.VerifyDpopProofResult
  * @property options Options for creating the DPoP proof (includes issuer/key for signing)
  * @property publicJwk The public key (JWK) to embed in the DPoP proof header
  */
+@JsExportCompat
 data class CreateDpopProofArgs(
     val options: CreateDpopProofOptions,
     val publicJwk: Jwk,
@@ -48,6 +50,7 @@ data class CreateDpopProofArgs(
  * - ath: Hash of access token (when presenting with access token)
  * - nonce: Server-provided nonce (when required)
  */
+@JsExportCompat
 interface CreateDpopProofCommand : ServiceCommand<CreateDpopProofArgs, DpopProofResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -68,6 +71,7 @@ interface CreateDpopProofCommand : ServiceCommand<CreateDpopProofArgs, DpopProof
  * - nonce matches expected value (if provided)
  * - JWK thumbprint matches expected value (if provided)
  */
+@JsExportCompat
 interface VerifyDpopProofCommand : ServiceCommand<VerifyDpopProofOptions, VerifyDpopProofResult> {
     override val commandId: String get() = COMMAND_ID
 

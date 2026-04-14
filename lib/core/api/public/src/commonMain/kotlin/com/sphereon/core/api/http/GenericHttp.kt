@@ -17,6 +17,9 @@
 
 package com.sphereon.core.api.http
 
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
+
 /**
  * Lazy map that only creates the underlying map when first accessed.
  * This avoids allocations for maps that are never used.
@@ -24,6 +27,7 @@ package com.sphereon.core.api.http
  * Performance benefit: For requests where headers or query parameters are never accessed,
  * this completely avoids the map allocation and iteration cost.
  */
+@JsExportCompat
 class LazyMap<K, V>(
     private val initializer: () -> Map<K, V>,
 ) : Map<K, V> {
@@ -186,6 +190,7 @@ data class GenericHttpRequest(
         /**
          * Creates a request with text body content.
          */
+        @JvmStatic
         fun withTextBody(
             method: String,
             path: String,
@@ -206,6 +211,7 @@ data class GenericHttpRequest(
         /**
          * Creates a request with binary body content.
          */
+        @JvmStatic
         fun withBinaryBody(
             method: String,
             path: String,
@@ -239,6 +245,7 @@ data class GenericHttpRequest(
  * - Use [bodyContent] for the typed body model supporting text and binary
  * - Use [body] (String?) for backward compatibility with existing code
  */
+@JsExportCompat
 data class GenericHttpResponse(
     val statusCode: Int,
     val headers: Map<String, String> = emptyMap(),
@@ -273,6 +280,7 @@ data class GenericHttpResponse(
         /**
          * Creates a response with text body content.
          */
+        @JvmStatic
         fun withTextBody(
             statusCode: Int,
             body: String?,
@@ -288,6 +296,7 @@ data class GenericHttpResponse(
         /**
          * Creates a response with binary body content.
          */
+        @JvmStatic
         fun withBinaryBody(
             statusCode: Int,
             body: ByteArray?,
@@ -306,6 +315,7 @@ data class GenericHttpResponse(
  * Compiled path pattern for efficient matching.
  * Pre-splits the pattern to avoid repeated string operations.
  */
+@JsExportCompat
 class CompiledPathPattern private constructor(
     val pattern: String,
     private val segments: List<Segment>,
@@ -373,6 +383,7 @@ class CompiledPathPattern private constructor(
          * Compile a path pattern for efficient matching.
          * Results are cached to avoid recompiling the same pattern.
          */
+        @JvmStatic
         fun compile(pattern: String): CompiledPathPattern =
             cache.getOrPut(pattern) {
                 val segments =

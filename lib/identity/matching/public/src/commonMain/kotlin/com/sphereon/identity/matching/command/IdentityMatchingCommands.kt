@@ -17,6 +17,7 @@
 package com.sphereon.identity.matching.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.matching.model.CreateIdentityMatchArgs
 import com.sphereon.identity.matching.model.DeleteIdentityMatchArgs
 import com.sphereon.identity.matching.model.IdentityMatch
@@ -24,6 +25,7 @@ import com.sphereon.identity.matching.model.ListIdentityMatchesArgs
 import com.sphereon.identity.matching.model.LookupIdentityMatchArgs
 import com.sphereon.identity.matching.model.MatchResult
 
+@JsExportCompat
 interface LookupIdentityMatchCommand : ServiceCommand<LookupIdentityMatchArgs, MatchResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -32,6 +34,7 @@ interface LookupIdentityMatchCommand : ServiceCommand<LookupIdentityMatchArgs, M
     }
 }
 
+@JsExportCompat
 interface CreateIdentityMatchCommand : ServiceCommand<CreateIdentityMatchArgs, IdentityMatch> {
     override val commandId: String get() = COMMAND_ID
 
@@ -40,6 +43,7 @@ interface CreateIdentityMatchCommand : ServiceCommand<CreateIdentityMatchArgs, I
     }
 }
 
+@JsExportCompat
 interface DeleteIdentityMatchCommand : ServiceCommand<DeleteIdentityMatchArgs, Boolean> {
     override val commandId: String get() = COMMAND_ID
 
@@ -48,6 +52,7 @@ interface DeleteIdentityMatchCommand : ServiceCommand<DeleteIdentityMatchArgs, B
     }
 }
 
+@JsExportCompat
 interface ListIdentityMatchesCommand : ServiceCommand<ListIdentityMatchesArgs, List<IdentityMatch>> {
     override val commandId: String get() = COMMAND_ID
 

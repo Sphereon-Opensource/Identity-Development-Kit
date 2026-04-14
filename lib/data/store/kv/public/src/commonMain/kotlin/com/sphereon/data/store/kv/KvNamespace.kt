@@ -17,15 +17,19 @@
 
 package com.sphereon.data.store.kv
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * A typed namespace for keys stored in a [KvStore].
  *
  * Namespaces are mandatory to avoid accidental key collisions between modules.
  */
+@JsExportCompat
 interface KvNamespaceId {
     val name: String
 }
 
+@JsExportCompat
 data class KvNamespace<V : Any>(
     override val name: String,
     val codec: KvCodec<V>,

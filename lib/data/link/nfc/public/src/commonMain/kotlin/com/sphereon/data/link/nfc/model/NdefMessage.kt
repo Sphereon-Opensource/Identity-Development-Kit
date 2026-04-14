@@ -17,8 +17,10 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.io.bytestring.ByteStringBuilder
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -26,6 +28,7 @@ import kotlin.native.ObjCName
  *
  * @property records the records in the message.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NdefMessage", exact = true)
 data class NdefMessage(
@@ -54,6 +57,7 @@ data class NdefMessage(
          * @param encoded the encoded messages.
          * @return the decoded message
          */
+        @JvmStatic
         fun fromEncoded(encoded: ByteArray): NdefMessage = NdefMessage(NdefRecord.fromEncoded(encoded))
     }
 }

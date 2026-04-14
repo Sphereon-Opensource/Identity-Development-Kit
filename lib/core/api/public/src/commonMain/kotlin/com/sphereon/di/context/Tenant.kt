@@ -17,7 +17,6 @@
 
 package com.sphereon.di.context
 
-import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.Order
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -27,21 +26,18 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TenantAware", exact = true)
-@JsExportCompat
 interface TenantAware {
     val tenant: TenantContextData
 }
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PrincipalAware", exact = true)
-@JsExportCompat
 interface PrincipalAware {
     val principal: Any?
 }
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TenantContextData", exact = true)
-@JsExportCompat
 interface TenantContextData {
     val tenantId: String
 }

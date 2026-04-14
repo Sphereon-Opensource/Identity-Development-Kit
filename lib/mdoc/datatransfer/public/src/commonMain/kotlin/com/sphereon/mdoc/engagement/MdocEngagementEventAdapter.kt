@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -47,6 +48,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementEventAdapter", exact = true)
+@JsExportCompat
 abstract class MdocEngagementEventAdapter : MdocEngagementEvent.Listener {
     override suspend fun onInitializing(event: MdocEngagementEvent.Initializing) { // No-op
     }

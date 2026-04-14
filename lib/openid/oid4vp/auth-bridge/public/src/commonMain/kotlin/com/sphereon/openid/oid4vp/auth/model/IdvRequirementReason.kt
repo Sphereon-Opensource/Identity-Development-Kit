@@ -16,9 +16,11 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 @Serializable
+@JsExportCompat
 enum class IdvRequirementReason {
     FIRST_TIME_LINK,
     EXPIRED_BINDING,

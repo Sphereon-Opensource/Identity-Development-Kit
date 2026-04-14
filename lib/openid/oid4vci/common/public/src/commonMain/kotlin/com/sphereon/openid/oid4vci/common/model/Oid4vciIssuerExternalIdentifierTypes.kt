@@ -17,6 +17,7 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
@@ -35,6 +36,7 @@ import kotlinx.serialization.json.JsonObject
  * `https://issuer.example.com/tenant1`). The resolver constructs the correct
  * `.well-known/openid-credential-issuer` URL per OID4VCI 1.1 Section 13.2.
  */
+@JsExportCompat
 data class ExternalIdentifierOid4vciIssuerOpts(
     override val identifier: String,
     override val context: IdentifierContext = IdentifierContext(),
@@ -52,6 +54,7 @@ data class ExternalIdentifierOid4vciIssuerOpts(
  * Contains the credential issuer metadata, the resolved authorization server metadata
  * (if available), and the JWKS resolved from the authorization server.
  */
+@JsExportCompat
 data class Oid4vciIssuerExternalIdentifierResult(
     override val identifierOpts: ExternalIdentifierOid4vciIssuerOpts,
     override val jwks: Array<ExternalJwkInfo>,
@@ -107,4 +110,5 @@ data class Oid4vciIssuerExternalIdentifierResult(
 /**
  * Marker interface for the OID4VCI issuer external identifier resolution service.
  */
+@JsExportCompat
 interface Oid4vciIssuerExternalIdentifierService : ExternalIdentifierService

@@ -121,6 +121,12 @@ kotlin {
                 implementation(sphereonlib.io.ktor.client.cio)
             }
         }
+
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 
     compilerOptions {

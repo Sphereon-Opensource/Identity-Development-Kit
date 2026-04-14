@@ -26,6 +26,7 @@ import com.sphereon.core.api.session.Command
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
@@ -83,6 +84,7 @@ open class IdkError(
     )
 
     companion object {
+        @JvmStatic
         @JsStatic
         fun fromDTO(error: IdkErrorType) =
             IdkError(
@@ -95,6 +97,7 @@ open class IdkError(
                 meta = error.meta,
             )
 
+        @JvmStatic
         @JsStatic
         fun fromString(
             message: String,
@@ -111,6 +114,7 @@ open class IdkError(
             exception = exception,
         )
 
+        @JvmStatic
         @JsStatic
         fun fromDefinition(
             definition: ErrorDefinitionType,
@@ -135,6 +139,7 @@ open class IdkError(
             meta = meta,
         )
 
+        @JvmStatic
         @JsStatic
         fun UNKNOWN_ERROR(
             severity: Severity = Severity.ERROR,
@@ -154,6 +159,7 @@ open class IdkError(
             exception = exception,
         )
 
+        @JvmStatic
         @JsStatic
         fun ILLEGAL_ARGUMENT_ERROR(
             severity: Severity = Severity.ERROR,
@@ -174,6 +180,7 @@ open class IdkError(
             exception = throwable,
         )
 
+        @JvmStatic
         @JsStatic
         fun COMMAND_ARG_NOT_SUPPORTED_ERROR(
             severity: Severity = Severity.ERROR,
@@ -195,6 +202,7 @@ open class IdkError(
             exception = throwable,
         )
 
+        @JvmStatic
         @JsStatic
         fun NOT_FOUND_ERROR(
             severity: Severity = Severity.ERROR,
@@ -215,6 +223,7 @@ open class IdkError(
             exception = throwable,
         )
 
+        @JvmStatic
         @JsStatic
         fun COMMAND_DISABLED_ERROR(
             commandId: String,
@@ -236,6 +245,7 @@ open class IdkError(
             meta = mapOf("commandId" to commandId),
         )
 
+        @JvmStatic
         @JsStatic
         fun COMMAND_SKIPPED_ERROR(
             commandId: String,
@@ -258,6 +268,7 @@ open class IdkError(
             meta = mapOf("commandId" to commandId, "reason" to reason),
         )
 
+        @JvmStatic
         @JsStatic
         fun COMMAND_NOT_AUTHORIZED_ERROR(
             commandId: String,
@@ -281,6 +292,7 @@ open class IdkError(
             meta = mapOf("commandId" to commandId, "reason" to reason, "actor" to actor),
         )
 
+        @JvmStatic
         @JsStatic
         fun ALL_HANDLERS_FAILED_ERROR(
             errors: List<IdkError>,
@@ -300,6 +312,7 @@ open class IdkError(
             meta = mapOf("errorCount" to errors.size),
         )
 
+        @JvmStatic
         @JsStatic
         fun UNAUTHORIZED_ERROR(
             message: String = "Unauthorized",
@@ -319,6 +332,7 @@ open class IdkError(
             exception = throwable,
         )
 
+        @JvmStatic
         @JsStatic
         fun FORBIDDEN_ERROR(
             message: String = "Access forbidden",
@@ -338,6 +352,7 @@ open class IdkError(
             exception = throwable,
         )
 
+        @JvmStatic
         @JsStatic
         fun ALREADY_EXISTS_ERROR(
             severity: Severity = Severity.ERROR,
@@ -358,6 +373,7 @@ open class IdkError(
             exception = throwable,
         )
 
+        @JvmStatic
         @JsStatic
         fun INVALID_STATE(
             severity: Severity = Severity.ERROR,

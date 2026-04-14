@@ -19,11 +19,14 @@
 
 package com.sphereon.data.link.ble.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CharacteristicWriteMode", exact = true)
 enum class CharacteristicWriteMode(
@@ -42,10 +45,12 @@ enum class CharacteristicWriteMode(
     WRITE_TYPE_SIGNED(0x04),
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GattCharacteristic", exact = true)
 data class GattCharacteristic(
     override val id: Uuid,
+    @JsExportIgnoreCompat
     val properties: Set<GattProperty>,
     val service: GattService? = null,
 ) : HasUuidId {

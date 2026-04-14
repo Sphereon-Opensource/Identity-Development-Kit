@@ -16,8 +16,12 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
 enum class CanonicalMergeMode {
     WALLET_ONLY,
@@ -27,18 +31,22 @@ enum class CanonicalMergeMode {
     MERGE_ALL,
 }
 
+@JsExportCompat
 @Serializable
-data class CanonicalAttributeRule(
-    val canonicalName: String,
-    val mergeMode: CanonicalMergeMode,
-    val required: Boolean = false,
-    val persist: Boolean = false,
-    val project: Boolean = false,
-    /**
-     * Per-provider source aliases. Key = provider ID (e.g., "surf", "keycloak").
-     * Value = source claim name at that provider.
-     * Keys are strictly provider IDs — no reserved names.
-     * When no alias exists for a provider, the canonical name is used as source.
-     */
-    val sourceAliases: Map<String, String> = emptyMap(),
-)
+data class CanonicalAttributeRule
+    @JvmOverloads
+    constructor(
+        val canonicalName: String,
+        val mergeMode: CanonicalMergeMode,
+        val required: Boolean = false,
+        val persist: Boolean = false,
+        val project: Boolean = false,
+        /**
+         * Per-provider source aliases. Key = provider ID (e.g., "surf", "keycloak").
+         * Value = source claim name at that provider.
+         * Keys are strictly provider IDs — no reserved names.
+         * When no alias exists for a provider, the canonical name is used as source.
+         */
+        @JsExportIgnoreCompat
+        val sourceAliases: Map<String, String> = emptyMap(),
+    )

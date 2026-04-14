@@ -16,8 +16,10 @@
 
 package com.sphereon.openid.oid4vc.common
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmStatic
 
 /**
  * Well-known cryptographic binding methods per OID4VCI.
@@ -26,6 +28,7 @@ import kotlinx.serialization.Serializable
  * strings. This enum covers the fixed well-known values; DID-based methods are represented
  * as raw strings of the form "did:<method>" and handled via the companion helpers.
  */
+@JsExportCompat
 @Serializable
 enum class CryptographicBindingMethod(
     val value: String,
@@ -39,12 +42,15 @@ enum class CryptographicBindingMethod(
 
     companion object {
         /** Constructs the raw DID binding method string for the given DID method (e.g. "did:key"). */
+        @JvmStatic
         fun did(method: String): String = "did:$method"
 
         /** Returns the matching well-known enum entry, or null for DID strings or unknown values. */
+        @JvmStatic
         fun fromValue(value: String): CryptographicBindingMethod? = entries.find { it.value == value }
 
         /** Returns true when the raw binding method value represents a DID-based method. */
+        @JvmStatic
         fun isDid(value: String): Boolean = value.startsWith("did:")
     }
 }

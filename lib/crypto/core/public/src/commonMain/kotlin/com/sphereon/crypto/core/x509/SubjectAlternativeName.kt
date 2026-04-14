@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -75,6 +76,7 @@ enum class GeneralNameType(
     ;
 
     companion object {
+        @JvmStatic
         fun fromTag(tag: Int): GeneralNameType? = entries.find { it.tag == tag }
     }
 }
@@ -169,6 +171,7 @@ data class SubjectAlternativeName(
         /**
          * Empty SAN extension (no names).
          */
+        @JvmStatic
         val EMPTY = SubjectAlternativeName(emptyList())
     }
 }

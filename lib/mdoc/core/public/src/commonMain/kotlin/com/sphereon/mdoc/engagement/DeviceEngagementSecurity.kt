@@ -29,6 +29,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyCborCodec
 import com.sphereon.crypto.core.cose.CoseKeyType
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -39,6 +40,7 @@ data class DeviceEngagementSecurity(
     val eDeviceKeyBytes: CborEncodedItem<CoseKeyType>,
 ) {
     companion object {
+        @JvmStatic
         fun fromCborItem(
             a: CborArray<CborItem<*>>,
             coseKeyCborCodec: CoseKeyCborCodec,

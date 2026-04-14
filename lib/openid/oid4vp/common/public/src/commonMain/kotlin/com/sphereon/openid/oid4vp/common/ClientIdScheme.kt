@@ -20,6 +20,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -90,6 +91,7 @@ enum class JarSignerMethod {
          * @param kid Key ID from header (null if not present)
          * @return The detected signer method
          */
+        @JvmStatic
         fun detect(
             x5c: List<String>?,
             jwk: Any?,
@@ -328,6 +330,7 @@ enum class ClientIdScheme(
          * @param clientId The full client_id value from the authorization request
          * @return The parsed ClientIdScheme, defaults to PRE_REGISTERED if no recognized prefix
          */
+        @JvmStatic
         fun fromClientId(clientId: String): ClientIdScheme {
             val colonIndex = clientId.indexOf(':')
 
@@ -350,6 +353,7 @@ enum class ClientIdScheme(
          * @param clientIdWithScheme The full client_id value from the authorization request
          * @return The original client identifier without the prefix and colon
          */
+        @JvmStatic
         fun extractClientIdWithoutScheme(clientIdWithScheme: String): String {
             val colonIndex = clientIdWithScheme.indexOf(':')
             return if (colonIndex == -1) {
@@ -365,6 +369,7 @@ enum class ClientIdScheme(
          * @param prefix The prefix string to look up
          * @return The matching ClientIdScheme, or null if not found
          */
+        @JvmStatic
         fun fromPrefix(prefix: String?): ClientIdScheme? = entries.find { it.prefix == prefix }
     }
 }

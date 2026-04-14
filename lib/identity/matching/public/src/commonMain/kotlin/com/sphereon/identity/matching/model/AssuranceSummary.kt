@@ -16,7 +16,9 @@
 
 package com.sphereon.identity.matching.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * IDV-compatible assurance metadata captured during reconciliation.
@@ -27,11 +29,14 @@ import kotlinx.serialization.Serializable
  * @property executionId A unique identifier for the reconciliation execution
  * @property evidenceReferenceHash A hash referencing the evidence used for verification
  */
+@JsExportCompat
 @Serializable
-data class AssuranceSummary(
-    val walletAssuranceLevel: String? = null,
-    val oidcAcr: String? = null,
-    val oidcAmr: List<String>? = null,
-    val executionId: String? = null,
-    val evidenceReferenceHash: String? = null,
-)
+data class AssuranceSummary
+    @JvmOverloads
+    constructor(
+        val walletAssuranceLevel: String? = null,
+        val oidcAcr: String? = null,
+        val oidcAmr: List<String>? = null,
+        val executionId: String? = null,
+        val evidenceReferenceHash: String? = null,
+    )

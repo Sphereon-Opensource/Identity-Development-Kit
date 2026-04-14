@@ -16,10 +16,12 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.PartyType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 @Serializable
 data class IdvMethodType(
     val value: String,
@@ -35,31 +37,37 @@ data class IdvMethodType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class IdvMethodId(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvUseCaseId(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvExecutionId(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvNodeId(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class IdvGroupId(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class OtpChannel(
     val value: String,
@@ -71,6 +79,7 @@ data class OtpChannel(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class BiometricProviderType(
     val value: String,
@@ -83,6 +92,7 @@ data class BiometricProviderType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class DocumentProviderType(
     val value: String,
@@ -95,6 +105,7 @@ data class DocumentProviderType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class DocumentType(
     val value: String,
@@ -107,6 +118,7 @@ data class DocumentType(
     }
 }
 
+@JsExportCompat
 @Serializable
 enum class EidasAssuranceLevel(
     val serializedValue: String,
@@ -124,8 +136,9 @@ enum class EidasAssuranceLevel(
 /**
  * Canonical definition in core/api/public. This typealias preserves existing import paths.
  */
-typealias AuthAssuranceLevel = com.sphereon.core.api.service.contract.AuthAssuranceLevel
+typealias AuthAssuranceLevel = com.sphereon.core.api.service.AuthAssuranceLevel
 
+@JsExportCompat
 @Serializable
 data class AuthMethodReference(
     val value: String,
@@ -144,6 +157,7 @@ data class AuthMethodReference(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class EvidenceStrength(
     val value: String,
@@ -155,6 +169,7 @@ data class EvidenceStrength(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class ProofingScenario(
     val value: String,
@@ -166,6 +181,7 @@ data class ProofingScenario(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class TrustFrameworkType(
     val value: String,
@@ -178,6 +194,7 @@ data class TrustFrameworkType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class RestApiAuthType(
     val value: String,
@@ -191,6 +208,7 @@ data class RestApiAuthType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class IdvEntryPointType(
     val value: String,
@@ -203,6 +221,7 @@ data class IdvEntryPointType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class IdvTriggerType(
     val value: String,
@@ -215,6 +234,7 @@ data class IdvTriggerType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class IdvEvidenceType(
     val value: String,
@@ -227,27 +247,32 @@ data class IdvEvidenceType(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class IdvProviderType(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class AttributePath(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class InputFieldId(
     val value: String,
 )
 
+@JsExportCompat
 @Serializable
 data class ConfigReference(
     val key: String,
     val required: Boolean = true,
 )
 
+@JsExportCompat
 @Serializable
 data class SecretReference(
     val providerId: String? = null,
@@ -255,6 +280,7 @@ data class SecretReference(
     val key: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class LegalBasis(
     val value: String,
@@ -268,6 +294,7 @@ data class LegalBasis(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class EtsiLoip(
     val value: String,
@@ -279,6 +306,7 @@ data class EtsiLoip(
     }
 }
 
+@JsExportCompat
 @Serializable
 enum class IdvExecutionStatus {
     CREATED,
@@ -290,6 +318,7 @@ enum class IdvExecutionStatus {
     CANCELLED,
 }
 
+@JsExportCompat
 @Serializable
 enum class IdvNodeStatus {
     PENDING,
@@ -304,12 +333,14 @@ enum class IdvNodeStatus {
     CANCELLED,
 }
 
+@JsExportCompat
 @Serializable
 enum class IdvMethodScope {
     APP,
     TENANT,
 }
 
+@JsExportCompat
 @Serializable
 enum class IdentityAssociationType {
     NATURAL_PERSON,
@@ -326,6 +357,7 @@ enum class IdentityAssociationType {
         }
 }
 
+@JsExportCompat
 @Serializable
 enum class ConsentType {
     BIOMETRIC_PROCESSING,
@@ -333,6 +365,7 @@ enum class ConsentType {
     CROSS_BORDER_TRANSFER,
 }
 
+@JsExportCompat
 @Serializable
 enum class CddLevel {
     SDD,
@@ -340,6 +373,7 @@ enum class CddLevel {
     EDD,
 }
 
+@JsExportCompat
 @Serializable
 enum class MatchOperator {
     EQUALS,

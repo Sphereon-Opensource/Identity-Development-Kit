@@ -19,7 +19,6 @@ package com.sphereon.oauth2.client.service
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
 import com.sphereon.oauth2.client.command.FetchJwksCommand
@@ -39,7 +38,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MetadataService", exact = true)
-@JsExportCompat
 interface MetadataService {
     /**
      * Provides access to the underlying commands for advanced usage scenarios
@@ -49,7 +47,6 @@ interface MetadataService {
     /**
      * Container for all metadata commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val fetchAuthorizationServerMetadata: FetchAuthorizationServerMetadataCommand
         val fetchJwks: FetchJwksCommand

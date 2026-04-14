@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -50,6 +51,8 @@ object TokenTypeIdentifier {
  * in a delegation chain. Supports nested delegation via the recursive `act` field.
  */
 @Serializable(with = ActorClaimSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class ActorClaim(
     val sub: String,
     val act: ActorClaim? = null,
@@ -63,6 +66,8 @@ data class ActorClaim(
  * which actors are authorized to act on behalf of the subject.
  */
 @Serializable(with = MayActClaimSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class MayActClaim(
     val sub: String,
     val additionalClaims: Map<String, JsonElement> = emptyMap(),

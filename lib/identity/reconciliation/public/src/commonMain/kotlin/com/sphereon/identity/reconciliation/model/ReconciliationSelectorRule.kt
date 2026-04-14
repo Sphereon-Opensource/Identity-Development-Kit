@@ -16,24 +16,40 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.identity.idv.model.AttributePredicate
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class ReconciliationSelectorRule(
-    val id: String,
-    val enabled: Boolean = true,
-    val priority: Int = 0,
-    val tenants: Set<String>? = null,
-    val entryPointTypes: Set<String>? = null,
-    val triggerTypes: Set<String>? = null,
-    val queryIds: Set<String>? = null,
-    val dcqlCredentialQueryIds: Set<String>? = null,
-    val dcqlCredentialSetRefs: Set<String>? = null,
-    val credentialTypes: Set<String>? = null,
-    val issuers: Set<String>? = null,
-    val attributePredicates: List<AttributePredicate>? = null,
-    val knownHolderStates: Set<KnownHolderState>? = null,
-    val requestedProjections: Set<String>? = null,
-    val plan: ReconciliationPlanTemplate,
-)
+data class ReconciliationSelectorRule
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val enabled: Boolean = true,
+        val priority: Int = 0,
+        @JsExportIgnoreCompat
+        val tenants: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val entryPointTypes: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val triggerTypes: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val queryIds: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val dcqlCredentialQueryIds: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val dcqlCredentialSetRefs: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val credentialTypes: Set<String>? = null,
+        @JsExportIgnoreCompat
+        val issuers: Set<String>? = null,
+        val attributePredicates: List<AttributePredicate>? = null,
+        @JsExportIgnoreCompat
+        val knownHolderStates: Set<KnownHolderState>? = null,
+        @JsExportIgnoreCompat
+        val requestedProjections: Set<String>? = null,
+        val plan: ReconciliationPlanTemplate,
+    )

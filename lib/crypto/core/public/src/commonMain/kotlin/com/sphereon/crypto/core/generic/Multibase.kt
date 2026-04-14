@@ -15,16 +15,18 @@
  */
 
 package com.sphereon.crypto.core.generic
-
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.decodeFromHex
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.encodeToHex
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
 
 /**
  * Multibase encoding types per the multibase spec.
  * Each encoding is identified by a single-character prefix.
  */
+@JsExportCompat
 enum class MultibaseEncoding(
     val prefix: Char,
 ) {
@@ -34,6 +36,7 @@ enum class MultibaseEncoding(
     ;
 
     companion object {
+        @JvmStatic
         fun fromPrefix(prefix: Char): MultibaseEncoding? = entries.find { it.prefix == prefix }
     }
 }

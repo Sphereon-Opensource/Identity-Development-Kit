@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vci.common.serializer.CredentialRequestProofsSerializer
 import com.sphereon.openid.oid4vci.common.serializer.CredentialRequestSerializer
 import kotlinx.serialization.SerialName
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.jvm.JvmStatic
 
 /**
  * OID4VCI Credential Request (1.0 Section 8.2, 1.1 Section 9.2)
@@ -36,6 +38,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * Per the spec, only `proofs` (plural) is supported. There is no singular `proof` field.
  */
+@JsExportCompat
 @Serializable(with = CredentialRequestSerializer::class)
 data class CredentialRequest(
     @SerialName("credential_configuration_id") val credentialConfigurationId: String? = null,
@@ -68,24 +71,31 @@ data class CredentialRequestProofs(
 ) {
     companion object {
         /** Create JWT proofs container from compact JWT strings. */
+        @JvmStatic
         fun jwt(vararg jwtValues: String): CredentialRequestProofs = CredentialRequestProofs(proofType = "jwt", proofValues = jwtValues.map { JsonPrimitive(it) })
 
         /** Create JWT proofs container from compact JWT strings. */
+        @JvmStatic
         fun jwt(jwtValues: List<String>): CredentialRequestProofs = CredentialRequestProofs(proofType = "jwt", proofValues = jwtValues.map { JsonPrimitive(it) })
 
         /** Create CWT proofs container from base64url-encoded CWT bytes. */
+        @JvmStatic
         fun cwt(vararg cwtValues: String): CredentialRequestProofs = CredentialRequestProofs(proofType = "cwt", proofValues = cwtValues.map { JsonPrimitive(it) })
 
         /** Create CWT proofs container from base64url-encoded CWT bytes. */
+        @JvmStatic
         fun cwt(cwtValues: List<String>): CredentialRequestProofs = CredentialRequestProofs(proofType = "cwt", proofValues = cwtValues.map { JsonPrimitive(it) })
 
         /** Create attestation proofs container from attestation strings. */
+        @JvmStatic
         fun attestation(vararg attestationValues: String): CredentialRequestProofs = CredentialRequestProofs(proofType = "attestation", proofValues = attestationValues.map { JsonPrimitive(it) })
 
         /** Create di_vp proofs container from Verifiable Presentation objects. */
+        @JvmStatic
         fun diVp(vararg vpObjects: JsonObject): CredentialRequestProofs = CredentialRequestProofs(proofType = "di_vp", proofValues = vpObjects.toList())
 
         /** Create di_vp proofs container from Verifiable Presentation objects. */
+        @JvmStatic
         fun diVp(vpObjects: List<JsonObject>): CredentialRequestProofs = CredentialRequestProofs(proofType = "di_vp", proofValues = vpObjects)
     }
 }
@@ -112,6 +122,7 @@ fun CredentialRequestProofs.objectValues(): List<JsonObject> = proofValues.map {
  * [alg] is optional in 1.1 because key agreement may come from the JWK itself.
  * [zip] is the compression algorithm (1.1 addition).
  */
+@JsExportCompat
 @Serializable
 data class RequestedCredentialResponseEncryption(
     val jwk: JsonObject,

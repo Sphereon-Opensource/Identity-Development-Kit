@@ -19,7 +19,6 @@ package com.sphereon.openid.oid4vci.holder
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
@@ -167,14 +166,12 @@ interface Oid4vciHolderAdapter : Oid4vciHolderService
  * @see TokenResponseWithContext
  * @see CreatedProof
  */
-@JsExportCompat
 @Suppress("NON_EXPORTABLE_TYPE")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Oid4vciHolder", exact = true)
 interface Oid4vciHolder : Oid4vciHolderAdapter {
     val commands: Commands
 
-    @JsExportIgnoreCompat
     interface Commands {
         val parseCredentialOffer: ParseCredentialOfferCommand
         val resolveCredentialOffer: ResolveCredentialOfferCommand

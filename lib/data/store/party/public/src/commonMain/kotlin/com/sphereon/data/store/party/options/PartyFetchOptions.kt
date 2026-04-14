@@ -17,8 +17,10 @@
 
 package com.sphereon.data.store.party.options
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Options for controlling which associations to fetch when loading parties.
@@ -41,54 +43,57 @@ import kotlinx.serialization.Serializable
  * )
  * ```
  */
+@JsExportCompat
 @Serializable
-data class PartyFetchOptions(
-    /** Include the owner party details */
-    @SerialName("includeOwner")
-    val includeOwner: Boolean = false,
-    /** Include all identities associated with this party */
-    @SerialName("includeIdentities")
-    val includeIdentities: Boolean = false,
-    /** Options for loading identities (only used if includeIdentities is true) */
-    @SerialName("identityOptions")
-    val identityOptions: IdentityFetchOptions = IdentityFetchOptions.MINIMAL,
-) {
-    companion object {
-        /** Load only core party data (default) */
-        val MINIMAL = PartyFetchOptions()
+data class PartyFetchOptions
+    @JvmOverloads
+    constructor(
+        /** Include the owner party details */
+        @SerialName("includeOwner")
+        val includeOwner: Boolean = false,
+        /** Include all identities associated with this party */
+        @SerialName("includeIdentities")
+        val includeIdentities: Boolean = false,
+        /** Options for loading identities (only used if includeIdentities is true) */
+        @SerialName("identityOptions")
+        val identityOptions: IdentityFetchOptions = IdentityFetchOptions.MINIMAL,
+    ) {
+        companion object {
+            /** Load only core party data (default) */
+            val MINIMAL = PartyFetchOptions()
 
-        /** Load party with owner */
-        val WITH_OWNER = PartyFetchOptions(includeOwner = true)
+            /** Load party with owner */
+            val WITH_OWNER = PartyFetchOptions(includeOwner = true)
 
-        /** Load party with identities (minimal) */
-        val WITH_IDENTITIES = PartyFetchOptions(includeIdentities = true)
+            /** Load party with identities (minimal) */
+            val WITH_IDENTITIES = PartyFetchOptions(includeIdentities = true)
 
-        /** Load party with identities and their correlation identifiers */
-        val WITH_FULL_IDENTITIES =
-            PartyFetchOptions(
+            /** Load party with identities and their correlation identifiers */
+            val WITH_FULL_IDENTITIES =
+                PartyFetchOptions(
+                    includeIdentities = true,
+                    identityOptions = IdentityFetchOptions.WITH_IDENTIFIERS,
+                )
+
+            /** Load everything */
+            val FULL =
+                PartyFetchOptions(
+                    includeOwner = true,
+                    includeIdentities = true,
+                    identityOptions = IdentityFetchOptions.FULL,
+                )
+        }
+
+        /** Builder method to include owner */
+        fun withOwner() = copy(includeOwner = true)
+
+        /** Builder method to include identities */
+        fun withIdentities(options: IdentityFetchOptions = IdentityFetchOptions.MINIMAL) = copy(includeIdentities = true, identityOptions = options)
+
+        /** Builder method to include identities with correlation identifiers */
+        fun withFullIdentities() =
+            copy(
                 includeIdentities = true,
                 identityOptions = IdentityFetchOptions.WITH_IDENTIFIERS,
             )
-
-        /** Load everything */
-        val FULL =
-            PartyFetchOptions(
-                includeOwner = true,
-                includeIdentities = true,
-                identityOptions = IdentityFetchOptions.FULL,
-            )
     }
-
-    /** Builder method to include owner */
-    fun withOwner() = copy(includeOwner = true)
-
-    /** Builder method to include identities */
-    fun withIdentities(options: IdentityFetchOptions = IdentityFetchOptions.MINIMAL) = copy(includeIdentities = true, identityOptions = options)
-
-    /** Builder method to include identities with correlation identifiers */
-    fun withFullIdentities() =
-        copy(
-            includeIdentities = true,
-            identityOptions = IdentityFetchOptions.WITH_IDENTIFIERS,
-        )
-}

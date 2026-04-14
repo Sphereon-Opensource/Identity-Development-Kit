@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.CoseSign1Result
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
@@ -32,6 +33,7 @@ import com.sphereon.mdoc.data.mso.MobileSecurityObject
 /**
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("for", exact = true)
+@JsExportCompat
  * Public interface for the MDOC signing service.
  */
 interface MdocSignService {

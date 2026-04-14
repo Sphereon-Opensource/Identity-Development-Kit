@@ -17,14 +17,17 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
  * Interface for resolving active profiles in the configuration system.
  * Profiles allow environment-specific configuration (e.g., "development", "staging", "production").
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProfileResolver", exact = true)
 interface ProfileResolver {
@@ -93,6 +96,7 @@ data class ProfileChain(
         /**
          * Create a profile chain with a single profile.
          */
+        @JvmStatic
         fun of(
             profile: String,
             fallbackToDefault: Boolean = true,
@@ -101,6 +105,7 @@ data class ProfileChain(
         /**
          * Create a profile chain with multiple profiles.
          */
+        @JvmStatic
         fun of(
             vararg profiles: String,
             fallbackToDefault: Boolean = true,
@@ -109,6 +114,7 @@ data class ProfileChain(
         /**
          * Create a default-only profile chain.
          */
+        @JvmStatic
         fun defaultOnly(): ProfileChain = ProfileChain(emptyList(), fallbackToDefault = true)
     }
 }
@@ -116,6 +122,7 @@ data class ProfileChain(
 /**
  * Default profile resolver that uses environment variables or system properties.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultProfileResolver", exact = true)
 class DefaultProfileResolver(
@@ -180,6 +187,7 @@ class DefaultProfileResolver(
 /**
  * Profile-aware property resolution support.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProfileAwareResolution", exact = true)
 interface ProfileAwareResolution {
@@ -203,6 +211,7 @@ interface ProfileAwareResolution {
 /**
  * Profile metadata for configuration settings.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ProfileMetadata", exact = true)

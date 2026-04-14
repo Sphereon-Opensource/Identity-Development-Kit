@@ -17,9 +17,11 @@
 package com.sphereon.mdoc.transfer
 
 import com.sphereon.cbor.StringLabel
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @Serializable
@@ -42,6 +44,7 @@ value class OriginInfoType(
     override fun toString(): String = infoType.toString()
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OriginInfoDetails", exact = true)
 data class OriginInfoDetails(
@@ -54,6 +57,7 @@ data class OriginInfoDetails(
 
 typealias OriginInfos = Array<OriginInfo>
 
+@JsExportCompat
 data class OriginInfo(
     val cat: OriginInfoCategory,
     val type: OriginInfoType,
@@ -61,8 +65,13 @@ data class OriginInfo(
     val original: ByteArray?,
 ) {
     companion object {
+        @JvmStatic
         val CAT = StringLabel("cat")
+
+        @JvmStatic
         val TYPE = StringLabel("type")
+
+        @JvmStatic
         val DETAILS = StringLabel("details")
     }
 }

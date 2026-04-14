@@ -16,12 +16,14 @@
 
 package com.sphereon.openid.oid4vci.common.dsl
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialRequestProofs
 
 /**
  * An HTTP endpoint with a bearer access token.
  * Eliminates repeated endpoint + accessToken field pairs across command args.
  */
+@JsExportCompat
 data class AuthenticatedEndpoint(
     val url: String,
     val accessToken: String,
@@ -30,6 +32,7 @@ data class AuthenticatedEndpoint(
 /**
  * PKCE challenge pair per RFC 7636.
  */
+@JsExportCompat
 data class PkceChallenge(
     val codeChallenge: String,
     val codeChallengeMethod: String = "S256",
@@ -38,6 +41,7 @@ data class PkceChallenge(
 /**
  * Retry/polling configuration.
  */
+@JsExportCompat
 data class RetryPolicy(
     val maxAttempts: Int = 3,
     val initialIntervalSeconds: Int = 5,
@@ -64,6 +68,7 @@ sealed class CredentialTarget {
  * Typed IAE interaction types per OID4VCI 1.1 Section 6.
  * The string constants already exist in IaeInteractionTypes; this provides type safety.
  */
+@JsExportCompat
 enum class IaeInteractionType(
     val urn: String,
 ) {

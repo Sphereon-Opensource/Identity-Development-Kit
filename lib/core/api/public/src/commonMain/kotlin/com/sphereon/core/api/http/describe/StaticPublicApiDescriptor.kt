@@ -16,6 +16,8 @@
 
 package com.sphereon.core.api.http.describe
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Convenience base class for app-scoped [HttpAdapterDescriptorProvider] implementations
  * that describe a [PublicApiHttpAdapter][com.sphereon.core.api.http.command.PublicApiHttpAdapter]
@@ -46,6 +48,7 @@ package com.sphereon.core.api.http.describe
  * @param mount The mount configuration for the adapter
  * @param endpoints The endpoint descriptors (with relative paths within the adapter base)
  */
+@JsExportCompat
 abstract class StaticPublicApiDescriptor(
     private val adapterId: String,
     private val mount: HttpAdapterMount,

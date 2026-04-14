@@ -16,23 +16,29 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class DesignBinding(
-    val vct: String? = null,
-    val credentialConfigurationId: String? = null,
-    val schemaId: String? = null,
-    val docType: String? = null,
-    val vcType: String? = null,
-    val vcContext: String? = null,
-    val issuerId: String? = null,
-    val issuerDid: String? = null,
-    val issuerUri: String? = null,
-    val verifierClientId: String? = null,
-    val ocaSaid: String? = null,
-)
+data class DesignBinding
+    @JvmOverloads
+    constructor(
+        val vct: String? = null,
+        val credentialConfigurationId: String? = null,
+        val schemaId: String? = null,
+        val docType: String? = null,
+        val vcType: String? = null,
+        val vcContext: String? = null,
+        val issuerId: String? = null,
+        val issuerDid: String? = null,
+        val issuerUri: String? = null,
+        val verifierClientId: String? = null,
+        val ocaSaid: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
 enum class DesignBindingKey {
     VCT,

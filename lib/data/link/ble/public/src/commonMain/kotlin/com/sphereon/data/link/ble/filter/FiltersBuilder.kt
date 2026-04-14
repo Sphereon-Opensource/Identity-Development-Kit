@@ -17,8 +17,11 @@
 
 package com.sphereon.data.link.ble.filter
 
+import com.sphereon.core.compat.JsExportCompat
+
 private typealias FilterBuilderAction = FilterPredicateBuilder.() -> Unit
 
+@JsExportCompat
 public class FiltersBuilder internal constructor() {
     private val filterBuilderActions: MutableList<FilterBuilderAction> = mutableListOf()
 

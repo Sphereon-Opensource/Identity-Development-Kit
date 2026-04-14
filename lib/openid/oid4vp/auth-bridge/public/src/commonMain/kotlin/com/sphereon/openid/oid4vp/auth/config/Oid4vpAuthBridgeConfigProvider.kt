@@ -17,6 +17,7 @@
 
 package com.sphereon.openid.oid4vp.auth.config
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthBridgeConfig
 
 /**
@@ -26,6 +27,7 @@ import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthBridgeConfig
  * The default implementation [com.sphereon.openid.oid4vp.auth.impl.config.Oid4vpAuthBridgeConfigBinder]
  * reads from IDK's ConfigService.
  */
+@JsExportCompat
 interface Oid4vpAuthBridgeConfigProvider {
     /**
      * Get the current OID4VP Auth Bridge configuration.

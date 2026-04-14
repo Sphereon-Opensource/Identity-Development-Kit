@@ -19,6 +19,7 @@
 
 package com.sphereon.mdoc.transport.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
@@ -81,6 +82,7 @@ object MdocReaderServiceChars {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocBleServiceCharacteristics", exact = true)
+@JsExportCompat
 interface MdocBleServiceCharacteristics {
     /**
      * State characteristic UUID - used to notify the peer of state changes.

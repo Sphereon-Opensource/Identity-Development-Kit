@@ -17,6 +17,7 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.KnownHolderState
 import com.sphereon.openid.oid4vp.universal.VerifiedData
 import kotlinx.serialization.SerialName
@@ -48,6 +49,7 @@ import kotlin.time.Instant
  * @property expiresAt Session expiration timestamp.
  */
 @Serializable
+@JsExportCompat
 data class Oid4vpAuthSession(
     @SerialName("session_id")
     val sessionId: String,

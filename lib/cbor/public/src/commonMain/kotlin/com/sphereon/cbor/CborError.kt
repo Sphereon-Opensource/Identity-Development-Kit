@@ -21,6 +21,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkError.Severity
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmOverloads
 
 /**
  * CBOR-specific error definitions following the IdkError pattern.
@@ -39,6 +40,7 @@ object CborError {
      * @param current The current depth when the limit was hit
      * @param max The configured maximum depth limit
      */
+    @JvmOverloads
     fun MAX_DEPTH_EXCEEDED(
         current: Int,
         max: Int,
@@ -66,6 +68,7 @@ object CborError {
      * @param current The current item count when the limit was hit
      * @param max The configured maximum item limit
      */
+    @JvmOverloads
     fun MAX_ITEMS_EXCEEDED(
         current: Int,
         max: Int,
@@ -92,6 +95,7 @@ object CborError {
      * @param length The length that exceeded the limit
      * @param max The configured maximum string length
      */
+    @JvmOverloads
     fun MAX_STRING_LENGTH_EXCEEDED(
         length: Int,
         max: Int,
@@ -118,6 +122,7 @@ object CborError {
      *
      * @param count The number of leftover bytes
      */
+    @JvmOverloads
     fun LEFTOVER_BYTES(
         count: Int,
         severity: Severity = Severity.ERROR,
@@ -142,6 +147,7 @@ object CborError {
      * @param required The number of bytes required
      * @param available The number of bytes actually available
      */
+    @JvmOverloads
     fun OUT_OF_BOUNDS(
         offset: Int,
         required: Int,
@@ -166,6 +172,7 @@ object CborError {
      *
      * @param offset The offset where the invalid UTF-8 was found
      */
+    @JvmOverloads
     fun INVALID_UTF8(
         offset: Int,
         severity: Severity = Severity.ERROR,
@@ -189,6 +196,7 @@ object CborError {
      * @param value The invalid additional information value
      * @param offset The offset where it was found
      */
+    @JvmOverloads
     fun INVALID_ADDITIONAL_INFO(
         value: Int,
         offset: Int,
@@ -212,6 +220,7 @@ object CborError {
      *
      * @param offset The offset where the unexpected BREAK was found
      */
+    @JvmOverloads
     fun UNEXPECTED_BREAK(
         offset: Int,
         severity: Severity = Severity.ERROR,
@@ -235,6 +244,7 @@ object CborError {
      * @param majorType The major type where indefinite length was incorrectly used
      * @param offset The offset where it was found
      */
+    @JvmOverloads
     fun INDEFINITE_LENGTH_NOT_ALLOWED(
         majorType: Int,
         offset: Int,
@@ -259,6 +269,7 @@ object CborError {
      * @param message A description of what went wrong
      * @param throwable The original exception if one was caught
      */
+    @JvmOverloads
     fun DECODE_ERROR(
         message: String,
         throwable: Throwable? = null,

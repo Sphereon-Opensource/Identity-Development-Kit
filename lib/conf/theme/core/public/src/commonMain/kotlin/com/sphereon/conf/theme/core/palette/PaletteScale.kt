@@ -18,6 +18,8 @@ package com.sphereon.conf.theme.core.palette
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 
 /**
  * A 10-stop color scale (50–900) representing a single design system palette role.
@@ -78,6 +80,7 @@ data class PaletteScale(
          * Mapping: 50→tone95, 100→tone90, 200→tone80, 300→tone70, 400→tone60,
          * 500→tone50, 600→tone40, 700→tone30, 800→tone20, 900→tone10
          */
+        @JvmStatic
         fun fromTonalPalette(palette: TonalPalette): PaletteScale =
             PaletteScale(
                 s50 = palette.tone(tone = TONE_95),
@@ -113,58 +116,60 @@ data class PaletteScale(
  */
 @JsExportCompat
 @Serializable
-data class DesignSystemPalette(
-    val brand: PaletteScale,
-    val secondary: PaletteScale? = null,
-    val neutral: PaletteScale? = null,
-    val error: PaletteScale? = null,
-    val success: PaletteScale? = null,
-    val warning: PaletteScale? = null,
-    val info: PaletteScale? = null,
-    val pending: PaletteScale? = null,
-) {
-    /** All defined (non-null) role names */
-    val definedRoles: List<String>
-        get() =
-            buildList {
-                add("brand")
-                if (secondary != null) {
-                    add("secondary")
+data class DesignSystemPalette
+    @JvmOverloads
+    constructor(
+        val brand: PaletteScale,
+        val secondary: PaletteScale? = null,
+        val neutral: PaletteScale? = null,
+        val error: PaletteScale? = null,
+        val success: PaletteScale? = null,
+        val warning: PaletteScale? = null,
+        val info: PaletteScale? = null,
+        val pending: PaletteScale? = null,
+    ) {
+        /** All defined (non-null) role names */
+        val definedRoles: List<String>
+            get() =
+                buildList {
+                    add("brand")
+                    if (secondary != null) {
+                        add("secondary")
+                    }
+                    if (neutral != null) {
+                        add("neutral")
+                    }
+                    if (error != null) {
+                        add("error")
+                    }
+                    if (success != null) {
+                        add("success")
+                    }
+                    if (warning != null) {
+                        add("warning")
+                    }
+                    if (info != null) {
+                        add("info")
+                    }
+                    if (pending != null) {
+                        add("pending")
+                    }
                 }
-                if (neutral != null) {
-                    add("neutral")
-                }
-                if (error != null) {
-                    add("error")
-                }
-                if (success != null) {
-                    add("success")
-                }
-                if (warning != null) {
-                    add("warning")
-                }
-                if (info != null) {
-                    add("info")
-                }
-                if (pending != null) {
-                    add("pending")
-                }
-            }
 
-    /**
-     * Get a scale by its role name.
-     * @return The [PaletteScale] for the given role, or null if not defined
-     */
-    fun getScale(role: String): PaletteScale? =
-        when (role) {
-            "brand" -> brand
-            "secondary" -> secondary
-            "neutral" -> neutral
-            "error" -> error
-            "success" -> success
-            "warning" -> warning
-            "info" -> info
-            "pending" -> pending
-            else -> null
-        }
-}
+        /**
+         * Get a scale by its role name.
+         * @return The [PaletteScale] for the given role, or null if not defined
+         */
+        fun getScale(role: String): PaletteScale? =
+            when (role) {
+                "brand" -> brand
+                "secondary" -> secondary
+                "neutral" -> neutral
+                "error" -> error
+                "success" -> success
+                "warning" -> warning
+                "info" -> info
+                "pending" -> pending
+                else -> null
+            }
+    }

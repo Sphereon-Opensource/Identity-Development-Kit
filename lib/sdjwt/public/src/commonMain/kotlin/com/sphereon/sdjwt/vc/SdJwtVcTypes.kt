@@ -16,6 +16,7 @@
 
 package com.sphereon.sdjwt.vc
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.KeyBindingJwt
 import com.sphereon.sdjwt.SdJwtCompact
 import kotlinx.serialization.SerialName
@@ -79,6 +80,7 @@ object SdJwtVcTypeHeaders {
  * @property jwks Inline JWK Set (OPTIONAL, mutually exclusive with jwksUri)
  */
 @Serializable
+@JsExportCompat
 data class SdJwtVcIssuerMetadata(
     @SerialName("issuer")
     val issuer: String,
@@ -110,6 +112,7 @@ data class SdJwtVcIssuerMetadata(
  * @property schemaIntegrity Integrity protection for schema URL (OPTIONAL)
  */
 @Serializable
+@JsExportCompat
 data class SdJwtVcTypeMetadata(
     @SerialName("vct")
     val vct: String,
@@ -140,6 +143,7 @@ data class SdJwtVcTypeMetadata(
  * @property rendering Rendering metadata (OPTIONAL)
  */
 @Serializable
+@JsExportCompat
 data class DisplayInformation(
     @SerialName("locale")
     val locale: String,
@@ -158,6 +162,7 @@ data class DisplayInformation(
  * @property svgTemplates SVG template rendering methods
  */
 @Serializable
+@JsExportCompat
 data class RenderingMetadata(
     @SerialName("simple")
     val simple: SimpleRenderingMethod? = null,
@@ -174,6 +179,7 @@ data class RenderingMetadata(
  * @property textColor Text color (hex format)
  */
 @Serializable
+@JsExportCompat
 data class SimpleRenderingMethod(
     @SerialName("logo")
     val logo: LogoMetadata? = null,
@@ -193,6 +199,7 @@ data class SimpleRenderingMethod(
  * @property properties SVG template properties
  */
 @Serializable
+@JsExportCompat
 data class SvgTemplateRenderingMethod(
     @SerialName("uri")
     val uri: String,
@@ -210,6 +217,7 @@ data class SvgTemplateRenderingMethod(
  * @property contrast Normal or high contrast
  */
 @Serializable
+@JsExportCompat
 data class SvgTemplateProperties(
     @SerialName("orientation")
     val orientation: SvgTemplateOrientation? = null,
@@ -220,6 +228,7 @@ data class SvgTemplateProperties(
 )
 
 @Serializable
+@JsExportCompat
 enum class SvgTemplateOrientation {
     @SerialName("portrait")
     PORTRAIT,
@@ -229,6 +238,7 @@ enum class SvgTemplateOrientation {
 }
 
 @Serializable
+@JsExportCompat
 enum class SvgTemplateColorScheme {
     @SerialName("light")
     LIGHT,
@@ -238,6 +248,7 @@ enum class SvgTemplateColorScheme {
 }
 
 @Serializable
+@JsExportCompat
 enum class SvgTemplateContrast {
     @SerialName("normal")
     NORMAL,
@@ -254,6 +265,7 @@ enum class SvgTemplateContrast {
  * @property altText Alternative text for accessibility
  */
 @Serializable
+@JsExportCompat
 data class LogoMetadata(
     @SerialName("uri")
     val uri: String,
@@ -270,6 +282,7 @@ data class LogoMetadata(
  * @property uriIntegrity Integrity protection for image URL
  */
 @Serializable
+@JsExportCompat
 data class BackgroundImageMetadata(
     @SerialName("uri")
     val uri: String,
@@ -287,6 +300,7 @@ data class BackgroundImageMetadata(
  * @property svgId SVG element ID for rendering
  */
 @Serializable
+@JsExportCompat
 data class ClaimInformation(
     @SerialName("path")
     val path: List<String?>, // May contain null per spec for array indices
@@ -308,6 +322,7 @@ data class ClaimInformation(
  * @property description Localized claim description
  */
 @Serializable
+@JsExportCompat
 data class ClaimDisplayMetadata(
     @SerialName("locale")
     val locale: String,
@@ -321,6 +336,7 @@ data class ClaimDisplayMetadata(
  * Selective disclosure metadata for claims
  */
 @Serializable
+@JsExportCompat
 enum class ClaimSdMetadata {
     /** Claim MUST be selectively disclosable */
     @SerialName("always")
@@ -343,6 +359,7 @@ enum class ClaimSdMetadata {
  * @property statusAssertion Status assertion (OPTIONAL)
  */
 @Serializable
+@JsExportCompat
 data class CredentialStatus(
     @SerialName("status_list")
     val statusList: StatusListReference? = null,
@@ -357,6 +374,7 @@ data class CredentialStatus(
  * @property idx Index in status list
  */
 @Serializable
+@JsExportCompat
 data class StatusListReference(
     @SerialName("uri")
     val uri: String,
@@ -455,6 +473,7 @@ sealed interface IssuerMetadataResolutionError {
 /**
  * Options for SD-JWT-VC verification
  */
+@JsExportCompat
 data class SdJwtVcVerificationOpts(
     val validateTypeMetadata: Boolean = true,
     val validateStatus: Boolean = false,
@@ -470,6 +489,7 @@ data class SdJwtVcVerificationOpts(
  * @property typeMetadata Resolved type metadata (if validation enabled)
  * @property issuerMetadata Resolved issuer metadata
  */
+@JsExportCompat
 data class SdJwtVcVerificationResult(
     val sdJwt: SdJwtCompact,
     val vct: String,
@@ -486,6 +506,7 @@ data class SdJwtVcVerificationResult(
  * @property typeMetadata Resolved type metadata (if validation enabled)
  * @property issuerMetadata Resolved issuer metadata
  */
+@JsExportCompat
 data class SdJwtVcPresentationVerificationResult(
     val sdJwt: SdJwtCompact,
     val kbJwt: KeyBindingJwt,

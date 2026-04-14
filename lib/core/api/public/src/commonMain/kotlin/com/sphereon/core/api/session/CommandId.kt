@@ -23,6 +23,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 
 /**
  * Hierarchical command ID value class.
@@ -85,6 +86,7 @@ value class CommandId(
          * @param service The service segment (e.g., "keys", "manager", "parties")
          * @param command The command segment (e.g., "get", "resolve", "create")
          */
+        @JvmStatic
         fun of(
             module: String,
             service: String,
@@ -97,6 +99,7 @@ value class CommandId(
          * @param id The command ID string to parse
          * @return CommandId if valid, null otherwise
          */
+        @JvmStatic
         fun tryParse(id: String): CommandId? =
             if (isValidCommandId(id)) {
                 CommandId(id)
@@ -110,6 +113,7 @@ value class CommandId(
          * @param id The command ID string to parse
          * @return Ok with CommandId if valid, Err with IdkError if invalid
          */
+        @JvmStatic
         fun tryParseResult(id: String): IdkResult<CommandId, IdkError> {
             val valid = requireCommandId(id)
             if (valid.isErr) {

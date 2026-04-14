@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.common.serializer.CredentialIssuerMetadataSerializer
 import kotlinx.serialization.SerialName
@@ -26,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
 /**
  * OID4VCI 1.0 Credential Issuer Metadata (Section 12.2.4)
  */
+@JsExportCompat
 @Serializable(with = CredentialIssuerMetadataSerializer::class)
 data class CredentialIssuerMetadata(
     @SerialName("credential_issuer") val credentialIssuer: String,
@@ -49,6 +51,7 @@ data class CredentialIssuerMetadata(
  *
  * Declares what encryption algorithms the issuer supports for encrypting credential responses.
  */
+@JsExportCompat
 @Serializable
 data class MetadataCredentialResponseEncryption(
     @SerialName("alg_values_supported") val algValuesSupported: List<String>,
@@ -62,6 +65,7 @@ data class MetadataCredentialResponseEncryption(
  *
  * Declares the issuer's encryption key and supported algorithms for receiving encrypted requests.
  */
+@JsExportCompat
 @Serializable
 data class MetadataCredentialRequestEncryption(
     val jwks: JsonObject,
@@ -73,6 +77,7 @@ data class MetadataCredentialRequestEncryption(
 /**
  * OID4VCI 1.1 batch credential issuance metadata.
  */
+@JsExportCompat
 @Serializable
 data class BatchCredentialIssuance(
     @SerialName("batch_size") val batchSize: Int,

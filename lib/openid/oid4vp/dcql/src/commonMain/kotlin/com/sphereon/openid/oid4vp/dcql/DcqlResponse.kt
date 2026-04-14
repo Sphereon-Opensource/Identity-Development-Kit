@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.dcql
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -58,6 +59,7 @@ import kotlinx.serialization.Serializable
  * @see DcqlQuery
  */
 @Serializable
+@JsExportCompat
 data class DcqlResponse(
     val credential_matches: List<DcqlCredentialMatch>? = null,
     val credential_set_matches: List<DcqlCredentialSetMatch>? = null,
@@ -92,6 +94,7 @@ data class DcqlResponse(
  * @see DcqlResponse
  */
 @Serializable
+@JsExportCompat
 data class DcqlCredentialMatch(
     val credential_id: String,
     val claims_satisfied: List<String>? = null,
@@ -130,6 +133,7 @@ data class DcqlCredentialMatch(
  * @see DcqlResponse
  */
 @Serializable
+@JsExportCompat
 data class DcqlCredentialSetMatch(
     val credential_set_id: String,
     val credential_id: String,

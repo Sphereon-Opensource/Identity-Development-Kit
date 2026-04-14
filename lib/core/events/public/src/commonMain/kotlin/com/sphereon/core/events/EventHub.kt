@@ -8,6 +8,8 @@ package com.sphereon.core.events
 import com.sphereon.core.api.events.EventCategory
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventType
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.SingleIn
@@ -60,6 +62,7 @@ import kotlinx.coroutines.flow.SharedFlow
  * @see EventService for event emission
  * @see EventFilter for filtering options
  */
+@JsExportCompat
 interface EventHub {
     /**
      * Hot SharedFlow of all events published to this hub.
@@ -68,6 +71,7 @@ interface EventHub {
      * (default: 1000). Subscribers receive events as they are published.
      * Late subscribers do not receive past events unless replay > 0.
      */
+    @JsExportIgnoreCompat
     val events: SharedFlow<Event>
 
     /**
@@ -91,6 +95,7 @@ interface EventHub {
      * @param handler Suspend function called for each matching event
      * @return Job that can be cancelled to stop the subscription
      */
+    @JsExportIgnoreCompat
     fun subscribe(
         scope: CoroutineScope,
         filter: EventFilter? = null,
@@ -104,6 +109,7 @@ interface EventHub {
      * @param builder DSL builder for configuring filter and handler
      * @return Job that can be cancelled to stop the subscription
      */
+    @JsExportIgnoreCompat
     fun subscribe(
         scope: CoroutineScope,
         builder: EventSubscriptionBuilder.() -> Unit,
@@ -118,6 +124,7 @@ interface EventHub {
      * @param filter Filter to apply to events
      * @return Flow of filtered events
      */
+    @JsExportIgnoreCompat
     fun filteredEvents(filter: EventFilter): Flow<Event>
 
     /**
@@ -126,6 +133,7 @@ interface EventHub {
      * @param pattern Glob-style pattern (e.g., "command.*")
      * @return Flow of events matching the pattern
      */
+    @JsExportIgnoreCompat
     fun eventsByTypePattern(pattern: String): Flow<Event>
 
     /**
@@ -134,6 +142,7 @@ interface EventHub {
      * @param subsystems Subsystems to filter by
      * @return Flow of events from specified subsystems
      */
+    @JsExportIgnoreCompat
     fun eventsBySubsystem(subsystems: Set<EventSubsystem>): Flow<Event>
 
     /**
@@ -142,6 +151,7 @@ interface EventHub {
      * @param subsystem Subsystem to filter by
      * @return Flow of events from the specified subsystem
      */
+    @JsExportIgnoreCompat
     fun eventsBySubsystem(subsystem: EventSubsystem): Flow<Event> = eventsBySubsystem(setOf(subsystem))
 
     /**
@@ -150,6 +160,7 @@ interface EventHub {
      * @param categories Categories to filter by
      * @return Flow of events in specified categories
      */
+    @JsExportIgnoreCompat
     fun eventsByCategory(categories: Set<EventCategory>): Flow<Event>
 
     /**
@@ -158,6 +169,7 @@ interface EventHub {
      * @param category Category to filter by
      * @return Flow of events in the specified category
      */
+    @JsExportIgnoreCompat
     fun eventsByCategory(category: EventCategory): Flow<Event> = eventsByCategory(setOf(category))
 
     /**
@@ -165,6 +177,7 @@ interface EventHub {
      */
     @SingleIn(AppScope::class)
     @ContributesTo(AppScope::class)
+    @JsExportIgnoreCompat
     interface Graph {
         val eventHub: EventHub
     }
@@ -173,6 +186,7 @@ interface EventHub {
 /**
  * Builder interface for subscription DSL.
  */
+@JsExportCompat
 interface EventSubscriptionBuilder {
     /**
      * Configure the event filter.

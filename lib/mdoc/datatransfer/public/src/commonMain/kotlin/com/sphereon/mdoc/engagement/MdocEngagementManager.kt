@@ -20,6 +20,7 @@ package com.sphereon.mdoc.engagement
 import com.sphereon.core.api.IdkErrorResult
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.transfer.TransferInstance
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.experimental.ExperimentalObjCName
@@ -34,6 +35,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementManager", exact = true)
+@JsExportCompat
 interface MdocEngagementManager : MdocEngagementFactory.Holder {
     /**
      * Centralized event hub for UI integration.

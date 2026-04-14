@@ -18,6 +18,7 @@ package com.sphereon.core.api.conf
 
 import com.sphereon.core.api.session.CommandId
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -70,6 +71,7 @@ data class CommandConfigScope(
         const val DEFAULT = "default"
         val GLOBAL = CommandConfigScope()
 
+        @JvmStatic
         fun fromCommandId(commandId: CommandId) =
             CommandConfigScope(
                 module = commandId.module,
@@ -77,10 +79,13 @@ data class CommandConfigScope(
                 command = commandId.command,
             )
 
+        @JvmStatic
         fun fromCommandId(commandId: String) = fromCommandId(CommandId(commandId))
 
+        @JvmStatic
         fun module(module: String) = CommandConfigScope(module = module)
 
+        @JvmStatic
         fun service(
             module: String,
             service: String,

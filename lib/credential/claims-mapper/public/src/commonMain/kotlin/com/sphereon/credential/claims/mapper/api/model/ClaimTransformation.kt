@@ -17,12 +17,14 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * Describes the expected format of an input date value for [ClaimTransformation.ToIsoDate].
  */
+@JsExportCompat
 @Serializable
 enum class DateInputFormat {
     /** ISO 8601 datetime (e.g., "2025-01-15T10:30:00Z") — parsed via Instant.parse() */

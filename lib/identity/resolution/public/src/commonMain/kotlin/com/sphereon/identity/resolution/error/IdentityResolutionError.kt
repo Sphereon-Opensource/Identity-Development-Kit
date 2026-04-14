@@ -18,33 +18,38 @@ package com.sphereon.identity.resolution.error
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import kotlin.jvm.JvmOverloads
 
 sealed interface IdentityResolutionError : IdkErrorType {
-    data class ResolutionFailed(
-        val reason: String,
-        override val code: String = "identity_resolution.failed",
-        override val message: IdkError.Message =
-            IdkError.Message(
-                i18nKey = "identity.resolution.error.failed",
-                defaultMessage = "Identity resolution failed: $reason",
-            ),
-        override val severity: IdkError.Severity = IdkError.Severity.ERROR,
-        override val exception: Throwable? = null,
-        override val causes: List<IdkErrorType> = emptyList(),
-        override val meta: Map<String, Any?> = emptyMap(),
-    ) : IdentityResolutionError
+    data class ResolutionFailed
+        @JvmOverloads
+        constructor(
+            val reason: String,
+            override val code: String = "identity_resolution.failed",
+            override val message: IdkError.Message =
+                IdkError.Message(
+                    i18nKey = "identity.resolution.error.failed",
+                    defaultMessage = "Identity resolution failed: $reason",
+                ),
+            override val severity: IdkError.Severity = IdkError.Severity.ERROR,
+            override val exception: Throwable? = null,
+            override val causes: List<IdkErrorType> = emptyList(),
+            override val meta: Map<String, Any?> = emptyMap(),
+        ) : IdentityResolutionError
 
-    data class MacGenerationFailed(
-        val reason: String,
-        override val code: String = "identity_resolution.mac_generation_failed",
-        override val message: IdkError.Message =
-            IdkError.Message(
-                i18nKey = "identity.resolution.error.mac_generation_failed",
-                defaultMessage = "MAC generation failed: $reason",
-            ),
-        override val severity: IdkError.Severity = IdkError.Severity.ERROR,
-        override val exception: Throwable? = null,
-        override val causes: List<IdkErrorType> = emptyList(),
-        override val meta: Map<String, Any?> = emptyMap(),
-    ) : IdentityResolutionError
+    data class MacGenerationFailed
+        @JvmOverloads
+        constructor(
+            val reason: String,
+            override val code: String = "identity_resolution.mac_generation_failed",
+            override val message: IdkError.Message =
+                IdkError.Message(
+                    i18nKey = "identity.resolution.error.mac_generation_failed",
+                    defaultMessage = "MAC generation failed: $reason",
+                ),
+            override val severity: IdkError.Severity = IdkError.Severity.ERROR,
+            override val exception: Throwable? = null,
+            override val causes: List<IdkErrorType> = emptyList(),
+            override val meta: Map<String, Any?> = emptyMap(),
+        ) : IdentityResolutionError
 }

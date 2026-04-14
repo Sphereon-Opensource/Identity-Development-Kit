@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.Curve
 import kotlinx.serialization.Serializable
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 
 /**
  * Key Agreement Algorithms for JWE (alg header parameter when using ECDH).
@@ -74,6 +75,7 @@ enum class KeyAgreementAlgorithm(
          * @return The matching KeyAgreementAlgorithm, or null if not found
          */
         @JsStatic
+        @JvmStatic
         fun fromIdentifier(identifier: String): KeyAgreementAlgorithm? = entries.firstOrNull { it.identifier == identifier }
 
         /**
@@ -84,6 +86,7 @@ enum class KeyAgreementAlgorithm(
          * @return Array of compatible KeyAgreementAlgorithm values
          */
         @JsStatic
+        @JvmStatic
         fun supportedByCurve(curve: Curve?): Array<KeyAgreementAlgorithm> {
             // All ECDH-ES variants support P-256, P-384, P-521
             return when (curve) {

@@ -7,6 +7,7 @@ package com.sphereon.core.events
 
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.Command
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Marker interface for commands that should NOT emit events.
@@ -80,4 +81,5 @@ import com.sphereon.core.api.session.Command
  * @see CommandEventConfig for configurable event emission control
  * @see EventService for event emission
  */
+@JsExportCompat
 interface SilentCommand<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType> : Command<Arg, SuccessResult, ErrorResult>

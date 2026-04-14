@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.issuer.bridge
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -26,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
  * Scoped to what differs by AS topology. Nonce lifecycle is NOT in the bridge —
  * it is issuer-owned protocol state regardless of AS configuration.
  */
+@JsExportCompat
 interface Oid4vciAuthorizationServerBridge {
     /** Register a pre-authorized code in the AS, returning the code string. */
     suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError>
@@ -43,6 +45,7 @@ interface Oid4vciAuthorizationServerBridge {
     suspend fun augmentAsMetadata(args: AugmentAsMetadataArgs): IdkResult<JsonObject, IdkError>
 }
 
+@JsExportCompat
 data class RegisterPreAuthCodeArgs(
     val sessionId: String,
     val credentialConfigurationIds: List<String>,
@@ -51,17 +54,20 @@ data class RegisterPreAuthCodeArgs(
     val useCredentialIdentifiers: Boolean = true,
 )
 
+@JsExportCompat
 data class RegisteredPreAuthCode(
     val code: String,
     val txCode: String?,
 )
 
+@JsExportCompat
 data class ConsumePreAuthCodeArgs(
     val code: String,
     val txCode: String?,
     val clientId: String,
 )
 
+@JsExportCompat
 data class ConsumedPreAuthCode(
     val sessionId: String,
     val subject: String?,
@@ -69,22 +75,26 @@ data class ConsumedPreAuthCode(
     val credentialIdentifiers: List<String>? = null,
 )
 
+@JsExportCompat
 data class CreateAuthContextArgs(
     val issuerState: String,
     val credentialConfigurationIds: List<String>,
     val authorizationDetails: List<com.sphereon.openid.oid4vci.common.model.Oid4vciAuthorizationDetail>? = null,
 )
 
+@JsExportCompat
 data class AuthorizationContextRef(
     val issuerState: String,
     val sessionId: String,
 )
 
+@JsExportCompat
 data class ValidateAccessTokenArgs(
     val accessToken: String,
     val dpopProof: String? = null,
 )
 
+@JsExportCompat
 data class ValidatedTokenContext(
     val subject: String,
     val clientId: String,
@@ -93,6 +103,7 @@ data class ValidatedTokenContext(
     val credentialIdentifiers: List<String>? = null,
 )
 
+@JsExportCompat
 data class AugmentAsMetadataArgs(
     val baseMetadata: JsonObject,
 )

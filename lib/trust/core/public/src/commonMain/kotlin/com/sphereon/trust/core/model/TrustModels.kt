@@ -7,6 +7,7 @@
 package com.sphereon.trust.core.model
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
@@ -26,6 +27,7 @@ import kotlin.time.Instant
 data class TrustContext(
     val type: String,
     val framework: String? = null,
+    @JsExportIgnoreCompat
     val parameters: Map<String, String> = emptyMap(),
 ) {
     companion object {
@@ -119,6 +121,7 @@ data class TrustAnchor(
     @Contextual
     val keyInfo: ResolvedKeyInfoType<KeyType>,
     val uri: String? = null,
+    @JsExportIgnoreCompat
     val metadata: Map<String, String> = emptyMap(),
     val validFrom: Instant? = null,
     val validUntil: Instant? = null,

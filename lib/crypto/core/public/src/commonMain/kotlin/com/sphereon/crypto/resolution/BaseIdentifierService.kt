@@ -16,9 +16,9 @@
  */
 
 package com.sphereon.crypto.resolution
-
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.Order
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
@@ -30,6 +30,7 @@ interface IdentifierService : BaseIdentifierService<IdentifierOptsOrResult> {
     }
 }
 
+@JsExportCompat
 interface BaseIdentifierService<Type : IdentifierOptsOrResult> {
     /**
      * Which identifier‐methods this service supports.

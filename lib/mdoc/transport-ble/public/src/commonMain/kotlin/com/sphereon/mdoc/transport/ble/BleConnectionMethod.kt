@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.transfer.device.BleOptions
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
@@ -50,6 +51,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleConnectionMethod", exact = true)
+@JsExportCompat
 data class BleConnectionMethod(
     override val options: BleOptions,
 ) : ConnectionMethodBase<BleOptions>(options) {

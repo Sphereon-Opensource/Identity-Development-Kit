@@ -18,6 +18,7 @@ package com.sphereon.identity.resolution.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.resolution.model.IdentityResolutionResult
 import com.sphereon.identity.resolution.model.ResolverConfig
 
@@ -26,6 +27,7 @@ import com.sphereon.identity.resolution.model.ResolverConfig
  * Each resolver is a strategy (matching, OIDC introspection, LDAP, etc.)
  * that can be enabled/disabled per tenant via [ResolverConfig].
  */
+@JsExportCompat
 interface IdentityResolver {
     /** Unique resolver ID (e.g., "identity-matching", "oidc-introspection") */
     val resolverId: String

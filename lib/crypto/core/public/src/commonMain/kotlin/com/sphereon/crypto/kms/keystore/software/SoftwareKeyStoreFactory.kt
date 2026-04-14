@@ -16,7 +16,7 @@
  */
 
 package com.sphereon.crypto.kms.keystore.software
-
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.kms.KeyStore
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KeyStoreFactory
@@ -29,6 +29,7 @@ import kotlin.native.ObjCName
 @AssistedFactory
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RealSoftwareKeyStoreFactory", exact = true)
+@JsExportCompat
 interface RealSoftwareKeyStoreFactory {
     fun create(config: KeyStoreConfig): SoftwareKeyStoreService
 }

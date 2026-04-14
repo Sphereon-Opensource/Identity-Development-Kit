@@ -16,28 +16,38 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 @Serializable
-data class ClaimLabel(
-    val locale: String,
-    val label: String,
-    val description: String? = null,
-    val entryValues: Map<String, String>? = null,
-)
+data class ClaimLabel
+    @JvmOverloads
+    constructor(
+        val locale: String,
+        val label: String,
+        val description: String? = null,
+        @JsExportIgnoreCompat
+        val entryValues: Map<String, String>? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ClaimPresentation(
-    val path: DesignClaimPath,
-    val labels: List<ClaimLabel>,
-    val mandatory: Boolean = false,
-    val sdPolicy: SdPolicy = SdPolicy.ALLOWED,
-    val order: Int = 0,
-    val group: String? = null,
-    val svgId: String? = null,
-    val valueKind: ClaimValueKind? = null,
-    val widgetHint: ClaimWidgetHint? = null,
-    val markdownAllowed: Boolean = false,
-    val entryCodes: List<String>? = null,
-    val unit: String? = null,
-)
+data class ClaimPresentation
+    @JvmOverloads
+    constructor(
+        val path: DesignClaimPath,
+        val labels: List<ClaimLabel>,
+        val mandatory: Boolean = false,
+        val sdPolicy: SdPolicy = SdPolicy.ALLOWED,
+        val order: Int = 0,
+        val group: String? = null,
+        val svgId: String? = null,
+        val valueKind: ClaimValueKind? = null,
+        val widgetHint: ClaimWidgetHint? = null,
+        val markdownAllowed: Boolean = false,
+        val entryCodes: List<String>? = null,
+        val unit: String? = null,
+    )

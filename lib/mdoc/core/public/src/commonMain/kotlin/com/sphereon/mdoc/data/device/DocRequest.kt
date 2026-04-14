@@ -25,6 +25,7 @@ import com.sphereon.mdoc.transfer.reader.ReaderAuthenticationBytes
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 typealias docRequestBuilder = DocRequest.Builder
@@ -90,9 +91,11 @@ data class DocRequest(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val ITEMS_REQUEST = StringLabel("itemsRequest")
 
         @JsStatic
+        @JvmStatic
         val READER_AUTH = StringLabel("readerAuth")
     }
 }

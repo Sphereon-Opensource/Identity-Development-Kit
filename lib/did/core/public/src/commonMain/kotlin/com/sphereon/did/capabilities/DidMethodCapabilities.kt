@@ -20,6 +20,8 @@ package com.sphereon.did.capabilities
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -42,169 +44,175 @@ import kotlin.native.ObjCName
 @ObjCName("DidMethodCapabilities", exact = true)
 @JsExportCompat
 @Serializable
-data class DidMethodCapabilities(
-    val method: String,
-    val lifecycle: LifecycleCapabilities = LifecycleCapabilities(),
-    val keyManagement: KeyManagementCapabilities = KeyManagementCapabilities(),
-    val serviceManagement: ServiceManagementCapabilities = ServiceManagementCapabilities(),
-    val representations: RepresentationCapabilities = RepresentationCapabilities(),
-    val resolution: ResolutionCapabilities = ResolutionCapabilities(),
-    val recommendations: UsageRecommendations = UsageRecommendations(),
-    val metadata: MethodMetadata = MethodMetadata(),
-) {
-    /**
-     * Checks if this method supports creation of new DIDs.
-     */
-    fun canCreate(): Boolean = lifecycle.create
-
-    /**
-     * Checks if this method supports updating existing DIDs.
-     */
-    fun canUpdate(): Boolean = lifecycle.update
-
-    /**
-     * Checks if this method supports deactivating DIDs.
-     */
-    fun canDeactivate(): Boolean = lifecycle.deactivate
-
-    /**
-     * Checks if this method is immutable (create-only, no updates).
-     */
-    fun isImmutable(): Boolean = !lifecycle.isMutable()
-
-    /**
-     * Checks if this method supports any modification operations.
-     */
-    fun isMutable(): Boolean = lifecycle.isMutable()
-
-    /**
-     * Checks if this method supports key management operations.
-     */
-    fun supportsKeyManagement(): Boolean = keyManagement.supportsKeyManagement()
-
-    /**
-     * Checks if this method supports service management operations.
-     */
-    fun supportsServiceManagement(): Boolean = serviceManagement.supportsServiceManagement()
-
-    /**
-     * Checks if caching is allowed for this method.
-     */
-    fun allowsCaching(): Boolean = resolution.allowsCaching
-
-    companion object {
+data class DidMethodCapabilities
+    @JvmOverloads
+    constructor(
+        val method: String,
+        val lifecycle: LifecycleCapabilities = LifecycleCapabilities(),
+        val keyManagement: KeyManagementCapabilities = KeyManagementCapabilities(),
+        val serviceManagement: ServiceManagementCapabilities = ServiceManagementCapabilities(),
+        val representations: RepresentationCapabilities = RepresentationCapabilities(),
+        val resolution: ResolutionCapabilities = ResolutionCapabilities(),
+        val recommendations: UsageRecommendations = UsageRecommendations(),
+        val metadata: MethodMetadata = MethodMetadata(),
+    ) {
         /**
-         * Default capabilities for did:key method.
+         * Checks if this method supports creation of new DIDs.
          */
-        val KEY: DidMethodCapabilities =
-            DidMethodCapabilities(
-                method = "key",
-                lifecycle = LifecycleCapabilities.IMMUTABLE,
-                keyManagement =
-                    KeyManagementCapabilities(
-                        addition = false,
-                        supportedKeyTypes =
-                            listOf(
-                                KeyManagementCapabilities.ED25519,
-                                KeyManagementCapabilities.X25519,
-                                KeyManagementCapabilities.SECP256K1,
-                                KeyManagementCapabilities.P256,
-                                KeyManagementCapabilities.P384,
-                            ),
-                    ),
-                serviceManagement = ServiceManagementCapabilities.NONE,
-                representations = RepresentationCapabilities.JWK_AND_MULTIKEY,
-                resolution = ResolutionCapabilities.NO_CACHING,
-                recommendations = UsageRecommendations.EPHEMERAL_PERSONAL,
-                metadata =
-                    MethodMetadata(
-                        description = "Static DID derived from public key",
-                        specificationUrl = "https://w3c-ccg.github.io/did-method-key/",
-                    ),
-            )
+        fun canCreate(): Boolean = lifecycle.create
 
         /**
-         * Default capabilities for did:jwk method.
+         * Checks if this method supports updating existing DIDs.
          */
-        val JWK: DidMethodCapabilities =
-            DidMethodCapabilities(
-                method = "jwk",
-                lifecycle = LifecycleCapabilities.IMMUTABLE,
-                keyManagement =
-                    KeyManagementCapabilities(
-                        addition = false,
-                        supportedKeyTypes =
-                            listOf(
-                                KeyManagementCapabilities.ED25519,
-                                KeyManagementCapabilities.SECP256K1,
-                                KeyManagementCapabilities.P256,
-                                KeyManagementCapabilities.P384,
-                            ),
-                    ),
-                serviceManagement = ServiceManagementCapabilities.NONE,
-                representations = RepresentationCapabilities.JWK_ONLY,
-                resolution = ResolutionCapabilities.NO_CACHING,
-                recommendations = UsageRecommendations.EPHEMERAL_PERSONAL,
-                metadata =
-                    MethodMetadata(
-                        description = "Static DID containing base64url-encoded JWK",
-                        specificationUrl = "https://github.com/quartzjer/did-jwk/blob/main/spec.md",
-                    ),
-            )
+        fun canUpdate(): Boolean = lifecycle.update
 
         /**
-         * Default capabilities for did:web method.
+         * Checks if this method supports deactivating DIDs.
          */
-        val WEB: DidMethodCapabilities =
-            DidMethodCapabilities(
-                method = "web",
-                lifecycle = LifecycleCapabilities.FULL,
-                keyManagement =
-                    KeyManagementCapabilities(
-                        addition = true,
-                        replacement = true,
-                        removal = true,
-                        supportedKeyTypes =
-                            listOf(
-                                KeyManagementCapabilities.ED25519,
-                                KeyManagementCapabilities.SECP256K1,
-                                KeyManagementCapabilities.P256,
-                                KeyManagementCapabilities.P384,
-                            ),
-                    ),
-                serviceManagement = ServiceManagementCapabilities.FULL,
-                representations = RepresentationCapabilities.JWK_AND_MULTIKEY,
-                resolution = ResolutionCapabilities.WEB_CACHING,
-                recommendations = UsageRecommendations.ORGANIZATIONAL,
-                metadata =
-                    MethodMetadata(
-                        description = "DID method using web domain verification",
-                        specificationUrl = "https://w3c-ccg.github.io/did-method-web/",
-                    ),
-            )
+        fun canDeactivate(): Boolean = lifecycle.deactivate
 
         /**
-         * Capabilities for a universal resolver that supports multiple methods.
+         * Checks if this method is immutable (create-only, no updates).
          */
-        val UNIVERSAL_RESOLVER: DidMethodCapabilities =
-            DidMethodCapabilities(
-                method = "*",
-                lifecycle = LifecycleCapabilities.IMMUTABLE, // Resolution only
-                keyManagement = KeyManagementCapabilities.NONE,
-                serviceManagement = ServiceManagementCapabilities.NONE,
-                representations = RepresentationCapabilities.ALL,
-                resolution =
-                    ResolutionCapabilities(
-                        allowsCaching = true,
-                        allowsLocalRecord = true,
-                        cacheTtlSeconds = 300,
-                    ),
-                recommendations = UsageRecommendations(),
-                metadata =
-                    MethodMetadata(
-                        description = "Universal resolver supporting multiple DID methods",
-                        specificationUrl = "https://dev.uniresolver.io/",
-                    ),
-            )
+        fun isImmutable(): Boolean = !lifecycle.isMutable()
+
+        /**
+         * Checks if this method supports any modification operations.
+         */
+        fun isMutable(): Boolean = lifecycle.isMutable()
+
+        /**
+         * Checks if this method supports key management operations.
+         */
+        fun supportsKeyManagement(): Boolean = keyManagement.supportsKeyManagement()
+
+        /**
+         * Checks if this method supports service management operations.
+         */
+        fun supportsServiceManagement(): Boolean = serviceManagement.supportsServiceManagement()
+
+        /**
+         * Checks if caching is allowed for this method.
+         */
+        fun allowsCaching(): Boolean = resolution.allowsCaching
+
+        companion object {
+            /**
+             * Default capabilities for did:key method.
+             */
+            @JvmStatic
+            val KEY: DidMethodCapabilities =
+                DidMethodCapabilities(
+                    method = "key",
+                    lifecycle = LifecycleCapabilities.IMMUTABLE,
+                    keyManagement =
+                        KeyManagementCapabilities(
+                            addition = false,
+                            supportedKeyTypes =
+                                listOf(
+                                    KeyManagementCapabilities.ED25519,
+                                    KeyManagementCapabilities.X25519,
+                                    KeyManagementCapabilities.SECP256K1,
+                                    KeyManagementCapabilities.P256,
+                                    KeyManagementCapabilities.P384,
+                                ),
+                        ),
+                    serviceManagement = ServiceManagementCapabilities.NONE,
+                    representations = RepresentationCapabilities.JWK_AND_MULTIKEY,
+                    resolution = ResolutionCapabilities.NO_CACHING,
+                    recommendations = UsageRecommendations.EPHEMERAL_PERSONAL,
+                    metadata =
+                        MethodMetadata(
+                            description = "Static DID derived from public key",
+                            specificationUrl = "https://w3c-ccg.github.io/did-method-key/",
+                        ),
+                )
+
+            /**
+             * Default capabilities for did:jwk method.
+             */
+            @JvmStatic
+            val JWK: DidMethodCapabilities =
+                DidMethodCapabilities(
+                    method = "jwk",
+                    lifecycle = LifecycleCapabilities.IMMUTABLE,
+                    keyManagement =
+                        KeyManagementCapabilities(
+                            addition = false,
+                            supportedKeyTypes =
+                                listOf(
+                                    KeyManagementCapabilities.ED25519,
+                                    KeyManagementCapabilities.SECP256K1,
+                                    KeyManagementCapabilities.P256,
+                                    KeyManagementCapabilities.P384,
+                                ),
+                        ),
+                    serviceManagement = ServiceManagementCapabilities.NONE,
+                    representations = RepresentationCapabilities.JWK_ONLY,
+                    resolution = ResolutionCapabilities.NO_CACHING,
+                    recommendations = UsageRecommendations.EPHEMERAL_PERSONAL,
+                    metadata =
+                        MethodMetadata(
+                            description = "Static DID containing base64url-encoded JWK",
+                            specificationUrl = "https://github.com/quartzjer/did-jwk/blob/main/spec.md",
+                        ),
+                )
+
+            /**
+             * Default capabilities for did:web method.
+             */
+            @JvmStatic
+            val WEB: DidMethodCapabilities =
+                DidMethodCapabilities(
+                    method = "web",
+                    lifecycle = LifecycleCapabilities.FULL,
+                    keyManagement =
+                        KeyManagementCapabilities(
+                            addition = true,
+                            replacement = true,
+                            removal = true,
+                            supportedKeyTypes =
+                                listOf(
+                                    KeyManagementCapabilities.ED25519,
+                                    KeyManagementCapabilities.SECP256K1,
+                                    KeyManagementCapabilities.P256,
+                                    KeyManagementCapabilities.P384,
+                                ),
+                        ),
+                    serviceManagement = ServiceManagementCapabilities.FULL,
+                    representations = RepresentationCapabilities.JWK_AND_MULTIKEY,
+                    resolution = ResolutionCapabilities.WEB_CACHING,
+                    recommendations = UsageRecommendations.ORGANIZATIONAL,
+                    metadata =
+                        MethodMetadata(
+                            description = "DID method using web domain verification",
+                            specificationUrl = "https://w3c-ccg.github.io/did-method-web/",
+                        ),
+                )
+
+            /**
+             * Capabilities for a universal resolver that supports multiple methods.
+             */
+            @JvmStatic
+            val UNIVERSAL_RESOLVER: DidMethodCapabilities =
+                DidMethodCapabilities(
+                    method = "*",
+                    lifecycle = LifecycleCapabilities.IMMUTABLE, // Resolution only
+                    keyManagement = KeyManagementCapabilities.NONE,
+                    serviceManagement = ServiceManagementCapabilities.NONE,
+                    representations = RepresentationCapabilities.ALL,
+                    resolution =
+                        ResolutionCapabilities(
+                            allowsCaching = true,
+                            allowsLocalRecord = true,
+                            cacheTtlSeconds = 300,
+                        ),
+                    recommendations = UsageRecommendations(),
+                    metadata =
+                        MethodMetadata(
+                            description = "Universal resolver supporting multiple DID methods",
+                            specificationUrl = "https://dev.uniresolver.io/",
+                        ),
+                )
+        }
     }
-}

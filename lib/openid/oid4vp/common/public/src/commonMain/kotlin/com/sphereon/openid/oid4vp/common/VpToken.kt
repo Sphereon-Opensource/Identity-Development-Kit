@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.common
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -34,6 +35,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -68,6 +70,7 @@ import kotlin.native.ObjCName
 @JsExportCompat
 @Serializable(with = VpTokenSerializer::class)
 data class VpToken(
+    @JsExportIgnoreCompat
     val presentations: Map<String, List<String>>,
 ) {
     init {
@@ -129,6 +132,7 @@ data class VpToken(
          * @return Parsed VpToken
          * @throws IllegalArgumentException if JSON format is invalid
          */
+        @JvmStatic
         fun fromJson(json: JsonElement): VpToken =
             when (json) {
                 is JsonObject -> parseObjectFormat(json)
@@ -236,6 +240,7 @@ object VpTokenSerializer : KSerializer<VpToken> {
 /**
  * Builder for creating VP Tokens with DCQL format.
  */
+@JsExportCompat
 class VpTokenBuilder {
     private val presentations = mutableMapOf<String, MutableList<String>>()
 

@@ -16,6 +16,8 @@
 
 package com.sphereon.oauth2.common.config
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Provider for OAuth2 authorization server configuration.
  *
@@ -25,6 +27,7 @@ package com.sphereon.oauth2.common.config
  * for the current context. Commands should use this rather than resolving
  * server IDs manually.
  */
+@JsExportCompat
 interface OAuth2ServersConfigProvider {
     /**
      * The active server configuration profile.

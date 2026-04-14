@@ -17,8 +17,10 @@
 
 package com.sphereon.data.store.party.options
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Options for controlling which associations to fetch when loading tenants.
@@ -41,36 +43,39 @@ import kotlinx.serialization.Serializable
  * )
  * ```
  */
+@JsExportCompat
 @Serializable
-data class TenantFetchOptions(
-    /** Include count of identities in this tenant */
-    @SerialName("includeIdentityCount")
-    val includeIdentityCount: Boolean = false,
-    /** Include the owner party details */
-    @SerialName("includeOwnerParty")
-    val includeOwnerParty: Boolean = false,
-) {
-    companion object {
-        /** Load only core tenant data (default) */
-        val MINIMAL = TenantFetchOptions()
+data class TenantFetchOptions
+    @JvmOverloads
+    constructor(
+        /** Include count of identities in this tenant */
+        @SerialName("includeIdentityCount")
+        val includeIdentityCount: Boolean = false,
+        /** Include the owner party details */
+        @SerialName("includeOwnerParty")
+        val includeOwnerParty: Boolean = false,
+    ) {
+        companion object {
+            /** Load only core tenant data (default) */
+            val MINIMAL = TenantFetchOptions()
 
-        /** Load tenant with aggregate counts */
-        val WITH_COUNTS = TenantFetchOptions(includeIdentityCount = true)
+            /** Load tenant with aggregate counts */
+            val WITH_COUNTS = TenantFetchOptions(includeIdentityCount = true)
 
-        /** Load tenant with owner party */
-        val WITH_OWNER = TenantFetchOptions(includeOwnerParty = true)
+            /** Load tenant with owner party */
+            val WITH_OWNER = TenantFetchOptions(includeOwnerParty = true)
 
-        /** Load everything */
-        val FULL =
-            TenantFetchOptions(
-                includeIdentityCount = true,
-                includeOwnerParty = true,
-            )
+            /** Load everything */
+            val FULL =
+                TenantFetchOptions(
+                    includeIdentityCount = true,
+                    includeOwnerParty = true,
+                )
+        }
+
+        /** Builder method to include identity count */
+        fun withIdentityCount() = copy(includeIdentityCount = true)
+
+        /** Builder method to include owner party */
+        fun withOwnerParty() = copy(includeOwnerParty = true)
     }
-
-    /** Builder method to include identity count */
-    fun withIdentityCount() = copy(includeIdentityCount = true)
-
-    /** Builder method to include owner party */
-    fun withOwnerParty() = copy(includeOwnerParty = true)
-}

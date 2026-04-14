@@ -19,6 +19,7 @@ package com.sphereon.core.api.session
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Standard error mapper interface for commands.
@@ -26,6 +27,7 @@ import com.sphereon.core.api.error.IdkErrorType
  *
  * @param E The error type (typically IdkError or a subtype)
  */
+@JsExportCompat
 interface CommandErrorMapper<E : IdkErrorType> {
     /**
      * Creates an error for unsupported arguments.

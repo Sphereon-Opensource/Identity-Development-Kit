@@ -15,6 +15,8 @@
  */
 package com.sphereon.core.api.http
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Optional capability for [HttpAdapter]s that want to participate in generic adapter dispatching.
  *
@@ -22,6 +24,7 @@ package com.sphereon.core.api.http
  * To keep host wiring minimal and framework-agnostic, adapters can implement this interface to declare whether
  * they can handle a specific [GenericHttpRequest].
  */
+@JsExportCompat
 interface RoutableHttpAdapter : HttpAdapter {
     fun canHandle(request: GenericHttpRequest): Boolean
 }

@@ -17,12 +17,14 @@
 
 package com.sphereon.credential.claims.mapper.api.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * Indicates whether a claim path refers to the source or target.
  */
+@JsExportCompat
 @Serializable
 enum class ClaimPathType {
     @SerialName("SOURCE")

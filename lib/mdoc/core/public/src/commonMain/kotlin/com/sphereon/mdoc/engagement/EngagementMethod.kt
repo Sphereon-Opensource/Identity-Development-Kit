@@ -16,9 +16,11 @@
 
 package com.sphereon.mdoc.engagement
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.transfer.reader.ReaderEngagement
 import com.sphereon.mdoc.transfer.reader.ReaderEngagementCborCodec
 
+@JsExportCompat
 interface MdocEngagementMethod {
     val type: EngagementType
 }
@@ -33,12 +35,14 @@ interface MdocEngagementMethod {
  *
  * @param scheme The URI scheme (default: "mdoc:" per ISO 18013-5)
  */
+@JsExportCompat
 data class QREngagementMethod(
     val scheme: String = "mdoc:",
 ) : MdocEngagementMethod {
     override val type: EngagementType = EngagementType.QR
 }
 
+@JsExportCompat
 class NfcEngagementMethod : MdocEngagementMethod {
     override val type: EngagementType = EngagementType.NFC
 }
@@ -59,6 +63,7 @@ class NfcEngagementMethod : MdocEngagementMethod {
  *
  * @param authorizationRequestUri The full `mdoc-openid4vp://` URI from the verifier's QR code or deep link
  */
+@JsExportCompat
 data class Oid4vpEngagementMethod(
     val authorizationRequestUri: String,
 ) : MdocEngagementMethod {
@@ -84,6 +89,7 @@ data class Oid4vpEngagementMethod(
  *
  * @param readerEngagement The reader engagement containing reader's ephemeral key and retrieval methods
  */
+@JsExportCompat
 data class ReaderEngagementMethod(
     val readerEngagement: ReaderEngagement,
     private val readerEngagementCborCodec: ReaderEngagementCborCodec? = null,

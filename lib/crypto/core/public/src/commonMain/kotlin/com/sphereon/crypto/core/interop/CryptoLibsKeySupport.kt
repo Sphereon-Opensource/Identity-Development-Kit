@@ -38,6 +38,7 @@ import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeTo
 import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -58,6 +59,7 @@ import dev.whyoleg.cryptography.CryptographyAlgorithmId
 import dev.whyoleg.cryptography.algorithms.Digest
 import dev.whyoleg.cryptography.algorithms.EC
 import org.kotlincrypto.hash.sha1.SHA1
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 // ============================================================================
@@ -184,13 +186,17 @@ fun toKeyInfoJwk(keyInfo: KeyInfoType<*>): KeyInfoType<Jwk> {
  * Represents the context information needed for key operations in cryptography. Used internally when accessing crypto libs.
  */
 @Suppress("NON_EXPORTABLE_TYPE")
-data class DerKmpKeyInfoContext(
-    val key: Jwk,
-    val publicKeyBytes: ByteArray,
-    val privateKeyBytes: ByteArray?,
-    val curveImpl: EC.Curve? = null,
-    val algImpl: CryptographyAlgorithmId<Digest>,
-)
+@JsExportCompat
+data class
+DerKmpKeyInfoContext
+    @JvmOverloads
+    constructor(
+        val key: Jwk,
+        val publicKeyBytes: ByteArray,
+        val privateKeyBytes: ByteArray?,
+        val curveImpl: EC.Curve? = null,
+        val algImpl: CryptographyAlgorithmId<Digest>,
+    )
 
 // ============================================================================
 // Signature Algorithm Mapping

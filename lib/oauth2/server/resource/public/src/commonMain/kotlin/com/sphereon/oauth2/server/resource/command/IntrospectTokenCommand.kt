@@ -28,6 +28,7 @@ import kotlin.native.ObjCName
  * @property token The access token string (JWT or opaque)
  * @property authorizationServer The authorization server URL
  */
+@JsExportCompat
 data class IntrospectTokenArgs(
     val token: String,
     val authorizationServer: String,
@@ -67,6 +68,7 @@ data class IntrospectTokenArgs(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IntrospectTokenCommand", exact = true)
+@JsExportCompat
 interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenPayload.Introspection> {
     override val commandId: String get() = COMMAND_ID
 

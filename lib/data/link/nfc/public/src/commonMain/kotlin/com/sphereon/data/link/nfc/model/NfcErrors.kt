@@ -21,8 +21,11 @@ package com.sphereon.data.link.nfc.model
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
-import kotlin.js.JsExport
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 
@@ -30,17 +33,22 @@ import kotlin.uuid.ExperimentalUuidApi
 @ObjCName("NfcError", exact = true)
 interface NfcError : IdkErrorType
 
-@JsExport
+@JsExportCompat
 sealed class NfcErrors(
     override val code: String,
     override val severity: Severity,
     override val message: Message,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = mutableListOf(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = mutableMapOf(),
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
 ) : IdkError(code = code, severity = severity, message = message, causes = causes, meta = meta, exception = exception),
     NfcError {
     companion object {
+        @JvmStatic
+        @JvmOverloads
         fun unknown(
             reason: String = "An unknown NFC error occurred",
             throwable: Throwable? = null,
@@ -51,6 +59,8 @@ sealed class NfcErrors(
             causes = causes,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun scanFailed(
             reason: String = "Scanning failed",
             throwable: Throwable? = null,
@@ -61,11 +71,14 @@ sealed class NfcErrors(
             causes = causes,
         )
 
+        @JvmStatic
         fun tagNotFound(tagId: String) =
             TagNotFoundError(
                 message = Message(i18nKey = "nfc.error.tag.not.found", defaultMessage = "Tag with id $tagId not found"),
             )
 
+        @JvmStatic
+        @JvmOverloads
         fun tagLost(
             reason: String = "NFC tag was removed from the field",
             throwable: Throwable? = null,
@@ -74,11 +87,14 @@ sealed class NfcErrors(
             exception = throwable,
         )
 
+        @JvmStatic
         fun notSupported(reason: String) =
             NotSupportedNfcError(
                 message = Message(i18nKey = "nfc.error.not.supported", defaultMessage = reason),
             )
 
+        @JvmStatic
+        @JvmOverloads
         fun connectionFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -87,6 +103,8 @@ sealed class NfcErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun transceiveFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -95,6 +113,8 @@ sealed class NfcErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun commandFailed(
             reason: String,
             status: Int? = null,
@@ -110,6 +130,8 @@ sealed class NfcErrors(
                 },
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun sessionFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -118,6 +140,8 @@ sealed class NfcErrors(
             exception = throwable,
         )
 
+        @JvmStatic
+        @JvmOverloads
         fun ndefParseFailed(
             reason: String,
             throwable: Throwable? = null,
@@ -130,103 +154,123 @@ sealed class NfcErrors(
     override fun toString(): String = "NfcError(code='$code', severity=$severity, message=$message, causes=$causes, meta=$meta, exception=${exception?.stackTraceToString()})"
 }
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UnknownNfcError", exact = true)
 data class UnknownNfcError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_UNKNOWN_ERROR", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NotSupportedNfcError", exact = true)
 data class NotSupportedNfcError(
     override val message: Message,
     override val severity: Severity = Severity.ERROR,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_NOT_SUPPORTED", severity = severity)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TagNotFoundError", exact = true)
 data class TagNotFoundError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_TAG_NOT_FOUND", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TagLostError", exact = true)
 data class TagLostError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_TAG_LOST", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConnectionFailedError", exact = true)
 data class ConnectionFailedError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_CONNECTION_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScanError", exact = true)
 data class ScanError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_SCAN_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TransceiveError", exact = true)
 data class TransceiveError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_TRANSCEIVE_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CommandFailedError", exact = true)
 data class CommandFailedError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_COMMAND_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionError", exact = true)
 data class SessionError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_SESSION_FAILED", severity = Severity.ERROR)
 
-@JsExport
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NdefParseError", exact = true)
 data class NdefParseError(
     override val message: Message,
+    @JsExportIgnoreCompat
     override val exception: Throwable? = null,
+    @JsExportIgnoreCompat
     override val causes: List<IdkErrorType> = emptyList(),
+    @JsExportIgnoreCompat
     override val meta: Map<String, Any?> = emptyMap(),
 ) : NfcErrors(message = message, exception = exception, causes = causes, meta = meta, code = "NFC_NDEF_PARSE_FAILED", severity = Severity.ERROR)

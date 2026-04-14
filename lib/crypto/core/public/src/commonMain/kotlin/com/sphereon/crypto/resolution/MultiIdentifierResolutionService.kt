@@ -16,8 +16,10 @@
  */
 
 package com.sphereon.crypto.resolution
+import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Multi-resolution service interface that combines managed and external identifier resolution
  */
+@JsExportCompat
 interface MultiIdentifierResolutionService : IdentifierService

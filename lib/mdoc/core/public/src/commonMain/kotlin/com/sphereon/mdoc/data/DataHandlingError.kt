@@ -18,10 +18,13 @@
 package com.sphereon.mdoc.data
 
 import com.sphereon.cbor.cddl_int
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DataHandlingError", exact = true)
 enum class DataHandlingError(
@@ -49,10 +52,12 @@ enum class DataHandlingError(
 
     companion object Factory {
         @JsStatic
+        @JvmStatic
         fun fromErrorCode(errorCode: cddl_int): DataHandlingError = entries.find { it.errorCode == DataHandlingErrorCode.Factory.fromErrorCodeValue(errorCode) }!!
     }
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DataHandlingErrorCode", exact = true)
 enum class DataHandlingErrorCode(
@@ -65,6 +70,7 @@ enum class DataHandlingErrorCode(
 
     companion object Factory {
         @JsStatic
+        @JvmStatic
         fun fromErrorCodeValue(errorCode: cddl_int): DataHandlingErrorCode =
             if (errorCode == OK.value) {
                 OK

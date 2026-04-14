@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.ContributesTo
@@ -39,6 +40,7 @@ import kotlin.native.ObjCName
  *    @ContributesIntoSet(SessionScope::class)
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("BleTransportFactory", exact = true)
+@JsExportCompat
  *    class BleTransportFactory : MdocTransportFactory { ... }
  *    ```
  *

@@ -16,7 +16,7 @@
  */
 
 package com.sphereon.crypto.core.kms
-
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -32,6 +32,7 @@ import kotlinx.serialization.Serializable
  * Configured via `sphereon.crypto.kms.managed-key-store.mode`.
  */
 @Serializable
+@JsExportCompat
 enum class ManagedKeyStoreMode {
     @SerialName("iterating")
     ITERATING,

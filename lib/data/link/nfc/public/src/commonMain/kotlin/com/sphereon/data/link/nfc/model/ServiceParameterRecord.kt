@@ -17,6 +17,7 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.ByteDataReader
 import com.sphereon.util.appendByteString
 import com.sphereon.util.appendUInt16
@@ -25,6 +26,7 @@ import com.sphereon.util.getUInt8
 import kotlinx.io.bytestring.buildByteString
 import kotlinx.io.bytestring.encodeToByteString
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.math.pow
 import kotlin.native.ObjCName
 import kotlin.time.Duration
@@ -41,6 +43,7 @@ import kotlin.time.Duration
  * @property nWait Maximum number of waiting time extensions.
  * @property maxNdefSize Maximum NDEF Message size in bytes.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ServiceParameterRecord", exact = true)
 data class ServiceParameterRecord(
@@ -89,6 +92,7 @@ data class ServiceParameterRecord(
          * @param record the record to check
          * @return a [ServiceParameterRecord] or `null`.
          */
+        @JvmStatic
         fun fromNdefRecord(record: NdefRecord): ServiceParameterRecord? {
             if (record.tnf != NdefRecord.Tnf.WELL_KNOWN ||
                 record.type != NfcConst.RTD_SERVICE_PARAMETER

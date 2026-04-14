@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transport.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.SessionData
 import com.sphereon.mdoc.SessionEstablishment
 import com.sphereon.mdoc.transport.IncomingDataChannel
@@ -30,6 +31,7 @@ import com.sphereon.mdoc.transport.OutgoingDataChannel
  *
  * Extends the common IncomingDataChannel interface with BLE-specific methods.
  */
+@JsExportCompat
 interface BleIncomingDataChannel : IncomingDataChannel {
     /**
      * Get the most recently received raw data.
@@ -84,6 +86,7 @@ interface BleIncomingDataChannel : IncomingDataChannel {
  *
  * Extends the common OutgoingDataChannel interface with BLE-specific methods.
  */
+@JsExportCompat
 interface BleOutgoingDataChannel : OutgoingDataChannel {
     /**
      * Get the most recently sent raw data.

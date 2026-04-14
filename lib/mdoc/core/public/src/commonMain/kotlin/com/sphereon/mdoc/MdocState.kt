@@ -17,12 +17,14 @@
 
 package com.sphereon.mdoc
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("representing", exact = true)
+@JsExportCompat
  * Super interface representing states in the mdoc interaction lifecycle.
  *
  * This interface acts as a common base for both engagement and retrieval states,

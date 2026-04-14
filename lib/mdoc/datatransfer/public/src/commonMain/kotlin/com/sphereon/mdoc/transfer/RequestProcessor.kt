@@ -23,6 +23,7 @@ import com.sphereon.core.api.asOkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.log.LogService
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.MdocSignService
@@ -42,6 +43,7 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DocumentProvider", exact = true)
+@JsExportCompat
 interface DocumentProvider {
     suspend fun getDocuments(selectorData: Any? = null): Set<DocumentWithKeyAlias>
 }
@@ -50,6 +52,7 @@ interface DocumentProvider {
  * Represents a functional interface responsible for selecting a single document
  * from a list of available documents based on a given document request.
  */
+@JsExportCompat
 interface DocumentRequestSingleDocumentSelector {
     /**
      * Selects a single document from a set of available documents based on the given document request.
@@ -75,6 +78,7 @@ interface DocumentRequestSingleDocumentSelector {
  * The DeviceRequest contains an array of Doc Request object (DocRequest). So an implementation of this interface is likely to call
  * the DocumentRequestSingleDocumentSelector interface
  */
+@JsExportCompat
 interface RequestDocumentsSelector {
     /**
      * Selects documents based on the provided device request in CBOR format.
@@ -99,6 +103,7 @@ interface RequestDocumentsSelector {
  *
  * It is likely that an implementation of this interface delegates to the above functional interfaces as well.
  */
+@JsExportCompat
 interface RequestResponseProcessor {
     /**
      * Creates a response based on the given device request.
@@ -115,6 +120,7 @@ interface RequestResponseProcessor {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SimpleDocumentRequestSingleDocumentSelector", exact = true)
+@JsExportCompat
 class SimpleDocumentRequestSingleDocumentSelector(
     val log: LogService,
     val globalCustomSelectorData: Any? = null,
@@ -151,6 +157,7 @@ class SimpleDocumentRequestSingleDocumentSelector(
  * DocRequest matches the Document object.
  */
 @AssistedInject
+@JsExportCompat
 data class MapDrivenDocRequestSelector(
     @Assisted var selections: Map<DocRequest, DocumentWithKeyAlias>,
     @Assisted val sessionTranscript: SessionTranscript? = null, // If not provided the assumption is that the documents are already signed.
@@ -224,6 +231,7 @@ data class MapDrivenDocRequestSelector(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SimpleRequestDocumentsSelector", exact = true)
+@JsExportCompat
 class SimpleRequestDocumentsSelector(
     val log: LogService,
     val docRequestSingleDocSelect: DocumentRequestSingleDocumentSelector,
@@ -266,6 +274,7 @@ class SimpleRequestDocumentsSelector(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SimpleRequestResponseProcessor", exact = true)
+@JsExportCompat
 open class SimpleRequestResponseProcessor(
     val documentsSelector: RequestDocumentsSelector,
     val globalDocumentsProvider: DocumentProvider? = null,

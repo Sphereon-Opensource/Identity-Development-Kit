@@ -17,12 +17,15 @@
 package com.sphereon.ktor.http.client.provider
 
 import com.sphereon.core.api.log.LogLevel
+import com.sphereon.core.compat.JsExportCompat
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SimpleRestClientOptions", exact = true)
@@ -32,6 +35,7 @@ data class SimpleRestClientOptions(
     val logLevel: LogLevel = LogLevel.INFO,
 ) {
     companion object {
+        @JvmStatic
         val DEFAULT_OPTIONS = SimpleRestClientOptions(HttpClientEngineType.CIO, true, LogLevel.INFO)
     }
 

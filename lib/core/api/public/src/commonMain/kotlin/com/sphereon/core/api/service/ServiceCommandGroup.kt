@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -27,6 +28,7 @@ import kotlinx.serialization.Serializable
  * Example: the "kms.keys" group contains commands for key CRUD operations:
  * `kms.keys.get`, `kms.keys.list`, `kms.keys.store`, `kms.keys.generate`, `kms.keys.delete`.
  */
+@JsExportCompat
 @Serializable
 data class ServiceCommandGroupDescription(
     /** Unique group identifier, derived from module + service. E.g. "kms.keys" */
@@ -57,6 +59,7 @@ data class ServiceCommandGroupDescription(
  * class MyGroupDescriptorProvider : ServiceCommandGroupDescriptorProvider { ... }
  * ```
  */
+@JsExportCompat
 interface ServiceCommandGroupDescriptorProvider {
     /** Unique group identifier. E.g. "kms.keys" */
     val groupId: String
@@ -74,6 +77,7 @@ interface ServiceCommandGroupDescriptorProvider {
  * Used by transport servers, admin endpoints, and health checks to discover
  * available service groups and their commands.
  */
+@JsExportCompat
 interface ServiceCommandGroupCatalog {
     /** All discovered group descriptions, sorted by groupId. */
     val groups: List<ServiceCommandGroupDescription>

@@ -17,11 +17,13 @@
 
 package com.sphereon.mdoc.data.server
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.data.DocTypeAlias
 import com.sphereon.mdoc.data.RequestInfoAlias
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ServerItemsRequest", exact = true)
 data class ServerItemsRequest(

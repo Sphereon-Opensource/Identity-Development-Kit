@@ -17,13 +17,16 @@
 package com.sphereon.oauth2.client.command
 
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 
+@JsExportCompat
 data class FetchServerMetadataArgs(
     val issuer: String,
 )
 
+@JsExportCompat
 data class FetchJwksArgs(
     val jwksUri: String,
 )
@@ -39,6 +42,7 @@ data class FetchJwksArgs(
  * 2. {origin}{path}/.well-known/oauth-authorization-server (legacy non-compliant)
  * 3. {issuer}/.well-known/openid-configuration (OpenID Connect Discovery)
  */
+@JsExportCompat
 interface FetchAuthorizationServerMetadataCommand : ServiceCommand<FetchServerMetadataArgs, AuthorizationServerMetadata> {
     override val commandId: String get() = COMMAND_ID
 
@@ -52,6 +56,7 @@ interface FetchAuthorizationServerMetadataCommand : ServiceCommand<FetchServerMe
  *
  * Used to retrieve the authorization server's public keys for signature verification
  */
+@JsExportCompat
 interface FetchJwksCommand : ServiceCommand<FetchJwksArgs, JwkSet> {
     override val commandId: String get() = COMMAND_ID
 

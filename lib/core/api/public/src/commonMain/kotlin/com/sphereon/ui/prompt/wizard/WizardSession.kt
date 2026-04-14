@@ -55,6 +55,7 @@ interface WizardStep {
  * @param Step The type of wizard step.
  * @param Res The type of final response.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("WizardSession", exact = true)
 interface WizardSession<Step : WizardStep, Res : PromptResponse> {

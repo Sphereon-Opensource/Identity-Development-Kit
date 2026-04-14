@@ -18,6 +18,7 @@
 package com.sphereon.mdoc.data.server
 
 import com.sphereon.cbor.cddl_tstr
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -26,6 +27,7 @@ import kotlin.native.ObjCName
  * The server retrieval mdoc request shall be JSON encoded and formatted as follows:
  */
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ServerRequest", exact = true)
 data class ServerRequest(

@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.idv.config
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.idv.model.IdvMethodDefinition
 import com.sphereon.identity.idv.model.IdvUseCaseDefinition
 import kotlinx.serialization.Serializable
@@ -32,6 +33,7 @@ import kotlinx.serialization.json.Json
  * }
  * ```
  */
+@JsExportCompat
 @Serializable
 data class IdvDefinitions(
     val methods: List<IdvMethodDefinition> = emptyList(),

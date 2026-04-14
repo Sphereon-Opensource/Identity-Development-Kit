@@ -17,7 +17,6 @@
 
 package com.sphereon.di.session
 
-import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -36,7 +35,6 @@ import kotlin.native.ObjCName
  * is active and within its valid scope. This enables controlled behavior for instances tied to
  * plugin services.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionScope", exact = true)
 public abstract class SessionScope private constructor()

@@ -17,12 +17,14 @@
 
 package com.sphereon.mdoc.transfer
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.transport.ConnectionMethod
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocTransferFactory", exact = true)
+@JsExportCompat
 interface MdocTransferFactory {
     fun setupTransfer(
         connectionMethod: ConnectionMethod,

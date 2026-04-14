@@ -31,6 +31,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -81,18 +82,23 @@ data class ValidityInfo(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val SIGNED = StringLabel("signed")
 
         @JsStatic
+        @JvmStatic
         val VALID_FROM = StringLabel("validFrom")
 
         @JsStatic
+        @JvmStatic
         val VALID_UNTIL = StringLabel("validUntil")
 
         @JsStatic
+        @JvmStatic
         val EXPECTED_UPDATE = StringLabel("expectedUpdate")
 
         @JsStatic
+        @JvmStatic
         fun fromDates(
             signed: LocalDateTimeKMP = DateTimeUtils.DEFAULTS.dateTimeLocal(),
             validFrom: LocalDateTimeKMP = DateTimeUtils.DEFAULTS.dateTimeLocal(),

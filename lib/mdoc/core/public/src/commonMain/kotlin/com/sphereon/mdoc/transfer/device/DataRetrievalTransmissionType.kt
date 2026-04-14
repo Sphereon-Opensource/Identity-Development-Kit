@@ -17,9 +17,12 @@
 
 package com.sphereon.mdoc.transfer.device
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DataRetrievalTransmissionType", exact = true)
 enum class DataRetrievalTransmissionType {
@@ -30,6 +33,7 @@ enum class DataRetrievalTransmissionType {
     ;
 
     companion object {
+        @JvmStatic
         fun fromString(value: String): DataRetrievalTransmissionType? =
             when (value.lowercase()) {
                 "ble" -> BLE

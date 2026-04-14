@@ -42,6 +42,8 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -63,31 +65,35 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeyIdentity", exact = true)
 @Serializable
-data class KeyIdentity(
-    val kid: String? = null,
-    val providerId: String? = null,
-    val alias: String? = null,
-    val keyType: KeyTypeMapping? = null,
-) {
-    /**
-     * Check if this identity has any identifying information.
-     */
-    fun hasIdentity(): Boolean = kid != null || alias != null
-
-    companion object {
+data class
+KeyIdentity
+    @JvmOverloads
+    constructor(
+        val kid: String? = null,
+        val providerId: String? = null,
+        val alias: String? = null,
+        val keyType: KeyTypeMapping? = null,
+    ) {
         /**
-         * Create identity from a key info.
+         * Check if this identity has any identifying information.
          */
-        @JsStatic
-        fun <KT : KeyType> fromKeyInfo(keyInfo: KeyInfoType<KT>): KeyIdentity =
-            KeyIdentity(
-                kid = keyInfo.kid ?: keyInfo.key?.getKeyId(false),
-                providerId = keyInfo.providerId,
-                alias = keyInfo.alias,
-                keyType = keyInfo.keyType ?: keyInfo.key?.getKeyType(),
-            )
+        fun hasIdentity(): Boolean = kid != null || alias != null
+
+        companion object {
+            /**
+             * Create identity from a key info.
+             */
+            @JsStatic
+            @JvmStatic
+            fun <KT : KeyType> fromKeyInfo(keyInfo: KeyInfoType<KT>): KeyIdentity =
+                KeyIdentity(
+                    kid = keyInfo.kid ?: keyInfo.key?.getKeyId(false),
+                    providerId = keyInfo.providerId,
+                    alias = keyInfo.alias,
+                    keyType = keyInfo.keyType ?: keyInfo.key?.getKeyType(),
+                )
+        }
     }
-}
 
 /**
  * Represents an interface for a cryptographic key.
@@ -261,35 +267,44 @@ interface KeyType : KeyDTOType {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdentifierAliasLookup", exact = true)
 @Serializable
-data class IdentifierAliasLookup(
-    override val alias: String,
-    override val providerId: String? = null,
-    override val noCache: Boolean = false,
-) : IdentifierLookupType {
-    @Transient
-    override val kid: String? = null
+@JsExportCompat
+data class
+IdentifierAliasLookup
+    @JvmOverloads
+    constructor(
+        override val alias: String,
+        override val providerId: String? = null,
+        override val noCache: Boolean = false,
+    ) : IdentifierLookupType {
+        @Transient
+        override val kid: String? = null
 
-    @Transient
-    override val opts: Map<String, String>? = null
-}
+        @Transient
+        override val opts: Map<String, String>? = null
+    }
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdentifierKidLookup", exact = true)
 @Serializable
-data class IdentifierKidLookup(
-    override val kid: String,
-    override val providerId: String? = null,
-    override val noCache: Boolean = false,
-) : IdentifierLookupType {
-    @Transient
-    override val alias: String? = null
+@JsExportCompat
+data class
+IdentifierKidLookup
+    @JvmOverloads
+    constructor(
+        override val kid: String,
+        override val providerId: String? = null,
+        override val noCache: Boolean = false,
+    ) : IdentifierLookupType {
+        @Transient
+        override val alias: String? = null
 
-    @Transient
-    override val opts: Map<String, String>? = null
-}
+        @Transient
+        override val opts: Map<String, String>? = null
+    }
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdentifierLookupType", exact = true)
+@JsExportCompat
 interface IdentifierLookupType {
     val noCache: Boolean
 
@@ -479,6 +494,7 @@ interface ManagedKeyInfoType<out KT : KeyType> : ResolvedKeyInfoType<KT> {
  *
  * Full key resolution is done via [com.sphereon.crypto.core.kms.KeyStoreService.getKey].
  */
+@JsExportCompat
 sealed interface ManagedKeyReferenceType : KeyInfoType<Nothing> {
     override val key: Nothing? get() = null
     override val alias: String
@@ -494,30 +510,34 @@ sealed interface ManagedKeyReferenceType : KeyInfoType<Nothing> {
  * a [KeyInfoType] is expected.
  */
 @Serializable
-data class ManagedKeyReference(
-    override val alias: String,
-    override val kid: String? = null,
-    override val providerId: String,
-    override val origin: com.sphereon.core.api.model.Origin? = null,
-    override val signatureAlgorithm: com.sphereon.crypto.core.generic.SignatureAlgorithm? = null,
-    override val keyType: com.sphereon.crypto.core.generic.KeyTypeMapping? = null,
-    override val keyVisibility: KeyVisibility? = null,
-    override val keyEncoding: KeyEncoding? = null,
-) : ManagedKeyReferenceType {
-    @Transient
-    override val key: Nothing? = null
+@JsExportCompat
+data class
+ManagedKeyReference
+    @JvmOverloads
+    constructor(
+        override val alias: String,
+        override val kid: String? = null,
+        override val providerId: String,
+        override val origin: com.sphereon.core.api.model.Origin? = null,
+        override val signatureAlgorithm: com.sphereon.crypto.core.generic.SignatureAlgorithm? = null,
+        override val keyType: com.sphereon.crypto.core.generic.KeyTypeMapping? = null,
+        override val keyVisibility: KeyVisibility? = null,
+        override val keyEncoding: KeyEncoding? = null,
+    ) : ManagedKeyReferenceType {
+        @Transient
+        override val key: Nothing? = null
 
-    @Transient
-    override val x5c: Array<String>? = null
+        @Transient
+        override val x5c: Array<String>? = null
 
-    @Transient
-    override val opts: Map<String, String>? = null
+        @Transient
+        override val opts: Map<String, String>? = null
 
-    @Transient
-    override val noCache: Boolean = false
+        @Transient
+        override val noCache: Boolean = false
 
-    override fun toPublicKeyInfo(): KeyInfoType<Nothing> = this
-}
+        override fun toPublicKeyInfo(): KeyInfoType<Nothing> = this
+    }
 
 /**
  * Wrapper for SerialDescriptor that allows overriding the serial name.
@@ -577,73 +597,78 @@ internal class ManagedKeyInfoSerializer<KT : KeyType>(
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeyInfo", exact = true)
-data class KeyInfo<out KT : KeyType>(
-    override val kid: String? = null, // val jwk: JWK,
-    override val key: KT? = null,
-    @Transient // Runtime configuration options, not serialized
-    override val opts: Map<String, String>? = null,
-    override val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
-    override val signatureAlgorithm: SignatureAlgorithm? = null,
-    override val x5c: Array<String>? = key?.getX509CertificateChain(),
-    override val alias: String? = null,
-    override val providerId: String? = null,
-    override val keyType: KeyTypeMapping? = null,
-    override val keyEncoding: KeyEncoding? = null,
-    override val noCache: Boolean = false,
-) : KeyInfoType<KT> {
-    override fun hashCode(): Int {
-        var result = kid?.hashCode() ?: 0
-        result = 31 * result + (key?.hashCode() ?: 0)
-        result = 31 * result + (opts?.hashCode() ?: 0)
-        return result
-    }
+data class KeyInfo<
+    out KT : KeyType
+>
+    @JvmOverloads
+    constructor(
+        override val kid: String? = null, // val jwk: JWK,
+        override val key: KT? = null,
+        @Transient // Runtime configuration options, not serialized
+        override val opts: Map<String, String>? = null,
+        override val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
+        override val signatureAlgorithm: SignatureAlgorithm? = null,
+        override val x5c: Array<String>? = key?.getX509CertificateChain(),
+        override val alias: String? = null,
+        override val providerId: String? = null,
+        override val keyType: KeyTypeMapping? = null,
+        override val keyEncoding: KeyEncoding? = null,
+        override val noCache: Boolean = false,
+    ) : KeyInfoType<KT> {
+        override fun hashCode(): Int {
+            var result = kid?.hashCode() ?: 0
+            result = 31 * result + (key?.hashCode() ?: 0)
+            result = 31 * result + (opts?.hashCode() ?: 0)
+            return result
+        }
 
-    override fun toString(): String = "KeyInfo(alias=$alias, kid=$kid, key=$key, opts=$opts)"
+        override fun toString(): String = "KeyInfo(alias=$alias, kid=$kid, key=$key, opts=$opts)"
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other !is KeyInfo<*>) {
+                return false
+            }
+
+            if (kid != other.kid) {
+                return false
+            }
+            if (key != other.key) {
+                return false
+            }
+            if (opts != other.opts) {
+                return false
+            }
+
             return true
         }
-        if (other !is KeyInfo<*>) {
-            return false
-        }
 
-        if (kid != other.kid) {
-            return false
-        }
-        if (key != other.key) {
-            return false
-        }
-        if (opts != other.opts) {
-            return false
-        }
+        fun resolve(resolver: ((keyInfo: KeyInfoType<KT>) -> ResolvedKeyInfoType<@UnsafeVariance KT>)) = resolver(this)
 
-        return true
+        @Suppress("UNCHECKED_CAST")
+        override fun toPublicKeyInfo(): KeyInfoType<KT> = this.copy(key = key?.toPublicKey() as KT?, keyVisibility = KeyVisibility.PUBLIC)
+
+        companion object {
+            @JsStatic
+            @JvmStatic
+            fun <KT : KeyType> fromDTO(dto: KeyInfoType<KT>) =
+                with(dto) {
+                    KeyInfo(
+                        kid = key?.getKeyId(false) ?: kid,
+                        key = key,
+                        opts = opts,
+                        x5c = key?.getX509CertificateChain() ?: x5c,
+                        providerId = providerId,
+                        alias = alias,
+                        keyVisibility = keyVisibility ?: KeyVisibility.PUBLIC,
+                        signatureAlgorithm = signatureAlgorithm ?: key?.getSignatureAlgorithm(),
+                        keyType = key?.getKeyType() ?: dto.keyType,
+                    )
+                }
+        }
     }
-
-    fun resolve(resolver: ((keyInfo: KeyInfoType<KT>) -> ResolvedKeyInfoType<@UnsafeVariance KT>)) = resolver(this)
-
-    @Suppress("UNCHECKED_CAST")
-    override fun toPublicKeyInfo(): KeyInfoType<KT> = this.copy(key = key?.toPublicKey() as KT?, keyVisibility = KeyVisibility.PUBLIC)
-
-    companion object {
-        @JsStatic
-        fun <KT : KeyType> fromDTO(dto: KeyInfoType<KT>) =
-            with(dto) {
-                KeyInfo(
-                    kid = key?.getKeyId(false) ?: kid,
-                    key = key,
-                    opts = opts,
-                    x5c = key?.getX509CertificateChain() ?: x5c,
-                    providerId = providerId,
-                    alias = alias,
-                    keyVisibility = keyVisibility ?: KeyVisibility.PUBLIC,
-                    signatureAlgorithm = signatureAlgorithm ?: key?.getSignatureAlgorithm(),
-                    keyType = key?.getKeyType() ?: dto.keyType,
-                )
-            }
-    }
-}
 
 @JsExportCompat
 @Serializable
@@ -659,211 +684,43 @@ enum class KeyEncoding {
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolvedKeyInfo", exact = true)
-data class ResolvedKeyInfo<KT : KeyType>(
-    override val kid: String? = null, // val jwk: JWK,
-    override val key: KT,
-    @Transient // Runtime configuration options, not serialized
-    override val opts: Map<String, String>? = null,
-    override val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
-    override val signatureAlgorithm: SignatureAlgorithm? = null,
-    override val alias: String? = null,
-    override val x5c: Array<String>? = null,
+data class ResolvedKeyInfo<
+    KT : KeyType
+>
+    @JvmOverloads
+    constructor(
+        override val kid: String? = null, // val jwk: JWK,
+        override val key: KT,
+        @Transient // Runtime configuration options, not serialized
+        override val opts: Map<String, String>? = null,
+        override val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
+        override val signatureAlgorithm: SignatureAlgorithm? = null,
+        override val alias: String? = null,
+        override val x5c: Array<String>? = null,
 //    override val x509VerificationResult: X509VerificationResult<KT>? = null,
-    override val providerId: String? = null,
-    override val keyType: KeyTypeMapping? = null,
-    override val keyEncoding: KeyEncoding? = null,
-    override val noCache: Boolean = false,
-) : ResolvedKeyInfoType<KT> {
-    fun toKeyInfo() =
-        KeyInfo(
-            kid = kid ?: key.getKeyId(false),
-            key = key,
-            opts = opts,
-            x5c = x5c ?: key.getX509CertificateChain(),
-            providerId = providerId,
-            alias = alias,
-            keyVisibility =
-                keyVisibility ?: if (key.d !== null) {
-                    KeyVisibility.PRIVATE
-                } else {
-                    KeyVisibility.PUBLIC
-                },
-            signatureAlgorithm = signatureAlgorithm ?: key.getSignatureAlgorithm(),
-            keyType = keyType ?: key.getKeyType(),
-            keyEncoding =
-                keyEncoding ?: if (key is JwkDTOType || key is JwkType) {
-                    KeyEncoding.JOSE
-                } else if (key is CoseKeyType) {
-                    KeyEncoding.COSE
-                } else {
-                    null
-                },
-        )
-
-    @Suppress("UNCHECKED_CAST")
-    override fun toResolvedPublicKeyInfo(): ResolvedKeyInfo<KT> = this.copy(key = key.toPublicKey() as KT, keyVisibility = KeyVisibility.PUBLIC)
-
-    override fun toPublicKeyInfo() = toKeyInfo().toPublicKeyInfo()
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
-            return true
-        }
-        if (other == null || this::class != other::class) {
-            return false
-        }
-
-        other as ResolvedKeyInfoType<*>
-
-        if (kid != other.kid) {
-            return false
-        }
-        if (key != other.key) {
-            return false
-        }
-        if (opts != other.opts) {
-            return false
-        }
-        if (keyVisibility != other.keyVisibility) {
-            return false
-        }
-        if (signatureAlgorithm != other.signatureAlgorithm) {
-            return false
-        }
-        if (alias != other.alias) {
-            return false
-        }
-        if (x5c != null) {
-            if (other.x5c == null || !x5c.contentEquals(other.x5c)) {
-                return false
-            }
-        } else if (other.x5c != null) {
-            return false
-        }
-        if (providerId != other.providerId) {
-            return false
-        }
-        if (keyType != other.keyType) {
-            return false
-        }
-        if (keyEncoding != other.keyEncoding) {
-            return false
-        }
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = kid?.hashCode() ?: 0
-        result = 31 * result + key.hashCode()
-        result = 31 * result + (opts?.hashCode() ?: 0)
-        result = 31 * result + (keyVisibility?.hashCode() ?: 0)
-        result = 31 * result + (signatureAlgorithm?.hashCode() ?: 0)
-        result = 31 * result + (alias?.hashCode() ?: 0)
-        result = 31 * result + (x5c?.contentHashCode() ?: 0)
-        result = 31 * result + (providerId?.hashCode() ?: 0)
-        result = 31 * result + (keyType?.hashCode() ?: 0)
-        result = 31 * result + (keyEncoding?.hashCode() ?: 0)
-        return result
-    }
-
-    companion object {
-        @JsStatic
-        fun <KT : KeyType> fromDTO(dto: ResolvedKeyInfoType<KT>) =
-            with(dto) {
-                ResolvedKeyInfo(
-                    kid = key.getKeyId(false) ?: kid,
-                    key = key,
-                    opts = opts,
-                    x5c = key.getX509CertificateChain() ?: x5c,
-                    providerId = providerId,
-                    alias = alias,
-                    keyVisibility = keyVisibility ?: KeyVisibility.PUBLIC,
-                    signatureAlgorithm = signatureAlgorithm ?: key.getSignatureAlgorithm(),
-                    keyType = keyType,
-                    keyEncoding =
-                        keyEncoding ?: if (key is JwkDTOType || key is JwkType) {
-                            KeyEncoding.JOSE
-                        } else if (key is CoseKeyType) {
-                            KeyEncoding.COSE
-                        } else {
-                            null
-                        },
-                )
-            }
-
-        /**
-         * Safely creates a ResolvedKeyInfo from a KeyInfoType.
-         * @return IdkResult containing the resolved key info, or an error if no key is available.
-         */
-        @JsStatic
-        @Beta(message = "Safe conversion API - may have minor changes in future versions")
-        fun <KT : KeyType> tryFromKeyInfo(
-            dto: KeyInfoType<*>,
-            key: KT? = null,
-        ): IdkResult<ResolvedKeyInfo<KT>, IdkError> =
-            with(dto) {
-                @Suppress("UNCHECKED_CAST")
-                val resolvedKey =
-                    key ?: dto.key?.let { it as KT }
-                        ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "No key passed in and key info also had no key"))
-                Ok(
-                    ResolvedKeyInfo(
-                        kid = kid ?: resolvedKey.getKeyId(false),
-                        key = resolvedKey,
-                        opts = opts,
-                        x5c = x5c ?: resolvedKey.getX509CertificateChain(),
-                        providerId = providerId,
-                        alias = alias,
-                        keyVisibility =
-                            keyVisibility ?: if (resolvedKey.d !== null) {
-                                KeyVisibility.PRIVATE
-                            } else {
-                                KeyVisibility.PUBLIC
-                            },
-                        signatureAlgorithm = signatureAlgorithm ?: resolvedKey.getSignatureAlgorithm(),
-                        keyType = dto.keyType ?: resolvedKey.getKeyType(),
-                        keyEncoding =
-                            keyEncoding ?: if (resolvedKey is JwkDTOType || resolvedKey is JwkType) {
-                                KeyEncoding.JOSE
-                            } else if (resolvedKey is CoseKeyType) {
-                                KeyEncoding.COSE
-                            } else {
-                                null
-                            },
-                    ),
-                )
-            }
-
-        /**
-         * Creates a ResolvedKeyInfo from a KeyInfoType.
-         * @throws IllegalArgumentException if no key is available.
-         */
-        @JsStatic
-        fun <KT : KeyType> fromKeyInfo(
-            dto: KeyInfoType<*>,
-            key: KT? = null,
-        ): ResolvedKeyInfo<KT> =
-            tryFromKeyInfo(dto, key).getOrElse {
-                throw IllegalArgumentException(it.message.defaultMessage)
-            }
-
-        @JsStatic
-        fun <KT : KeyType> fromKey(key: KT): ResolvedKeyInfoType<KT> =
-            ResolvedKeyInfo(
-                kid = key.getKeyId(false),
+        override val providerId: String? = null,
+        override val keyType: KeyTypeMapping? = null,
+        override val keyEncoding: KeyEncoding? = null,
+        override val noCache: Boolean = false,
+    ) : ResolvedKeyInfoType<KT> {
+        fun toKeyInfo() =
+            KeyInfo(
+                kid = kid ?: key.getKeyId(false),
                 key = key,
-                x5c = key.getX509CertificateChain(),
+                opts = opts,
+                x5c = x5c ?: key.getX509CertificateChain(),
+                providerId = providerId,
+                alias = alias,
                 keyVisibility =
-                    if (key.d !== null) {
+                    keyVisibility ?: if (key.d !== null) {
                         KeyVisibility.PRIVATE
                     } else {
                         KeyVisibility.PUBLIC
                     },
-                signatureAlgorithm = key.getSignatureAlgorithm(),
-                keyType = key.getKeyType(),
+                signatureAlgorithm = signatureAlgorithm ?: key.getSignatureAlgorithm(),
+                keyType = keyType ?: key.getKeyType(),
                 keyEncoding =
-                    if (key is JwkDTOType || key is JwkType) {
+                    keyEncoding ?: if (key is JwkDTOType || key is JwkType) {
                         KeyEncoding.JOSE
                     } else if (key is CoseKeyType) {
                         KeyEncoding.COSE
@@ -871,8 +728,184 @@ data class ResolvedKeyInfo<KT : KeyType>(
                         null
                     },
             )
+
+        @Suppress("UNCHECKED_CAST")
+        override fun toResolvedPublicKeyInfo(): ResolvedKeyInfo<KT> = this.copy(key = key.toPublicKey() as KT, keyVisibility = KeyVisibility.PUBLIC)
+
+        override fun toPublicKeyInfo() = toKeyInfo().toPublicKeyInfo()
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as ResolvedKeyInfoType<*>
+
+            if (kid != other.kid) {
+                return false
+            }
+            if (key != other.key) {
+                return false
+            }
+            if (opts != other.opts) {
+                return false
+            }
+            if (keyVisibility != other.keyVisibility) {
+                return false
+            }
+            if (signatureAlgorithm != other.signatureAlgorithm) {
+                return false
+            }
+            if (alias != other.alias) {
+                return false
+            }
+            if (x5c != null) {
+                if (other.x5c == null || !x5c.contentEquals(other.x5c)) {
+                    return false
+                }
+            } else if (other.x5c != null) {
+                return false
+            }
+            if (providerId != other.providerId) {
+                return false
+            }
+            if (keyType != other.keyType) {
+                return false
+            }
+            if (keyEncoding != other.keyEncoding) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = kid?.hashCode() ?: 0
+            result = 31 * result + key.hashCode()
+            result = 31 * result + (opts?.hashCode() ?: 0)
+            result = 31 * result + (keyVisibility?.hashCode() ?: 0)
+            result = 31 * result + (signatureAlgorithm?.hashCode() ?: 0)
+            result = 31 * result + (alias?.hashCode() ?: 0)
+            result = 31 * result + (x5c?.contentHashCode() ?: 0)
+            result = 31 * result + (providerId?.hashCode() ?: 0)
+            result = 31 * result + (keyType?.hashCode() ?: 0)
+            result = 31 * result + (keyEncoding?.hashCode() ?: 0)
+            return result
+        }
+
+        companion object {
+            @JsStatic
+            @JvmStatic
+            fun <KT : KeyType> fromDTO(dto: ResolvedKeyInfoType<KT>) =
+                with(dto) {
+                    ResolvedKeyInfo(
+                        kid = key.getKeyId(false) ?: kid,
+                        key = key,
+                        opts = opts,
+                        x5c = key.getX509CertificateChain() ?: x5c,
+                        providerId = providerId,
+                        alias = alias,
+                        keyVisibility = keyVisibility ?: KeyVisibility.PUBLIC,
+                        signatureAlgorithm = signatureAlgorithm ?: key.getSignatureAlgorithm(),
+                        keyType = keyType,
+                        keyEncoding =
+                            keyEncoding ?: if (key is JwkDTOType || key is JwkType) {
+                                KeyEncoding.JOSE
+                            } else if (key is CoseKeyType) {
+                                KeyEncoding.COSE
+                            } else {
+                                null
+                            },
+                    )
+                }
+
+            /**
+             * Safely creates a ResolvedKeyInfo from a KeyInfoType.
+             * @return IdkResult containing the resolved key info, or an error if no key is available.
+             */
+            @JsStatic
+            @Beta(message = "Safe conversion API - may have minor changes in future versions")
+            @JvmStatic
+            fun <KT : KeyType> tryFromKeyInfo(
+                dto: KeyInfoType<*>,
+                key: KT? = null,
+            ): IdkResult<ResolvedKeyInfo<KT>, IdkError> =
+                with(dto) {
+                    @Suppress("UNCHECKED_CAST")
+                    val resolvedKey =
+                        key ?: dto.key?.let { it as KT }
+                            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "No key passed in and key info also had no key"))
+                    Ok(
+                        ResolvedKeyInfo(
+                            kid = kid ?: resolvedKey.getKeyId(false),
+                            key = resolvedKey,
+                            opts = opts,
+                            x5c = x5c ?: resolvedKey.getX509CertificateChain(),
+                            providerId = providerId,
+                            alias = alias,
+                            keyVisibility =
+                                keyVisibility ?: if (resolvedKey.d !== null) {
+                                    KeyVisibility.PRIVATE
+                                } else {
+                                    KeyVisibility.PUBLIC
+                                },
+                            signatureAlgorithm = signatureAlgorithm ?: resolvedKey.getSignatureAlgorithm(),
+                            keyType = dto.keyType ?: resolvedKey.getKeyType(),
+                            keyEncoding =
+                                keyEncoding ?: if (resolvedKey is JwkDTOType || resolvedKey is JwkType) {
+                                    KeyEncoding.JOSE
+                                } else if (resolvedKey is CoseKeyType) {
+                                    KeyEncoding.COSE
+                                } else {
+                                    null
+                                },
+                        ),
+                    )
+                }
+
+            /**
+             * Creates a ResolvedKeyInfo from a KeyInfoType.
+             * @throws IllegalArgumentException if no key is available.
+             */
+            @JsStatic
+            @JvmStatic
+            fun <KT : KeyType> fromKeyInfo(
+                dto: KeyInfoType<*>,
+                key: KT? = null,
+            ): ResolvedKeyInfo<KT> =
+                tryFromKeyInfo(dto, key).getOrElse {
+                    throw IllegalArgumentException(it.message.defaultMessage)
+                }
+
+            @JsStatic
+            @JvmStatic
+            fun <KT : KeyType> fromKey(key: KT): ResolvedKeyInfoType<KT> =
+                ResolvedKeyInfo(
+                    kid = key.getKeyId(false),
+                    key = key,
+                    x5c = key.getX509CertificateChain(),
+                    keyVisibility =
+                        if (key.d !== null) {
+                            KeyVisibility.PRIVATE
+                        } else {
+                            KeyVisibility.PUBLIC
+                        },
+                    signatureAlgorithm = key.getSignatureAlgorithm(),
+                    keyType = key.getKeyType(),
+                    keyEncoding =
+                        if (key is JwkDTOType || key is JwkType) {
+                            KeyEncoding.JOSE
+                        } else if (key is CoseKeyType) {
+                            KeyEncoding.COSE
+                        } else {
+                            null
+                        },
+                )
+        }
     }
-}
 
 /**
  * Represents a key that is managed by a KMS (Key Management System) provider.
@@ -910,6 +943,7 @@ data class ResolvedKeyInfo<KT : KeyType>(
 @SerialName("ManagedKeyInfo")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ManagedKeyInfo", exact = true)
+@JsExportCompat
 data class ManagedKeyInfo<out KT : KeyType>(
     override val alias: String,
     override val providerId: String,
@@ -936,6 +970,7 @@ data class ManagedKeyInfo<out KT : KeyType>(
          * @throws IllegalArgumentException if key, alias, or providerId is null
          */
         @JsStatic
+        @JvmStatic
         fun <T : KeyType> fromKeyInfo(keyInfo: KeyInfoType<T>): ManagedKeyInfo<T> {
             require(keyInfo.key != null) { "KeyInfo to ManagedKeyInfo must have a key" }
             require(keyInfo.alias != null) { "KeyInfo to ManagedKeyInfo must have an alias" }
@@ -962,6 +997,7 @@ data class ManagedKeyInfo<out KT : KeyType>(
          * @throws IllegalArgumentException if alias or providerId is null
          */
         @JsStatic
+        @JvmStatic
         fun <T : KeyType> build(
             keyInfo: KeyInfoType<T>,
             alias: String? = keyInfo.alias,

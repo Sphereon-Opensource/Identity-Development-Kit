@@ -21,6 +21,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.did.models.VerificationPurpose
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -33,10 +34,12 @@ import kotlin.native.ObjCName
 @ObjCName("ResolveDidArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class ResolveDidArgs(
-    val did: String,
-    val options: DidResolutionOptions = DidResolutionOptions(),
-)
+data class ResolveDidArgs
+    @JvmOverloads
+    constructor(
+        val did: String,
+        val options: DidResolutionOptions = DidResolutionOptions(),
+    )
 
 /**
  * Arguments for the DereferenceDidCommand.
@@ -48,10 +51,12 @@ data class ResolveDidArgs(
 @ObjCName("DereferenceDidArgs", exact = true)
 @JsExportCompat
 @Serializable
-data class DereferenceDidArgs(
-    val didUrl: String,
-    val options: DidDereferenceOptions = DidDereferenceOptions(),
-)
+data class DereferenceDidArgs
+    @JvmOverloads
+    constructor(
+        val didUrl: String,
+        val options: DidDereferenceOptions = DidDereferenceOptions(),
+    )
 
 /**
  * Arguments for the ResolveVerificationMethodCommand.

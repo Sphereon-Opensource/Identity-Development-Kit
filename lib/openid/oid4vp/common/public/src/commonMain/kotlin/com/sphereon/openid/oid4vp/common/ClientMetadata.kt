@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.common
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.ClientRegistration
@@ -155,8 +157,10 @@ internal object ClientMetadataSerializer : KSerializer<ClientMetadata> {
  * @property authorizationEncryptedResponseEnc JWE enc for encrypted responses (JARM - OpenID4VP Section 8.4)
  */
 @Serializable(with = ClientMetadataSerializer::class)
+@JsExportCompat
 data class ClientMetadata(
     val baseMetadata: ClientRegistration,
+    @JsExportIgnoreCompat
     @SerialName("vp_formats")
     val vpFormats: Map<String, VpFormatInfo>? = null,
     @SerialName("client_purpose")
@@ -189,6 +193,8 @@ data class ClientMetadata(
     val softwareId: String? get() = baseMetadata.softwareId
     val softwareVersion: String? get() = baseMetadata.softwareVersion
     val softwareStatement: String? get() = baseMetadata.softwareStatement
+
+    @JsExportIgnoreCompat
     val additionalParameters: Map<String, JsonElement> get() = baseMetadata.additionalParameters
 }
 
@@ -215,6 +221,7 @@ data class ClientMetadata(
  * @property deviceAuthAlgValuesSupported COSE algorithms for DeviceAuth in mdoc (mso_mdoc)
  */
 @Serializable
+@JsExportCompat
 data class VpFormatInfo(
     /**
      * JWS algorithms supported for SD-JWT issuer signature.
@@ -359,6 +366,7 @@ val validateClientMetadata =
  *
  * Provides a convenient DSL for configuring VP format algorithm support.
  */
+@JsExportCompat
 class VpFormatInfoBuilder {
     private var sdJwtAlgValues: MutableList<String>? = null
     private var kbJwtAlgValues: MutableList<String>? = null
@@ -499,6 +507,7 @@ fun ldpVpFormatInfo(proofTypes: List<String> = listOf("Ed25519Signature2018", "J
  *
  * Provides a convenient DSL for configuring which VP formats a verifier supports.
  */
+@JsExportCompat
 class VpFormatsBuilder {
     private val formats = mutableMapOf<String, VpFormatInfo>()
 
@@ -577,6 +586,7 @@ class VpFormatsBuilder {
     /**
      * Add support for a custom format using a builder DSL.
      */
+    @JsExportIgnoreCompat
     fun format(
         name: String,
         block: VpFormatInfoBuilder.() -> Unit,
@@ -584,6 +594,7 @@ class VpFormatsBuilder {
         formats[name] = buildVpFormatInfo(block)
     }
 
+    @JsExportIgnoreCompat
     fun build(): Map<String, VpFormatInfo> = formats.toMap()
 }
 

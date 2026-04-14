@@ -21,45 +21,49 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PasswordInputCallback", exact = true)
 @Serializable
 @JsExportCompat
-data class PasswordInputCallback(
-    val password: CharArray,
-    val protectionAlgorithm: String? = null,
-    @Contextual
-    val protectionParameters: Any? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+PasswordInputCallback
+    @JvmOverloads
+    constructor(
+        val password: CharArray,
+        val protectionAlgorithm: String? = null,
+        @Contextual
+        val protectionParameters: Any? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as PasswordInputCallback
+
+            if (!password.contentEquals(other.password)) {
+                return false
+            }
+            if (protectionAlgorithm != other.protectionAlgorithm) {
+                return false
+            }
+            if (protectionParameters != other.protectionParameters) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
-        }
 
-        other as PasswordInputCallback
-
-        if (!password.contentEquals(other.password)) {
-            return false
+        override fun hashCode(): Int {
+            var result = password.contentHashCode()
+            result = 31 * result + (protectionAlgorithm?.hashCode() ?: 0)
+            result = 31 * result + (protectionParameters?.hashCode() ?: 0)
+            return result
         }
-        if (protectionAlgorithm != other.protectionAlgorithm) {
-            return false
-        }
-        if (protectionParameters != other.protectionParameters) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = password.contentHashCode()
-        result = 31 * result + (protectionAlgorithm?.hashCode() ?: 0)
-        result = 31 * result + (protectionParameters?.hashCode() ?: 0)
-        return result
-    }
-}

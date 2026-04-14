@@ -16,8 +16,8 @@
  */
 
 package com.sphereon.crypto.kms.keystore.memory
-
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.kms.KeyStore
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KeyStoreFactory

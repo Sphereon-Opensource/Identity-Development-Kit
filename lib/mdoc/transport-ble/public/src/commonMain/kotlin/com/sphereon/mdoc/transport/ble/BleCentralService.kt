@@ -20,6 +20,7 @@
 package com.sphereon.mdoc.transport.ble
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.ScanError
@@ -57,6 +58,7 @@ import kotlin.uuid.Uuid
  * This allows the service to be created and tested independently of the
  * engagement infrastructure.
  */
+@JsExportCompat
 interface BleCentralService : AutoCloseable {
     /**
      * The role of this party (MDOC or MDOC_READER).

@@ -23,6 +23,8 @@ import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -38,11 +40,13 @@ import kotlin.native.ObjCName
 @ObjCName("DidKeyTypeCapability", exact = true)
 @JsExportCompat
 @Serializable
-data class KeyTypeCapability(
-    val keyType: KeyTypeMapping,
-    val curve: Curve? = null,
-    val algorithm: SignatureAlgorithm? = null,
-)
+data class KeyTypeCapability
+    @JvmOverloads
+    constructor(
+        val keyType: KeyTypeMapping,
+        val curve: Curve? = null,
+        val algorithm: SignatureAlgorithm? = null,
+    )
 
 /**
  * Verification method (key) management capabilities.
@@ -58,102 +62,112 @@ data class KeyTypeCapability(
 @ObjCName("DidKeyManagementCapabilities", exact = true)
 @JsExportCompat
 @Serializable
-data class KeyManagementCapabilities(
-    val addition: Boolean = false,
-    val replacement: Boolean = false,
-    val removal: Boolean = false,
-    val supportedKeyTypes: List<KeyTypeCapability> = emptyList(),
-) {
-    companion object {
-        /**
-         * Common Ed25519 key capability.
-         */
-        val ED25519: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.OKP,
-                curve = Curve.Ed25519,
-                algorithm = SignatureAlgorithm.ED25519,
-            )
+data class KeyManagementCapabilities
+    @JvmOverloads
+    constructor(
+        val addition: Boolean = false,
+        val replacement: Boolean = false,
+        val removal: Boolean = false,
+        val supportedKeyTypes: List<KeyTypeCapability> = emptyList(),
+    ) {
+        companion object {
+            /**
+             * Common Ed25519 key capability.
+             */
+            @JvmStatic
+            val ED25519: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.OKP,
+                    curve = Curve.Ed25519,
+                    algorithm = SignatureAlgorithm.ED25519,
+                )
 
-        /**
-         * Common X25519 key capability (key agreement).
-         */
-        val X25519: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.OKP,
-                curve = Curve.X25519,
-                algorithm = null, // X25519 is for key agreement, not signing
-            )
+            /**
+             * Common X25519 key capability (key agreement).
+             */
+            @JvmStatic
+            val X25519: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.OKP,
+                    curve = Curve.X25519,
+                    algorithm = null, // X25519 is for key agreement, not signing
+                )
 
-        /**
-         * Common secp256k1 key capability.
-         */
-        val SECP256K1: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.EC,
-                curve = Curve.Secp256k1,
-                algorithm = SignatureAlgorithm.ES256K,
-            )
+            /**
+             * Common secp256k1 key capability.
+             */
+            @JvmStatic
+            val SECP256K1: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.EC,
+                    curve = Curve.Secp256k1,
+                    algorithm = SignatureAlgorithm.ES256K,
+                )
 
-        /**
-         * Common P-256 key capability.
-         */
-        val P256: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.EC,
-                curve = Curve.P_256,
-                algorithm = SignatureAlgorithm.ECDSA_SHA256,
-            )
+            /**
+             * Common P-256 key capability.
+             */
+            @JvmStatic
+            val P256: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.EC,
+                    curve = Curve.P_256,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
 
-        /**
-         * Common P-384 key capability.
-         */
-        val P384: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.EC,
-                curve = Curve.P_384,
-                algorithm = SignatureAlgorithm.ECDSA_SHA384,
-            )
+            /**
+             * Common P-384 key capability.
+             */
+            @JvmStatic
+            val P384: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.EC,
+                    curve = Curve.P_384,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA384,
+                )
 
-        /**
-         * Common P-521 key capability.
-         */
-        val P521: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.EC,
-                curve = Curve.P_521,
-                algorithm = SignatureAlgorithm.ECDSA_SHA512,
-            )
+            /**
+             * Common P-521 key capability.
+             */
+            @JvmStatic
+            val P521: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.EC,
+                    curve = Curve.P_521,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA512,
+                )
 
-        /**
-         * Common RSA key capability.
-         */
-        val RSA: KeyTypeCapability =
-            KeyTypeCapability(
-                keyType = KeyTypeMapping.RSA,
-                curve = null,
-                algorithm = null,
-            )
+            /**
+             * Common RSA key capability.
+             */
+            @JvmStatic
+            val RSA: KeyTypeCapability =
+                KeyTypeCapability(
+                    keyType = KeyTypeMapping.RSA,
+                    curve = null,
+                    algorithm = null,
+                )
 
-        /**
-         * No key management capabilities.
-         */
-        val NONE: KeyManagementCapabilities = KeyManagementCapabilities()
-    }
-
-    /**
-     * Checks if any key management operations are supported.
-     */
-    fun supportsKeyManagement(): Boolean = addition || replacement || removal
-
-    /**
-     * Checks if a specific key type and curve is supported.
-     */
-    fun supportsKeyType(
-        keyType: KeyTypeMapping,
-        curve: Curve?,
-    ): Boolean =
-        supportedKeyTypes.any { capability ->
-            capability.keyType == keyType && (curve == null || capability.curve == curve)
+            /**
+             * No key management capabilities.
+             */
+            @JvmStatic
+            val NONE: KeyManagementCapabilities = KeyManagementCapabilities()
         }
-}
+
+        /**
+         * Checks if any key management operations are supported.
+         */
+        fun supportsKeyManagement(): Boolean = addition || replacement || removal
+
+        /**
+         * Checks if a specific key type and curve is supported.
+         */
+        fun supportsKeyType(
+            keyType: KeyTypeMapping,
+            curve: Curve?,
+        ): Boolean =
+            supportedKeyTypes.any { capability ->
+                capability.keyType == keyType && (curve == null || capability.curve == curve)
+            }
+    }

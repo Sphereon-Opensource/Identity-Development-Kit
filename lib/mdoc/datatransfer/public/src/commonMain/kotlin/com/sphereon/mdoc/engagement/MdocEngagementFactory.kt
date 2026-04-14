@@ -19,6 +19,7 @@ package com.sphereon.mdoc.engagement
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.mdoc.transfer.device.BleOptions
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
@@ -36,6 +37,7 @@ import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocEngagementFactory", exact = true)
+@JsExportCompat
 interface MdocEngagementFactory {
     val holder: Holder
     val reader: Reader
@@ -96,6 +98,7 @@ interface MdocEngagementFactory {
     }
 }
 
+@JsExportCompat
 class EngagementConfiguration {
     private val _engagementMethods = mutableSetOf<MdocEngagementMethod>()
     private val _retrievalMethods = mutableSetOf<DeviceRetrievalMethod>()
@@ -194,6 +197,7 @@ class EngagementConfiguration {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ReaderConfiguration", exact = true)
+@JsExportCompat
 class ReaderConfiguration {
     private val _engagementMethods = mutableSetOf<MdocEngagementMethod>()
     private val _retrievalMethods = mutableSetOf<DeviceRetrievalMethod>()
@@ -220,6 +224,7 @@ class ReaderConfiguration {
 // Engagement builder for grouping engagement methods
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("EngagementBuilder", exact = true)
+@JsExportCompat
 class EngagementBuilder {
     private val methods = mutableSetOf<MdocEngagementMethod>()
 
@@ -253,6 +258,7 @@ class EngagementBuilder {
 // Retrieval builder for grouping retrieval methods
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RetrievalBuilder", exact = true)
+@JsExportCompat
 class RetrievalBuilder(
     private val engagementMethodSet: Set<MdocEngagementMethod>,
 ) {
@@ -288,18 +294,21 @@ class RetrievalBuilder(
 // Individual method builders
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("QrEngagementBuilder", exact = true)
+@JsExportCompat
 class QrEngagementBuilder {
     var scheme: String = "mdoc:"
 
     fun build(): QREngagementMethod = QREngagementMethod(scheme)
 }
 
+@JsExportCompat
 class NfcEngagementBuilder {
     fun build(): NfcEngagementMethod = NfcEngagementMethod()
 }
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ReaderEngagementBuilder", exact = true)
+@JsExportCompat
 class ReaderEngagementBuilder {
     private var readerEngagement: ReaderEngagement? = null
     private var readerEngagementCborCodec: ReaderEngagementCborCodec? = null
@@ -325,6 +334,7 @@ class ReaderEngagementBuilder {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BleRetrievalBuilder", exact = true)
+@JsExportCompat
 class BleRetrievalBuilder {
     var peripheralServerMode: Boolean = false
 
@@ -382,6 +392,7 @@ class BleRetrievalBuilder {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NfcRetrievalBuilder", exact = true)
+@JsExportCompat
 class NfcRetrievalBuilder {
     var maxCommandDataFieldLength: UInt = 0xffff.toUInt()
     var maxResponseDataFieldLength: UInt = 0x10000.toUInt()
@@ -408,6 +419,7 @@ class NfcRetrievalBuilder {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("WebsiteRetrievalBuilder", exact = true)
+@JsExportCompat
 class WebsiteRetrievalBuilder(
     private val engagementMethodSet: Set<MdocEngagementMethod>,
 ) {
@@ -463,6 +475,7 @@ class WebsiteRetrievalBuilder(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Oid4vpEngagementBuilder", exact = true)
+@JsExportCompat
 class Oid4vpEngagementBuilder {
     /**
      * The full `mdoc-openid4vp://` URI from the verifier.
@@ -533,6 +546,7 @@ class Oid4vpEngagementBuilder {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Oid4vpRetrievalBuilder", exact = true)
+@JsExportCompat
 class Oid4vpRetrievalBuilder(
     private val engagementMethodSet: Set<MdocEngagementMethod>,
 ) {

@@ -20,6 +20,7 @@ import com.sphereon.cbor.NumberLabel
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.uuid.Uuid
 
@@ -35,6 +36,7 @@ data class RestApiOptions(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val URI = NumberLabel(0)
     }
 }
@@ -53,15 +55,19 @@ data class WifiAwareOptions(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val PASS_PHRASE = NumberLabel(0)
 
         @JsStatic
+        @JvmStatic
         val CHANNEL_INFO_OPERATING_CLASS = NumberLabel(1)
 
         @JsStatic
+        @JvmStatic
         val CHANNEL_INFO_CHANNEL_NUMBER = NumberLabel(2)
 
         @JsStatic
+        @JvmStatic
         val SUPPORTED_BANDS = NumberLabel(3)
     }
 }
@@ -81,18 +87,23 @@ data class BleOptions(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val PERIPHERAL_SERVER_MODE = NumberLabel(0)
 
         @JsStatic
+        @JvmStatic
         val CENTRAL_CLIENT_MODE = NumberLabel(1)
 
         @JsStatic
+        @JvmStatic
         val PERIPHERAL_SERVER_MODE_UUID = NumberLabel(10)
 
         @JsStatic
+        @JvmStatic
         val CENTRAL_CLIENT_MODE_UUID = NumberLabel(11)
 
         @JsStatic
+        @JvmStatic
         val PERIPHERAL_SERVER_MODE_DEVICE_ADDRESS = NumberLabel(20)
     }
 }
@@ -108,9 +119,11 @@ data class NfcOptions(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val MAX_COMMAND_DATA_FIELD_LENGTH = NumberLabel(0)
 
         @JsStatic
+        @JvmStatic
         val MAX_RESPONSE_DATA_FIELD_LENGTH = NumberLabel(1)
     }
 }
@@ -159,18 +172,23 @@ data class Oid4vpOptions(
 
     companion object {
         @JsStatic
+        @JvmStatic
         val CLIENT_ID = NumberLabel(0)
 
         @JsStatic
+        @JvmStatic
         val RESPONSE_URI = NumberLabel(1)
 
         @JsStatic
+        @JvmStatic
         val NONCE = NumberLabel(2)
 
         @JsStatic
+        @JvmStatic
         val REQUEST_URI = NumberLabel(3)
 
         @JsStatic
+        @JvmStatic
         val PRESENTATION_DEFINITION_URI = NumberLabel(4)
     }
 }

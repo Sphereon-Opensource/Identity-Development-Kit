@@ -29,6 +29,7 @@ import kotlin.native.ObjCName
  * @property authorizationServer The expected issuer (authorization server URL)
  * @property expectedAudience The expected audience (this resource server)
  */
+@JsExportCompat
 data class VerifyJwtArgs(
     val jwt: String,
     val authorizationServer: String,
@@ -68,6 +69,7 @@ data class VerifyJwtArgs(
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyJwtCommand", exact = true)
+@JsExportCompat
 interface VerifyJwtCommand : ServiceCommand<VerifyJwtArgs, TokenPayload.Jwt> {
     override val commandId: String get() = COMMAND_ID
 

@@ -16,19 +16,26 @@
 
 package com.sphereon.identity.matching.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
+@JsExportCompat
 @Serializable
-data class IdentityMatch(
-    val id: String,
-    val identifierHash: String,
-    val identifierType: IdentifierType,
-    val internalIdentityId: String,
-    val tenantId: String,
-    val metadata: Map<String, String> = emptyMap(),
-    val hashKeyVersion: String? = null,
-    val createdAt: Instant,
-    val updatedAt: Instant? = null,
-    val lastUsedAt: Instant? = null,
-)
+data class IdentityMatch
+    @JvmOverloads
+    constructor(
+        val id: String,
+        val identifierHash: String,
+        val identifierType: IdentifierType,
+        val internalIdentityId: String,
+        val tenantId: String,
+        @JsExportIgnoreCompat
+        val metadata: Map<String, String> = emptyMap(),
+        val hashKeyVersion: String? = null,
+        val createdAt: Instant,
+        val updatedAt: Instant? = null,
+        val lastUsedAt: Instant? = null,
+    )

@@ -30,6 +30,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -95,6 +96,7 @@ enum class JwaAlgorithm(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String?): JwaAlgorithm? = entries.find { entry -> entry.value == value }
     }
 }

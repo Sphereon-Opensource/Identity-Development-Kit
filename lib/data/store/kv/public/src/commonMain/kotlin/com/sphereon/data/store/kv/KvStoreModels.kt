@@ -16,6 +16,8 @@
 
 package com.sphereon.data.store.kv
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.di.Order
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
@@ -34,6 +36,7 @@ import kotlin.native.ObjCName
  * - SESSION: isolated per session within a principal+tenant context
  */
 @Serializable
+@JsExportCompat
 enum class KvStoreScopeBinding {
     APP,
     TENANT,
@@ -54,6 +57,7 @@ object KvStoreBackends {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KvStoreConfigBase", exact = true)
+@JsExportCompat
 interface KvStoreConfigBase {
     val id: String
     val scopeBinding: KvStoreScopeBinding
@@ -67,6 +71,7 @@ interface KvStoreConfigBase {
  * Subclasses add backend-specific typed fields.
  */
 @Serializable
+@JsExportCompat
 abstract class AbstractKvStoreConfig {
     abstract val id: String
 
@@ -85,6 +90,7 @@ abstract class AbstractKvStoreConfig {
  */
 @Serializable
 @SerialName("KvStoreConfig")
+@JsExportCompat
 data class KvStoreConfig(
     override val id: String,
     @SerialName("scopeBinding")
@@ -93,6 +99,7 @@ data class KvStoreConfig(
     override val enabled: Boolean = true,
     override val order: Int = Order.MEDIUM.orderValue,
     @SerialName("defaultconfigs")
+    @JsExportIgnoreCompat
     val defaultConfigValues: Map<String, String> = emptyMap(),
 ) : AbstractKvStoreConfig(),
     KvStoreConfigBase
@@ -109,6 +116,7 @@ data class KvStoreConfig(
 @SerialName("memory")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemoryKvStoreConfig", exact = true)
+@JsExportCompat
 data class InMemoryKvStoreConfig(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     override val id: String = "memory",
@@ -138,6 +146,7 @@ data class InMemoryKvStoreConfig(
 @SerialName("kottage")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KottageKvStoreConfig", exact = true)
+@JsExportCompat
 data class KottageKvStoreConfig(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     override val id: String = "kottage",
@@ -161,6 +170,7 @@ data class KottageKvStoreConfig(
 /**
  * Partition key used by backing storages (in-memory, persistent) to isolate data.
  */
+@JsExportCompat
 data class KvPartitionKey(
     val storeId: String,
     val tenantId: String? = null,
@@ -168,16 +178,19 @@ data class KvPartitionKey(
     val sessionId: String? = null,
 )
 
+@JsExportCompat
 data class KvEntryMetadata(
     val createdAtEpochMillis: Long,
     val expiresAtEpochMillis: Long,
 )
 
+@JsExportCompat
 data class KvEntry<V : Any>(
     val value: V,
     val metadata: KvEntryMetadata,
 )
 
+@JsExportCompat
 data class KvPutResult(
     val metadata: KvEntryMetadata,
 )

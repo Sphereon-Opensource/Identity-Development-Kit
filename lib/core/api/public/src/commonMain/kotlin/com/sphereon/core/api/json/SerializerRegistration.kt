@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.json
 
+import com.sphereon.core.compat.JsExportCompat
 import software.amazon.app.platform.scope.Scope
 import software.amazon.app.platform.scope.Scoped
 
@@ -44,6 +45,7 @@ import software.amazon.app.platform.scope.Scoped
  * }
  * ```
  */
+@JsExportCompat
 interface SerializerRegistration : Scoped {
     /**
      * Called automatically when entering the AppScope.

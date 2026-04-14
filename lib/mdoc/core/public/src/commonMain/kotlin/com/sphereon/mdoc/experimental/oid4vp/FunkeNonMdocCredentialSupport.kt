@@ -37,6 +37,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 const val OID4VP_PROTOCOL_INFO_LITERAL = "oid4vp"
@@ -79,6 +80,7 @@ data class CredentialFormat(
 ) {
     companion object {
         @JsStatic
+        @JvmStatic
         val ALG = StringLabel("alg")
     }
 }
@@ -151,6 +153,7 @@ data class Oid4vpRequestProtocol(
          * deserializing between CBOR and JSON representations.
          */
         @JsStatic
+        @JvmStatic
         val CREDENTIAL_FORMAT = StringLabel("credentialFormat")
     }
 }

@@ -21,6 +21,8 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.did.models.VerificationMethodType
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -39,75 +41,80 @@ import kotlin.native.ObjCName
 @ObjCName("DidRepresentationCapabilities", exact = true)
 @JsExportCompat
 @Serializable
-data class RepresentationCapabilities(
-    val jsonWebKey2020: Boolean = true,
-    val multikey: Boolean = false,
-    val ed25519VerificationKey2020: Boolean = false,
-    val ed25519VerificationKey2018: Boolean = false,
-    val ecdsaSecp256k1VerificationKey2019: Boolean = false,
-) {
-    companion object {
-        /**
-         * Only JsonWebKey2020 support.
-         */
-        val JWK_ONLY: RepresentationCapabilities =
-            RepresentationCapabilities(
-                jsonWebKey2020 = true,
-            )
+data class RepresentationCapabilities
+    @JvmOverloads
+    constructor(
+        val jsonWebKey2020: Boolean = true,
+        val multikey: Boolean = false,
+        val ed25519VerificationKey2020: Boolean = false,
+        val ed25519VerificationKey2018: Boolean = false,
+        val ecdsaSecp256k1VerificationKey2019: Boolean = false,
+    ) {
+        companion object {
+            /**
+             * Only JsonWebKey2020 support.
+             */
+            @JvmStatic
+            val JWK_ONLY: RepresentationCapabilities =
+                RepresentationCapabilities(
+                    jsonWebKey2020 = true,
+                )
+
+            /**
+             * JsonWebKey2020 and Multikey support.
+             */
+            @JvmStatic
+            val JWK_AND_MULTIKEY: RepresentationCapabilities =
+                RepresentationCapabilities(
+                    jsonWebKey2020 = true,
+                    multikey = true,
+                )
+
+            /**
+             * All verification method formats supported.
+             */
+            @JvmStatic
+            val ALL: RepresentationCapabilities =
+                RepresentationCapabilities(
+                    jsonWebKey2020 = true,
+                    multikey = true,
+                    ed25519VerificationKey2020 = true,
+                    ed25519VerificationKey2018 = true,
+                    ecdsaSecp256k1VerificationKey2019 = true,
+                )
+        }
 
         /**
-         * JsonWebKey2020 and Multikey support.
+         * Gets a list of supported verification method types.
          */
-        val JWK_AND_MULTIKEY: RepresentationCapabilities =
-            RepresentationCapabilities(
-                jsonWebKey2020 = true,
-                multikey = true,
-            )
+        fun getSupportedTypes(): List<VerificationMethodType> =
+            buildList {
+                if (jsonWebKey2020) {
+                    add(VerificationMethodType.JSON_WEB_KEY_2020)
+                }
+                if (multikey) {
+                    add(VerificationMethodType.MULTIKEY)
+                }
+                if (ed25519VerificationKey2020) {
+                    add(VerificationMethodType.ED25519_VERIFICATION_KEY_2020)
+                }
+                if (ed25519VerificationKey2018) {
+                    add(VerificationMethodType.ED25519_VERIFICATION_KEY_2018)
+                }
+                if (ecdsaSecp256k1VerificationKey2019) {
+                    add(VerificationMethodType.ECDSA_SECP256K1_VERIFICATION_KEY_2019)
+                }
+            }
 
         /**
-         * All verification method formats supported.
+         * Checks if a specific verification method type is supported.
          */
-        val ALL: RepresentationCapabilities =
-            RepresentationCapabilities(
-                jsonWebKey2020 = true,
-                multikey = true,
-                ed25519VerificationKey2020 = true,
-                ed25519VerificationKey2018 = true,
-                ecdsaSecp256k1VerificationKey2019 = true,
-            )
+        fun supportsType(type: VerificationMethodType): Boolean =
+            when (type) {
+                VerificationMethodType.JSON_WEB_KEY_2020 -> jsonWebKey2020
+                VerificationMethodType.MULTIKEY -> multikey
+                VerificationMethodType.ED25519_VERIFICATION_KEY_2020 -> ed25519VerificationKey2020
+                VerificationMethodType.ED25519_VERIFICATION_KEY_2018 -> ed25519VerificationKey2018
+                VerificationMethodType.ECDSA_SECP256K1_VERIFICATION_KEY_2019 -> ecdsaSecp256k1VerificationKey2019
+            }
     }
-
-    /**
-     * Gets a list of supported verification method types.
-     */
-    fun getSupportedTypes(): List<VerificationMethodType> =
-        buildList {
-            if (jsonWebKey2020) {
-                add(VerificationMethodType.JSON_WEB_KEY_2020)
-            }
-            if (multikey) {
-                add(VerificationMethodType.MULTIKEY)
-            }
-            if (ed25519VerificationKey2020) {
-                add(VerificationMethodType.ED25519_VERIFICATION_KEY_2020)
-            }
-            if (ed25519VerificationKey2018) {
-                add(VerificationMethodType.ED25519_VERIFICATION_KEY_2018)
-            }
-            if (ecdsaSecp256k1VerificationKey2019) {
-                add(VerificationMethodType.ECDSA_SECP256K1_VERIFICATION_KEY_2019)
-            }
-        }
-
-    /**
-     * Checks if a specific verification method type is supported.
-     */
-    fun supportsType(type: VerificationMethodType): Boolean =
-        when (type) {
-            VerificationMethodType.JSON_WEB_KEY_2020 -> jsonWebKey2020
-            VerificationMethodType.MULTIKEY -> multikey
-            VerificationMethodType.ED25519_VERIFICATION_KEY_2020 -> ed25519VerificationKey2020
-            VerificationMethodType.ED25519_VERIFICATION_KEY_2018 -> ed25519VerificationKey2018
-            VerificationMethodType.ECDSA_SECP256K1_VERIFICATION_KEY_2019 -> ecdsaSecp256k1VerificationKey2019
-        }
-}

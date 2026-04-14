@@ -20,6 +20,7 @@ package com.sphereon.mdoc.data.mso
 import com.sphereon.cbor.StringLabel
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 @JsExportCompat
@@ -56,7 +57,10 @@ data class KeyAuthorizations(
     override fun toString(): String = "KeyAuthorizations(nameSpaces=$nameSpaces, dataElements=$dataElements)"
 
     companion object {
+        @JvmStatic
         val NAME_SPACES = StringLabel("nameSpaces")
+
+        @JvmStatic
         val DATA_ELEMENTS = StringLabel("dataElements")
     }
 }

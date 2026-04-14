@@ -21,6 +21,7 @@ import com.sphereon.cbor.StringLabel
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.stringify
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -37,7 +38,10 @@ data class DeviceSigned(
     override fun toString(): String = "DeviceSigned(nameSpaces=$nameSpaces, deviceAuth=$deviceAuth, original=${stringify(original)})"
 
     companion object {
+        @JvmStatic
         val NAME_SPACES = StringLabel("nameSpaces")
+
+        @JvmStatic
         val DEVICE_AUTH = StringLabel("deviceAuth")
     }
 }

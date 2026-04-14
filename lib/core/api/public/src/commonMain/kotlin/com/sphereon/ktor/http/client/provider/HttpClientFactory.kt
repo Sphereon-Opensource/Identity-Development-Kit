@@ -18,6 +18,7 @@
 package com.sphereon.ktor.http.client.provider
 
 import com.sphereon.core.api.log.LoggerConfig
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.ktor.http.client.config.SslConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -27,6 +28,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiationConfig
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -35,6 +37,7 @@ import kotlin.native.ObjCName
  * This type lives in `core/api` so other modules can depend on the *interfaces* without introducing
  * build-time cycles. Concrete engines and platform-specific behavior are provided by host applications.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HttpClientOptions", exact = true)
 data class HttpClientOptions(
@@ -72,6 +75,7 @@ data class HttpClientOptions(
     val urlValidation: UrlValidationPolicy? = null,
 ) {
     companion object {
+        @JvmStatic
         fun createDefault(loggingConfig: LoggerConfig = LoggerConfig.Default): HttpClientOptions =
             HttpClientOptions(
                 // Do not force an engine here.
@@ -94,6 +98,7 @@ data class HttpClientOptions(
     }
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HttpClientFactory", exact = true)
 interface HttpClientFactory {

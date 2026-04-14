@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.auth.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vp.auth.input.CreateUserInput
 import com.sphereon.openid.oid4vp.auth.model.ResolvedUser
 
@@ -46,6 +47,7 @@ import com.sphereon.openid.oid4vp.auth.model.ResolvedUser
  * - GET /api/users/v1/users?username={identifier} for lookup
  * - POST /api/users/v1/users for creation
  */
+@JsExportCompat
 interface UserService {
     /**
      * Look up a user by their identifier (username).

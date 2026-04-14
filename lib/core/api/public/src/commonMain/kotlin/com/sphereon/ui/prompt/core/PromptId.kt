@@ -20,6 +20,7 @@ package com.sphereon.ui.prompt.core
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmInline
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -42,12 +43,14 @@ value class PromptId
             /**
              * Creates a new random PromptId.
              */
+            @JvmStatic
             @OptIn(ExperimentalUuidApi::class)
             fun random(): PromptId = PromptId(Uuid.random().toString())
 
             /**
              * Creates a PromptId from an existing string value.
              */
+            @JvmStatic
             fun fromString(value: String): PromptId = PromptId(value)
         }
     }

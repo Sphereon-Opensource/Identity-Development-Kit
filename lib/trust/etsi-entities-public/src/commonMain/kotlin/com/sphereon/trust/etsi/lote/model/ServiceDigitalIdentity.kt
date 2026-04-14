@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.JsonElement
  * Key difference from 612: supports plural certificates, public key values (JWK),
  * and multiple X.509 Subject Key Identifiers.
  */
+@JsExportCompat
 @Serializable
 data class LoTEServiceDigitalIdentity(
     @SerialName("X509Certificates")
@@ -44,6 +46,7 @@ data class LoTEServiceDigitalIdentity(
 /**
  * PKI object containing a Base64-encoded DER value.
  */
+@JsExportCompat
 @Serializable
 data class PkiObject(
     @SerialName("pkiOb")

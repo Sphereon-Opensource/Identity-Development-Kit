@@ -16,11 +16,13 @@
 
 package com.sphereon.openid.oid4vci.rest
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
  * Configuration for the OID4VCI backend REST API.
  */
+@JsExportCompat
 @Serializable
 data class Oid4vciRestConfig(
     /**
@@ -37,6 +39,7 @@ data class Oid4vciRestConfig(
 /**
  * Provider interface for OID4VCI REST configuration.
  */
+@JsExportCompat
 interface Oid4vciRestConfigProvider {
     fun getConfig(): Oid4vciRestConfig
 }

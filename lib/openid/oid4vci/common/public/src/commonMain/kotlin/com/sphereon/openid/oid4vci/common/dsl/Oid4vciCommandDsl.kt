@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vci.common.dsl
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
@@ -61,6 +63,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * Builder for [RequestedCredentialResponseEncryption].
  * Used inside both [RequestCredentialArgsBuilder] and [RequestCredentialWithFlowArgsBuilder].
  */
+@JsExportCompat
 @Oid4vciDsl
 class RequestedEncryptionBuilder {
     /** The requester's public JWK used to encrypt the credential response. */
@@ -221,6 +224,7 @@ class RequestCredentialArgsBuilder {
 }
 
 /** Validated intermediate state produced by [RequestCredentialArgsBuilder]. */
+@JsExportCompat
 data class RequestCredentialArgsState(
     val credentialEndpoint: String,
     val accessToken: String,
@@ -350,6 +354,7 @@ class CreateCredentialRequestProofArgsBuilder {
 }
 
 /** Validated intermediate state produced by [CreateCredentialRequestProofArgsBuilder]. */
+@JsExportCompat
 data class CreateCredentialRequestProofArgsState(
     val issuerUrl: String,
     val cNonce: String?,
@@ -543,6 +548,7 @@ class RequestCredentialWithFlowArgsBuilder {
 }
 
 /** Validated intermediate state produced by [RequestCredentialWithFlowArgsBuilder]. */
+@JsExportCompat
 data class RequestCredentialWithFlowArgsState(
     val sessionId: String,
     val credentialEndpoint: String,
@@ -575,6 +581,7 @@ data class RequestCredentialWithFlowArgsState(
  * }
  * ```
  */
+@JsExportCompat
 @Oid4vciDsl
 class PollDeferredCredentialArgsBuilder {
     private var deferredCredentialEndpoint: String? = null
@@ -672,6 +679,7 @@ class PollDeferredCredentialArgsBuilder {
 }
 
 /** Validated intermediate state produced by [PollDeferredCredentialArgsBuilder]. */
+@JsExportCompat
 data class PollDeferredCredentialArgsState(
     val deferredCredentialEndpoint: String,
     val accessToken: String,
@@ -761,6 +769,7 @@ class CreateCredentialOfferArgsBuilder {
      *
      * @param builder Map builder — use [MutableMap.put] to add key/value pairs.
      */
+    @JsExportIgnoreCompat
     fun attributes(builder: MutableMap<String, JsonElement>.() -> Unit) {
         preSeededAttributes.builder()
     }
@@ -793,6 +802,7 @@ class CreateCredentialOfferArgsBuilder {
 }
 
 /** Validated intermediate state produced by [CreateCredentialOfferArgsBuilder]. */
+@JsExportCompat
 data class CreateCredentialOfferArgsState(
     val issuerId: String,
     val credentialConfigurationIds: List<String>,
@@ -820,6 +830,7 @@ data class CreateCredentialOfferArgsState(
  * }
  * ```
  */
+@JsExportCompat
 @Oid4vciDsl
 class SendNotificationWithRetryArgsBuilder {
     private var notificationEndpoint: String? = null
@@ -912,6 +923,7 @@ class SendNotificationWithRetryArgsBuilder {
 }
 
 /** Validated intermediate state produced by [SendNotificationWithRetryArgsBuilder]. */
+@JsExportCompat
 data class SendNotificationWithRetryArgsState(
     val notificationEndpoint: String,
     val accessToken: String,

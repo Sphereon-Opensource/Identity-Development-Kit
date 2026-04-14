@@ -20,6 +20,8 @@ package com.sphereon.did.models
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -44,49 +46,51 @@ import kotlin.native.ObjCName
 @ObjCName("DidVerificationMethodConfig", exact = true)
 @JsExportCompat
 @Serializable
-data class VerificationMethodConfig(
-    val kmsKeyAlias: String,
-    val kmsProviderId: String,
-    val verificationMethodId: String,
-    val purposes: List<VerificationPurpose>,
-    val type: VerificationMethodType = VerificationMethodType.JSON_WEB_KEY_2020,
-    val controller: String? = null,
-    val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
-) {
-    init {
-        require(verificationMethodId.isNotBlank()) {
-            "verificationMethodId must not be blank"
+data class VerificationMethodConfig
+    @JvmOverloads
+    constructor(
+        val kmsKeyAlias: String,
+        val kmsProviderId: String,
+        val verificationMethodId: String,
+        val purposes: List<VerificationPurpose>,
+        val type: VerificationMethodType = VerificationMethodType.JSON_WEB_KEY_2020,
+        val controller: String? = null,
+        val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
+    ) {
+        init {
+            require(verificationMethodId.isNotBlank()) {
+                "verificationMethodId must not be blank"
+            }
+            require(purposes.isNotEmpty()) {
+                "At least one verification purpose must be specified"
+            }
         }
-        require(purposes.isNotEmpty()) {
-            "At least one verification purpose must be specified"
-        }
+
+        /**
+         * Creates the full verification method ID for a given DID.
+         *
+         * @param did The DID to create the full ID for
+         * @return The full verification method ID (e.g., "did:example:123#key-1")
+         */
+        fun createFullId(did: String): String = "$did#$verificationMethodId"
+
+        /**
+         * Checks if this config includes the specified purpose.
+         */
+        fun hasPurpose(purpose: VerificationPurpose): Boolean = purposes.contains(purpose)
+
+        /**
+         * Checks if this key can be used for authentication.
+         */
+        fun canAuthenticate(): Boolean = hasPurpose(VerificationPurpose.AUTHENTICATION)
+
+        /**
+         * Checks if this key can be used for signing credentials (assertions).
+         */
+        fun canSign(): Boolean = hasPurpose(VerificationPurpose.ASSERTION_METHOD)
+
+        /**
+         * Checks if this key can be used for encryption (key agreement).
+         */
+        fun canEncrypt(): Boolean = hasPurpose(VerificationPurpose.KEY_AGREEMENT)
     }
-
-    /**
-     * Creates the full verification method ID for a given DID.
-     *
-     * @param did The DID to create the full ID for
-     * @return The full verification method ID (e.g., "did:example:123#key-1")
-     */
-    fun createFullId(did: String): String = "$did#$verificationMethodId"
-
-    /**
-     * Checks if this config includes the specified purpose.
-     */
-    fun hasPurpose(purpose: VerificationPurpose): Boolean = purposes.contains(purpose)
-
-    /**
-     * Checks if this key can be used for authentication.
-     */
-    fun canAuthenticate(): Boolean = hasPurpose(VerificationPurpose.AUTHENTICATION)
-
-    /**
-     * Checks if this key can be used for signing credentials (assertions).
-     */
-    fun canSign(): Boolean = hasPurpose(VerificationPurpose.ASSERTION_METHOD)
-
-    /**
-     * Checks if this key can be used for encryption (key agreement).
-     */
-    fun canEncrypt(): Boolean = hasPurpose(VerificationPurpose.KEY_AGREEMENT)
-}

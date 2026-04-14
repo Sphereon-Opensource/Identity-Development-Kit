@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.PolymorphicSerializer
 import kotlinx.serialization.json.Json
 import kotlin.experimental.ExperimentalObjCName
@@ -36,6 +37,7 @@ import kotlin.reflect.KClass
  *
  * @param T The base type for polymorphic deserialization
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PolymorphicConfigBinder", exact = true)
 interface PolymorphicConfigBinder<T : Any> {
@@ -100,6 +102,7 @@ interface PolymorphicConfigBinder<T : Any> {
  *                           Canonicalized means delimiters removed (e.g., "key.visibility" -> "keyvisibility").
  * @param redact Whether to redact sensitive values when converting to JSON (default: false for config binding)
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DefaultPolymorphicConfigBinder", exact = true)
 class DefaultPolymorphicConfigBinder<T : Any>(

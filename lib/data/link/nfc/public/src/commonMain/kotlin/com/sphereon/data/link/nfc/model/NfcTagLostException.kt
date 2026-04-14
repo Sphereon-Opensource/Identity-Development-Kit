@@ -17,9 +17,12 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Exception thrown if a [NfcIsoTag] is removed while trying to communicate with it.
  */
+@JsExportCompat
 class NfcTagLostException : Exception {
     /**
      * Construct a new exception.

@@ -23,6 +23,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 
 /**
@@ -200,8 +201,11 @@ data class ResolverInfo(
 @OptIn(ExperimentalObjCName::class)
 @JsExportCompat
 @ObjCName("ExternalIdentifierResolutionError", exact = true)
-data class ExternalIdentifierResolutionError(
-    val message: String,
-    val resolverCandidates: List<String> = emptyList(),
-    val identifierType: String? = null,
-)
+data class
+ExternalIdentifierResolutionError
+    @JvmOverloads
+    constructor(
+        val message: String,
+        val resolverCandidates: List<String> = emptyList(),
+        val identifierType: String? = null,
+    )

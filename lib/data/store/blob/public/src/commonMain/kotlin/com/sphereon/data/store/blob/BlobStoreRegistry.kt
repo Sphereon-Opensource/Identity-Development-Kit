@@ -16,11 +16,14 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.compat.JsExportCompat
+
 /**
  * Registry that resolves [BlobStore] instances by scheme.
  *
  * Uses the set of [BlobStoreFactory] multibindings to find the right factory for a given scheme.
  */
+@JsExportCompat
 interface BlobStoreRegistry {
     fun resolve(config: BlobStoreConfigBase): BlobStore
 

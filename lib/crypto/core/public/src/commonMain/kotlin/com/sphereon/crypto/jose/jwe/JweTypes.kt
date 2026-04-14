@@ -24,6 +24,8 @@ import com.sphereon.crypto.core.json.cryptoJsonSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -132,6 +134,7 @@ data class JweCompact(
          * @return Parsed JweCompact object
          * @throws IllegalArgumentException if the format is invalid
          */
+        @JvmStatic
         fun parse(jwe: String): JweCompact {
             val parts = jwe.split(".")
             require(parts.size == 5) {
@@ -159,6 +162,7 @@ data class JweCompact(
         /**
          * Check if a string matches JWE Compact format (5 base64url parts separated by dots)
          */
+        @JvmStatic
         fun isValidCompactFormat(value: String): Boolean {
             val parts = value.split(".")
             return parts.size == 5 && parts.all { it.isEmpty() || it.matches(Regex("^[a-zA-Z0-9_-]+$")) }
@@ -193,41 +197,45 @@ data class JweCompact(
 @ObjCName("JweJsonFlattened", exact = true)
 @JsExportCompat
 @Serializable
-data class JweJsonFlattened(
-    val protected: String?, // Base64url-encoded protected header
-    val unprotected: JsonObject? = null, // Unprotected header (as JsonObject for additional data)
-    val encrypted_key: String, // Base64url
-    val iv: String, // Base64url
-    val ciphertext: String, // Base64url
-    val tag: String, // Base64url
-    val aad: String? = null, // Base64url (optional AAD)
-) : Jwe {
-    /**
-     * Get the protected header as a JweHeader object
-     */
-    fun getProtectedHeader(): JweHeader? =
-        protected?.let {
-            val headerJson = it.decodeFrom(Encoding.BASE64URL).decodeToString()
-            JweHeader.fromJson(headerJson)
-        }
-
-    /**
-     * Get the unprotected header as a JweHeader object
-     */
-    fun getUnprotectedHeader(): JweHeader? = unprotected?.let { JweHeader.fromJson(it) }
-
-    /**
-     * Serialize to JSON string
-     */
-    fun toJsonString(): String = cryptoJsonSerializer.encodeToString(serializer(), this)
-
-    companion object {
+data class
+JweJsonFlattened
+    @JvmOverloads
+    constructor(
+        val protected: String?, // Base64url-encoded protected header
+        val unprotected: JsonObject? = null, // Unprotected header (as JsonObject for additional data)
+        val encrypted_key: String, // Base64url
+        val iv: String, // Base64url
+        val ciphertext: String, // Base64url
+        val tag: String, // Base64url
+        val aad: String? = null, // Base64url (optional AAD)
+    ) : Jwe {
         /**
-         * Parse a JWE JSON Flattened Serialization string
+         * Get the protected header as a JweHeader object
          */
-        fun fromJson(json: String): JweJsonFlattened = cryptoJsonSerializer.decodeFromString(serializer(), json)
+        fun getProtectedHeader(): JweHeader? =
+            protected?.let {
+                val headerJson = it.decodeFrom(Encoding.BASE64URL).decodeToString()
+                JweHeader.fromJson(headerJson)
+            }
+
+        /**
+         * Get the unprotected header as a JweHeader object
+         */
+        fun getUnprotectedHeader(): JweHeader? = unprotected?.let { JweHeader.fromJson(it) }
+
+        /**
+         * Serialize to JSON string
+         */
+        fun toJsonString(): String = cryptoJsonSerializer.encodeToString(serializer(), this)
+
+        companion object {
+            /**
+             * Parse a JWE JSON Flattened Serialization string
+             */
+            @JvmStatic
+            fun fromJson(json: String): JweJsonFlattened = cryptoJsonSerializer.decodeFromString(serializer(), json)
+        }
     }
-}
 
 /**
  * JWE JSON General Serialization Format per RFC 7516 Section 7.2.1
@@ -262,88 +270,92 @@ data class JweJsonFlattened(
 @ObjCName("JweJsonGeneral", exact = true)
 @JsExportCompat
 @Serializable
-data class JweJsonGeneral(
-    val protected: String?,
-    val unprotected: JsonObject? = null,
-    val recipients: Array<JweRecipient>, // Multiple recipients
-    val iv: String,
-    val ciphertext: String,
-    val tag: String,
-    val aad: String? = null,
-) : Jwe {
-    /**
-     * Get the protected header as a JweHeader object
-     */
-    fun getProtectedHeader(): JweHeader? =
-        protected?.let {
-            val headerJson = it.decodeFrom(Encoding.BASE64URL).decodeToString()
-            JweHeader.fromJson(headerJson)
-        }
+data class
+JweJsonGeneral
+    @JvmOverloads
+    constructor(
+        val protected: String?,
+        val unprotected: JsonObject? = null,
+        val recipients: Array<JweRecipient>, // Multiple recipients
+        val iv: String,
+        val ciphertext: String,
+        val tag: String,
+        val aad: String? = null,
+    ) : Jwe {
+        /**
+         * Get the protected header as a JweHeader object
+         */
+        fun getProtectedHeader(): JweHeader? =
+            protected?.let {
+                val headerJson = it.decodeFrom(Encoding.BASE64URL).decodeToString()
+                JweHeader.fromJson(headerJson)
+            }
 
-    /**
-     * Get the unprotected header as a JweHeader object
-     */
-    fun getUnprotectedHeader(): JweHeader? = unprotected?.let { JweHeader.fromJson(it) }
+        /**
+         * Get the unprotected header as a JweHeader object
+         */
+        fun getUnprotectedHeader(): JweHeader? = unprotected?.let { JweHeader.fromJson(it) }
 
-    /**
-     * Serialize to JSON string
-     */
-    fun toJsonString(): String = cryptoJsonSerializer.encodeToString(serializer(), this)
+        /**
+         * Serialize to JSON string
+         */
+        fun toJsonString(): String = cryptoJsonSerializer.encodeToString(serializer(), this)
 
-    // Proper equals for Array field
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+        // Proper equals for Array field
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as JweJsonGeneral
+
+            if (protected != other.protected) {
+                return false
+            }
+            if (unprotected != other.unprotected) {
+                return false
+            }
+            if (!recipients.contentEquals(other.recipients)) {
+                return false
+            }
+            if (iv != other.iv) {
+                return false
+            }
+            if (ciphertext != other.ciphertext) {
+                return false
+            }
+            if (tag != other.tag) {
+                return false
+            }
+            if (aad != other.aad) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
+
+        override fun hashCode(): Int {
+            var result = protected?.hashCode() ?: 0
+            result = 31 * result + (unprotected?.hashCode() ?: 0)
+            result = 31 * result + recipients.contentHashCode()
+            result = 31 * result + iv.hashCode()
+            result = 31 * result + ciphertext.hashCode()
+            result = 31 * result + tag.hashCode()
+            result = 31 * result + (aad?.hashCode() ?: 0)
+            return result
         }
 
-        other as JweJsonGeneral
-
-        if (protected != other.protected) {
-            return false
+        companion object {
+            /**
+             * Parse a JWE JSON General Serialization string
+             */
+            @JvmStatic
+            fun fromJson(json: String): JweJsonGeneral = cryptoJsonSerializer.decodeFromString(serializer(), json)
         }
-        if (unprotected != other.unprotected) {
-            return false
-        }
-        if (!recipients.contentEquals(other.recipients)) {
-            return false
-        }
-        if (iv != other.iv) {
-            return false
-        }
-        if (ciphertext != other.ciphertext) {
-            return false
-        }
-        if (tag != other.tag) {
-            return false
-        }
-        if (aad != other.aad) {
-            return false
-        }
-
-        return true
     }
-
-    override fun hashCode(): Int {
-        var result = protected?.hashCode() ?: 0
-        result = 31 * result + (unprotected?.hashCode() ?: 0)
-        result = 31 * result + recipients.contentHashCode()
-        result = 31 * result + iv.hashCode()
-        result = 31 * result + ciphertext.hashCode()
-        result = 31 * result + tag.hashCode()
-        result = 31 * result + (aad?.hashCode() ?: 0)
-        return result
-    }
-
-    companion object {
-        /**
-         * Parse a JWE JSON General Serialization string
-         */
-        fun fromJson(json: String): JweJsonGeneral = cryptoJsonSerializer.decodeFromString(serializer(), json)
-    }
-}
 
 /**
  * Per-Recipient Information for JWE JSON General Serialization
@@ -358,15 +370,18 @@ data class JweJsonGeneral(
 @ObjCName("JweRecipient", exact = true)
 @JsExportCompat
 @Serializable
-data class JweRecipient(
-    val header: JsonObject? = null, // Per-recipient unprotected header
-    val encrypted_key: String, // Base64url
-) {
-    /**
-     * Get the header as a JweHeader object
-     */
-    fun getHeader(): JweHeader? = header?.let { JweHeader.fromJson(it) }
-}
+data class
+JweRecipient
+    @JvmOverloads
+    constructor(
+        val header: JsonObject? = null, // Per-recipient unprotected header
+        val encrypted_key: String, // Base64url
+    ) {
+        /**
+         * Get the header as a JweHeader object
+         */
+        fun getHeader(): JweHeader? = header?.let { JweHeader.fromJson(it) }
+    }
 
 /**
  * Utility functions for JWE type checking

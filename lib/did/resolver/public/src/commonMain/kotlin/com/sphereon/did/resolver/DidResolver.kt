@@ -19,6 +19,7 @@ package com.sphereon.did.resolver
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.did.capabilities.DidMethodCapabilities
 
 /**
@@ -31,6 +32,7 @@ import com.sphereon.did.capabilities.DidMethodCapabilities
  *
  * @see <a href="https://www.w3.org/TR/did-core/#resolution">W3C DID Resolution</a>
  */
+@JsExportCompat
 interface DidResolver {
     /**
      * The DID methods supported by this resolver.
@@ -96,6 +98,7 @@ interface DidResolver {
  * Any class annotated with `@ContributesIntoSet(SessionScope::class, binding = binding<DidResolver>())`
  * will be automatically registered.
  */
+@JsExportCompat
 interface DidResolverRegistry {
     /**
      * Gets the resolver for a specific DID method.

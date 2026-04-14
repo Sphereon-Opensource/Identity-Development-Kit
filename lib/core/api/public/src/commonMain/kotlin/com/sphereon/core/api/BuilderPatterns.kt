@@ -17,6 +17,7 @@
 package com.sphereon.core.api
 
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -73,6 +74,7 @@ import kotlin.native.ObjCName
  *
  * @param T The type that this builder constructs
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdkBuilder", exact = true)
 interface IdkBuilder<T> {
@@ -110,6 +112,7 @@ interface IdkBuilder<T> {
  * @param T The type being built
  * @param B The builder type (for fluent chaining)
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdkFluentBuilder")
 interface FluentBuilder<T, B : FluentBuilder<T, B>> : IdkBuilder<T> {
@@ -131,6 +134,7 @@ annotation class BuilderDsl
  *
  * @param T The type being configured
  */
+@JsExportCompat
 @BuilderDsl
 abstract class ConfigBuilder<T> : IdkBuilder<T> {
     /**
@@ -154,6 +158,7 @@ abstract class ConfigBuilder<T> : IdkBuilder<T> {
 /**
  * Validation result for builder construction.
  */
+@JsExportCompat
 sealed class BuilderValidationResult {
     object Valid : BuilderValidationResult()
 

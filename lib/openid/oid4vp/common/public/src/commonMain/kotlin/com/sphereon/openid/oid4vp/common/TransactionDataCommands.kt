@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -63,6 +64,9 @@ data class ParseTransactionDataResult(
  * 3. Validates each entry
  * 4. Returns parsed entries with original encoded form and index
  */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ParseTransactionDataCommand", exact = true)
+@JsExportCompat
 interface ParseTransactionDataCommand : ServiceCommand<ParseTransactionDataArgs, ParseTransactionDataResult> {
     override val commandId: String get() = COMMAND_ID
 
@@ -94,6 +98,7 @@ typealias CredentialTransactionHashes = Map<String, List<TransactionDataHashes>>
 @JsExportCompat
 data class VerifyTransactionDataArgs(
     val transactionData: List<String>,
+    @JsExportIgnoreCompat
     val credentials: CredentialTransactionHashes,
 )
 
@@ -127,6 +132,9 @@ data class VerifyTransactionDataResult(
  * 3. Computes hash of the original encoded transaction data
  * 4. Verifies the hash exists in the credential's transaction_data_hashes
  */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifyTransactionDataCommand", exact = true)
+@JsExportCompat
 interface VerifyTransactionDataCommand : ServiceCommand<VerifyTransactionDataArgs, VerifyTransactionDataResult> {
     override val commandId: String get() = COMMAND_ID
 

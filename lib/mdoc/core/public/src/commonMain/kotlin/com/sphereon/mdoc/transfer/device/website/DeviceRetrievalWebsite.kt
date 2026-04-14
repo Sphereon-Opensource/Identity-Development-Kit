@@ -17,6 +17,7 @@
 
 package com.sphereon.mdoc.transfer.device.website
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.mdoc.SessionData
 import com.sphereon.mdoc.SessionEstablishment
@@ -26,6 +27,7 @@ import com.sphereon.mdoc.transfer.reader.ReaderEngagement
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeviceRetrievalWebsiteFactory", exact = true)
 interface DeviceRetrievalWebsiteFactory {
@@ -37,6 +39,7 @@ interface DeviceRetrievalWebsiteFactory {
     fun create(options: HttpClientOptions? = null): DeviceRetrievalWebsite
 }
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeviceRetrievalWebsite", exact = true)
 interface DeviceRetrievalWebsite : AutoCloseable {

@@ -17,6 +17,7 @@
 package com.sphereon.identity.idv.store
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.idv.command.ResolveIdvUseCaseArgs
 import com.sphereon.identity.idv.model.IdvError
 import com.sphereon.identity.idv.model.IdvExecution
@@ -27,6 +28,7 @@ import com.sphereon.identity.idv.model.IdvUseCaseDefinition
 import com.sphereon.identity.idv.model.IdvUseCaseId
 import kotlin.time.Instant
 
+@JsExportCompat
 interface IdvMethodDefinitionStore {
     suspend fun findById(
         id: IdvMethodId,
@@ -48,6 +50,7 @@ interface IdvMethodDefinitionStore {
     ): Boolean
 }
 
+@JsExportCompat
 interface IdvUseCaseDefinitionStore {
     suspend fun findById(
         id: IdvUseCaseId,
@@ -71,6 +74,7 @@ interface IdvUseCaseDefinitionStore {
     suspend fun resolve(args: ResolveIdvUseCaseArgs): IdvUseCaseDefinition?
 }
 
+@JsExportCompat
 interface IdvExecutionStore {
     suspend fun findById(
         executionId: IdvExecutionId,

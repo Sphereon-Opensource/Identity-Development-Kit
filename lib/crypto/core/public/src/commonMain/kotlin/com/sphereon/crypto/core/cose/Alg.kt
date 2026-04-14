@@ -29,6 +29,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -690,6 +691,7 @@ enum class CoseAlgorithm(
          * @return The corresponding `CoseAlgorithm` entry if found, otherwise `null`.
          */
         @JsName("fromValue")
+        @JvmStatic
         fun fromValue(
             value: Int?,
             type: AlgorithmType? = null,
@@ -703,6 +705,7 @@ enum class CoseAlgorithm(
          * @throws IllegalArgumentException If no matching `CoseAlgorithm` is found.
          */
         @JsName("fromName")
+        @JvmStatic
         fun fromName(name: String): CoseAlgorithm = entries.find { it.id == name || it.name == name } ?: throw IllegalArgumentException("Unknown cose algorithm: $name")
 
         /**
@@ -712,6 +715,7 @@ enum class CoseAlgorithm(
          * @return An array of `CoseAlgorithm` entries that match the specified `AlgorithmType`.
          */
         @JsName("asList")
+        @JvmStatic
         fun asList(type: AlgorithmType? = null): Array<CoseAlgorithm> = entries.filter { entry -> type === null || entry.keyType == type }.toTypedArray()
     }
 }

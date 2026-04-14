@@ -17,6 +17,7 @@
 
 package com.sphereon.data.store.party.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 

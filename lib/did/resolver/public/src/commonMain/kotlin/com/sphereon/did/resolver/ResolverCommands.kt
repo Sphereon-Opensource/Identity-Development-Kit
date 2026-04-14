@@ -21,7 +21,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationPurpose
 import kotlin.experimental.ExperimentalObjCName
@@ -56,6 +55,7 @@ interface ResolveDidCommand : ServiceCommand<ResolveDidArgs, DidResolutionResult
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveDidCommandService", exact = true)
+@JsExportCompat
 interface ResolveDidCommandService {
     suspend fun resolve(args: ResolveDidArgs): IdkResult<DidResolutionResult, IdkError>
 }
@@ -87,6 +87,7 @@ interface DereferenceDidCommand : ServiceCommand<DereferenceDidArgs, DidDerefere
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DereferenceDidCommandService", exact = true)
+@JsExportCompat
 interface DereferenceDidCommandService {
     suspend fun dereference(args: DereferenceDidArgs): IdkResult<DidDereferenceResult, IdkError>
 }
@@ -115,6 +116,7 @@ interface ResolveVerificationMethodCommand : ServiceCommand<ResolveVerificationM
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveVerificationMethodCommandService", exact = true)
+@JsExportCompat
 interface ResolveVerificationMethodCommandService {
     suspend fun resolveVerificationMethod(args: ResolveVerificationMethodArgs): IdkResult<VerificationMethod, IdkError>
 }
@@ -140,6 +142,7 @@ interface ResolveVerificationMethodsByPurposeCommand : ServiceCommand<ResolveVer
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveVerificationMethodsByPurposeCommandService", exact = true)
+@JsExportCompat
 interface ResolveVerificationMethodsByPurposeCommandService {
     suspend fun resolveVerificationMethodsByPurpose(args: ResolveVerificationMethodsByPurposeArgs): IdkResult<List<VerificationMethod>, IdkError>
 }

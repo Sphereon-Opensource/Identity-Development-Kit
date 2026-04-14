@@ -18,6 +18,8 @@
 package com.sphereon.data.link.ble.client
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.data.link.ble.BleError
 import com.sphereon.data.link.ble.CharacteristicReadError
 import com.sphereon.data.link.ble.CharacteristicWriteError
@@ -38,9 +40,11 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlePlatformClient", exact = true)
 interface BlePlatformClient : AutoCloseable {
+    @JsExportIgnoreCompat
     val bleEvents: SharedFlow<BleEvent>
 
     suspend fun scan(args: ScanDevicesArgs = ScanDevicesArgs()): IdkResult<List<BleDevice>, ScanError>

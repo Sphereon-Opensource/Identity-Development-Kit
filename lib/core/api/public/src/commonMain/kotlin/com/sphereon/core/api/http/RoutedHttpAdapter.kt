@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.OpenApiHints
+import com.sphereon.core.compat.JsExportCompat
 
 private const val HTTP_NOT_FOUND = 404
 
@@ -38,6 +39,7 @@ private const val HTTP_NOT_FOUND = 404
  * so the adapter receives paths like `/keys/abc123` (basePath + route), not
  * `/api/kms/keys/abc123` (serverPrefix + basePath + route).
  */
+@JsExportCompat
 abstract class RoutedHttpAdapter : RoutableHttpAdapter {
     protected abstract val mount: HttpAdapterMount
     protected abstract val routes: List<HttpRoute>

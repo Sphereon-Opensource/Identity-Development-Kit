@@ -17,8 +17,10 @@
 
 package com.sphereon.data.store.party.options
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Options for controlling which extensions to fetch when loading correlation identifiers.
@@ -38,54 +40,57 @@ import kotlinx.serialization.Serializable
  * CorrelationIdentifierFetchOptions.FULL
  * ```
  */
+@JsExportCompat
 @Serializable
-data class CorrelationIdentifierFetchOptions(
-    /** Include X.509 certificate extension data */
-    @SerialName("includeX509Extension")
-    val includeX509Extension: Boolean = false,
-    /** Include registration extension data */
-    @SerialName("includeRegistrationExtension")
-    val includeRegistrationExtension: Boolean = false,
-    /** Include electronic address extension data */
-    @SerialName("includeElectronicExtension")
-    val includeElectronicExtension: Boolean = false,
-) {
-    companion object {
-        /** Load only core identifier data (default) */
-        val MINIMAL = CorrelationIdentifierFetchOptions()
+data class CorrelationIdentifierFetchOptions
+    @JvmOverloads
+    constructor(
+        /** Include X.509 certificate extension data */
+        @SerialName("includeX509Extension")
+        val includeX509Extension: Boolean = false,
+        /** Include registration extension data */
+        @SerialName("includeRegistrationExtension")
+        val includeRegistrationExtension: Boolean = false,
+        /** Include electronic address extension data */
+        @SerialName("includeElectronicExtension")
+        val includeElectronicExtension: Boolean = false,
+    ) {
+        companion object {
+            /** Load only core identifier data (default) */
+            val MINIMAL = CorrelationIdentifierFetchOptions()
 
-        /** Load identifier with X.509 extension */
-        val WITH_X509 = CorrelationIdentifierFetchOptions(includeX509Extension = true)
+            /** Load identifier with X.509 extension */
+            val WITH_X509 = CorrelationIdentifierFetchOptions(includeX509Extension = true)
 
-        /** Load identifier with registration extension */
-        val WITH_REGISTRATION = CorrelationIdentifierFetchOptions(includeRegistrationExtension = true)
+            /** Load identifier with registration extension */
+            val WITH_REGISTRATION = CorrelationIdentifierFetchOptions(includeRegistrationExtension = true)
 
-        /** Load identifier with electronic extension */
-        val WITH_ELECTRONIC = CorrelationIdentifierFetchOptions(includeElectronicExtension = true)
+            /** Load identifier with electronic extension */
+            val WITH_ELECTRONIC = CorrelationIdentifierFetchOptions(includeElectronicExtension = true)
 
-        /** Load identifier with all extensions */
-        val FULL =
-            CorrelationIdentifierFetchOptions(
+            /** Load identifier with all extensions */
+            val FULL =
+                CorrelationIdentifierFetchOptions(
+                    includeX509Extension = true,
+                    includeRegistrationExtension = true,
+                    includeElectronicExtension = true,
+                )
+        }
+
+        /** Builder method to include X.509 extension */
+        fun withX509Extension() = copy(includeX509Extension = true)
+
+        /** Builder method to include registration extension */
+        fun withRegistrationExtension() = copy(includeRegistrationExtension = true)
+
+        /** Builder method to include electronic extension */
+        fun withElectronicExtension() = copy(includeElectronicExtension = true)
+
+        /** Builder method to include all extensions */
+        fun withAllExtensions() =
+            copy(
                 includeX509Extension = true,
                 includeRegistrationExtension = true,
                 includeElectronicExtension = true,
             )
     }
-
-    /** Builder method to include X.509 extension */
-    fun withX509Extension() = copy(includeX509Extension = true)
-
-    /** Builder method to include registration extension */
-    fun withRegistrationExtension() = copy(includeRegistrationExtension = true)
-
-    /** Builder method to include electronic extension */
-    fun withElectronicExtension() = copy(includeElectronicExtension = true)
-
-    /** Builder method to include all extensions */
-    fun withAllExtensions() =
-        copy(
-            includeX509Extension = true,
-            includeRegistrationExtension = true,
-            includeElectronicExtension = true,
-        )
-}

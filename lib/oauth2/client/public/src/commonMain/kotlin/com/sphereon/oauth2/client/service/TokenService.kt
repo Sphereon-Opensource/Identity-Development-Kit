@@ -19,7 +19,6 @@ package com.sphereon.oauth2.client.service
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.client.command.ExchangeTokenCommand
 import com.sphereon.oauth2.common.model.TokenRequest
 import com.sphereon.oauth2.common.model.TokenResponse
@@ -43,7 +42,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TokenService", exact = true)
-@JsExportCompat
 interface TokenService {
     /**
      * Provides access to the underlying commands for advanced usage scenarios
@@ -53,7 +51,6 @@ interface TokenService {
     /**
      * Container for all token commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val exchangeToken: ExchangeTokenCommand
     }

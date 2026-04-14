@@ -16,6 +16,8 @@
 
 package com.sphereon.data.store.credential.design.resolution
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
 import com.sphereon.data.store.credential.design.model.DerivedRenderHintsRecord
 import com.sphereon.data.store.credential.design.model.DesignSourceType
@@ -25,7 +27,9 @@ import com.sphereon.data.store.credential.design.model.RenderVariantRecord
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.ResolveEntityDesignInput
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
+@JsExportCompat
 interface DesignLayerProvider {
     val sourceType: DesignSourceType
     val authoritative: Boolean
@@ -46,25 +50,37 @@ interface DesignLayerProvider {
     ): VerifierDesignLayerResult? = null
 }
 
+@JsExportCompat
 @Serializable
-data class CredentialDesignLayerResult(
-    val displays: List<LocalizedCredentialDisplay> = emptyList(),
-    val claims: List<ClaimPresentation> = emptyList(),
-    val renderVariants: List<RenderVariantRecord> = emptyList(),
-    val derivedRenderHints: DerivedRenderHintsRecord? = null,
-    val providedFields: Set<String>,
-)
+data class CredentialDesignLayerResult
+    @JvmOverloads
+    constructor(
+        val displays: List<LocalizedCredentialDisplay> = emptyList(),
+        val claims: List<ClaimPresentation> = emptyList(),
+        val renderVariants: List<RenderVariantRecord> = emptyList(),
+        val derivedRenderHints: DerivedRenderHintsRecord? = null,
+        @JsExportIgnoreCompat
+        val providedFields: Set<String>,
+    )
 
+@JsExportCompat
 @Serializable
-data class IssuerDesignLayerResult(
-    val displays: List<EntityLocaleDesign> = emptyList(),
-    val renderVariants: List<RenderVariantRecord> = emptyList(),
-    val providedFields: Set<String>,
-)
+data class IssuerDesignLayerResult
+    @JvmOverloads
+    constructor(
+        val displays: List<EntityLocaleDesign> = emptyList(),
+        val renderVariants: List<RenderVariantRecord> = emptyList(),
+        @JsExportIgnoreCompat
+        val providedFields: Set<String>,
+    )
 
+@JsExportCompat
 @Serializable
-data class VerifierDesignLayerResult(
-    val displays: List<EntityLocaleDesign> = emptyList(),
-    val renderVariants: List<RenderVariantRecord> = emptyList(),
-    val providedFields: Set<String>,
-)
+data class VerifierDesignLayerResult
+    @JvmOverloads
+    constructor(
+        val displays: List<EntityLocaleDesign> = emptyList(),
+        val renderVariants: List<RenderVariantRecord> = emptyList(),
+        @JsExportIgnoreCompat
+        val providedFields: Set<String>,
+    )

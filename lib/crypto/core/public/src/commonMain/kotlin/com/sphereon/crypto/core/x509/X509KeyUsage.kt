@@ -25,6 +25,7 @@ import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.ExperimentalJsStatic
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -69,6 +70,7 @@ enum class KeyUsageFlag(
 
     companion object {
         @JsStatic
+        @JvmStatic
         fun fromValue(value: String): KeyUsageFlag = entries.find { it.value == value } ?: throw IllegalArgumentException("Unknown value key usage value: $value")
     }
 }
@@ -85,6 +87,7 @@ data class KeyUsage(
     companion object {
         /** Parses the KeyUsage BIT STRING into KeyUsage data class. */
         @JsStatic
+        @JvmStatic
         fun fromDerBitString(raw: ByteArray): KeyUsage {
             if (raw.isEmpty() || raw[0] != 0x03.toByte()) {
                 error("Invalid BIT STRING tag or empty input")

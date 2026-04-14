@@ -19,6 +19,8 @@ package com.sphereon.credential.claims.mapper.api.resolver
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -32,6 +34,7 @@ import kotlinx.serialization.json.JsonObject
  * The resolver pattern allows the mapper service to support multiple
  * credential formats without knowing the details of each format.
  */
+@JsExportCompat
 interface CredentialClaimResolver {
     /**
      * The credential formats supported by this resolver.
@@ -39,6 +42,7 @@ interface CredentialClaimResolver {
      * The mapper service uses this to select the appropriate resolver
      * for each credential based on its format.
      */
+    @JsExportIgnoreCompat
     val supportedFormats: Set<CredentialFormat>
 
     /**
@@ -54,6 +58,7 @@ interface CredentialClaimResolver {
      *   the claims after disclosure reconstruction)
      * @return Map of claim paths to values, or error
      */
+    @JsExportIgnoreCompat
     suspend fun extractAllClaims(
         credential: String,
         format: CredentialFormat,
@@ -74,6 +79,7 @@ interface CredentialClaimResolver {
      * @param disclosedClaims Optional pre-decoded claims
      * @return Map of claim paths to values, or error
      */
+    @JsExportIgnoreCompat
     suspend fun extractClaims(
         credential: String,
         format: CredentialFormat,

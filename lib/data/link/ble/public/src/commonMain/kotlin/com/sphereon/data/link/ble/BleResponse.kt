@@ -17,12 +17,14 @@
 
 package com.sphereon.data.link.ble
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.link.ble.model.BleDevice
 import com.sphereon.data.link.ble.model.GattCharacteristic
 import com.sphereon.data.link.ble.model.GattService
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 sealed class BleResponse {
     object Success : BleResponse()
 

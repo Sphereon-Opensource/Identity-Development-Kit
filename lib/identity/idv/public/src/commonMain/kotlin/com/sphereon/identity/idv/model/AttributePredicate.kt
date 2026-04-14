@@ -16,8 +16,10 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
 @Serializable
 data class AttributePredicate(
     val attributePath: AttributePath,

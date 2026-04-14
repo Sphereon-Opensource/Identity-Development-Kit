@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.jarm
 
+import com.sphereon.core.compat.JsExportCompat
 import io.konform.validation.Validation
 import io.konform.validation.jsonschema.pattern
 import kotlinx.serialization.SerialName
@@ -39,6 +40,7 @@ import kotlinx.serialization.json.JsonObject
  * - Encrypted: Response is an encrypted JWT (JWE) - plaintext payload
  * - SignedEncrypted: Response is signed first, then encrypted (nested JWT)
  */
+@JsExportCompat
 @Serializable
 enum class JarmMode {
     /**
@@ -81,6 +83,8 @@ enum class JarmMode {
  *
  * Authorization response parameters become JWT claims (e.g., code, state, vp_token, etc.)
  */
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 @Serializable
 data class JarmResponsePayload(
     /**
@@ -132,6 +136,7 @@ data class JarmResponsePayload(
  * @property contentEncryptionAlgorithm JWE content encryption algorithm (e.g., "A256GCM", "A128CBC-HS256")
  * @property mode JARM mode (Signed, Encrypted, or SignedEncrypted)
  */
+@JsExportCompat
 @Serializable
 data class JarmConfig(
     /**
@@ -255,6 +260,7 @@ data class JarmConfig(
  * @property signatureVerified Whether the JWT was signed (and signature verified)
  * @property decrypted Whether the JWT was encrypted (and successfully decrypted)
  */
+@JsExportCompat
 @Serializable
 data class JarmVerificationResult(
     /**

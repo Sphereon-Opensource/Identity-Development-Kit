@@ -17,6 +17,7 @@
 
 package com.sphereon.trust.etsi.lote.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmName
 
@@ -25,6 +26,7 @@ import kotlin.jvm.JvmName
  *
  * JSON representation: `{"lang": "en", "value": "Name"}`
  */
+@JsExportCompat
 @Serializable
 data class MultiLangString(
     val lang: String,
@@ -36,6 +38,7 @@ data class MultiLangString(
  *
  * JSON representation: `{"lang": "en", "uriValue": "https://..."}`
  */
+@JsExportCompat
 @Serializable
 data class MultiLangURI(
     val lang: String,

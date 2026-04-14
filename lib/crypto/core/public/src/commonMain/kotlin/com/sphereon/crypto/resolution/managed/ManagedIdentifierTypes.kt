@@ -17,6 +17,7 @@
 
 package com.sphereon.crypto.resolution.managed
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.IdentifierLookupType
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
@@ -34,10 +35,12 @@ import com.sphereon.crypto.resolution.IdentifierMethodDefaults
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import com.sphereon.crypto.resolution.IdentifierTypeUtils
 import kotlinx.serialization.json.JsonObject
+import kotlin.jvm.JvmOverloads
 
 /**
  * Union type for managed identifier options or results
  */
+@JsExportCompat
 abstract class ManagedIdentifierOptsOrResult(
     override val method: IIdentifierMethod? = null,
     override val identifier: Any,
@@ -49,19 +52,24 @@ abstract class ManagedIdentifierOptsOrResult(
     override fun asResult() = this as ManagedIdentifierResult<*>
 }
 
-data class AdditionalDidLookupInfo(
-    override val noCache: Boolean = false,
-    override val kid: String? = null,
-    override val alias: String? = null,
-    val keyType: String? = null,
+@JsExportCompat
+data class
+AdditionalDidLookupInfo
+    @JvmOverloads
+    constructor(
+        override val noCache: Boolean = false,
+        override val kid: String? = null,
+        override val alias: String? = null,
+        val keyType: String? = null,
 //    val offlineWhenNoDIDRegistered: Boolean? = null,
 //    val noVerificationMethodFallback: Boolean? = null,
-    val controllerKey: Boolean? = null,
-    val vmRelationship: String? = null,
-    override val opts: Map<String, String>? = emptyMap(),
-    override val providerId: String? = null,
-) : IdentifierLookupType
+        val controllerKey: Boolean? = null,
+        val vmRelationship: String? = null,
+        override val opts: Map<String, String>? = emptyMap(),
+        override val providerId: String? = null,
+    ) : IdentifierLookupType
 
+@JsExportCompat
 abstract class ManagedIdentifierOpts(
     override val identifier: Any,
     override val context: IdentifierContext = IdentifierContext(),
@@ -71,81 +79,118 @@ abstract class ManagedIdentifierOpts(
     override val isResolved: Boolean = false
 }
 
-data class ManagedOptsDid(
-    override val identifier: String,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: AdditionalDidLookupInfo = AdditionalDidLookupInfo(),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.DID
-}
+@JsExportCompat
+data class
+ManagedOptsDid
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: AdditionalDidLookupInfo = AdditionalDidLookupInfo(),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.DID
+    }
 
-data class ManagedOptsKid(
-    override val identifier: String,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: KeyInfoType<KeyType> = KeyInfo(kid = identifier),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.KID
-}
+@JsExportCompat
+data class
+ManagedOptsKid
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: KeyInfoType<KeyType> = KeyInfo(kid = identifier),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.KID
+    }
 
-data class ManagedOptsAlias(
-    override val identifier: String,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: KeyInfoType<*> = KeyInfo<KeyType>(alias = identifier),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.KEY_ALIAS
-}
+@JsExportCompat
+data class
+ManagedOptsAlias
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: KeyInfoType<*> = KeyInfo<KeyType>(alias = identifier),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.KEY_ALIAS
+    }
 
-data class ManagedOptsKey(
-    override val identifier: KeyType,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: KeyInfoType<*> = ResolvedKeyInfo(key = identifier),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.KEY
-}
+@JsExportCompat
+data class
+ManagedOptsKey
+    @JvmOverloads
+    constructor(
+        override val identifier: KeyType,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: KeyInfoType<*> = ResolvedKeyInfo(key = identifier),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.KEY
+    }
 
-data class ManagedOptsKeyInfo(
-    override val identifier: KeyInfoType<*>,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: KeyInfoType<*> = identifier,
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.KEY
-}
+@JsExportCompat
+data class
+ManagedOptsKeyInfo
+    @JvmOverloads
+    constructor(
+        override val identifier: KeyInfoType<*>,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: KeyInfoType<*> = identifier,
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.KEY
+    }
 
-data class ManagedOptsCoseKey(
-    override val identifier: CoseKey,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: KeyInfoType<CoseKeyType> = ResolvedKeyInfo(key = identifier),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.COSE_KEY
-}
+@JsExportCompat
+data class
+ManagedOptsCoseKey
+    @JvmOverloads
+    constructor(
+        override val identifier: CoseKey,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: KeyInfoType<CoseKeyType> = ResolvedKeyInfo(key = identifier),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.COSE_KEY
+    }
 
-data class ManagedOptsJwk(
-    override val identifier: Jwk,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: KeyInfoType<Jwk> = ResolvedKeyInfo(key = identifier),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.JWK
-}
+@JsExportCompat
+data class
+ManagedOptsJwk
+    @JvmOverloads
+    constructor(
+        override val identifier: Jwk,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: KeyInfoType<Jwk> = ResolvedKeyInfo(key = identifier),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.JWK
+    }
 
-data class ManagedOptsOID4VCIssuer(
-    override val identifier: String,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: AdditionalIdentifierLookup = AdditionalIdentifierLookup(),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.OID4VCI_ISSUER
-}
+@JsExportCompat
+data class
+ManagedOptsOID4VCIssuer
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: AdditionalIdentifierLookup = AdditionalIdentifierLookup(),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.OID4VCI_ISSUER
+    }
 
-data class ManagedOptsX5c(
-    override val identifier: List<String>,
-    override val context: IdentifierContext = IdentifierContext(),
-    override val lookup: AdditionalIdentifierLookup = AdditionalIdentifierLookup(),
-) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
-    override val method = IdentifierMethodDefaults.X5C
-}
+@JsExportCompat
+data class
+ManagedOptsX5c
+    @JvmOverloads
+    constructor(
+        override val identifier: List<String>,
+        override val context: IdentifierContext = IdentifierContext(),
+        override val lookup: AdditionalIdentifierLookup = AdditionalIdentifierLookup(),
+    ) : ManagedIdentifierOpts(identifier = identifier, context = context, lookup = lookup) {
+        override val method = IdentifierMethodDefaults.X5C
+    }
 
 /**
  * Base interface for managed identifier results
  */
+@JsExportCompat
 abstract class ManagedIdentifierResult<KeyType : com.sphereon.crypto.core.KeyType>(
     override val method: IIdentifierMethod,
     open val keyInfo: ManagedKeyInfoType<KeyType>,
@@ -161,18 +206,23 @@ abstract class ManagedIdentifierResult<KeyType : com.sphereon.crypto.core.KeyTyp
 /**
  * Result for managed DID identifiers
  */
-data class ManagedIdentifierDidResult(
-    override val identifier: String,
-    override val context: IdentifierContext,
-    override val keyInfo: ManagedKeyInfoType<KeyType>,
-    val keys: List<ManagedKeyInfoType<JwkType>>,
-    val verificationMethodSection: String? = null,
-    val controllerKeyId: String? = null,
-) : ManagedIdentifierResult<KeyType>(identifier = identifier, method = IdentifierMethodDefaults.DID, context = context, keyInfo = keyInfo)
+@JsExportCompat
+data class
+ManagedIdentifierDidResult
+    @JvmOverloads
+    constructor(
+        override val identifier: String,
+        override val context: IdentifierContext,
+        override val keyInfo: ManagedKeyInfoType<KeyType>,
+        val keys: List<ManagedKeyInfoType<JwkType>>,
+        val verificationMethodSection: String? = null,
+        val controllerKeyId: String? = null,
+    ) : ManagedIdentifierResult<KeyType>(identifier = identifier, method = IdentifierMethodDefaults.DID, context = context, keyInfo = keyInfo)
 
 /**
  * Result for managed JWK identifiers
  */
+@JsExportCompat
 class ManagedIdentifierJwkResult(
     override val context: IdentifierContext,
     override val keyInfo: ManagedKeyInfoType<JwkType>,
@@ -182,49 +232,69 @@ class ManagedIdentifierJwkResult(
 /**
  * Result for managed KID identifiers
  */
-data class ManagedIdentifierKidResult(
-    override val context: IdentifierContext,
-    override val keyInfo: ManagedKeyInfoType<KeyType>,
-    override val identifier: String,
-) : ManagedIdentifierResult<KeyType>(identifier = identifier, method = IdentifierMethodDefaults.KID, context = context, keyInfo = keyInfo)
+@JsExportCompat
+data class
+ManagedIdentifierKidResult
+    @JvmOverloads
+    constructor(
+        override val context: IdentifierContext,
+        override val keyInfo: ManagedKeyInfoType<KeyType>,
+        override val identifier: String,
+    ) : ManagedIdentifierResult<KeyType>(identifier = identifier, method = IdentifierMethodDefaults.KID, context = context, keyInfo = keyInfo)
 
 /**
  * Result for managed Key identifiers
  */
-data class ManagedIdentifierKeyResult(
-    override val context: IdentifierContext,
-    override val keyInfo: ManagedKeyInfoType<KeyType>,
-    override val identifier: KeyType,
-) : ManagedIdentifierResult<KeyType>(identifier = identifier, method = IdentifierMethodDefaults.KEY, context = context, keyInfo = keyInfo)
+@JsExportCompat
+data class
+ManagedIdentifierKeyResult
+    @JvmOverloads
+    constructor(
+        override val context: IdentifierContext,
+        override val keyInfo: ManagedKeyInfoType<KeyType>,
+        override val identifier: KeyType,
+    ) : ManagedIdentifierResult<KeyType>(identifier = identifier, method = IdentifierMethodDefaults.KEY, context = context, keyInfo = keyInfo)
 
 /**
  * Result for managed COSE Key identifiers
  */
-data class ManagedIdentifierCoseKeyResult(
-    override val context: IdentifierContext,
-    override val keyInfo: ManagedKeyInfoType<CoseKeyType>,
-    override val identifier: CoseKeyType,
-) : ManagedIdentifierResult<CoseKeyType>(identifier = identifier, method = IdentifierMethodDefaults.COSE_KEY, context = context, keyInfo = keyInfo)
+@JsExportCompat
+data class
+ManagedIdentifierCoseKeyResult
+    @JvmOverloads
+    constructor(
+        override val context: IdentifierContext,
+        override val keyInfo: ManagedKeyInfoType<CoseKeyType>,
+        override val identifier: CoseKeyType,
+    ) : ManagedIdentifierResult<CoseKeyType>(identifier = identifier, method = IdentifierMethodDefaults.COSE_KEY, context = context, keyInfo = keyInfo)
 
 /**
  * Result for managed OID4VCIssuer identifiers
  */
-data class ManagedIdentifierOID4VCIssuerResult(
-    override val context: IdentifierContext,
-    override val keyInfo: ManagedKeyInfoType<JwkType>,
-    override val identifier: String,
-) : ManagedIdentifierResult<JwkType>(identifier = identifier, method = IdentifierMethodDefaults.OID4VCI_ISSUER, context = context, keyInfo = keyInfo)
+@JsExportCompat
+data class
+ManagedIdentifierOID4VCIssuerResult
+    @JvmOverloads
+    constructor(
+        override val context: IdentifierContext,
+        override val keyInfo: ManagedKeyInfoType<JwkType>,
+        override val identifier: String,
+    ) : ManagedIdentifierResult<JwkType>(identifier = identifier, method = IdentifierMethodDefaults.OID4VCI_ISSUER, context = context, keyInfo = keyInfo)
 
 /**
  * Result for managed X5C identifiers
  */
-data class ManagedIdentifierX5cResult(
-    override val context: IdentifierContext,
-    override val keyInfo: ManagedKeyInfoType<JwkType>,
-    override val identifier: List<String>,
-    override val x5c: Array<String>,
-    val certificate: Any? = null,
-) : ManagedIdentifierResult<JwkType>(identifier = identifier, method = IdentifierMethodDefaults.X5C, context = context, keyInfo = keyInfo)
+@JsExportCompat
+data class
+ManagedIdentifierX5cResult
+    @JvmOverloads
+    constructor(
+        override val context: IdentifierContext,
+        override val keyInfo: ManagedKeyInfoType<JwkType>,
+        override val identifier: List<String>,
+        override val x5c: Array<String>,
+        val certificate: Any? = null,
+    ) : ManagedIdentifierResult<JwkType>(identifier = identifier, method = IdentifierMethodDefaults.X5C, context = context, keyInfo = keyInfo)
 
 /**
  * Type guard functions for managed identifier options

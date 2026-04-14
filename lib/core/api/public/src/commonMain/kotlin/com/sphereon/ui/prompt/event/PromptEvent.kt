@@ -19,7 +19,6 @@ package com.sphereon.ui.prompt.event
 
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventType
-import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.ui.prompt.core.CancelReason
 import com.sphereon.ui.prompt.core.PromptId
 import com.sphereon.ui.prompt.core.PromptOutcome

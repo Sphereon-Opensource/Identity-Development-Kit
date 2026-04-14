@@ -19,6 +19,7 @@ package com.sphereon.ktor.http.client.config
 import com.sphereon.core.api.log.LogLevel
 import com.sphereon.core.api.log.LogOutputFormat
 import com.sphereon.core.api.log.LoggerConfig
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.ktor.http.client.provider.UrlValidationPolicy
@@ -45,6 +46,7 @@ import kotlin.native.ObjCName
  * http.client.base.url=https://api.example.com
  * ```
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HttpClientProperties", exact = true)
 @Serializable
@@ -65,11 +67,13 @@ data class HttpClientProperties(
     }
 }
 
+@JsExportCompat
 @Serializable
 data class HttpCacheProperties(
     val enabled: Boolean? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class HttpLoggingProperties(
     val enabled: Boolean? = null,
@@ -85,6 +89,7 @@ data class HttpLoggingProperties(
  * (e.g., Ktor HttpTimeout) since the core API module does not depend on
  * the timeout plugin directly.
  */
+@JsExportCompat
 @Serializable
 data class HttpTimeoutProperties(
     val connectMs: Long? = null,
@@ -92,17 +97,20 @@ data class HttpTimeoutProperties(
     val socketMs: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class HttpRetryProperties(
     val maxRetries: Int? = null,
     val delayMs: Long? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class HttpUrlValidationProperties(
     val policy: String? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class HttpSslProperties(
     val defaultCertificate: HttpKeystoreCertRef? = null,
@@ -111,6 +119,7 @@ data class HttpSslProperties(
     val additionalCas: List<HttpKeystoreCertRef>? = null,
 )
 
+@JsExportCompat
 @Serializable
 data class HttpKeystoreCertRef(
     val keystoreId: String,

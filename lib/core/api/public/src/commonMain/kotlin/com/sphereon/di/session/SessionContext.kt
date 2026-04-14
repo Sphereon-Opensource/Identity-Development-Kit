@@ -17,7 +17,6 @@
 
 package com.sphereon.di.session
 
-import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.ContextAware
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.NoOpSessionContext
@@ -39,7 +38,6 @@ interface SessionContext : ContextAware {
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ISessionContextAware", exact = true)
-@JsExportCompat
 interface ISessionContextAware {
     val sessionContext: SessionContext
 }

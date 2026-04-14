@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -231,6 +232,8 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
  * @property additionalMetadata Additional discovery metadata (auto-captured from unknown JSON fields)
  */
 @Serializable(with = AuthorizationServerMetadataSerializer::class)
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class AuthorizationServerMetadata(
     val issuer: String,
     @SerialName("token_endpoint")

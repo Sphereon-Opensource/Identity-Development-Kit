@@ -17,9 +17,11 @@
 
 package com.sphereon.data.link.ble.filter
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ManufacturerData", exact = true)
 data class ManufacturerData(

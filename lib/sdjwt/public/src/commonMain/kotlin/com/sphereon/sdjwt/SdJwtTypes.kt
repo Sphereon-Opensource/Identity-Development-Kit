@@ -31,6 +31,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.ExperimentalJsExport
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Clock
 
@@ -153,6 +154,7 @@ data class Disclosure(
          * Creates a disclosure for an object property (named claim).
          * Format: [salt, claim_name, claim_value]
          */
+        @JvmStatic
         fun objectProperty(
             saltProvider: SaltProvider,
             claimName: String,
@@ -182,6 +184,7 @@ data class Disclosure(
          * Creates a disclosure for an array element (unnamed value).
          * Format: [salt, claim_value]
          */
+        @JvmStatic
         fun arrayElement(
             saltProvider: SaltProvider,
             elementValue: JsonElement,
@@ -211,6 +214,7 @@ data class Disclosure(
  * Provider interface for generating cryptographic salts
  * Used during SD-JWT issuance to create random salts for disclosures
  */
+@JsExportCompat
 interface SaltProvider {
     /**
      * Generate a random salt string
@@ -391,6 +395,7 @@ data class SdJwtSpec(
  * @property jwtPayload The JWT payload with digests (to be signed)
  * @property disclosures The list of disclosures for selectively disclosable claims
  */
+@JsExportCompat
 data class UnsignedSdJwt(
     val jwtPayload: JsonObject,
     val disclosures: List<Disclosure>,

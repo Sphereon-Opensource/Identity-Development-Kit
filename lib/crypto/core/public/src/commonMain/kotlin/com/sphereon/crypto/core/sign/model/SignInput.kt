@@ -21,6 +21,8 @@ import com.sphereon.core.api.Base64Serializer
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -39,70 +41,78 @@ import kotlin.native.ObjCName
 @ObjCName("SignInput", exact = true)
 @Serializable
 @JsExportCompat
-data class SignInput(
-    @Serializable(with = Base64Serializer::class) val input: ByteArray,
-    val signMode: SigningMode = SigningMode.DOCUMENT,
-    val name: String? = "document",
-    val mimeType: String? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) {
+data class
+SignInput
+    @JvmOverloads
+    constructor(
+        @Serializable(with = Base64Serializer::class) val input: ByteArray,
+        val signMode: SigningMode = SigningMode.DOCUMENT,
+        val name: String? = "document",
+        val mimeType: String? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as SignInput
+
+            if (!input.contentEquals(other.input)) {
+                return false
+            }
+            if (signMode != other.signMode) {
+                return false
+            }
+            if (name != other.name) {
+                return false
+            }
+            if (mimeType != other.mimeType) {
+                return false
+            }
+
             return true
         }
-        if (other == null || this::class != other::class) {
-            return false
+
+        override fun hashCode(): Int {
+            var result = input.contentHashCode()
+            result = 31 * result + signMode.hashCode()
+            result = 31 * result + (name?.hashCode() ?: 0)
+            result = 31 * result + (mimeType?.hashCode() ?: 0)
+            return result
         }
 
-        other as SignInput
+        companion object {
+            @JvmStatic
+            fun pdf(
+                data: ByteArray,
+                name: String = "document.pdf",
+            ): SignInput = SignInput(input = data, name = name, mimeType = "application/pdf")
 
-        if (!input.contentEquals(other.input)) {
-            return false
-        }
-        if (signMode != other.signMode) {
-            return false
-        }
-        if (name != other.name) {
-            return false
-        }
-        if (mimeType != other.mimeType) {
-            return false
-        }
+            @JvmStatic
+            fun xml(
+                data: ByteArray,
+                name: String = "document.xml",
+            ): SignInput = SignInput(input = data, name = name, mimeType = "application/xml")
 
-        return true
+            @JvmStatic
+            fun json(
+                data: ByteArray,
+                name: String = "document.json",
+            ): SignInput = SignInput(input = data, name = name, mimeType = "application/json")
+
+            @JvmStatic
+            fun binary(
+                data: ByteArray,
+                name: String = "document",
+            ): SignInput = SignInput(input = data, name = name, mimeType = "application/octet-stream")
+
+            @JvmStatic
+            fun digest(
+                digestData: ByteArray,
+                name: String = "digest",
+            ): SignInput = SignInput(input = digestData, name = name, signMode = SigningMode.DIGEST)
+        }
     }
-
-    override fun hashCode(): Int {
-        var result = input.contentHashCode()
-        result = 31 * result + signMode.hashCode()
-        result = 31 * result + (name?.hashCode() ?: 0)
-        result = 31 * result + (mimeType?.hashCode() ?: 0)
-        return result
-    }
-
-    companion object {
-        fun pdf(
-            data: ByteArray,
-            name: String = "document.pdf",
-        ): SignInput = SignInput(input = data, name = name, mimeType = "application/pdf")
-
-        fun xml(
-            data: ByteArray,
-            name: String = "document.xml",
-        ): SignInput = SignInput(input = data, name = name, mimeType = "application/xml")
-
-        fun json(
-            data: ByteArray,
-            name: String = "document.json",
-        ): SignInput = SignInput(input = data, name = name, mimeType = "application/json")
-
-        fun binary(
-            data: ByteArray,
-            name: String = "document",
-        ): SignInput = SignInput(input = data, name = name, mimeType = "application/octet-stream")
-
-        fun digest(
-            digestData: ByteArray,
-            name: String = "digest",
-        ): SignInput = SignInput(input = digestData, name = name, signMode = SigningMode.DIGEST)
-    }
-}

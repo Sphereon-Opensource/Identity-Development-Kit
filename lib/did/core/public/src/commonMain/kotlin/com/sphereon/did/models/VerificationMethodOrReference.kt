@@ -30,6 +30,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -52,51 +54,55 @@ import kotlin.native.ObjCName
 @ObjCName("DidVerificationMethodOrReference", exact = true)
 @JsExportCompat
 @Serializable(with = VerificationMethodOrReferenceSerializer::class)
-data class VerificationMethodOrReference(
-    val reference: String? = null,
-    val embedded: VerificationMethod? = null,
-) {
-    init {
-        require((reference != null) xor (embedded != null)) {
-            "Must have exactly one of reference or embedded"
+data class VerificationMethodOrReference
+    @JvmOverloads
+    constructor(
+        val reference: String? = null,
+        val embedded: VerificationMethod? = null,
+    ) {
+        init {
+            require((reference != null) xor (embedded != null)) {
+                "Must have exactly one of reference or embedded"
+            }
         }
-    }
 
-    companion object {
+        companion object {
+            /**
+             * Creates a VerificationMethodOrReference from a string reference.
+             *
+             * @param ref The reference string (e.g., "#key-1" or "did:example:123#key-1")
+             */
+            @JvmStatic
+            @JsStatic
+            fun fromReference(ref: String): VerificationMethodOrReference = VerificationMethodOrReference(reference = ref)
+
+            /**
+             * Creates a VerificationMethodOrReference from an embedded VerificationMethod.
+             *
+             * @param vm The embedded VerificationMethod object
+             */
+            @JvmStatic
+            @JsStatic
+            fun fromEmbedded(vm: VerificationMethod): VerificationMethodOrReference = VerificationMethodOrReference(embedded = vm)
+        }
+
         /**
-         * Creates a VerificationMethodOrReference from a string reference.
-         *
-         * @param ref The reference string (e.g., "#key-1" or "did:example:123#key-1")
+         * Returns true if this is a reference (not an embedded object).
          */
-        @JsStatic
-        fun fromReference(ref: String): VerificationMethodOrReference = VerificationMethodOrReference(reference = ref)
+        val isReference: Boolean get() = reference != null
 
         /**
-         * Creates a VerificationMethodOrReference from an embedded VerificationMethod.
-         *
-         * @param vm The embedded VerificationMethod object
+         * Returns true if this is an embedded VerificationMethod object.
          */
-        @JsStatic
-        fun fromEmbedded(vm: VerificationMethod): VerificationMethodOrReference = VerificationMethodOrReference(embedded = vm)
+        val isEmbedded: Boolean get() = embedded != null
+
+        /**
+         * Gets the verification method ID, whether from a reference or embedded object.
+         *
+         * @return The verification method ID
+         */
+        fun getId(): String = reference ?: embedded?.id ?: error("No reference or embedded VM")
     }
-
-    /**
-     * Returns true if this is a reference (not an embedded object).
-     */
-    val isReference: Boolean get() = reference != null
-
-    /**
-     * Returns true if this is an embedded VerificationMethod object.
-     */
-    val isEmbedded: Boolean get() = embedded != null
-
-    /**
-     * Gets the verification method ID, whether from a reference or embedded object.
-     *
-     * @return The verification method ID
-     */
-    fun getId(): String = reference ?: embedded?.id ?: error("No reference or embedded VM")
-}
 
 /**
  * Custom serializer for VerificationMethodOrReference.

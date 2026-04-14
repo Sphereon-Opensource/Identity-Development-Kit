@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.auth.http.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
 /**
@@ -33,6 +34,7 @@ import kotlinx.serialization.Serializable
  * @property ttlSeconds Session TTL in seconds. Overrides the default from configuration.
  */
 @Serializable
+@JsExportCompat
 data class CreateOid4vpAuthSessionRequest(
     val queryId: String? = null,
     val clientId: String? = null,

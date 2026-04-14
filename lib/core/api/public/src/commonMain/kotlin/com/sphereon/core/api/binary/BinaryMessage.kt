@@ -18,6 +18,8 @@ package com.sphereon.core.api.binary
 
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.compat.JsExportCompat
+import kotlin.jvm.JvmStatic
 
 /**
  * Transport-neutral binary request.
@@ -36,6 +38,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
  * @property metadata Additional metadata for cross-cutting concerns
  * @property body The request body
  */
+@JsExportCompat
 data class BinaryRequest(
     val commandId: String,
     val contentType: String? = null,
@@ -91,6 +94,7 @@ data class BinaryRequest(
          * @param request The HTTP request to convert
          * @param commandId The command ID for routing
          */
+        @JvmStatic
         fun fromGenericHttpRequest(
             request: GenericHttpRequest,
             commandId: String,
@@ -115,6 +119,7 @@ data class BinaryRequest(
  * @property headers All response headers
  * @property body The response body
  */
+@JsExportCompat
 data class BinaryResponse(
     val statusCode: Int,
     val contentType: String,
@@ -166,6 +171,7 @@ data class BinaryResponse(
         /**
          * Creates a success response with JSON content.
          */
+        @JvmStatic
         fun ok(
             body: String,
             contentType: String = CONTENT_TYPE_JSON,
@@ -179,6 +185,7 @@ data class BinaryResponse(
         /**
          * Creates a success response with binary content.
          */
+        @JvmStatic
         fun okBytes(
             body: ByteArray,
             contentType: String = CONTENT_TYPE_PROTOBUF,
@@ -192,6 +199,7 @@ data class BinaryResponse(
         /**
          * Creates a no-content response (204).
          */
+        @JvmStatic
         fun noContent(): BinaryResponse =
             BinaryResponse(
                 statusCode = 204,
@@ -202,6 +210,7 @@ data class BinaryResponse(
         /**
          * Creates a created response (201).
          */
+        @JvmStatic
         fun created(
             body: String,
             contentType: String = CONTENT_TYPE_JSON,
@@ -215,6 +224,7 @@ data class BinaryResponse(
         /**
          * Creates an error response from a GenericHttpResponse.
          */
+        @JvmStatic
         fun fromGenericHttpResponse(response: GenericHttpResponse): BinaryResponse =
             BinaryResponse(
                 statusCode = response.statusCode,

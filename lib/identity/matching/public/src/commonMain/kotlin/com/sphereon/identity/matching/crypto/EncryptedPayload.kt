@@ -16,8 +16,10 @@
 
 package com.sphereon.identity.matching.crypto
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Result of an authenticated encryption operation.
@@ -29,9 +31,12 @@ import kotlinx.serialization.Serializable
  * @property keyVersion The version identifier of the encryption key used
  * @property algorithm The content encryption algorithm used (default: A256GCM = AES-256-GCM)
  */
+@JsExportCompat
 @Serializable
-data class EncryptedPayload(
-    val ciphertext: String,
-    val keyVersion: String,
-    val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
-)
+data class EncryptedPayload
+    @JvmOverloads
+    constructor(
+        val ciphertext: String,
+        val keyVersion: String,
+        val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
+    )

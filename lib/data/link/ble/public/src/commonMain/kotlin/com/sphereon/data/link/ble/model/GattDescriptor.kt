@@ -17,11 +17,14 @@
 
 package com.sphereon.data.link.ble.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GattDescriptor", exact = true)
 data class GattDescriptor(
@@ -29,6 +32,7 @@ data class GattDescriptor(
     @OptIn(ExperimentalUuidApi::class)
     override val id: Uuid,
     /** Descriptor permissions (read/write/encrypted/mitm) */
+    @JsExportIgnoreCompat
     val permissions: Set<GattPermission> = emptySet(),
     /** Parent characteristic, if known */
     val characteristic: GattCharacteristic? = null,

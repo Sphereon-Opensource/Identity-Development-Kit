@@ -19,6 +19,7 @@ package com.sphereon.core.api.conf
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
@@ -46,6 +47,7 @@ import kotlin.native.ObjCName
  * ```
  * Resolved: timeout.connect.ms=10000, logging.enabled=false (rest from global)
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CommandScopedConfigBinder", exact = true)
 class CommandScopedConfigBinder(

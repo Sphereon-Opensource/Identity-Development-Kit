@@ -16,8 +16,10 @@
 
 package com.sphereon.openid.oid4vc.common
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmStatic
 
 /**
  * Proof type for credential issuance per OID4VCI.
@@ -25,6 +27,7 @@ import kotlinx.serialization.Serializable
  * OID4VCI Section 7.2.1: "proof_type" identifies the key proof mechanism.
  * Only JWT is implemented now; CWT and attestation will be added when needed.
  */
+@JsExportCompat
 @Serializable
 enum class ProofType(
     val value: String,
@@ -34,6 +37,7 @@ enum class ProofType(
     ;
 
     companion object {
+        @JvmStatic
         fun fromValue(value: String): ProofType? = entries.find { it.value == value }
     }
 }

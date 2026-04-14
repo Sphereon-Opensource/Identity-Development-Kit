@@ -34,6 +34,7 @@ import com.sphereon.core.compat.toKotlin
 import kotlinx.datetime.LocalDate
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 import kotlin.time.Instant
 
@@ -236,9 +237,16 @@ data class DrivingPrivilege(
     }
 
     companion object {
+        @JvmStatic
         val VEHICLE_CATEGORY_CODE = StringLabel("vehicle_category_code")
+
+        @JvmStatic
         val ISSUE_DATE = StringLabel("issue_date")
+
+        @JvmStatic
         val EXPIRY_DATE = StringLabel("expiry_date")
+
+        @JvmStatic
         val CODES = StringLabel("codes")
     }
 }
@@ -282,8 +290,13 @@ data class DrivingPrivilegesCode(
     override fun toString(): String = "DrivingPrivilegesCode(code=$code, sign=$sign, value=$value)"
 
     companion object {
+        @JvmStatic
         val CODE = StringLabel("code")
+
+        @JvmStatic
         val SIGN = StringLabel("sign")
+
+        @JvmStatic
         val VALUE = StringLabel("value")
     }
 }

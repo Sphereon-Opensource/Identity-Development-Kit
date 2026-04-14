@@ -18,21 +18,27 @@
 package com.sphereon.crypto.core
 
 import com.sphereon.core.api.model.Origin
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 /**
  * Filter criteria for querying managed key references.
  */
 @Serializable
-data class ManagedKeyReferenceFilter(
-    val providerId: String? = null,
-    val alias: String? = null,
-    val kid: String? = null,
-    val origin: Origin? = null,
-    val keyType: KeyTypeMapping? = null,
-)
+@JsExportCompat
+data class
+ManagedKeyReferenceFilter
+    @JvmOverloads
+    constructor(
+        val providerId: String? = null,
+        val alias: String? = null,
+        val kid: String? = null,
+        val origin: Origin? = null,
+        val keyType: KeyTypeMapping? = null,
+    )
 
 /**
  * Convert a fully-resolved [ManagedKeyInfoType] to a metadata-only [ManagedKeyReference].

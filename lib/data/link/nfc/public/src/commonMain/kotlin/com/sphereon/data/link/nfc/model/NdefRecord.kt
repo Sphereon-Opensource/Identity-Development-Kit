@@ -17,6 +17,7 @@
 
 package com.sphereon.data.link.nfc.model
 
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.util.ByteDataReader
 import com.sphereon.util.appendByteString
 import com.sphereon.util.appendUInt32
@@ -27,6 +28,7 @@ import kotlinx.io.bytestring.append
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.encodeToByteString
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
@@ -37,6 +39,7 @@ import kotlin.native.ObjCName
  * @property id identifier meta-data, not commonly used.
  * @property payload the actual payload.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NdefRecord", exact = true)
 data class NdefRecord(
@@ -373,6 +376,7 @@ data class NdefRecord(
          * @param uri the URI to create a record for, for example `www.google.com`.
          * @return a new record with the URI.
          */
+        @JvmStatic
         fun createUri(uri: String): NdefRecord {
             var uriPrefixNum = 0
             var uriStr = uri
@@ -400,6 +404,7 @@ data class NdefRecord(
          * @param mimeData the data.
          * @return a NDEF record containing the type and data.
          */
+        @JvmStatic
         fun createMime(
             mimeType: String,
             mimeData: ByteArray,

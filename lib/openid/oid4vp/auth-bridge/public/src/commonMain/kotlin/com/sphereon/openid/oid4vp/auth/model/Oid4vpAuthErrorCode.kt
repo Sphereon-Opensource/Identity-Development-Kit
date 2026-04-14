@@ -16,13 +16,16 @@
 
 package com.sphereon.openid.oid4vp.auth.model
 
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmStatic
 
 /**
  * Error codes for OID4VP Authentication Bridge operations.
  */
 @Serializable
+@JsExportCompat
 enum class Oid4vpAuthErrorCode {
     /**
      * Query ID is required but was not provided and no default is configured.
@@ -131,6 +134,7 @@ enum class Oid4vpAuthErrorCode {
          * @return The matching [Oid4vpAuthErrorCode]
          * @throws IllegalArgumentException if value is not found
          */
+        @JvmStatic
         fun fromValue(value: String): Oid4vpAuthErrorCode =
             entries.find { it.name.equals(value, ignoreCase = true) }
                 ?: throw IllegalArgumentException("Unknown Oid4vpAuthErrorCode: $value")

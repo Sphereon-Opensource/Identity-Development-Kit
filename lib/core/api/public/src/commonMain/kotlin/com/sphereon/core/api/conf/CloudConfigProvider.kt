@@ -19,6 +19,7 @@ package com.sphereon.core.api.conf
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -31,6 +32,7 @@ import kotlin.time.Instant
  * Interface for cloud-based configuration providers.
  * Extends PropertySource with cloud-specific capabilities like refresh and change watching.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CloudConfigProvider", exact = true)
 interface CloudConfigProvider : PropertySource<Map<String, Any>> {
@@ -89,6 +91,7 @@ interface CloudConfigProvider : PropertySource<Map<String, Any>> {
 /**
  * Result of a refresh operation.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RefreshResult", exact = true)
@@ -105,6 +108,7 @@ data class RefreshResult(
 /**
  * Event emitted when configuration changes.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigChangeEvent", exact = true)
@@ -119,6 +123,7 @@ data class ConfigChangeEvent(
 /**
  * Type of configuration change.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ConfigChangeType", exact = true)
 enum class ConfigChangeType {
@@ -141,6 +146,7 @@ enum class ConfigChangeType {
 /**
  * Health status for cloud config provider.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CloudProviderHealth", exact = true)
@@ -157,6 +163,7 @@ data class CloudProviderHealth(
 /**
  * Base configuration for cloud config providers.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CloudConfigProviderConfig", exact = true)
@@ -173,6 +180,7 @@ data class CloudConfigProviderConfig(
 /**
  * Behavior when cloud config provider fails.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("FailureMode", exact = true)
 enum class FailureMode {
@@ -189,6 +197,7 @@ enum class FailureMode {
 /**
  * Retry configuration for cloud operations.
  */
+@JsExportCompat
 @Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RetryConfig", exact = true)
@@ -203,6 +212,7 @@ data class RetryConfig(
 /**
  * Registry for cloud configuration providers.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CloudConfigProviderRegistry", exact = true)
 class CloudConfigProviderRegistry {
@@ -250,6 +260,7 @@ class CloudConfigProviderRegistry {
  * Abstract base class for cloud config providers.
  * Provides common functionality for caching and error handling.
  */
+@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AbstractCloudConfigProvider", exact = true)
 abstract class AbstractCloudConfigProvider(

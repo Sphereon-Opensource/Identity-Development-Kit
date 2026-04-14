@@ -20,7 +20,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.client.command.CreateEncryptedJarArgs
 import com.sphereon.oauth2.client.command.CreateEncryptedJarCommand
@@ -54,7 +53,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JarService", exact = true)
-@JsExportCompat
 interface JarService {
     /**
      * Create a signed JAR from an authorization request
@@ -122,7 +120,6 @@ interface JarService {
     /**
      * Container for all JAR commands
      */
-    @JsExportIgnoreCompat
     interface Commands {
         val createSignedJar: CreateSignedJarCommand
         val createEncryptedJar: CreateEncryptedJarCommand

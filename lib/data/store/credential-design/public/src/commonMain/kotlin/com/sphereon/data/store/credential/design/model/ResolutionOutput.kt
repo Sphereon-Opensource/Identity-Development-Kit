@@ -16,46 +16,64 @@
 
 package com.sphereon.data.store.credential.design.model
 
+import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
+@JsExportCompat
 @Serializable
-data class AppliedDesignLayer(
-    val sourceType: DesignSourceType,
-    val sourceUrl: String? = null,
-    val priority: Int,
-    val authoritative: Boolean = false,
-)
+data class AppliedDesignLayer
+    @JvmOverloads
+    constructor(
+        val sourceType: DesignSourceType,
+        val sourceUrl: String? = null,
+        val priority: Int,
+        val authoritative: Boolean = false,
+    )
 
+@JsExportCompat
 @Serializable
-data class ResolvedCredentialDesign(
-    val design: CredentialDesignRecord,
-    val issuerDesign: IssuerDesignRecord? = null,
-    val verifierDesign: VerifierDesignRecord? = null,
-    val renderVariants: List<RenderVariantRecord>,
-    val derivedRenderHints: DerivedRenderHintsRecord? = null,
-    val appliedLayers: List<AppliedDesignLayer>,
-    val lockedFields: Map<String, DesignSourceType>,
-    val resolvedAt: Instant,
-    val etag: String? = null,
-)
+data class ResolvedCredentialDesign
+    @JvmOverloads
+    constructor(
+        val design: CredentialDesignRecord,
+        val issuerDesign: IssuerDesignRecord? = null,
+        val verifierDesign: VerifierDesignRecord? = null,
+        val renderVariants: List<RenderVariantRecord>,
+        val derivedRenderHints: DerivedRenderHintsRecord? = null,
+        val appliedLayers: List<AppliedDesignLayer>,
+        @JsExportIgnoreCompat
+        val lockedFields: Map<String, DesignSourceType>,
+        val resolvedAt: Instant,
+        val etag: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ResolvedIssuerDesign(
-    val design: IssuerDesignRecord,
-    val renderVariants: List<RenderVariantRecord>,
-    val appliedLayers: List<AppliedDesignLayer>,
-    val lockedFields: Map<String, DesignSourceType>,
-    val resolvedAt: Instant,
-    val etag: String? = null,
-)
+data class ResolvedIssuerDesign
+    @JvmOverloads
+    constructor(
+        val design: IssuerDesignRecord,
+        val renderVariants: List<RenderVariantRecord>,
+        val appliedLayers: List<AppliedDesignLayer>,
+        @JsExportIgnoreCompat
+        val lockedFields: Map<String, DesignSourceType>,
+        val resolvedAt: Instant,
+        val etag: String? = null,
+    )
 
+@JsExportCompat
 @Serializable
-data class ResolvedVerifierDesign(
-    val design: VerifierDesignRecord,
-    val renderVariants: List<RenderVariantRecord>,
-    val appliedLayers: List<AppliedDesignLayer>,
-    val lockedFields: Map<String, DesignSourceType>,
-    val resolvedAt: Instant,
-    val etag: String? = null,
-)
+data class ResolvedVerifierDesign
+    @JvmOverloads
+    constructor(
+        val design: VerifierDesignRecord,
+        val renderVariants: List<RenderVariantRecord>,
+        val appliedLayers: List<AppliedDesignLayer>,
+        @JsExportIgnoreCompat
+        val lockedFields: Map<String, DesignSourceType>,
+        val resolvedAt: Instant,
+        val etag: String? = null,
+    )

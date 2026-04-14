@@ -20,6 +20,7 @@ package com.sphereon.mdoc.transfer
 import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.cose.CoseKeyType
@@ -59,6 +60,7 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TransferManager", exact = true)
+@JsExportCompat
 interface TransferManager :
     MdocRetrievalEvent.Handlers,
     RequestResponseProcessor,

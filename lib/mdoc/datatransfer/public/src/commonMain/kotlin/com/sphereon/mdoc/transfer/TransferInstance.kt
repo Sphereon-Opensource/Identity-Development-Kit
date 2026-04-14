@@ -19,6 +19,7 @@ package com.sphereon.mdoc.transfer
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.engagement.EngagementInstance
@@ -57,6 +58,7 @@ import kotlin.uuid.Uuid
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TransferInstance", exact = true)
+@JsExportCompat
 interface TransferInstance : MdocRetrievalEvent.Handlers {
     val engagement: EngagementInstance
     val manager: TransferManager

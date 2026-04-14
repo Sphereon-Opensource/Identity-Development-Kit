@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.universal
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vc.common.SessionError
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
@@ -246,6 +247,7 @@ data class VerifiedData(
     /**
      * Full authorization response per the FIDES Universal OID4VP spec.
      */
+    @JsExportIgnoreCompat
     @SerialName("authorization_response")
     val authorizationResponse: JsonObject? = null,
 ) {
@@ -277,6 +279,7 @@ data class VerifiedClaimsValue(
     /**
      * Claims returned and deserialized in the form of a map.
      */
+    @JsExportIgnoreCompat
     val claims: Map<String, JsonElement>? = null,
     /**
      * The raw VP token presentation string (JWT, SD-JWT, etc.) for this credential.
@@ -328,6 +331,7 @@ data class VerifiedCredential(
     /**
      * Disclosed claims as key-value pairs.
      */
+    @JsExportIgnoreCompat
     val claims: Map<String, JsonElement> = emptyMap(),
 )
 
