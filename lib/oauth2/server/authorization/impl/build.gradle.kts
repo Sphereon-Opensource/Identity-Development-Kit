@@ -96,12 +96,6 @@ kotlin {
                 implementation(projects.libCryptoKmsProviderSoftware)
                 // Need default implementations for SessionExecution and other core dependencies
                 implementation(projects.libCoreApiDefault)
-            }
-        }
-        val jvmTest by getting {
-            dependencies {
-                // Need default implementations for SessionExecution and other core dependencies
-                implementation(projects.libCoreApiDefault)
                 implementation(projects.libCoreEventsImpl)
             }
         }

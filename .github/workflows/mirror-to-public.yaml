@@ -64,11 +64,27 @@ jobs:
           # whatever commit it currently has.
           fetch-depth: 0
           ref: ${{ steps.target.outputs.branch }}
+          # Don't leave a global http.extraheader with the workflow's GITHUB_TOKEN
+          # in git config — it would override the PAT we embed in the public
+          # remote URL and cause "Repository not found" on push.
+          persist-credentials: false
 
       - name: Configure git identity
         run: |
-          git config user.name  "sphereon-mirror-bot"
-          git config user.email "sphereon-mirror-bot@users.noreply.github.com"
+          git config user.name  "idk-mirror-bot"
+          git config user.email "idk-mirror-bot@users.noreply.github.com"
+
+      - name: Verify PUBLIC_REPO_TOKEN is wired
+        env:
+          TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          # Length is safe to print; GitHub masks the value itself. Prefix tells us
+          # whether it's a fine-grained PAT (starts with 'github_pat_') or classic
+          # ('ghp_'). Length 0 means the secret isn't wired up on this repo.
+          echo "token length: ${#TOKEN}"
+          if [ "${#TOKEN}" -ge 11 ]; then
+            echo "token kind:   ${TOKEN:0:11}..."
+          fi
 
       - name: Add public remote
         env:
