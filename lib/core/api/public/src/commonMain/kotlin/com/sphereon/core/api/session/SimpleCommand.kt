@@ -53,7 +53,6 @@ import kotlin.native.ObjCName
  * @param Arg The type of the input argument
  * @param Result The type of the success result
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SimpleCommand", exact = true)
 interface SimpleCommand<Arg : Any, Result : Any> {

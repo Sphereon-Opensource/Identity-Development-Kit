@@ -55,7 +55,6 @@ import com.sphereon.di.session.SessionContext
  *
  * @param execution The session execution context providing access to session context and services
  */
-@JsExportCompat
 abstract class CommandAggregatorService(
     override val execution: SessionExecution,
 ) : CommandDelegator {
@@ -104,7 +103,6 @@ abstract class CommandAggregatorService(
  *
  * @param C The type of the commands container
  */
-@JsExportCompat
 abstract class TypedCommandAggregatorService<C>(
     override val execution: SessionExecution,
 ) : CommandDelegator {

@@ -26,6 +26,17 @@ interface CborEncoder {
     fun encode(item: CborItem<*>): ByteArray
 }
 
+/**
+ * Result of decoding a single CBOR item from a byte array at a given offset.
+ * Uses a dedicated data class instead of [Pair] so the type survives
+ * `@JsExport` on generic result wrappers without losing its fields on JS.
+ */
+@JsExportCompat
+data class CborDecodedItem(
+    val offset: Int,
+    val item: CborItem<*>,
+)
+
 @JsExportCompat
 interface CborParser {
     fun parse(
@@ -37,7 +48,7 @@ interface CborParser {
         bytes: ByteArray,
         offset: Int,
         config: CborDecoderConfig = CborDecoderConfig.DEFAULT,
-    ): IdkResult<Pair<Int, CborItem<*>>, IdkError>
+    ): IdkResult<CborDecodedItem, IdkError>
 }
 
 @JsExportCompat

@@ -45,7 +45,6 @@ import com.sphereon.di.session.SessionContext
  * }
  * ```
  */
-@JsExportCompat
 interface CommandDelegator {
     /**
      * The session execution context providing access to sessionContext and other session-scoped services.
@@ -82,7 +81,6 @@ interface CommandDelegator {
  * A variant of CommandDelegator that only requires a SessionContext instead of full SessionExecution.
  * Useful for simpler scenarios where the full execution context isn't needed.
  */
-@JsExportCompat
 interface SimpleCommandDelegator {
     /**
      * The session context to use for command invocation.

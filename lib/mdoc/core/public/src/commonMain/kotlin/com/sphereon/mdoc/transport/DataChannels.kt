@@ -143,7 +143,6 @@ interface IncomingDataChannel : AutoCloseable {
  * Implementations should be thread-safe for concurrent writes if the
  * underlying transport supports it.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OutgoingDataChannel", exact = true)
 interface OutgoingDataChannel : AutoCloseable {

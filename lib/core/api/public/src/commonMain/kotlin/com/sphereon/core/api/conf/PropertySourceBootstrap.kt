@@ -261,7 +261,6 @@ class PropertySourceBootstrapImpl(
  *
  * This is used as a fallback when no property source modules are on the classpath.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("NoOpPropertySourceBootstrap", exact = true)
 class NoOpPropertySourceBootstrap : PropertySourceBootstrap {

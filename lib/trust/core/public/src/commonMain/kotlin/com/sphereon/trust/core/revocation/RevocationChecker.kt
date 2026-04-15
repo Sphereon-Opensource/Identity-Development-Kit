@@ -19,7 +19,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RevocationChecker", exact = true)
-@JsExportCompat
 interface RevocationChecker {
     suspend fun checkRevocation(
         certificate: ByteArray,
@@ -113,7 +112,6 @@ class RevocationCheckException(
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OCSPChecker", exact = true)
-@JsExportCompat
 interface OCSPChecker {
     suspend fun checkOCSP(
         certificate: ByteArray,
@@ -127,7 +125,6 @@ interface OCSPChecker {
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CRLChecker", exact = true)
-@JsExportCompat
 interface CRLChecker {
     suspend fun checkCRL(
         certificate: ByteArray,

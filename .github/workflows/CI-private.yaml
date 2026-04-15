@@ -22,8 +22,8 @@ jobs:
   jvm:
     name: JVM Build & Test
     if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private'
-#    runs-on: ubuntu-latest
-    runs-on: linux-x64
+    runs-on: ubuntu-latest
+#    runs-on: linux-x64
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

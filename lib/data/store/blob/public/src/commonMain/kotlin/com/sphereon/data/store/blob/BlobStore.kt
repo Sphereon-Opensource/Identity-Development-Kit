@@ -32,7 +32,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobStore", exact = true)
-@JsExportCompat
 interface BlobStore {
     val storeId: String
 

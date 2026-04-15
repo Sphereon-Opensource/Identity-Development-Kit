@@ -36,7 +36,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobService", exact = true)
-@JsExportCompat
 interface BlobService {
     /**
      * The default store ID used when no explicit store ID is provided.

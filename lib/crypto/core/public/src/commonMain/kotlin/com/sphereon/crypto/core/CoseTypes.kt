@@ -32,7 +32,6 @@ import com.sphereon.crypto.core.generic.VerifySignatureResultType
  *
  * Not exported to JS as it has a similar interface exported using Promises instead of coroutines
  */
-@JsExportCompat
 interface CoseCryptoCallbackCoroutines {
     suspend fun sign(
         input: ToBeSignedCbor,
@@ -59,7 +58,6 @@ interface CoseCryptoCallbackCoroutines {
  *
  * Not exported to JS as it has a similar interface exported using Promises instead of coroutines
  */
-@JsExportCompat
 interface CoseCryptoService {
     suspend fun <CborType : Any> sign1(
         input: CoseSign1Input,

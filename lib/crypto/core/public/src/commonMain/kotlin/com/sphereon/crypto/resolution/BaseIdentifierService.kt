@@ -30,7 +30,6 @@ interface IdentifierService : BaseIdentifierService<IdentifierOptsOrResult> {
     }
 }
 
-@JsExportCompat
 interface BaseIdentifierService<Type : IdentifierOptsOrResult> {
     /**
      * Which identifier‐methods this service supports.

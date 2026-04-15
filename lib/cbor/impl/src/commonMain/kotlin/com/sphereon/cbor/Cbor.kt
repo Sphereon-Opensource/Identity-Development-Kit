@@ -40,7 +40,7 @@ object Cbor {
         encodedCbor: ByteArray,
         offset: Int,
         config: CborDecoderConfig = CborDecoderConfig.DEFAULT,
-    ): IdkResult<Pair<Int, CborItem<*>>, IdkError> = CborRuntimeImpl.tryDecodeWithOffset(encodedCbor, offset, config)
+    ): IdkResult<CborDecodedItem, IdkError> = CborRuntimeImpl.tryDecodeWithOffset(encodedCbor, offset, config)
 
     @JvmStatic
     @JsName("decodeWithOffset")
@@ -51,7 +51,7 @@ object Cbor {
     fun decode(
         encodedCbor: ByteArray,
         offset: Int,
-    ): Pair<Int, CborItem<*>> = CborRuntimeImpl.decode(encodedCbor, offset)
+    ): CborDecodedItem = CborRuntimeImpl.decode(encodedCbor, offset)
 
     @JvmStatic
     @Deprecated(

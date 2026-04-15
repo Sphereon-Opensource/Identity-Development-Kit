@@ -36,7 +36,6 @@ import com.sphereon.core.compat.JsExportCompat
  * @param Result The success result type
  * @param E The error type
  */
-@JsExportCompat
 interface CompensatableCommand<Arg : Any, Result : Any, E : IdkErrorType> : Command<Arg, Result, E> {
     /**
      * Compensates (rolls back) a previously executed operation.

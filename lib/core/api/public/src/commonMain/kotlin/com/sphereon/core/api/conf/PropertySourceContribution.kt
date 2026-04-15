@@ -55,7 +55,6 @@ import kotlin.native.ObjCName
  * }
  * ```
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertySourceContribution", exact = true)
 interface PropertySourceContribution : HasOrder {

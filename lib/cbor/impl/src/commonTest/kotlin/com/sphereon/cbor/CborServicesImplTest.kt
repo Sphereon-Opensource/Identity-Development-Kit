@@ -45,8 +45,8 @@ class CborServicesImplTest {
         val decoded = parser.parseWithOffset(combined, first.size)
 
         assertTrue(decoded.isOk)
-        assertEquals(combined.size, decoded.value.first)
-        assertEquals(CborUInt(7), decoded.value.second)
+        assertEquals(combined.size, decoded.value.offset)
+        assertEquals(CborUInt(7), decoded.value.item)
     }
 
     @Test

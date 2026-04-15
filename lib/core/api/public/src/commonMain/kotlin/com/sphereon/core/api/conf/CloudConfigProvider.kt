@@ -32,7 +32,6 @@ import kotlin.time.Instant
  * Interface for cloud-based configuration providers.
  * Extends PropertySource with cloud-specific capabilities like refresh and change watching.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CloudConfigProvider", exact = true)
 interface CloudConfigProvider : PropertySource<Map<String, Any>> {
@@ -212,7 +211,6 @@ data class RetryConfig(
 /**
  * Registry for cloud configuration providers.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CloudConfigProviderRegistry", exact = true)
 class CloudConfigProviderRegistry {
@@ -260,7 +258,6 @@ class CloudConfigProviderRegistry {
  * Abstract base class for cloud config providers.
  * Provides common functionality for caching and error handling.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AbstractCloudConfigProvider", exact = true)
 abstract class AbstractCloudConfigProvider(

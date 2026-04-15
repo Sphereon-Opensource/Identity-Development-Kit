@@ -53,7 +53,6 @@ import kotlin.native.ObjCName
  *
  * @param T The type of connection identifier (UUID for BLE, String for REST API, etc.)
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IMdocTransfer", exact = true)
 interface MdocTransport<T> : AutoCloseable {

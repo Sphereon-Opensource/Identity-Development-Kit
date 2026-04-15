@@ -30,7 +30,6 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PublicKeyResolver", exact = true)
-@JsExportCompat
 interface PublicKeyResolver {
     /**
      * Resolves the public key asynchronously given the key information and additional optional parameters.
@@ -52,7 +51,6 @@ interface PublicKeyResolver {
 /**
  * Interface for a session that resolves keys based on identifier methods and key types.
  */
-@JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KeyResolverService", exact = true)
 interface KeyResolverService : PublicKeyResolver {

@@ -35,5 +35,8 @@ object CborDecoder {
         encodedCbor: ByteArray,
         offset: Int,
         config: CborDecoderConfig = CborDecoderConfig.DEFAULT,
-    ): IdkResult<Pair<Int, CborItem<*>>, IdkError> = CborDecoderRuntimeImpl.decodeWithOffset(encodedCbor, offset, config)
+    ): IdkResult<CborDecodedItem, IdkError> =
+        CborDecoderRuntimeImpl.decodeWithOffset(encodedCbor, offset, config).map { (newOffset, item) ->
+            CborDecodedItem(newOffset, item)
+        }
 }

@@ -35,7 +35,6 @@ import kotlin.native.ObjCName
  * Base interface for mdoc transfer implementations.
  * Provides common functionality for all transfer types (BLE, REST API, etc.)
  */
-@JsExportCompat
 interface IMdocTransfer<OpenResult : Any> : AutoCloseable {
     val connectionMethod: ConnectionMethod
 

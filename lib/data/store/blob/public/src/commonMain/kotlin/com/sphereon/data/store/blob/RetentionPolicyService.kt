@@ -29,7 +29,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RetentionPolicyService", exact = true)
-@JsExportCompat
 interface RetentionPolicyService {
     /**
      * Check if a blob may be deleted according to retention policies.

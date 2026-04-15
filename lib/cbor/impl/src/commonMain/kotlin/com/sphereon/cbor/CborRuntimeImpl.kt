@@ -344,7 +344,10 @@ internal object CborRuntimeImpl {
         encodedCbor: ByteArray,
         offset: Int,
         config: CborDecoderConfig = CborDecoderConfig.DEFAULT,
-    ): IdkResult<Pair<Int, CborItem<*>>, IdkError> = CborDecoderRuntimeImpl.decodeWithOffset(encodedCbor, offset, config)
+    ): IdkResult<CborDecodedItem, IdkError> =
+        CborDecoderRuntimeImpl.decodeWithOffset(encodedCbor, offset, config).map { (newOffset, item) ->
+            CborDecodedItem(newOffset, item)
+        }
 
     // ========================================
     // Legacy exception-based decoding methods
@@ -372,7 +375,7 @@ internal object CborRuntimeImpl {
     fun decode(
         encodedCbor: ByteArray,
         offset: Int,
-    ): Pair<Int, CborItem<*>> =
+    ): CborDecodedItem =
         tryDecodeWithOffset(encodedCbor, offset).getOrElse { error ->
             throw IllegalArgumentException(error.message.defaultMessage, error.exception)
         }

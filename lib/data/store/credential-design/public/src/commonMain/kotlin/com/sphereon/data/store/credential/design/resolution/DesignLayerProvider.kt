@@ -29,7 +29,6 @@ import com.sphereon.data.store.credential.design.model.ResolveEntityDesignInput
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 
-@JsExportCompat
 interface DesignLayerProvider {
     val sourceType: DesignSourceType
     val authoritative: Boolean

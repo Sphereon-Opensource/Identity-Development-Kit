@@ -48,7 +48,6 @@ fun <T> Map<*, *>.getNumberLabel(
 }
 
 @Suppress("UNCHECKED_CAST")
-@JsExportCompat
 open class CborMap<K : CborItem<*>, V : CborItem<*>?>
     @JvmOverloads
     constructor(

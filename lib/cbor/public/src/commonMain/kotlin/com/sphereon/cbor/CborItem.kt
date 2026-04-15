@@ -39,7 +39,6 @@ import kotlin.native.ObjCName
 /**
  * We use closed polymorphism here (sealed)
  */
-@JsExportCompat
 sealed class CborItem<Type>(
     val value: Type,
     cddl: CDDLType,
