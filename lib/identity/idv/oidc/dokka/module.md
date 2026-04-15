@@ -1,0 +1,3 @@
+# Module lib-idv-oidc
+
+OIDC driver for IDK Identity Verification. It performs a verification run by delegating to an external OpenID Connect identity provider and mapping the returned claims back onto the IDV attribute model. Reach for this when the trusted authority for a given IDV flow is an existing IdP (for example a national or federated OIDC provider), rather than a credential held in a wallet.

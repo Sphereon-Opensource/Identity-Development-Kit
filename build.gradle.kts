@@ -388,6 +388,13 @@ if (isDokkaRequested) {
                     customStyleSheets.from(rootDir.resolve("dokka/sphereon-styles.css"))
                     footerMessage.set("© ${java.time.Year.now().value} Sphereon International B.V. | Creating Trust In A Digital World")
                 }
+
+                val moduleMd = projectDir.resolve("dokka/module.md")
+                if (moduleMd.exists()) {
+                    dokkaPublications.html {
+                        includes.from(moduleMd)
+                    }
+                }
             }
 
             // Ensure Dokka tasks run after copyGeneratedSources (for OpenAPI-generated code)

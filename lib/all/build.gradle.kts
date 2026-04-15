@@ -150,7 +150,7 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                // Kotlin Inject dependencies for DI
+                // dependencies for DI
                 implementation(libs.bundles.app.platform.di)
 
                 // All library dependencies

@@ -1,0 +1,3 @@
+# Module lib-openid-oid4vci-holder-impl
+
+Runtime for the OID4VCI holder contracts declared in `lib-openid-oid4vci-holder-public`. It realises end-to-end holder (wallet) behaviour: constructing authorization requests, exchanging authorization codes and pre-authorized codes for tokens, and producing credential-request proofs bound to the holder's key. Config-driven so wallets can stay data-driven about which issuers and flows they support.

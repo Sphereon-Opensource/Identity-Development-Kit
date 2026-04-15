@@ -1,0 +1,3 @@
+# Module lib-openid-oid4vp-auth-bridge-impl
+
+Runtime for the auth-bridge contracts in `lib-openid-oid4vp-auth-bridge-public`. It drives the session lifecycle that turns an OID4VP verification into a first-class authentication outcome: creating an auth session tied to a VP request, completing the session once a presentation arrives, and tracking status in between. It also integrates with the reconciliation layer so claims gathered from the wallet land in the canonical-attribute pipeline.

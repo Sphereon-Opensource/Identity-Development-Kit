@@ -140,7 +140,6 @@ sealed class BeforeExecuteResult<out A, out R, out E> {
  * @param SuccessResult The success result type
  * @param ErrorResult The error type
  */
-@JsExportCompat
 interface IEnhancedCommandExecutionExtension<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType> {
     /**
      * Called before command execution.
