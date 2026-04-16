@@ -46,7 +46,7 @@ enum class KeyVisibility : WithKeyVisibility {
         @JsStatic
         @JvmStatic
         fun fromValue(value: String): KeyVisibility =
-            entries.firstOrNull { it.keyVisibility == value.lowercase() }
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
                 ?: throw IllegalArgumentException("Unknown key visibility: $value")
     }
 }

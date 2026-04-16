@@ -678,6 +678,13 @@ enum class KeyEncoding {
     COSE,
     JOSE,
     PLATFORM,
+    ;
+
+    companion object {
+        fun fromValue(value: String): KeyEncoding =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+                ?: throw IllegalArgumentException("Unknown key encoding: $value")
+    }
 }
 
 @JsExportCompat

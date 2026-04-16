@@ -37,7 +37,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 /**
  * SQLite implementation of [KeyReferenceStore].
@@ -111,6 +111,19 @@ class SqliteKeyReferenceStoreImpl(
                 }
             } catch (expected: Exception) {
                 Err(IdkError.UNKNOWN_ERROR(message = "Failed to upsert key reference: ${expected.message}", exception = expected))
+            }
+        }
+
+    override suspend fun findById(
+        tenantId: String,
+        id: String,
+    ): IdkResult<KeyReferenceRecord?, IdkError> =
+        withContext(IO) {
+            try {
+                val row = queries.findById(tenantId = tenantId, id = id).executeAsOneOrNull()
+                Ok(row?.toKeyReferenceRecord())
+            } catch (expected: Exception) {
+                Err(IdkError.UNKNOWN_ERROR(message = "Failed to find key reference by id: ${expected.message}", exception = expected))
             }
         }
 
@@ -242,6 +255,18 @@ class SqliteKeyReferenceStoreImpl(
             }
         }
 
+    /**
+     * Maps a raw DB row to a [KeyReferenceRecord].
+     *
+     * Parsing strategy: every enum-backed column uses a throwing parser. Unrecognised values
+     * indicate either data corruption or a schema drift, and propagate to the enclosing
+     * `try/catch` as `Err(UNKNOWN_ERROR)` — the caller gets a loud failure rather than a
+     * record with silently-nulled fields that can't be distinguished from a real NULL.
+     *
+     * Trade-off: rolling out a new enum value in the DB before the consuming code can parse
+     * it will surface as `Err` on read. Accepted: incorrect data is worse than visible
+     * incompatibility, and forward-compat is better addressed by schema/migration discipline.
+     */
     private fun Key_reference.toKeyReferenceRecord(): KeyReferenceRecord =
         KeyReferenceRecord(
             id = id,
@@ -249,11 +274,11 @@ class SqliteKeyReferenceStoreImpl(
             alias = alias,
             kid = kid,
             providerId = provider_id,
-            origin = Origin.valueOf(origin.uppercase()),
+            origin = Origin.fromValue(origin),
             keyType = key_type?.let { KeyTypeMapping.fromValue(it) },
             signatureAlgorithm = signature_algorithm?.let { SignatureAlgorithm.fromValue(it) },
-            keyVisibility = key_visibility?.let { runCatching { KeyVisibility.valueOf(it.uppercase()) }.getOrNull() },
-            keyEncoding = key_encoding?.let { runCatching { KeyEncoding.valueOf(it.uppercase()) }.getOrNull() },
+            keyVisibility = key_visibility?.let { KeyVisibility.fromValue(it) },
+            keyEncoding = key_encoding?.let { KeyEncoding.fromValue(it) },
             createdAt = Instant.parse(created_at),
             createdById = created_by_id,
             updatedAt = Instant.parse(updated_at),

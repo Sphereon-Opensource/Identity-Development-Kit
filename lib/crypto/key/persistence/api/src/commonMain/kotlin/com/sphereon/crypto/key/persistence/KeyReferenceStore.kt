@@ -43,6 +43,12 @@ interface KeyReferenceStore {
     /** Insert or update a key reference, matched by tenant + alias + provider. */
     suspend fun upsert(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError>
 
+    /** Find a key reference by its primary-key id within a tenant. */
+    suspend fun findById(
+        tenantId: String,
+        id: String,
+    ): IdkResult<KeyReferenceRecord?, IdkError>
+
     /** Find a key reference by its key identifier within a tenant. Optionally scoped to a specific provider. */
     suspend fun findByKid(
         tenantId: String,
@@ -63,14 +69,20 @@ interface KeyReferenceStore {
         filter: ManagedKeyReferenceFilter? = null,
     ): IdkResult<List<KeyReferenceRecord>, IdkError>
 
-    /** Soft-delete a key reference by alias + provider within a tenant. */
+    /**
+     * Soft-delete a key reference by alias + provider within a tenant.
+     * Returns `true` if at least one record was deleted, `false` if no matching active record existed.
+     */
     suspend fun delete(
         tenantId: String,
         alias: String,
         providerId: String,
     ): IdkResult<Boolean, IdkError>
 
-    /** Soft-delete a key reference by kid within a tenant. Optionally scoped to a specific provider. */
+    /**
+     * Soft-delete a key reference by kid within a tenant. Optionally scoped to a specific provider.
+     * Returns `true` if at least one record was deleted, `false` if no matching active record existed.
+     */
     suspend fun deleteByKid(
         tenantId: String,
         kid: String,

@@ -39,4 +39,11 @@ enum class Origin {
     /** Resource was created and is managed natively within this system */
     @SerialName("managed")
     MANAGED,
+    ;
+
+    companion object {
+        fun fromValue(value: String): Origin =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+                ?: throw IllegalArgumentException("Unknown origin: $value")
+    }
 }

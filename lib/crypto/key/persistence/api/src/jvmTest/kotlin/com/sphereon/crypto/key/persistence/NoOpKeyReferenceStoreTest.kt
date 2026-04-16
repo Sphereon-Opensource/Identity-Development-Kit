@@ -65,6 +65,14 @@ class NoOpKeyReferenceStoreTest {
         }
 
     @Test
+    fun findByIdReturnsNull() =
+        runTest {
+            val result = store.findById("tenant", "id")
+            assertTrue(result.isOk)
+            assertNull(result.value)
+        }
+
+    @Test
     fun findByKidReturnsNull() =
         runTest {
             val result = store.findByKid("tenant", "kid")

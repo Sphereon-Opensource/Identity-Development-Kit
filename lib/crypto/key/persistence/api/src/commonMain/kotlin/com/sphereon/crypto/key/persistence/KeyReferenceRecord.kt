@@ -24,9 +24,9 @@ import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Persistence record for a key reference. Contains metadata only — no key material.

@@ -41,7 +41,8 @@ CREATE INDEX IF NOT EXISTS idx_key_ref_origin ON key_reference(origin);
 -- =====================
 
 findById:
-SELECT * FROM key_reference WHERE id = :id AND deleted_at IS NULL;
+SELECT * FROM key_reference
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
 
 findByKid:
 SELECT * FROM key_reference

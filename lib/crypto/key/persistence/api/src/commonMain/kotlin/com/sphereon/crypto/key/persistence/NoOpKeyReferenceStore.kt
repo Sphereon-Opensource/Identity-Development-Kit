@@ -44,6 +44,11 @@ class NoOpKeyReferenceStore : KeyReferenceStore {
 
     override suspend fun upsert(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError> = Ok(record)
 
+    override suspend fun findById(
+        tenantId: String,
+        id: String,
+    ): IdkResult<KeyReferenceRecord?, IdkError> = Ok(null)
+
     override suspend fun findByKid(
         tenantId: String,
         kid: String,
