@@ -17,6 +17,7 @@
 package com.sphereon.core.api.auth
 
 import com.sphereon.core.api.binary.BinaryRequest
+import com.sphereon.core.api.http.util.RequestUtils
 import com.sphereon.core.api.tracing.TraceContext
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.IdentityConstants
@@ -40,6 +41,11 @@ object AuthHeaders {
     // ========================================
     // Authentication Headers
     // ========================================
+
+    /**
+     * Standard HTTP Host header.
+     */
+    const val HOST = "Host"
 
     /**
      * Standard Authorization header for bearer tokens.
@@ -116,6 +122,35 @@ object AuthHeaders {
      * Requested scope for the operation.
      */
     const val X_SCOPE = "X-Scope"
+
+    // ========================================
+    // Proxy / Forwarding Headers
+    // ========================================
+
+    /**
+     * Client IP address when behind a reverse proxy.
+     */
+    const val X_FORWARDED_FOR = "X-Forwarded-For"
+
+    /**
+     * Original protocol (http/https) when behind a reverse proxy.
+     */
+    const val X_FORWARDED_PROTO = "X-Forwarded-Proto"
+
+    /**
+     * Original host requested by the client.
+     */
+    const val X_FORWARDED_HOST = "X-Forwarded-Host"
+
+    /**
+     * Original port when behind a reverse proxy.
+     */
+    const val X_FORWARDED_PORT = "X-Forwarded-Port"
+
+    /**
+     * Path prefix prepended by the reverse proxy.
+     */
+    const val X_FORWARDED_PREFIX = "X-Forwarded-Prefix"
 
     // ========================================
     // Transport Metadata Headers
@@ -261,8 +296,7 @@ data class AuthContext(
          */
         @JvmStatic
         fun fromHeaders(headers: Map<String, String>): AuthContext {
-            // Helper to get header case-insensitively
-            fun get(name: String): String? = headers[name] ?: headers[name.lowercase()] ?: headers[name.uppercase()]
+            fun get(name: String) = RequestUtils.extractHeaderValue(headers, name)
 
             val policyContextJson = get(AuthHeaders.X_POLICY_CONTEXT)
             val policyContext: Map<String, String> =

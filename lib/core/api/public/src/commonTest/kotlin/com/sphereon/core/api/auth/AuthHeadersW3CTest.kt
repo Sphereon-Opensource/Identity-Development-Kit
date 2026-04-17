@@ -562,3 +562,165 @@ class AuthContextExistingBehaviorTest {
         assertEquals("value1", updated.policyContext["key1"])
     }
 }
+
+/**
+ * Tests: AuthContext.fromHeaders() case-insensitive header lookup.
+ *
+ * HTTP/1.1 (RFC 7230 section 3.2) requires header field names to be case-insensitive.
+ * Proxies, load balancers, and frameworks normalize casing differently, so fromHeaders()
+ * must handle any casing variant.
+ */
+class AuthContextFromHeadersCaseInsensitiveTest {
+
+    @Test
+    fun authorizationLowercase() {
+        val headers = mapOf("authorization" to "Bearer my-token")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("my-token", ctx.token)
+    }
+
+    @Test
+    fun authorizationUppercase() {
+        val headers = mapOf("AUTHORIZATION" to "Bearer my-token")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("my-token", ctx.token)
+    }
+
+    @Test
+    fun apiKeyLowercase() {
+        val headers = mapOf("x-api-key" to "key-123")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("key-123", ctx.apiKey)
+    }
+
+    @Test
+    fun tenantIdMixedCase() {
+        val headers = mapOf("x-tenant-id" to "tenant-1")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("tenant-1", ctx.tenantId)
+    }
+
+    @Test
+    fun userIdUppercase() {
+        val headers = mapOf("X-USER-ID" to "user-1")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("user-1", ctx.userId)
+    }
+
+    @Test
+    fun principalIdLowercase() {
+        val headers = mapOf("x-principal-id" to "principal-1")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("principal-1", ctx.principalId)
+    }
+
+    @Test
+    fun serviceIdLowercase() {
+        val headers = mapOf("x-service-id" to "svc-1")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("svc-1", ctx.serviceId)
+    }
+
+    @Test
+    fun traceparentUppercase() {
+        // W3C spec says lowercase, but proxies may normalize differently
+        val headers = mapOf("TRACEPARENT" to "00-abcdef-123456-01")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("00-abcdef-123456-01", ctx.traceparent)
+    }
+
+    @Test
+    fun tracestateUppercase() {
+        val headers = mapOf("TRACESTATE" to "vendor=value")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("vendor=value", ctx.tracestate)
+    }
+
+    @Test
+    fun requestIdLowercase() {
+        val headers = mapOf("x-request-id" to "req-1")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("req-1", ctx.requestId)
+    }
+
+    @Test
+    fun correlationIdLowercase() {
+        val headers = mapOf("x-correlation-id" to "corr-1")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals("corr-1", ctx.correlationId)
+    }
+
+    @Test
+    fun scopeLowercase() {
+        val headers = mapOf("x-scope" to "read write")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals(setOf("read", "write"), ctx.scopes)
+    }
+
+    @Test
+    fun policyContextLowercase() {
+        val headers = mapOf("x-policy-context" to """{"env":"prod"}""")
+        val ctx = AuthContext.fromHeaders(headers)
+        assertEquals(mapOf("env" to "prod"), ctx.policyContext)
+    }
+
+    @Test
+    fun allHeadersLowercaseRoundTrip() {
+        // Simulate a proxy that lowercases every header
+        val original = AuthContext(
+            token = "jwt",
+            apiKey = "ak",
+            tenantId = "t1",
+            userId = "u1",
+            principalId = "p1",
+            serviceId = "s1",
+            traceparent = "00-aaa-bbb-01",
+            tracestate = "vendor=v",
+            requestId = "r1",
+            correlationId = "c1",
+            policyContext = mapOf("k" to "v"),
+            scopes = setOf("admin")
+        )
+
+        val lowercasedHeaders = original.toHeaders()
+            .map { (k, v) -> k.lowercase() to v }
+            .toMap()
+
+        val restored = AuthContext.fromHeaders(lowercasedHeaders)
+
+        assertEquals(original.token, restored.token)
+        assertEquals(original.apiKey, restored.apiKey)
+        assertEquals(original.tenantId, restored.tenantId)
+        assertEquals(original.userId, restored.userId)
+        assertEquals(original.principalId, restored.principalId)
+        assertEquals(original.serviceId, restored.serviceId)
+        assertEquals(original.traceparent, restored.traceparent)
+        assertEquals(original.tracestate, restored.tracestate)
+        assertEquals(original.requestId, restored.requestId)
+        assertEquals(original.correlationId, restored.correlationId)
+        assertEquals(original.policyContext, restored.policyContext)
+        assertEquals(original.scopes, restored.scopes)
+    }
+
+    @Test
+    fun allHeadersUppercaseRoundTrip() {
+        // Simulate a proxy that uppercases every header
+        val original = AuthContext(
+            token = "jwt",
+            tenantId = "t1",
+            traceparent = "00-aaa-bbb-01",
+            requestId = "r1"
+        )
+
+        val uppercasedHeaders = original.toHeaders()
+            .map { (k, v) -> k.uppercase() to v }
+            .toMap()
+
+        val restored = AuthContext.fromHeaders(uppercasedHeaders)
+
+        assertEquals(original.token, restored.token)
+        assertEquals(original.tenantId, restored.tenantId)
+        assertEquals(original.traceparent, restored.traceparent)
+        assertEquals(original.requestId, restored.requestId)
+    }
+}

@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.api.http.util.RequestUtils
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.RoutedHttpAdapter
@@ -127,14 +128,11 @@ class OAuth2HttpAdapter(
     }
 
     private fun GenericHttpRequest.forwardedScheme(): String {
-        val proto =
-            headers["x-forwarded-proto"]
-                ?: headers["X-Forwarded-Proto"]
-                ?: headers["X-FORWARDED-PROTO"]
+        val proto = RequestUtils.extractHeaderValue(headers, "X-Forwarded-Proto")
         return if (proto.equals("https", ignoreCase = true)) "https" else "http"
     }
 
-    private fun GenericHttpRequest.hostHeader(): String = headers["host"] ?: headers["Host"] ?: "localhost"
+    private fun GenericHttpRequest.hostHeader(): String = RequestUtils.extractHeaderValue(headers, "Host") ?: "localhost"
 
     private fun GenericHttpRequest.resolveBaseUrl(tenantPath: String? = null): String {
         // Prefer configured issuer URL — correct behind reverse proxies with path prefixes

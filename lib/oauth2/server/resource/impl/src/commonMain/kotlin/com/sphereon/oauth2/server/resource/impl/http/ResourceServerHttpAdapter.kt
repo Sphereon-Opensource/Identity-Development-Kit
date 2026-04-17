@@ -19,6 +19,7 @@ package com.sphereon.oauth2.server.resource.impl.http
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.http.util.RequestUtils
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.resource.model.ResourceRequest
 import com.sphereon.oauth2.server.resource.model.VerifiedResourceRequest
@@ -116,16 +117,7 @@ class ResourceServerHttpAdapter(
      * Build full URL from request.
      */
     private fun buildFullUrl(request: GenericHttpRequest): String {
-        // Extract host from headers
-        val host = request.headers["host"] ?: request.headers["Host"] ?: "localhost"
-        val scheme =
-            if (request.headers["x-forwarded-proto"] == "https") {
-                "https"
-            } else {
-                "http"
-            }
-
-        return "$scheme://$host${request.path}"
+        return RequestUtils.buildFullUrl(request.headers, request.path)
     }
 
     /**
