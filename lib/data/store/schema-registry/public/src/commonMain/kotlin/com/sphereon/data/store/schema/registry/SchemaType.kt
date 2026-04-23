@@ -29,4 +29,5 @@ enum class SchemaType(
     XML_SCHEMA("application/xml", ".xsd"),
     SD_JWT_VCT("application/json", ".json"),
     JSON_LD_CONTEXT("application/ld+json", ".jsonld"),
+    OCA_BUNDLE("application/json", ".json"),
 }
