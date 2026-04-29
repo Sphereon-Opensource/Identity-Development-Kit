@@ -9,7 +9,6 @@
     <ID>CyclomaticComplexMethod:IdToken.kt$IdTokenPayloadSerializer$override fun serialize( encoder: Encoder, value: IdTokenPayload, )</ID>
     <ID>CyclomaticComplexMethod:TokenResponse.kt$TokenRequestSerializer$override fun serialize( encoder: Encoder, value: TokenRequest, )</ID>
     <ID>LongMethod:ClientRegistration.kt$ClientRegistrationSerializer$override fun deserialize(decoder: Decoder): ClientRegistration</ID>
-    <ID>MatchingDeclarationName:ValidationExtensions.kt$ValidationErrorDetail</ID>
     <ID>StringLiteralDuplication:AuthorizationRequest.kt$AuthorizationRequestSerializer$"acr_values"</ID>
     <ID>StringLiteralDuplication:AuthorizationRequest.kt$AuthorizationRequestSerializer$"client_id"</ID>
     <ID>StringLiteralDuplication:AuthorizationRequest.kt$AuthorizationRequestSerializer$"code_challenge"</ID>

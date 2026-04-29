@@ -39,7 +39,7 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionExecution", exact = true)
-interface SessionExecution {
+interface SessionExecution: HasProvenance {
     val sessionContextManager: SessionContextManager
     val sessionContext: SessionContext
     val log: SessionLogService
@@ -47,6 +47,12 @@ interface SessionExecution {
     val interceptorChain: CommandLifecycleInterceptorChain get() = EmptyInterceptorChain
 
     fun isAnonymous(): Boolean = sessionContext.isAnonymous()
+
+    override val principalId: String
+        get() = sessionContext.context.principal.toString()
+
+    override val tenantId: String
+        get() = sessionContext.context.tenant.tenantId
 
     @ContributesTo(SessionScope::class)
     interface Graph {
@@ -88,6 +94,11 @@ enum class IdkScope {
     APP,
     USER,
     SESSION,
+}
+
+interface HasProvenance {
+    val principalId: String
+    val tenantId: String
 }
 
 // interface ICoreApiContextGraph: ISureContextGraph, ICoreApiContextExtensionGraph

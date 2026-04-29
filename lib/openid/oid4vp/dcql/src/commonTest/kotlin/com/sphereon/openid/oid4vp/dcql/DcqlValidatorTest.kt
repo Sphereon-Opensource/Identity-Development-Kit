@@ -18,6 +18,8 @@ package com.sphereon.openid.oid4vp.dcql
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.validation.toIdkResult
+import com.sphereon.core.api.validation.validate
 import io.konform.validation.Invalid
 import io.konform.validation.Valid
 import kotlin.test.Test
@@ -322,7 +324,7 @@ class DcqlValidatorTest {
                     ),
             )
 
-        val result = validateDcqlQuery(query).toIdkResult()
+        val result = validateDcqlQuery(query).toIdkResult { DcqlError.ValidationError(errors = it) }
         assertTrue(result is Ok)
     }
 
@@ -330,7 +332,7 @@ class DcqlValidatorTest {
     fun toIdkResultConvertsInvalidToErr() {
         val query = DcqlQuery(credentials = emptyList())
 
-        val result = validateDcqlQuery(query).toIdkResult()
+        val result = validateDcqlQuery(query).toIdkResult { DcqlError.ValidationError(errors = it) }
         assertTrue(result is Err)
     }
 
@@ -344,7 +346,7 @@ class DcqlValidatorTest {
                     ),
             )
 
-        val result = validate(validateDcqlQuery, query)
+        val result = validate(validateDcqlQuery, query) { DcqlError.ValidationError(errors = it) }
         assertTrue(result is Ok)
     }
 

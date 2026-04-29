@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package com.sphereon.oauth2.common.validation
+package com.sphereon.core.api.validation
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
 import io.konform.validation.Invalid
@@ -26,7 +27,17 @@ import io.konform.validation.Valid
 import io.konform.validation.ValidationResult
 
 /**
- * Validation error detail from Konform
+ * Validation Error Detail
+ *
+ * Structured information about a single validation error.
+ *
+ * This is consistent with the OAuth2 validation error pattern.
+ *
+ * @property path JSON path to the field that failed validation (e.g., "credentials[0].id")
+ * @property message Human-readable validation error message
+ * @property userContext Optional additional context about the error
+ *
+ * @see com.sphereon.core.api.validation.ValidationErrorDetail
  */
 @JsExportCompat
 @Suppress("NON_EXPORTABLE_TYPE")

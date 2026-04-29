@@ -24,6 +24,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.validate
 import com.sphereon.crypto.core.x509.certificateFromPem
 import com.sphereon.crypto.core.x509.x509DerOrPemToPem
 import com.sphereon.di.session.SessionScope
@@ -39,8 +40,8 @@ import com.sphereon.openid.oid4vp.common.ValidateClientIdArgs
 import com.sphereon.openid.oid4vp.common.ValidateClientIdCommand
 import com.sphereon.openid.oid4vp.common.VerifierAttestation
 import com.sphereon.openid.oid4vp.common.verifierInfo
+import com.sphereon.openid.oid4vp.dcql.DcqlError
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
-import com.sphereon.openid.oid4vp.dcql.validate
 import com.sphereon.openid.oid4vp.dcql.validateDcqlQuery
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommandService
@@ -113,7 +114,7 @@ class ResolveAuthorizationRequestCommandImpl(
                     val parsedQuery = Json.decodeFromJsonElement(DcqlQuery.serializer(), normalizedElement)
 
                     // Validate the parsed DCQL query - use fold
-                    validate(validateDcqlQuery, parsedQuery).fold(
+                    validate(validateDcqlQuery, parsedQuery) { DcqlError.ValidationError(errors = it) }.fold(
                         success = { parsedQuery },
                         failure = { error ->
                             return Err(
@@ -143,7 +144,7 @@ class ResolveAuthorizationRequestCommandImpl(
                 // If scope resolved to a DCQL query, use it
                 scopeResult.dcqlQuery?.let { resolvedQuery ->
                     // Validate the resolved DCQL query
-                    validate(validateDcqlQuery, resolvedQuery).fold(
+                    validate(validateDcqlQuery, resolvedQuery) { DcqlError.ValidationError(errors = it) }.fold(
                         success = { resolvedQuery },
                         failure = { error ->
                             return Err(

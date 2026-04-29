@@ -32,7 +32,7 @@ import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.client.validation.validatePkceData
 import com.sphereon.oauth2.common.error.PkceError
 import com.sphereon.oauth2.common.model.PkceMethod
-import com.sphereon.oauth2.common.validation.toIdkResult
+import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.random.Random

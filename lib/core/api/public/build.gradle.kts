@@ -71,6 +71,9 @@ kotlin {
                 api(sphereonlib.io.ktor.client.content.negotiation)
                 api(sphereonlib.io.ktor.client.logging)
                 api(sphereonlib.io.ktor.serialization.kotlinx.json)
+                // Konform validation — ValidationResult appears in the signature of
+                // the ValidationExtensions API (toIdkResult/validate).
+                api(sphereonlib.io.konform.konform)
             }
         }
         val commonTest by getting {

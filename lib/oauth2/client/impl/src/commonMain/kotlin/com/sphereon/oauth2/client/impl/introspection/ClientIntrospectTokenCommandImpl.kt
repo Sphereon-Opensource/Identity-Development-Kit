@@ -37,7 +37,7 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.TokenIntrospectionRequest
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
-import com.sphereon.oauth2.common.validation.toIdkResult
+import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body

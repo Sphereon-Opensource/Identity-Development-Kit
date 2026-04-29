@@ -18,7 +18,7 @@ package com.sphereon.oauth2.common.error
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
-import com.sphereon.oauth2.common.validation.ValidationErrorDetail
+import com.sphereon.core.api.validation.ValidationErrorDetail
 
 /**
  * OAuth 2.0 error types

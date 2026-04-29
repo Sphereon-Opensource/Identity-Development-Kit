@@ -3,5 +3,6 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>BracesOnIfStatements:XmlTestUtil.wasmJs.kt$if</ID>
+    <ID>MatchingDeclarationName:ValidationExtensions.kt$ValidationErrorDetail</ID>
   </CurrentIssues>
 </SmellBaseline>

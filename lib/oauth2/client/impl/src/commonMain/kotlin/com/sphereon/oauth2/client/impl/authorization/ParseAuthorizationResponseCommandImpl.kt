@@ -73,7 +73,7 @@ class ParseAuthorizationResponseCommandImpl(
                     Oauth2Error.InvalidRequest(
                         details =
                             listOf(
-                                com.sphereon.oauth2.common.validation.ValidationErrorDetail(
+                                com.sphereon.core.api.validation.ValidationErrorDetail(
                                     path = "redirectUrl",
                                     message = "Invalid redirect URL format: ${expected.message}",
                                 ),
@@ -97,7 +97,7 @@ class ParseAuthorizationResponseCommandImpl(
                 Oauth2Error.InvalidRequest(
                     details =
                         listOf(
-                            com.sphereon.oauth2.common.validation.ValidationErrorDetail(
+                            com.sphereon.core.api.validation.ValidationErrorDetail(
                                 path = "code",
                                 message = "Authorization response must contain 'code' parameter",
                             ),
@@ -122,7 +122,7 @@ class ParseAuthorizationResponseCommandImpl(
                 Oauth2Error.InvalidRequest(
                     details =
                         listOf(
-                            com.sphereon.oauth2.common.validation.ValidationErrorDetail(
+                            com.sphereon.core.api.validation.ValidationErrorDetail(
                                 path = "error",
                                 message = "Error response must contain non-empty 'error' parameter",
                             ),

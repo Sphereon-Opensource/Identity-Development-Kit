@@ -31,7 +31,7 @@ import com.sphereon.oauth2.client.command.FetchJwksArgs
 import com.sphereon.oauth2.client.command.FetchJwksCommand
 import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.common.error.MetadataError
-import com.sphereon.oauth2.common.validation.ValidationErrorDetail
+import com.sphereon.core.api.validation.ValidationErrorDetail
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body

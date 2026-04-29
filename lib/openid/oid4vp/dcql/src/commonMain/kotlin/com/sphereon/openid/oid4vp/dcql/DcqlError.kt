@@ -18,7 +18,7 @@ package com.sphereon.openid.oid4vp.dcql
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
-import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.api.validation.ValidationErrorDetail
 
 /**
  * DCQL Error Types
@@ -211,23 +211,3 @@ sealed interface DcqlError : IdkErrorType {
         override val meta: Map<String, Any?> = emptyMap(),
     ) : DcqlError
 }
-
-/**
- * Validation Error Detail
- *
- * Structured information about a single validation error.
- *
- * This is consistent with the OAuth2 validation error pattern.
- *
- * @property path JSON path to the field that failed validation (e.g., "credentials[0].id")
- * @property message Human-readable validation error message
- * @property userContext Optional additional context about the error
- *
- * @see com.sphereon.oauth2.common.validation.ValidationErrorDetail
- */
-@JsExportCompat
-data class ValidationErrorDetail(
-    val path: String,
-    val message: String,
-    val userContext: Any? = null,
-)

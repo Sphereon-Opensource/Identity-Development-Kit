@@ -44,7 +44,7 @@ import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.client.JarService
 import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
 import com.sphereon.oauth2.common.model.AuthorizationRequest
-import com.sphereon.oauth2.common.validation.toIdkResult
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs

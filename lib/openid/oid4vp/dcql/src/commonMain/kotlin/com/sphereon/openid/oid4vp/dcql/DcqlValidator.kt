@@ -16,13 +16,7 @@
 
 package com.sphereon.openid.oid4vp.dcql
 
-import com.sphereon.core.api.Err
-import com.sphereon.core.api.IdkResult
-import com.sphereon.core.api.Ok
-import io.konform.validation.Invalid
-import io.konform.validation.Valid
 import io.konform.validation.Validation
-import io.konform.validation.ValidationResult
 import io.konform.validation.constraints.minLength
 
 /**
@@ -303,36 +297,3 @@ val validateDcqlTrustedAuthority =
         }
     }
 
-/**
- * Convert Konform ValidationResult to IdkResult
- */
-fun <T> ValidationResult<T>.toIdkResult(): IdkResult<T, DcqlError.ValidationError> =
-    when (this) {
-        is Valid -> {
-            Ok(this.value)
-        }
-
-        is Invalid -> {
-            val details =
-                this.errors.map { error ->
-                    ValidationErrorDetail(
-                        path = error.path.toString(),
-                        message = error.message,
-                        userContext = error.userContext,
-                    )
-                }
-            Err(
-                DcqlError.ValidationError(
-                    errors = details,
-                ),
-            )
-        }
-    }
-
-/**
- * Validate and convert to IdkResult in one step
- */
-fun <T> validate(
-    validator: Validation<T>,
-    value: T,
-): IdkResult<T, DcqlError.ValidationError> = validator(value).toIdkResult()

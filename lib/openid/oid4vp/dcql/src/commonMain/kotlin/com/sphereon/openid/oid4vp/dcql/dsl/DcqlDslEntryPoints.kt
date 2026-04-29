@@ -17,10 +17,10 @@ package com.sphereon.openid.oid4vp.dcql.dsl
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.validation.ValidationErrorDetail
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.openid.oid4vp.dcql.DcqlError
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
-import com.sphereon.openid.oid4vp.dcql.ValidationErrorDetail
-import com.sphereon.openid.oid4vp.dcql.toIdkResult
 import com.sphereon.openid.oid4vp.dcql.validateDcqlQuery
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
@@ -191,5 +191,5 @@ inline fun dcqlQueryResult(builderAction: DcqlQueryScope.() -> Unit): IdkResult<
             )
         }
 
-    return validateDcqlQuery(query).toIdkResult()
+    return validateDcqlQuery(query).toIdkResult { DcqlError.ValidationError(errors = it) }
 }

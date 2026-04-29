@@ -44,7 +44,7 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationResult
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.PushedAuthorizationRequest
 import com.sphereon.oauth2.common.model.PushedAuthorizationResponse
-import com.sphereon.oauth2.common.validation.toIdkResult
+import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body

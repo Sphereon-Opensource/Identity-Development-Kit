@@ -32,7 +32,7 @@ import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.client.validation.validateAuthorizationServerMetadata
 import com.sphereon.oauth2.common.error.MetadataError
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
-import com.sphereon.oauth2.common.validation.toIdkResult
+import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
