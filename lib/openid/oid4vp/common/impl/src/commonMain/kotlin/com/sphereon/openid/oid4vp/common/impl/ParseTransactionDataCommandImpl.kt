@@ -60,7 +60,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @SingleIn(SessionScope::class)
 class ParseTransactionDataCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParseTransactionDataArgs, ParseTransactionDataResult>(
+) : TypedServiceCommandAdapter<ParseTransactionDataArgs, ParseTransactionDataResult, IdkError>(
         commandId = ParseTransactionDataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseTransactionDataArgs>(),

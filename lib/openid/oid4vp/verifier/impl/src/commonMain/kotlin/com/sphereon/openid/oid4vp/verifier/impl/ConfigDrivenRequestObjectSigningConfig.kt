@@ -16,12 +16,17 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl
 
+import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFrom
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierService
@@ -30,6 +35,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.models.VerificationPurpose
+import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
 import dev.zacsweers.metro.ContributesBinding
@@ -73,26 +79,60 @@ class ConfigDrivenRequestObjectSigningConfig(
     }
 
     /**
-     * Produce the verifier's client-identity binding per OID4VP 1.0 §5.9.3. Returns null
-     * only when signing is disabled. When signing is enabled, this MUST succeed — any
-     * configuration error throws (no silent fallback to the HTTPS client_id, which §5.9.3
-     * forbids signing under anyway).
+     * Produce the verifier's client-identity binding per OID4VP 1.0 §5.9.3.
      *
-     * Mode selection via `$NAMESPACE.signing.mode`:
-     *   - `did:jwk` / `did:key` / …   → [VerifierSignerBinding.Did]
-     *   - `x509_san_dns`              → [VerifierSignerBinding.X509SanDns]
-     *   - `x509_hash`                 → [VerifierSignerBinding.X509Hash]
-     *   - (absent) → defaults to `did:jwk`, matching historical demo behaviour.
+     * - Returns null when signing is disabled.
+     * - When [scheme] is non-null, build the binding for that scheme regardless of the
+     *   verifier-side default. Same KMS alias / cert / key serves all schemes — only the
+     *   prefix and JOSE header differ. This lets callers (the universal command, the
+     *   demo's verifier UI) pick a binding per request.
+     * - When [scheme] is null, fall back to the deployment-configured default mode at
+     *   `$NAMESPACE.signing.mode` (legacy behaviour).
+     *
+     * When signing is enabled, this MUST succeed — any configuration error throws (no
+     * silent fallback to the HTTPS client_id, which §5.9.3 forbids signing under anyway).
      */
-    override suspend fun resolveSignerBinding(): VerifierSignerBinding? {
+    override suspend fun resolveSignerBinding(scheme: ClientIdScheme?): VerifierSignerBinding? {
         if (!enabled) return null
         val alias = requireKeyAlias()
-        val mode = configService.getPropertyAsString("$NAMESPACE.signing.mode") ?: DEFAULT_MODE
-        return when {
-            mode.startsWith("did:") -> buildDidBinding(alias, method = mode.removePrefix("did:"))
-            mode == "x509_san_dns" -> buildX509SanDnsBinding(alias)
-            mode == "x509_hash" -> buildX509HashBinding(alias)
-            else -> error("Unsupported $NAMESPACE.signing.mode='$mode' (expected did:<method>, x509_san_dns, or x509_hash)")
+        return when (scheme) {
+            ClientIdScheme.DECENTRALIZED_IDENTIFIER -> {
+                // Default did method to `jwk` if the caller didn't pin one via config.
+                val configuredMode = configService.getPropertyAsString("$NAMESPACE.signing.mode")
+                val didMethod =
+                    if (configuredMode != null && configuredMode.startsWith("did:")) {
+                        configuredMode.removePrefix("did:")
+                    } else {
+                        "jwk"
+                    }
+                buildDidBinding(alias, method = didMethod)
+            }
+
+            ClientIdScheme.X509_SAN_DNS -> {
+                buildX509SanDnsBinding(alias)
+            }
+
+            ClientIdScheme.X509_HASH -> {
+                buildX509HashBinding(alias)
+            }
+
+            null -> {
+                // No scheme requested — use the deployment-configured default.
+                val mode = configService.getPropertyAsString("$NAMESPACE.signing.mode") ?: DEFAULT_MODE
+                when {
+                    mode.startsWith("did:") -> buildDidBinding(alias, method = mode.removePrefix("did:"))
+                    mode == "x509_san_dns" -> buildX509SanDnsBinding(alias)
+                    mode == "x509_hash" -> buildX509HashBinding(alias)
+                    else -> error("Unsupported $NAMESPACE.signing.mode='$mode' (expected did:<method>, x509_san_dns, or x509_hash)")
+                }
+            }
+
+            else -> {
+                error(
+                    "Unsupported client_id_scheme '$scheme' for verifier JAR signing. " +
+                        "Supported: decentralized_identifier (did:jwk), x509_san_dns, x509_hash.",
+                )
+            }
         }
     }
 
@@ -167,17 +207,36 @@ class ConfigDrivenRequestObjectSigningConfig(
         return VerifierSignerBinding.X509SanDns(dnsName = dnsName, certificateChain = chain)
     }
 
+    /**
+     * Build the `x509_hash:` binding per OID4VP 1.0 §5.9.3 / 1.1 §5.9.3 / HAIP 1.0 §5.
+     *
+     * Spec verbatim (OID4VP 1.0 §5.9.3, line 616):
+     *
+     *   "the original Client Identifier (the part without the `x509_hash:` prefix) MUST be a
+     *    hash and match the hash of the leaf certificate passed with the request. … The value
+     *    of `x509_hash` is the base64url-encoded value of the SHA-256 hash of the DER-encoded
+     *    X.509 certificate."
+     *
+     * The hash is therefore a deterministic function of the leaf cert — derive it on the fly
+     * from the same `x5c[0]` bytes the JAR will carry. Any pinned-config approach risks drift
+     * (regenerated keystore, swapped cert) that the conformance test catches as
+     * `ExtractAndValidateX509HashClientId: Mismatch between Client ID … and the calculated
+     * x509 hash`.
+     *
+     * `x5c` entries are base64-encoded DER per RFC 7515 §4.1.6 (regular base64 with padding,
+     * not base64url) — decode that and SHA-256 the resulting DER bytes.
+     */
     private suspend fun buildX509HashBinding(alias: String): VerifierSignerBinding.X509Hash {
         val chain = loadX5cChain(alias)
-        val providedHash =
-            configService.getPropertyAsString("$NAMESPACE.signing.certHash")
+        val leafBase64 =
+            chain.firstOrNull()
                 ?: error(
-                    "x509_hash signing requires $NAMESPACE.signing.certHash " +
-                        "(base64url SHA-256 of the DER-encoded leaf certificate per OID4VP §5.9.3). " +
-                        "We don't derive this on the fly — the hash is a trust-anchor identifier that " +
-                        "must be pinned in configuration.",
+                    "Signing key '$alias' resolved an empty x5c chain — x509_hash signing requires the " +
+                        "leaf certificate as the first element of the chain.",
                 )
-        return VerifierSignerBinding.X509Hash(certificateHash = providedHash, certificateChain = chain)
+        val leafDer = leafBase64.decodeFrom(Encoding.BASE64)
+        val certHash = hash(leafDer, DigestAlg.SHA256).encodeToBase64Url()
+        return VerifierSignerBinding.X509Hash(certificateHash = certHash, certificateChain = chain)
     }
 
     private suspend fun loadJwk(alias: String): Jwk {

@@ -71,7 +71,7 @@ data class WalletConfig(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParseAuthorizationRequestCommand", exact = true)
 @JsExportCompat
-interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRequestArgs, AuthorizationRequest> {
+interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRequestArgs, AuthorizationRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -97,7 +97,7 @@ interface ParseAuthorizationRequestCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveAuthorizationRequestCommand", exact = true)
 @JsExportCompat
-interface ResolveAuthorizationRequestCommand : ServiceCommand<AuthorizationRequest, ResolvedOid4vpRequest> {
+interface ResolveAuthorizationRequestCommand : ServiceCommand<AuthorizationRequest, ResolvedOid4vpRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -131,7 +131,7 @@ data class CreateAuthorizationResponseArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateAuthorizationResponseCommand", exact = true)
 @JsExportCompat
-interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizationResponseArgs, AuthorizationResponse> {
+interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizationResponseArgs, AuthorizationResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -194,7 +194,7 @@ data class SubmitAuthorizationResponseArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SubmitAuthorizationResponseCommand", exact = true)
 @JsExportCompat
-interface SubmitAuthorizationResponseCommand : ServiceCommand<SubmitAuthorizationResponseArgs, SubmissionResult> {
+interface SubmitAuthorizationResponseCommand : ServiceCommand<SubmitAuthorizationResponseArgs, SubmissionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

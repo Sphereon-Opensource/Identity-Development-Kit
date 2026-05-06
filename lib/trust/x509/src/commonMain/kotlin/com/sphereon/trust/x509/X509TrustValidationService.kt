@@ -7,9 +7,6 @@
 package com.sphereon.trust.x509
 
 import com.sphereon.core.api.Encoding
-import com.sphereon.core.api.cache.CacheRequirements
-import com.sphereon.core.api.cache.CacheService
-import com.sphereon.core.api.cache.CacheTtlConfig
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.crypto.core.interop.getPublicKeyJwk
@@ -20,8 +17,6 @@ import com.sphereon.crypto.core.x509.certificateFromDer
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
 import com.sphereon.di.session.SessionScope
-import com.sphereon.ktor.http.client.provider.HttpClientFactory
-import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.trust.core.TrustValidationService
 import com.sphereon.trust.core.config.TrustConfigProvider
 import com.sphereon.trust.core.model.TrustAnchor
@@ -32,16 +27,11 @@ import com.sphereon.trust.core.model.TrustValidationRequest
 import com.sphereon.trust.core.model.TrustValidationResult
 import com.sphereon.trust.core.validation.AbstractTrustValidationService
 import com.sphereon.trust.x509.extractor.X509EntityInfoExtractor
-import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.isSuccess
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * X.509 CA bundle trust validation service.
@@ -63,23 +53,11 @@ import kotlin.time.Duration.Companion.minutes
 class X509TrustValidationService(
     private val x509VerifyService: X509VerifyService,
     private val trustConfigProvider: TrustConfigProvider,
-    private val httpClientFactory: HttpClientFactory,
-    private val cacheService: CacheService,
+    private val trustAnchorLoader: X509TrustAnchorLoader,
     private val execution: SessionExecution,
     private val entityInfoExtractor: X509EntityInfoExtractor,
 ) : AbstractTrustValidationService("x509", setOf(TrustContext.TYPE_X509, TrustContext.TYPE_CA_BUNDLE)) {
     private val logger = execution.log.logManager.withTag("X509TrustValidationService")
-
-    private val httpClient by lazy { httpClientFactory.createClient(HttpClientOptions()) }
-
-    private val trustedCertsCache by lazy {
-        cacheService.getCache(
-            CacheRequirements(
-                namespace = "trust.x509.trusted-certs",
-                ttlConfig = CacheTtlConfig(app = 60.minutes),
-            ),
-        )
-    }
 
     override suspend fun validate(request: TrustValidationRequest): TrustValidationResult {
         logger.debug("Validating X.509 trust for context: ${request.context}")
@@ -102,7 +80,7 @@ class X509TrustValidationService(
                 )
             }
 
-            val trustedCerts = loadTrustedCerts()
+            val trustedCerts = trustAnchorLoader.loadTrustedCerts()
 
             val verificationRequest =
                 if (trustedCerts.isNotEmpty()) {
@@ -159,93 +137,6 @@ class X509TrustValidationService(
     }
 
     override suspend fun getTrustAnchors(): List<TrustAnchor> = emptyList()
-
-    private suspend fun loadTrustedCerts(): List<String> {
-        val cached = trustedCertsCache.getApp("trusted-certs")
-        if (cached != null) {
-            return kotlinx.serialization.json.Json
-                .decodeFromString<List<String>>(cached)
-        }
-
-        val x509Config = trustConfigProvider.getTrustConfig().anchors.x509
-        if (!x509Config.enabled) {
-            return emptyList()
-        }
-
-        val certs = mutableListOf<String>()
-        val failedSources = mutableListOf<String>()
-
-        for (path in x509Config.caBundlePaths) {
-            try {
-                val pemContent = readFileContent(path)
-                if (pemContent != null) {
-                    val extracted = extractPemCertificates(pemContent)
-                    certs.addAll(extracted)
-                    logger.debug("Loaded ${extracted.size} certificates from $path")
-                } else {
-                    failedSources.add(path)
-                    logger.error("Configured CA bundle not found or unreadable: $path")
-                }
-            } catch (expected: Exception) {
-                failedSources.add(path)
-                logger.error("Failed to load CA bundle from path: $path", exception = expected)
-            }
-        }
-
-        for (url in x509Config.caBundleUrls) {
-            try {
-                val response = httpClient.get(url)
-                if (response.status.isSuccess()) {
-                    val extracted = extractPemCertificates(response.bodyAsText())
-                    certs.addAll(extracted)
-                    logger.debug("Loaded ${extracted.size} certificates from $url")
-                } else {
-                    failedSources.add(url)
-                    logger.error("Failed to fetch CA bundle from $url: HTTP ${response.status.value}")
-                }
-            } catch (expected: Exception) {
-                failedSources.add(url)
-                logger.error("Failed to fetch CA bundle from URL: $url", exception = expected)
-            }
-        }
-
-        if (failedSources.isNotEmpty()) {
-            check(failedSources.size <= x509Config.maxFailedSources) {
-                "${failedSources.size} CA bundle source(s) failed to load (threshold: ${x509Config.maxFailedSources}): $failedSources"
-            }
-            logger.warn("${failedSources.size} CA bundle source(s) failed to load (within threshold ${x509Config.maxFailedSources}): $failedSources")
-        }
-
-        if (certs.isNotEmpty()) {
-            trustedCertsCache.putApp(
-                "trusted-certs",
-                kotlinx.serialization.json.Json
-                    .encodeToString(certs),
-            )
-        }
-
-        return certs
-    }
-
-    private fun extractPemCertificates(pemContent: String): List<String> {
-        val certs = mutableListOf<String>()
-        val beginMarker = "-----BEGIN CERTIFICATE-----"
-        val endMarker = "-----END CERTIFICATE-----"
-
-        var startIndex = pemContent.indexOf(beginMarker)
-        while (startIndex != -1) {
-            val endIndex = pemContent.indexOf(endMarker, startIndex)
-            if (endIndex == -1) {
-                break
-            }
-
-            val cert = pemContent.substring(startIndex, endIndex + endMarker.length)
-            certs.add(cert)
-
-            startIndex = pemContent.indexOf(beginMarker, endIndex)
-        }
-        return certs
-    }
 
     /**
      * Checks if a certificate's fingerprint matches any of the trusted fingerprints.

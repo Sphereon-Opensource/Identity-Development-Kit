@@ -17,54 +17,32 @@
 
 package com.sphereon.mdoc.oid4vp
 
-import com.sphereon.cbor.dsl.cborArray
-import com.sphereon.cbor.dsl.encode
-import com.sphereon.core.compat.Uuid
-import com.sphereon.crypto.core.generic.DigestAlg
-import com.sphereon.crypto.core.generic.hash
 import com.sphereon.mdoc.data.device.DataElementIdentifier
 import com.sphereon.mdoc.data.device.NameSpace
 import com.sphereon.mdoc.transfer.reader.OID4VPHandover
-import kotlin.experimental.ExperimentalObjCName
-import kotlin.native.ObjCName
 
 /**
- * ISO 18013-7
+ * Construct an OID4VP 1.0 final §B.2.6 OpenID4VPHandover.
+ *
+ * Both holder and verifier independently reconstruct the SessionTranscript with this
+ * handover (the wallet does NOT transmit it on the wire). For encrypted-response modes
+ * (`direct_post.jwt`, `dc_api.jwt`) [jwkThumbprint] MUST be the RFC 7638 SHA-256
+ * thumbprint of the verifier's encryption-key JWK (raw 32 bytes). For plain modes
+ * [jwkThumbprint] MUST be null. The CBOR encoder in `SessionCborCodecsImpl` handles
+ * the rest of the §B.2.6 envelope (sha-256 of CBOR-encoded handoverInfo, wrapped in
+ * `["OpenID4VPHandover", <hash>]`).
  */
-fun clientIdToHash(
+fun oid4vpHandoverFromInputs(
     clientId: String,
-    generatedNonce: String,
-): ByteArray {
-    val clientIdToHash =
-        cborArray {
-            add(clientId)
-            add(generatedNonce)
-        }.encode()
-    return hash(clientIdToHash, DigestAlg.SHA256)
-}
-
-fun responseUriToHash(
+    nonce: String,
+    jwkThumbprint: ByteArray?,
     responseUri: String,
-    generatedNonce: String,
-): ByteArray {
-    val responseUriToHash =
-        cborArray {
-            add(responseUri)
-            add(generatedNonce)
-        }.encode()
-    return hash(responseUriToHash, DigestAlg.SHA256)
-}
-
-fun oid4vpHandoverFromClientIdAndResponseUri(
-    clientId: String,
-    responseUri: String,
-    mdocGeneratedNonce: String = Uuid.v4String(),
-    authorizationRequestNonce: String,
 ): OID4VPHandover =
     OID4VPHandover(
-        clientIdHash = clientIdToHash(clientId, mdocGeneratedNonce),
-        responseUriHash = responseUriToHash(responseUri, mdocGeneratedNonce),
-        nonce = authorizationRequestNonce,
+        clientId = clientId,
+        nonce = nonce,
+        jwkThumbprint = jwkThumbprint,
+        responseUri = responseUri,
     )
 
 private const val PATH_ENTRY_GROUP_COUNT = 3

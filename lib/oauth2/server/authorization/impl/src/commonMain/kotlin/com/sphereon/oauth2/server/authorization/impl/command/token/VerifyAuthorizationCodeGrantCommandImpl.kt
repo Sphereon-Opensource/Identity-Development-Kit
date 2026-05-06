@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
@@ -72,9 +73,10 @@ private const val MAX_PKCE_LENGTH = 128
 class VerifyAuthorizationCodeGrantCommandImpl(
     execution: SessionExecution,
     private val authorizationCodeStorage: AuthorizationCodeStorage,
+    private val tokenStorage: com.sphereon.oauth2.server.authorization.storage.TokenStorage,
     private val clientRegistry: ClientRegistry,
     private val configProvider: OAuth2ServersConfigProvider,
-) : TypedServiceCommandAdapter<VerifyAuthorizationCodeGrantArgs, VerifiedAuthorizationCodeGrant>(
+) : TypedServiceCommandAdapter<VerifyAuthorizationCodeGrantArgs, VerifiedAuthorizationCodeGrant, IdkError>(
         commandId = VerifyAuthorizationCodeGrantCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyAuthorizationCodeGrantArgs>(),
@@ -103,35 +105,31 @@ class VerifyAuthorizationCodeGrantCommandImpl(
         // This prevents replay attacks by ensuring the code can only be used once
         val codeData =
             authorizationCodeStorage.consumeAuthorizationCode(code).getOrElse { error ->
-                return when (error) {
-                    is AuthorizationServerError.StorageError -> {
-                        if (error.details.contains("already been used")) {
-                            // RFC 6749 Section 10.5: If a code is used more than once,
-                            // SHOULD revoke all tokens issued based on that code
-                            Err(
-                                AuthorizationServerError.InvalidGrant(
-                                    details = "Authorization code has already been used",
-                                    exception = null,
-                                ),
-                            )
-                        } else {
-                            Err(
-                                AuthorizationServerError.ServerError(
-                                    details = "Failed to retrieve authorization code: ${error.details}",
-                                    exception = null,
-                                ),
-                            )
-                        }
-                    }
-
-                    else -> {
-                        Err(error)
-                    }
-                }
+                return Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Failed to retrieve authorization code: ${error.details}",
+                        exception = null,
+                    ),
+                )
             }
 
         // Check if code was found
         if (codeData == null) {
+            // RFC 6749 §10.5: "If an authorization code is used more than once, the
+            // authorization server MUST deny the request and SHOULD revoke (when possible)
+            // all tokens previously issued based on that authorization code." `consume…`
+            // returns null in two cases: the code was never stored / has expired off, OR
+            // it was already consumed. `findAuthorizationCode` distinguishes them — when an
+            // entry exists with `used = true`, this is a replay; revoke the tokens minted on
+            // the first redemption so a downstream resource-server introspection returns
+            // `active = false` and rejects any in-flight access. Best-effort: a revoke
+            // failure here is logged but does not change the InvalidGrant we return.
+            authorizationCodeStorage.findAuthorizationCode(code).getOrElse { null }?.let { stored ->
+                if (stored.used) {
+                    stored.issuedAccessToken?.let { tokenStorage.revokeAccessToken(it) }
+                    stored.issuedRefreshToken?.let { tokenStorage.revokeRefreshToken(it) }
+                }
+            }
             return Err(
                 AuthorizationServerError.InvalidGrant(
                     details = "Invalid or expired authorization code",
@@ -172,7 +170,11 @@ class VerifyAuthorizationCodeGrantCommandImpl(
                     ),
                 )
             }
-            if (codeData.redirectUri != redirectUri) {
+            // Constant-time compare. Redirect URIs are not secrets, but matching the same
+            // discipline as the PKCE compare below means a future grep audit can rely on
+            // every `redirect_uri` comparison going through ConstantTime — no exceptions to
+            // explain in the code review.
+            if (!ConstantTime.equalsCT(codeData.redirectUri, redirectUri)) {
                 return Err(
                     AuthorizationServerError.InvalidGrant(
                         details = "redirect_uri does not match authorization request",
@@ -182,11 +184,15 @@ class VerifyAuthorizationCodeGrantCommandImpl(
             }
         }
 
-        // Verify PKCE if code_challenge was present (RFC 7636)
-        if (codeData.codeChallenge != null) {
+        // Verify PKCE if code_challenge was present (RFC 7636 §4.6). PKCE failures at /token
+        // — missing/short/malformed verifier, computed challenge mismatch — are all `invalid_grant`
+        // per RFC 7636, NOT `invalid_request`. The conformance suite checks the wire `error`
+        // field byte-equal to `invalid_grant` (FAPI2-SP §5.3.2.1, RFC7636-4.6).
+        val storedCodeChallenge = codeData.codeChallenge
+        if (storedCodeChallenge != null) {
             if (codeVerifier.isNullOrBlank()) {
                 return Err(
-                    AuthorizationServerError.InvalidRequest(
+                    AuthorizationServerError.InvalidGrant(
                         details = "Missing required parameter: code_verifier (PKCE required)",
                         exception = null,
                     ),
@@ -197,7 +203,7 @@ class VerifyAuthorizationCodeGrantCommandImpl(
             // Must be 43-128 characters, A-Z, a-z, 0-9, -, ., _, ~
             if (codeVerifier.length !in MIN_PKCE_LENGTH..MAX_PKCE_LENGTH) {
                 return Err(
-                    AuthorizationServerError.InvalidRequest(
+                    AuthorizationServerError.InvalidGrant(
                         details = "code_verifier must be 43-128 characters",
                         exception = null,
                     ),
@@ -217,8 +223,11 @@ class VerifyAuthorizationCodeGrantCommandImpl(
                     }
                 }
 
-            // Verify challenge matches
-            if (computedChallenge != codeData.codeChallenge) {
+            // Verify challenge matches. RFC 7636 §4.6 — `code_challenge` is derived from a
+            // secret known only to the legitimate client; a non-CT compare leaks "did you
+            // hit a valid prefix?" timing that, combined with retries, lets an attacker
+            // recover the challenge byte-by-byte.
+            if (!ConstantTime.equalsCT(computedChallenge, storedCodeChallenge)) {
                 return Err(
                     AuthorizationServerError.InvalidGrant(
                         details = "PKCE verification failed: code_verifier does not match code_challenge",

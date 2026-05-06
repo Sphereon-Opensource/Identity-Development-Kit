@@ -85,7 +85,7 @@ class CreateJweJsonGeneralCommandImpl(
     execution: SessionExecution,
     private val keyManagerService: KeyManagerService,
     private val identifierService: MultiManagedIdentifierService,
-) : TypedServiceCommandAdapter<CreateJweJsonGeneralArgs, JweJsonGeneral>(
+) : TypedServiceCommandAdapter<CreateJweJsonGeneralArgs, JweJsonGeneral, IdkError>(
         commandId = CreateJweJsonGeneralCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJweJsonGeneralArgs>(),

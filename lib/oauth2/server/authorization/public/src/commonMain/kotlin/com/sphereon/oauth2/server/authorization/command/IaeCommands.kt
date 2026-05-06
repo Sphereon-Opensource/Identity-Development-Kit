@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.oauth2.server.authorization.model.IaeAuthorizationCodeResponse
 import com.sphereon.oauth2.server.authorization.model.IaeErrorResponse
@@ -98,7 +99,7 @@ data class HandleIaeInitialRequestArgs(
  *
  * Command ID: `oauth2.iae.initial`
  */
-interface HandleIaeInitialRequestCommand : ServiceCommand<HandleIaeInitialRequestArgs, IaeResult> {
+interface HandleIaeInitialRequestCommand : ServiceCommand<HandleIaeInitialRequestArgs, IaeResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -139,7 +140,7 @@ data class HandleIaeFollowUpArgs(
  *
  * Command ID: `oauth2.iae.followup`
  */
-interface HandleIaeFollowUpCommand : ServiceCommand<HandleIaeFollowUpArgs, IaeResult> {
+interface HandleIaeFollowUpCommand : ServiceCommand<HandleIaeFollowUpArgs, IaeResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

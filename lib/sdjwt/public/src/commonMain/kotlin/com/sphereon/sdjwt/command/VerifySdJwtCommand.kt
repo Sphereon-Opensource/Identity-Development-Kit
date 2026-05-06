@@ -15,6 +15,7 @@
  */
 package com.sphereon.sdjwt.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.SdJwtVerificationResult
@@ -24,7 +25,7 @@ import com.sphereon.sdjwt.VerifySdJwtArgs
  * Command interface for verifying SD-JWTs.
  */
 @JsExportCompat
-interface VerifySdJwtCommand : ServiceCommand<VerifySdJwtArgs, SdJwtVerificationResult> {
+interface VerifySdJwtCommand : ServiceCommand<VerifySdJwtArgs, SdJwtVerificationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

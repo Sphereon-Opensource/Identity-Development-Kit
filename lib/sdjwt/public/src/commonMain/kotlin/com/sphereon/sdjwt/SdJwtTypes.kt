@@ -353,6 +353,22 @@ data class SdJwtVerificationResult(
     val keyBindingValid: Boolean = true,
     val errorMessages: List<String> = emptyList(),
     val verificationTime: Long = Clock.System.now().toEpochMilliseconds(),
+    /**
+     * Did the verifier resolve a public key for the issuer JWT through its trust chain
+     * (KMS / DID resolver / x5c / pinned JWKS)? `false` here means we never even
+     * attempted a cryptographic check — the issue is upstream (e.g. unresolved
+     * relative `kid: "#0"` against the SD-JWT VC `iss`, missing did:web fetch,
+     * unknown trust anchor) and [signatureValid] is misleading on its own.
+     * Defaults to [signatureValid] for backward compatibility — older callers see
+     * the historical "true iff fully valid" semantics.
+     */
+    val issuerTrustEstablished: Boolean = signatureValid,
+    /**
+     * Result of the actual ECDSA / EdDSA / RSA-PSS / … check on the issuer JWT once
+     * a key was resolved. `null` iff [issuerTrustEstablished] is false (no key →
+     * nothing to check). Defaults align with [signatureValid] for legacy callers.
+     */
+    val issuerCryptoVerified: Boolean? = if (signatureValid) true else null,
 ) {
     /**
      * True if all aspects of verification passed

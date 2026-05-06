@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>NestedBlockDepth:JwtAuthenticationPlugin.kt$private fun extractBearerToken( call: ApplicationCall, cookieName: String? ): String?</ID>
+  </CurrentIssues>
+</SmellBaseline>

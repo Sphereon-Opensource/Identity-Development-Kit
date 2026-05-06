@@ -44,7 +44,7 @@ import io.ktor.http.isSuccess
 class ParseCredentialOfferCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<ParseCredentialOfferArgs, CredentialOffer>(
+) : TypedServiceCommandAdapter<ParseCredentialOfferArgs, CredentialOffer, IdkError>(
         commandId = ParseCredentialOfferCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseCredentialOfferArgs>(),

@@ -65,7 +65,7 @@ import kotlin.time.Clock
 class RetrieveAuthorizationResponseCommandImpl(
     execution: SessionExecution,
     private val responseCodeStore: ResponseCodeStore,
-) : TypedServiceCommandAdapter<RetrieveAuthorizationResponseArgs, RetrievedAuthorizationResponse>(
+) : TypedServiceCommandAdapter<RetrieveAuthorizationResponseArgs, RetrievedAuthorizationResponse, IdkError>(
         commandId = RetrieveAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RetrieveAuthorizationResponseArgs>(),

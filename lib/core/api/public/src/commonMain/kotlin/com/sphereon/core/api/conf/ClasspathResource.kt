@@ -26,3 +26,16 @@ package com.sphereon.core.api.conf
  * @return the resource content as a String, or null if not found or not supported
  */
 expect fun readClasspathResource(name: String): String?
+
+/**
+ * Reads a classpath resource as a [ByteArray].
+ *
+ * On JVM: uses the context class loader to find the resource. Used for binary assets such as
+ * SVG/CSS/PNG bundled into a module's `resources/` directory (e.g. the IDK login renderer
+ * static assets).
+ * On other platforms: returns null (classpath not available).
+ *
+ * @param name the resource name (e.g., "login/sphereon/img/sphereon-logo.svg")
+ * @return the resource content as a [ByteArray], or null if not found or not supported
+ */
+expect fun readClasspathResourceBytes(name: String): ByteArray?

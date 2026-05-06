@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:EddsaJcs2022Verifier.kt$EddsaJcs2022Verifier$override suspend fun verifyProof( unsecuredDocument: JsonObject, proof: DataIntegrityProof, ): IdkResult&lt;CryptosuiteVerification, IdkError></ID>
+    <ID>ReturnCount:EddsaJcs2022Verifier.kt$EddsaJcs2022Verifier$private fun extractEd25519Jwk(vm: VerificationMethod): Jwk?</ID>
+  </CurrentIssues>
+</SmellBaseline>

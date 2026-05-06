@@ -70,7 +70,7 @@ class MergeRequestObjectCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<MergeRequestObjectArgs, MergedRequestObjectResult>(
+) : TypedServiceCommandAdapter<MergeRequestObjectArgs, MergedRequestObjectResult, IdkError>(
         commandId = MergeRequestObjectCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<MergeRequestObjectArgs>(),

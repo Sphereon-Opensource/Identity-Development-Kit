@@ -16,25 +16,26 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.par
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.CreateRequestUriCommand
 import com.sphereon.oauth2.server.authorization.command.RequestUriData
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.storage.PushedAuthorizationRequestStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-import kotlin.random.Random
-
-private const val RANDOM_TOKEN_BYTES = 32
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Implementation of CreateRequestUriCommand
@@ -73,9 +74,12 @@ private const val RANDOM_TOKEN_BYTES = 32
 @ObjCName("CreateRequestUriCommandImpl", exact = true)
 class CreateRequestUriCommandImpl(
     execution: SessionExecution,
-    // 90 seconds default (RFC 9126 recommendation)
-    private val requestUriLifetimeSeconds: Int = 90,
-) : TypedServiceCommandAdapter<VerifiedAuthorizationRequest, RequestUriData>(
+    private val secureRandom: SecureRandom,
+    private val pushedAuthorizationRequestStorage: PushedAuthorizationRequestStorage,
+    private val clock: Clock,
+    // 60 seconds default (RFC 9126 §2.2 recommends a short lifetime; harness-friendly).
+    private val requestUriLifetimeSeconds: Int = 60,
+) : TypedServiceCommandAdapter<VerifiedAuthorizationRequest, RequestUriData, IdkError>(
         commandId = CreateRequestUriCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifiedAuthorizationRequest>(),
@@ -105,26 +109,32 @@ class CreateRequestUriCommandImpl(
         // Build request_uri according to RFC 9126 format
         val requestUri = "urn:ietf:params:oauth:request_uri:$identifier"
 
-        // Create request URI data
-        val requestUriData =
+        // RFC 9126 §2.2: persist the verified request under the issued URN with a short TTL so
+        // /authorize can retrieve and consume it. Storage failure is bubbled up so the client
+        // gets a server_error response rather than a request_uri the AS cannot honour later.
+        val expiresAt = clock.now() + requestUriLifetimeSeconds.seconds
+        val storeResult = pushedAuthorizationRequestStorage.storeRequest(requestUri, request, expiresAt)
+        if (storeResult.isErr) {
+            return Err(
+                AuthorizationServerError.ServerError(
+                    details = "Failed to persist pushed authorization request: ${storeResult.error.details}",
+                    exception = storeResult.error.exception,
+                ),
+            )
+        }
+
+        return Ok(
             RequestUriData(
                 requestUri = requestUri,
                 expiresIn = requestUriLifetimeSeconds,
                 authorizationRequest = request,
-            )
-
-        // Note: Actual storage of the request is handled by the caller
-        // This command just creates the request_uri and wraps the verified request
-
-        return Ok(requestUriData)
+            ),
+        )
     }
 
     /**
-     * Generate a cryptographically secure random identifier
-     * 32 bytes (256 bits) of entropy, base64url encoded
+     * Generate a cryptographically secure random identifier.
+     * 32 bytes (256 bits) of entropy, base64url encoded.
      */
-    private fun generateSecureIdentifier(): String {
-        val randomBytes = Random.Default.nextBytes(RANDOM_TOKEN_BYTES)
-        return randomBytes.encodeToBase64Url()
-    }
+    private suspend fun generateSecureIdentifier(): String = secureRandom.newToken()
 }

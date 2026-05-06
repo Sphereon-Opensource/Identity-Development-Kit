@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.model
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.crypto.core.jose.JwkSet
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -480,4 +481,32 @@ data class IdTokenValidationOptions(
      * Expected ACR (Authentication Context Class Reference) value
      */
     val expectedAcr: String? = null,
-)
+    /**
+     * Algorithms permitted for this ID token. When the JWS header `alg` is outside this list the
+     * validator rejects without touching the signature verifier. Defaults to OIDC Core's
+     * recommended "asymmetric for ID tokens" set (`RS256`, `ES256`, `PS256`) — HS* is deliberately
+     * NOT in the default because it requires a shared secret, which is inappropriate for RPs that
+     * resolve keys via the issuer's JWKS.
+     */
+    val allowedAlgorithms: List<String> = DEFAULT_ID_TOKEN_ALG_ALLOWLIST,
+    /**
+     * When `true`, the JWS header is allowed to carry a `jwk` or `x5c` member and the verifier
+     * may use it. OIDC ID tokens must NOT contain embedded keys — leave this `false` for normal
+     * RP usage. Only non-OIDC callers (e.g. OID4VP mdoc reader bindings) should flip this on.
+     */
+    val allowEmbeddedKeyInHeader: Boolean = false,
+    /**
+     * Trusted JWKS for signature verification. When set, the validator ONLY accepts signatures
+     * made with a key present in this set (matched by the header `kid`), and rejects an ID token
+     * whose header `kid` is not in the set. Callers resolve this from the issuer's `jwks_uri`
+     * via `IssuerJwksResolver` (see lib-oauth2-client) before invoking the validator.
+     *
+     * `null` preserves legacy behaviour (delegate key resolution to the underlying JwtService).
+     */
+    val trustedJwks: JwkSet? = null,
+) {
+    public companion object {
+        /** Default alg allow-list for OIDC ID token validation (OIDF Basic RP recommended). */
+        public val DEFAULT_ID_TOKEN_ALG_ALLOWLIST: List<String> = listOf("RS256", "ES256", "PS256")
+    }
+}

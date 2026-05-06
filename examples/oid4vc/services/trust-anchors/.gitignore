@@ -1,0 +1,7 @@
+# Operator-supplied IACA cert PEM files. Tracked: README only.
+# Anything else in this directory is environment-specific and stays local.
+*.pem
+*.crt
+*.cer
+*.der
+!.gitignore

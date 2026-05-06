@@ -20,7 +20,6 @@ package com.sphereon.mdoc.data.device
 import com.sphereon.cbor.CborString
 import com.sphereon.cbor.StringLabel
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.cose.COSE_Sign1
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.util.stringify
@@ -110,22 +109,29 @@ data class DeviceAuthentication(
     val original: ByteArray?,
 ) {
     companion object {
+        /**
+         * Build a DeviceAuthentication for OID4VP per §B.2.6.
+         *
+         * @param jwkThumbprint Raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's
+         *   encryption-key JWK. Required for `direct_post.jwt` / `dc_api.jwt`; null for plain
+         *   modes.
+         */
         @JsStatic
         @JvmStatic
         fun fromOid4vp(
             clientId: String,
+            nonce: String,
+            jwkThumbprint: ByteArray?,
             responseUri: String,
-            mdocNonce: String = Uuid.v4String(),
-            authorizationRequestNonce: String,
             docType: DocType,
             deviceNamespaces: DeviceNameSpaces,
         ): DeviceAuthentication {
             val sessionTranscript =
                 SessionTranscript.fromOid4vpClientIdAndResponseUri(
                     clientId = clientId,
+                    nonce = nonce,
+                    jwkThumbprint = jwkThumbprint,
                     responseUri = responseUri,
-                    mdocNonce = mdocNonce,
-                    authorizationRequestNonce = authorizationRequestNonce,
                 )
             return DeviceAuthentication(
                 sessionTranscript = sessionTranscript,

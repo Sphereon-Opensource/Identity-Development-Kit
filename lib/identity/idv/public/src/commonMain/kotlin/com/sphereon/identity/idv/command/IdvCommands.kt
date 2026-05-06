@@ -16,22 +16,24 @@
 
 package com.sphereon.identity.idv.command
 
+import com.sphereon.attribute.flow.AttributeBag
+import com.sphereon.attribute.flow.InputFieldId
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
-import com.sphereon.identity.idv.model.AttributeBag
 import com.sphereon.identity.idv.model.CompiledIdvGraph
 import com.sphereon.identity.idv.model.IdvExecution
 import com.sphereon.identity.idv.model.IdvExecutionContext
 import com.sphereon.identity.idv.model.IdvExecutionId
 import com.sphereon.identity.idv.model.IdvMaterializationResult
 import com.sphereon.identity.idv.model.IdvMaterializationRule
+import com.sphereon.identity.idv.model.IdvNode
 import com.sphereon.identity.idv.model.IdvNodeDispatchResult
 import com.sphereon.identity.idv.model.IdvNodeId
 import com.sphereon.identity.idv.model.IdvNodeResult
 import com.sphereon.identity.idv.model.IdvUseCaseDefinition
 import com.sphereon.identity.idv.model.IdvUseCaseId
-import com.sphereon.identity.idv.model.InputFieldId
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -68,6 +70,34 @@ data class StartIdvExecutionArgs(
     val useCaseId: IdvUseCaseId,
     val context: IdvExecutionContext,
     val callbackBaseUrl: String? = null,
+)
+
+/**
+ * Args for [StartAdhocIdvExecutionCommand]. The caller supplies the [graph] directly
+ * — no use-case lookup happens — so the AS's required-actions orchestrator can drive
+ * IDV with a graph composed on the fly from
+ * [com.sphereon.oauth2.server.authorization.requiredaction.RequiredActionGraphProvider]s.
+ *
+ * **Why a sibling command, not a flag on [StartIdvExecutionArgs]:** a stored
+ * use-case execution carries the use case's `policy` (assurance floor, TTL,
+ * retention, regulatory context) — none of which apply to a synthetic
+ * required-actions graph. Splitting the commands keeps the stored-use-case path
+ * purely declarative while letting the ad-hoc path supply only what it actually
+ * has.
+ */
+@JsExportCompat
+@Serializable
+data class StartAdhocIdvExecutionArgs(
+    val context: IdvExecutionContext,
+    /** The graph to execute. Typically a [com.sphereon.identity.idv.model.SequenceNode] or [com.sphereon.identity.idv.model.MethodNode]. */
+    val graph: IdvNode,
+    val callbackBaseUrl: String? = null,
+    /**
+     * Human-readable label surfaced on telemetry / audit events for the synthetic
+     * use case. Required-actions orchestration uses "required-actions" so logs are
+     * filterable; defaults work for tests.
+     */
+    val syntheticUseCaseName: String = "adhoc",
 )
 
 @JsExportCompat
@@ -156,7 +186,7 @@ data class ApplyIdvMaterializationArgs(
 )
 
 @JsExportCompat
-interface ResolveIdvUseCaseCommand : ServiceCommand<ResolveIdvUseCaseArgs, IdvUseCaseDefinition> {
+interface ResolveIdvUseCaseCommand : ServiceCommand<ResolveIdvUseCaseArgs, IdvUseCaseDefinition, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -165,7 +195,7 @@ interface ResolveIdvUseCaseCommand : ServiceCommand<ResolveIdvUseCaseArgs, IdvUs
 }
 
 @JsExportCompat
-interface CompileIdvGraphCommand : ServiceCommand<CompileIdvGraphArgs, CompiledIdvGraph> {
+interface CompileIdvGraphCommand : ServiceCommand<CompileIdvGraphArgs, CompiledIdvGraph, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -174,7 +204,7 @@ interface CompileIdvGraphCommand : ServiceCommand<CompileIdvGraphArgs, CompiledI
 }
 
 @JsExportCompat
-interface StartIdvExecutionCommand : ServiceCommand<StartIdvExecutionArgs, IdvExecution> {
+interface StartIdvExecutionCommand : ServiceCommand<StartIdvExecutionArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -182,8 +212,24 @@ interface StartIdvExecutionCommand : ServiceCommand<StartIdvExecutionArgs, IdvEx
     }
 }
 
+/**
+ * Sibling of [StartIdvExecutionCommand] for ad-hoc graphs. Drives an [IdvExecution]
+ * from a caller-supplied [com.sphereon.identity.idv.model.IdvNode] without
+ * consulting the [com.sphereon.identity.idv.store.IdvUseCaseDefinitionStore]. Used
+ * by the AS required-actions orchestrator's `ADHOC` strategy; tenants that prefer
+ * a stored, curated graph still call [StartIdvExecutionCommand] with a use-case id.
+ */
 @JsExportCompat
-interface GetIdvExecutionCommand : ServiceCommand<GetIdvExecutionArgs, IdvExecution> {
+interface StartAdhocIdvExecutionCommand : ServiceCommand<StartAdhocIdvExecutionArgs, IdvExecution, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "idv.execution.start_adhoc"
+    }
+}
+
+@JsExportCompat
+interface GetIdvExecutionCommand : ServiceCommand<GetIdvExecutionArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -192,7 +238,7 @@ interface GetIdvExecutionCommand : ServiceCommand<GetIdvExecutionArgs, IdvExecut
 }
 
 @JsExportCompat
-interface CancelIdvExecutionCommand : ServiceCommand<CancelIdvExecutionArgs, IdvExecution> {
+interface CancelIdvExecutionCommand : ServiceCommand<CancelIdvExecutionArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -201,7 +247,7 @@ interface CancelIdvExecutionCommand : ServiceCommand<CancelIdvExecutionArgs, Idv
 }
 
 @JsExportCompat
-interface ResumeIdvExecutionCommand : ServiceCommand<ResumeIdvExecutionArgs, IdvExecution> {
+interface ResumeIdvExecutionCommand : ServiceCommand<ResumeIdvExecutionArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -210,7 +256,7 @@ interface ResumeIdvExecutionCommand : ServiceCommand<ResumeIdvExecutionArgs, Idv
 }
 
 @JsExportCompat
-interface DispatchIdvNodeCommand : ServiceCommand<DispatchIdvNodeArgs, IdvNodeDispatchResult> {
+interface DispatchIdvNodeCommand : ServiceCommand<DispatchIdvNodeArgs, IdvNodeDispatchResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -219,7 +265,7 @@ interface DispatchIdvNodeCommand : ServiceCommand<DispatchIdvNodeArgs, IdvNodeDi
 }
 
 @JsExportCompat
-interface SubmitIdvNodeCommand : ServiceCommand<SubmitIdvNodeArgs, IdvExecution> {
+interface SubmitIdvNodeCommand : ServiceCommand<SubmitIdvNodeArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -228,7 +274,7 @@ interface SubmitIdvNodeCommand : ServiceCommand<SubmitIdvNodeArgs, IdvExecution>
 }
 
 @JsExportCompat
-interface HandleIdvNodeCallbackCommand : ServiceCommand<HandleIdvNodeCallbackArgs, IdvExecution> {
+interface HandleIdvNodeCallbackCommand : ServiceCommand<HandleIdvNodeCallbackArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -237,7 +283,7 @@ interface HandleIdvNodeCallbackCommand : ServiceCommand<HandleIdvNodeCallbackArg
 }
 
 @JsExportCompat
-interface PollIdvNodeCommand : ServiceCommand<PollIdvNodeArgs, IdvExecution> {
+interface PollIdvNodeCommand : ServiceCommand<PollIdvNodeArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -246,7 +292,7 @@ interface PollIdvNodeCommand : ServiceCommand<PollIdvNodeArgs, IdvExecution> {
 }
 
 @JsExportCompat
-interface CompleteIdvNodeCommand : ServiceCommand<CompleteIdvNodeArgs, IdvExecution> {
+interface CompleteIdvNodeCommand : ServiceCommand<CompleteIdvNodeArgs, IdvExecution, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -255,7 +301,7 @@ interface CompleteIdvNodeCommand : ServiceCommand<CompleteIdvNodeArgs, IdvExecut
 }
 
 @JsExportCompat
-interface ApplyIdvMaterializationCommand : ServiceCommand<ApplyIdvMaterializationArgs, IdvMaterializationResult> {
+interface ApplyIdvMaterializationCommand : ServiceCommand<ApplyIdvMaterializationArgs, IdvMaterializationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

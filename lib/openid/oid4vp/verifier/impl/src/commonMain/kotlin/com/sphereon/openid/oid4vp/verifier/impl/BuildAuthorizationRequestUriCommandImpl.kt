@@ -56,7 +56,7 @@ import kotlinx.serialization.json.Json
 @SingleIn(SessionScope::class)
 class BuildAuthorizationRequestUriCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<BuildAuthorizationRequestUriArgs, StringResult>(
+) : TypedServiceCommandAdapter<BuildAuthorizationRequestUriArgs, StringResult, IdkError>(
         commandId = BuildAuthorizationRequestUriCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BuildAuthorizationRequestUriArgs>(),
@@ -79,7 +79,8 @@ class BuildAuthorizationRequestUriCommandImpl(
         log.debug("Building authorization request URI")
 
         val request = processedArgs.request
-        val scheme = processedArgs.scheme
+        val prefix = resolveDeeplinkPrefix(processedArgs)
+        val logTag = processedArgs.deeplinkPrefix ?: "${processedArgs.scheme.scheme}://"
 
         // If using request_uri mode (PAR)
         if (processedArgs.useRequestUri) {
@@ -91,32 +92,51 @@ class BuildAuthorizationRequestUriCommandImpl(
                         ),
                     )
 
-            val uri = buildUriWithRequestUri(scheme, request.clientId, requestUri, request)
-            log.info("Built request_uri mode URI: ${scheme.scheme}://...")
+            val uri = buildUriWithRequestUri(prefix, request.clientId, requestUri, request)
+            log.info("Built request_uri mode URI: $logTag...")
             return Ok(StringResult(uri))
         }
 
         // Build full parameter URI
-        val uri = buildFullParameterUri(scheme, request)
+        val uri = buildFullParameterUri(prefix, request)
 
-        log.info("Built full parameter URI: ${scheme.scheme}://...")
+        log.info("Built full parameter URI: $logTag...")
         return Ok(StringResult(uri))
     }
 
     /**
-     * Build URI with request_uri parameter (PAR mode)
+     * Resolve the deeplink prefix that ends with `?` (so callers can append params with `&`).
      *
-     * Format: openid4vp://?client_id=...&request_uri=...
+     * Priority: explicit [BuildAuthorizationRequestUriArgs.deeplinkPrefix] (a full URL — web
+     * wallet, universal link, app link) over the [Oid4vpUriScheme] enum-driven `<scheme>://?`
+     * default. If the explicit prefix already contains a `?`, append `&` unless it already
+     * ends with one.
+     */
+    private fun resolveDeeplinkPrefix(args: BuildAuthorizationRequestUriArgs): String {
+        val explicit = args.deeplinkPrefix?.takeIf { it.isNotBlank() }
+        if (explicit != null) {
+            return when {
+                !explicit.contains('?') -> "$explicit?"
+                explicit.endsWith('?') || explicit.endsWith('&') -> explicit
+                else -> "$explicit&"
+            }
+        }
+        return "${args.scheme.scheme}://?"
+    }
+
+    /**
+     * Build URI with request_uri parameter (PAR mode).
+     *
+     * Format: `<prefix>client_id=...&request_uri=...` — `prefix` already ends with `?` or `&`.
      */
     private fun buildUriWithRequestUri(
-        scheme: Oid4vpUriScheme,
+        prefix: String,
         clientId: String,
         requestUri: String,
         request: AuthorizationRequest,
     ): String =
         buildString {
-            append(scheme.scheme)
-            append("://?")
+            append(prefix)
             append("client_id=")
             append(clientId.encodeUrlGraph())
             append("&request_uri=")
@@ -147,17 +167,17 @@ class BuildAuthorizationRequestUriCommandImpl(
         }
 
     /**
-     * Build URI with all parameters inline
+     * Build URI with all parameters inline.
      *
-     * Format: openid4vp://?client_id=...&response_type=...&dcql_query=...
+     * Format: `<prefix>client_id=...&response_type=...&dcql_query=...` — `prefix` already
+     * ends with `?` or `&`.
      */
     private fun buildFullParameterUri(
-        scheme: Oid4vpUriScheme,
+        prefix: String,
         request: AuthorizationRequest,
     ): String =
         buildString {
-            append(scheme.scheme)
-            append("://?")
+            append(prefix)
 
             // Required parameters
             append("client_id=")

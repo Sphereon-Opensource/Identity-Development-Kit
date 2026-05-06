@@ -33,7 +33,6 @@ data class OAuth2ServerInstanceConfig(
     val mode: AuthorizationServerMode = AuthorizationServerMode.HOSTED,
     val issuerTemplate: String? = null,
     val issuer: String? = null,
-    val baseUrl: String = "http://localhost:8080",
     // Token lifetimes (HOSTED mode)
     val accessTokenLifetimeSeconds: Int = 3600,
     val refreshTokenLifetimeSeconds: Int = 86400,
@@ -42,21 +41,100 @@ data class OAuth2ServerInstanceConfig(
     val refreshTokenRotation: Boolean = true,
     // Grant types & response types
     val grantTypesEnabled: Set<String> = setOf("authorization_code", "client_credentials", "refresh_token"),
-    val responseTypesSupported: Set<String> = setOf("code"),
+    // OIDC Core §3 — `code` is OAuth2 Authorization Code (Basic Profile). The hybrid trio
+    // (`code id_token`, `code token`, `code id_token token`) covers OIDC Core §3.3 Hybrid
+    // Flow. Pure-implicit (`id_token`, `id_token token`) is INTENTIONALLY OMITTED — RFC 9700
+    // / OAuth 2.1 deprecate it (token leakage in URL fragment, no CSRF protection at
+    // issuance). Operators who need it can opt in by overriding this set.
+    val responseTypesSupported: Set<String> =
+        setOf(
+            "code",
+            "code id_token",
+            "code token",
+            "code id_token token",
+        ),
     val scopesSupported: List<String>? = null,
     // OpenID Connect
     val oidc: FeaturePolicy = FeaturePolicy.DISABLED,
+    /**
+     * OIDC logout feature policy (RP-Initiated Logout 1.0, Back-Channel Logout 1.0,
+     * Front-Channel Logout 1.0). Default [FeaturePolicy.DISABLED] so discovery metadata does
+     * NOT advertise `end_session_endpoint` / `*_logout_supported` until a deployment explicitly
+     * opts in — OIDF Basic OP runs leave this off. When enabled, the end-session endpoint is
+     * expected on the EDK auth HTTP adapter (see [endSessionEndpoint] construction in
+     * `BuildServerMetadataCommandImpl`).
+     */
+    val logout: FeaturePolicy = FeaturePolicy.DISABLED,
     val idTokenLifetimeSeconds: Int = 3600,
     val subjectTypesSupported: List<String> = listOf("public"),
     val claimsSupported: List<String>? = null,
     val userinfoSigningAlgValuesSupported: Set<String>? = null,
+    /**
+     * When `true`, the AS embeds every projected user claim (the same set served from
+     * `/userinfo`) directly into the id_token, regardless of whether the response_type
+     * also issues an access_token. Defaults to `false`, which is OIDC Core §5.4
+     * conformant — profile/email/address/phone scope claims live on `/userinfo` for
+     * code/hybrid flows and only land in the id_token for pure `response_type=id_token`.
+     *
+     * Use this knob when you have RPs that consume the id_token without ever calling
+     * `/userinfo` (Auth.js v5 with default settings, simple SPA bearer-token clients,
+     * legacy SAML-bridge consumers expecting all claims in the assertion). It deviates
+     * from §5.4, so the OIDC Basic OP conformance suite's
+     * `EnsureIdTokenDoesNotContainNonRequestedClaims` will warn — turn it off for
+     * conformance runs.
+     *
+     * Per-client overrides (when the IDK adds them) win over this server-level default.
+     */
+    val embedUserinfoClaimsInIdToken: Boolean = false,
     // Feature policies
     val introspection: FeaturePolicy = FeaturePolicy.SUPPORTED,
     val revocation: FeaturePolicy = FeaturePolicy.SUPPORTED,
-    val par: FeaturePolicy = FeaturePolicy.DISABLED,
+    val par: FeaturePolicy = FeaturePolicy.SUPPORTED,
     val tokenExchange: FeaturePolicy = FeaturePolicy.DISABLED,
+    /**
+     * RFC 8628 (OAuth 2.0 Device Authorization Grant) feature policy. Gates whether the AS
+     * exposes the `/device_authorization` endpoint, accepts the
+     * `urn:ietf:params:oauth:grant-type:device_code` grant at `/token`, and advertises
+     * `device_authorization_endpoint` in discovery. Default [FeaturePolicy.DISABLED] so OIDF
+     * Basic OP runs and any deployment that does not target input-constrained devices keeps the
+     * surface entirely off until opted in.
+     */
+    val deviceFlow: FeaturePolicy = FeaturePolicy.DISABLED,
+    /**
+     * RFC 8628 §3.2 `expires_in`: lifetime (seconds) of an issued device-authorization record
+     * before it transitions to `expired_token`. Default 1800s (30 minutes) matches typical IdP
+     * guidance and gives the user-agent enough headroom for the verification step on a phone.
+     */
+    val deviceCodeLifetimeSeconds: Int = 1800,
+    /**
+     * RFC 8628 §3.2 `interval`: minimum number of seconds the client SHOULD wait between polling
+     * requests at `/token`. Default 5s. A `slow_down` response bumps the per-record interval by
+     * 5s on top of this baseline (RFC 8628 §3.5).
+     */
+    val devicePollIntervalSeconds: Int = 5,
     val pkce: FeaturePolicy = FeaturePolicy.REQUIRED,
-    val dpop: FeaturePolicy = FeaturePolicy.DISABLED,
+    /**
+     * RFC 8414 §2 `signed_metadata`: when [FeaturePolicy.SUPPORTED] (or stricter), the AS
+     * additionally embeds a JWS-signed copy of its discovery metadata under the
+     * `signed_metadata` JSON member. RPs that pin a key for the AS verify the JWS
+     * (header carries `kid` matching JWKS) and trust the signed copy over the unsigned
+     * one — defends against metadata tampering between the AS and the RP. The AS
+     * always returns the unsigned fields too; signed_metadata is additive.
+     *
+     * Default [FeaturePolicy.DISABLED] so OIDF Basic conformance (which does NOT
+     * require signed metadata) is unaffected; deployments that need to publish a
+     * signed copy opt in by setting this to SUPPORTED or REQUIRED.
+     */
+    val signedMetadata: FeaturePolicy = FeaturePolicy.DISABLED,
+    val dpop: FeaturePolicy = FeaturePolicy.SUPPORTED,
+    /**
+     * RFC 9449 §8: when `true`, the AS REQUIRES the DPoP proof JWT to carry a `nonce` claim
+     * equal to a server-issued nonce. Proofs without a nonce, or carrying a stale nonce, are
+     * rejected with `use_dpop_nonce` and the response includes a fresh `DPoP-Nonce` header.
+     * When `false` (default), nonce challenges are not initiated, but the AS still emits the
+     * `DPoP-Nonce` header on DPoP-bearing responses so clients can opt in proactively.
+     */
+    val dpopNonceRequired: Boolean = false,
     val iae: FeaturePolicy = FeaturePolicy.DISABLED,
     // Auth methods
     val pkceMethodsSupported: Set<String> = setOf("S256"),
@@ -64,6 +142,19 @@ data class OAuth2ServerInstanceConfig(
     val introspectionEndpointAuthMethodsSupported: Set<String> = setOf("client_secret_basic"),
     val revocationEndpointAuthMethodsSupported: Set<String> = setOf("client_secret_basic", "client_secret_post"),
     val dpopSigningAlgValuesSupported: Set<String>? = null,
+    // RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens.
+    // [mtls] gates whether the AS accepts `tls_client_auth` and `self_signed_tls_client_auth`
+    // at the token endpoint and whether discovery advertises `mtls_endpoint_aliases`.
+    // [tlsClientCertificateBoundAccessTokens] is the server-wide default for whether issued
+    // access tokens are bound to the presented TLS certificate via `cnf.x5t#S256` (RFC 8705 §3);
+    // per-client opt-in on [com.sphereon.oauth2.server.authorization.model.ClientRegistration]
+    // overrides this default.
+    // [mtlsEndpointHostOverride] supplies the hostname used in `mtls_endpoint_aliases` when the
+    // operator deploys a separate mTLS-only host (RFC 8705 §5). When `null`, aliases reuse the
+    // regular issuer host so the operator's TLS-terminating proxy can route based on path alone.
+    val mtls: FeaturePolicy = FeaturePolicy.DISABLED,
+    val tlsClientCertificateBoundAccessTokens: Boolean = false,
+    val mtlsEndpointHostOverride: String? = null,
     // Attestation-based client auth (draft-ietf-oauth-attestation-based-client-auth)
     val attestation: FeaturePolicy = FeaturePolicy.DISABLED,
     val attestationChallengeRequired: Boolean = false,
@@ -71,11 +162,63 @@ data class OAuth2ServerInstanceConfig(
     val clientAttestationPopSigningAlgValuesSupported: Set<String>? = null,
     val attestationMaxLifetimeSeconds: Int = 3600,
     val attestationPopMaxAgeSeconds: Int = 120,
-    // Signing key
-    val signingKeyAlias: String? = null, // KMS key alias for signing. null = auto (use first key, or create one)
+    // Per draft-ietf-oauth-attestation-based-client-auth-08 §10.5 / §12.1 the AS keeps a sliding
+    // window of seen PoP `jti` values to detect replays. The window is anchored on the PoP `iat`;
+    // any PoP whose iat lies outside it is rejected by the freshness check above, so this only
+    // bounds how long a jti needs to stay in the dedup table. Default 600s gives ample headroom
+    // around the 120s freshness window without growing the table unnecessarily.
+    val attestationPopJtiReplayWindowSeconds: Int = 600,
+    // JARM (OpenID Foundation JWT Secured Authorization Response Mode for OAuth 2.0,
+    // https://openid.net/specs/oauth-v2-jarm.html). Gated DISABLED by default so discovery
+    // does not advertise JARM signing/encryption metadata or `*.jwt` response modes until a
+    // deployment opts in. When enabled, [authorizationSigningAlgValuesSupported] /
+    // [authorizationEncryptionAlgValuesSupported] / [authorizationEncryptionEncValuesSupported]
+    // describe what the AS can mint, and the per-client metadata fields
+    // (`authorizationSignedResponseAlg`, `authorizationEncryptedResponseAlg`,
+    // `authorizationEncryptedResponseEnc` on [com.sphereon.oauth2.server.authorization.model.ClientRegistration])
+    // pin the actual algorithms used for that client.
+    val jarm: FeaturePolicy = FeaturePolicy.DISABLED,
+    val authorizationSigningAlgValuesSupported: Set<String>? = null,
+    val authorizationEncryptionAlgValuesSupported: Set<String>? = null,
+    val authorizationEncryptionEncValuesSupported: Set<String>? = null,
+    /**
+     * JARM JWT lifetime (seconds). Per the OIDF JARM spec the response JWT is short-lived; 600s
+     * (10 minutes) is the spec's recommended ceiling. Default 300s (5 minutes) leaves headroom
+     * for clock skew while staying well within the spec recommendation.
+     */
+    val jarmExpirationSeconds: Long = 300,
+    /**
+     * RFC 9101 (JAR) feature policy. Controls whether the AS accepts `request` (inline signed JWT)
+     * and `request_uri` parameters at `/authorize` and `/par`. When enabled, discovery advertises
+     * `request_parameter_supported=true`, `request_uri_parameter_supported=true`, and the
+     * `request_object_signing_alg_values_supported` list. Default [FeaturePolicy.SUPPORTED] so
+     * FAPI 2.0 deployments work without extra wiring; deployments that want to refuse JAR (and
+     * have the AS fall back to the legacy `request_not_supported` path) flip to
+     * [FeaturePolicy.DISABLED].
+     */
+    val jar: FeaturePolicy = FeaturePolicy.SUPPORTED,
+    /**
+     * RFC 9101 §5.2.2: when `true`, only `request_uri` values that are pre-registered for the
+     * client via [com.sphereon.oauth2.server.authorization.model.ClientRegistration.requestUris]
+     * are accepted. Discovery advertises `require_request_uri_registration=true`. Default `false`
+     * so well-known JAR clients can host the request object at any HTTPS URL they control.
+     */
+    val requireRequestUriRegistration: Boolean = false,
+    // Signing key references are no longer carried on this config — the AS now owns a
+    // SigningKeyStore SPI (vdx/edk/idk/lib/oauth2/server/authorization/public/.../storage/
+    // SigningKeyStore.kt) that tracks one or more keys per tenant in a state machine
+    // (ACTIVE / LEGACY / DISABLED). The active signer is resolved by reading the store at
+    // session-start time; multi-key JWKS publication uses listPublishable. See P0-K4 in the
+    // security plan for the rotation rationale.
     // Algorithms (null = auto-discover from KMS for HOSTED, or from metadata for EXTERNAL)
     val signingAlgorithmsSupported: Set<String>? = null,
     val idTokenSigningAlgValuesSupported: Set<String>? = null,
+    /**
+     * RFC 9101 §5.2.2: list of JWS `alg` values the AS accepts on signed JARs. When `null`, the
+     * AS derives the list from its server signing key (mirrors the
+     * [idTokenSigningAlgValuesSupported] auto-derivation). `none` is never accepted regardless of
+     * what is configured here, per RFC 9101 §6 / OIDC Core §6.1.
+     */
     val requestObjectSigningAlgValuesSupported: Set<String>? = null,
     // EXTERNAL mode: client credentials for connecting to this AS
     val tokenEndpointAuthMethod: String? = null,
@@ -90,9 +233,50 @@ data class OAuth2ServerInstanceConfig(
     val internalClients: Map<String, Pair<String, String>> = emptyMap(),
     // Public client policy for authorization code flow (OID4VCI wallets)
     val publicClients: PublicClientConfig = PublicClientConfig(),
+    // Browser-login session lifetimes (OIDC Core 1.0 §2 auth_time, prompt/max_age semantics)
+    val session: SessionConfig = SessionConfig(),
+    /**
+     * Whether the AS may derive its outbound URL scheme/host from `X-Forwarded-Proto` /
+     * `X-Forwarded-Host` / `Host` request headers when [issuer] is not configured. Defaults to
+     * `true` so existing dev deployments behind a single trusted reverse proxy keep working
+     * without explicit issuer configuration.
+     *
+     * Operators MUST set [issuer] to a fixed external URL in production. When [issuer] is set
+     * the AS already prefers it over header reconstruction, so this flag has no effect — its
+     * sole purpose is to lock down the no-issuer fallback in deployments that cannot or will
+     * not configure the issuer URL but still want to refuse header-driven scheme/host
+     * derivation. With `false` and no issuer, scheme defaults to `https` and the host to the
+     * literal `host` header value (which the operator must validate at the transport layer).
+     *
+     * Recommended production posture: configure [issuer] AND set this to `false`.
+     */
+    val trustForwardedHeaders: Boolean = true,
 ) {
     companion object {
         const val CONFIG_PREFIX = "oauth2.servers"
+    }
+}
+
+/**
+ * TTLs for the OIDC browser-login session backing the `oidc_login_sid` cookie.
+ *
+ * Two ceilings apply jointly: [idleTtlSeconds] caps inactivity between authorization requests,
+ * [absoluteTtlSeconds] caps total wall-clock lifetime. The shorter of the two wins on every
+ * lookup. Defaults follow common IdP guidance (30 minutes idle, 8 hours absolute).
+ *
+ * Config keys (under `${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.<asId>`):
+ * - `session.idle-ttl-seconds`
+ * - `session.absolute-ttl-seconds`
+ */
+@JsExportCompat
+@Serializable
+data class SessionConfig(
+    val idleTtlSeconds: Int = DEFAULT_IDLE_TTL_SECONDS,
+    val absoluteTtlSeconds: Int = DEFAULT_ABSOLUTE_TTL_SECONDS,
+) {
+    companion object {
+        const val DEFAULT_IDLE_TTL_SECONDS: Int = 1800
+        const val DEFAULT_ABSOLUTE_TTL_SECONDS: Int = 28800
     }
 }
 
@@ -106,4 +290,15 @@ data class OAuth2ServerInstanceConfig(
 data class PublicClientConfig(
     val allowAny: Boolean = false,
     val allowedClientIds: List<String> = emptyList(),
+    /**
+     * When `true`, public clients resolved via [allowAny] / [allowedClientIds] may present any
+     * redirect URI (the AS synthesises a registration with no registered URIs, effectively
+     * wildcard-accepting). Intended for OID4VCI wallet flows that use loopback or custom-scheme
+     * URIs the AS cannot pre-register.
+     *
+     * When `false` (default), the permissive public-client fallback is disabled entirely —
+     * [resolvePublicClient] returns `null`, forcing even public clients to be registered with
+     * real redirect URIs. OIDF conformance deployments MUST leave this `false`.
+     */
+    val permissiveRedirectUri: Boolean = false,
 )

@@ -70,7 +70,7 @@ import kotlin.time.Clock
 class PresentSdJwtCommandImpl(
     execution: SessionExecution,
     private val createJwsCompactCommand: CreateJwsCompactCommand,
-) : TypedServiceCommandAdapter<PresentSdJwtArgs, PresentSdJwtResult>(
+) : TypedServiceCommandAdapter<PresentSdJwtArgs, PresentSdJwtResult, IdkError>(
         commandId = PresentSdJwtCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<PresentSdJwtArgs>(),

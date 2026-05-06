@@ -3,5 +3,6 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>ComplexInterface:SchemaRegistryService.kt$SchemaRegistryService</ID>
+    <ID>StringLiteralDuplication:SchemaType.kt$SchemaType.JSON_SCHEMA$".json"</ID>
   </CurrentIssues>
 </SmellBaseline>

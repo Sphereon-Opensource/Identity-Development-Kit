@@ -80,7 +80,7 @@ class RequestCredentialCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     private val decryptJweCommand: DecryptJweCommand,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<RequestCredentialArgs, CredentialResponse>(
+) : TypedServiceCommandAdapter<RequestCredentialArgs, CredentialResponse, IdkError>(
         commandId = RequestCredentialCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RequestCredentialArgs>(),

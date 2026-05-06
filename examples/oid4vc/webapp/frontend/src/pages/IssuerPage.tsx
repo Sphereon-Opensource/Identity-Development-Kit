@@ -5,9 +5,17 @@ import { CredentialCard } from '../components/CredentialCard'
 import { ClaimForm } from '../components/ClaimForm'
 import { QrCodeDisplay } from '../components/QrCodeDisplay'
 import { SessionTracker } from '../components/SessionTracker'
+import { WalletTargetField, type WalletTargetPreset } from '../components/WalletTargetField'
 import { useCredentialMetadata } from '../hooks/useCredentialMetadata'
+import { useLocalStorage } from '../hooks/useLocalStorage'
 import { useSessionPolling } from '../hooks/useSessionPolling'
 import { useLocale } from '../i18n/LocaleContext'
+
+const ISSUER_PRESETS: WalletTargetPreset[] = [
+  { value: 'openid-credential-offer://', label: 'openid-credential-offer://' },
+  { value: 'haip://', label: 'haip://' },
+]
+const ISSUER_DEFAULT_TARGET = 'openid-credential-offer://'
 
 type Step = 'select' | 'configure' | 'offer' | 'success'
 
@@ -29,6 +37,7 @@ export function IssuerPage() {
   const [offer, setOffer] = useState<OfferResponse | null>(null)
   const [step, setStep] = useState<Step>('select')
   const [actionError, setActionError] = useState<string | null>(null)
+  const [walletTarget, setWalletTarget] = useLocalStorage<string>('oid4vc.issuer.walletTarget', ISSUER_DEFAULT_TARGET)
 
   const correlationIdRef = useRef('')
   const error = metadataError ?? actionError
@@ -72,6 +81,7 @@ export function IssuerPage() {
         credential_configuration_ids: [selectedConfig],
         credential_subject_data: claimValues,
         grants,
+        scheme: walletTarget,
         qr_code: { size: 400 },
       })
       correlationIdRef.current = result.correlation_id
@@ -114,6 +124,12 @@ export function IssuerPage() {
 
       {step === 'configure' && selectedConfig && (
         <section className="configure-section">
+          <WalletTargetField
+            presets={ISSUER_PRESETS}
+            value={walletTarget}
+            onChange={setWalletTarget}
+            customPlaceholder="https://wallet.example.com/credential_offer"
+          />
           <div className="grant-selection">
             <div className="grant-selection-header">
               <div className="grant-options">
@@ -175,6 +191,13 @@ export function IssuerPage() {
             stages={OFFER_STAGES}
             error={pollError}
           />
+
+          <details className="session-details">
+            <summary>{t('details.toggle')}</summary>
+            <pre className="session-details-payload">
+              {JSON.stringify({ offer, status }, null, 2)}
+            </pre>
+          </details>
         </section>
       )}
 

@@ -9,6 +9,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
+import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommandImpl
@@ -61,23 +62,39 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeBuildSignedMetadata,
             fakeConfigProvider,
             fakeRestConfigProvider,
+            FakeMultiManagedIdentifierService,
         )
     private val credentialOfferCommand = GetCredentialOfferEndpointCommandImpl(execution, fakeOfferStore, FakeCredentialIssuanceSessionStore())
     private val nonceCommand = IssueNonceEndpointCommandImpl(execution, fakeIssueNonce)
+
+    // Real CredentialResponseEncryptor wired with a JweService that throws — none of the
+    // happy-path tests in this file exercise credential_response_encryption, so the encryptor
+    // stays on its `Plain` short-circuit and never reaches JweService. Tests that DO exercise
+    // encryption (e.g. encryption_required violation) use the credentialCommand fixture
+    // unchanged because the violation rejection happens before the encryptor is invoked.
+    private val credentialResponseEncryptor =
+        com.sphereon.openid.oid4vci.issuer.impl.encryption
+            .CredentialResponseEncryptor(
+                jweService = ThrowingJweService,
+                configProvider = fakeConfigProvider,
+            )
     private val credentialCommand =
         HandleCredentialEndpointCommandImpl(
             execution,
             fakeHandleCredential,
             fakeDecryptJweCommand,
             fakeConfigProvider,
+            credentialResponseEncryptor,
         )
     private val deferredCommand =
         HandleDeferredCredentialEndpointCommandImpl(
             execution,
             fakeHandleDeferred,
             fakeDecryptJweCommand,
+            credentialResponseEncryptor,
+            fakeConfigProvider,
         )
-    private val notificationCommand = HandleNotificationEndpointCommandImpl(execution, fakeHandleNotification)
+    private val notificationCommand = HandleNotificationEndpointCommandImpl(execution, fakeHandleNotification, fakeConfigProvider)
 
     // Adapters
     private val metadataAdapter = Oid4vciIssuerMetadataHttpAdapter(execution, metadataCommand)
@@ -228,9 +245,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeHandleCredential.result =
                 Ok(
                     CredentialResponse(
-                        credential = JsonPrimitive("eyJ.test.credential"),
-                        cNonce = "new-nonce",
-                        cNonceExpiresIn = 300,
+                        credentials = listOf(CredentialResponseItem(credential = JsonPrimitive("eyJ.test.credential"))),
                     ),
                 )
 
@@ -249,7 +264,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             assertEquals(200, response.statusCode)
             assertNotNull(response.body)
             val body = json.parseToJsonElement(response.body!!)
-            assertNotNull(body.jsonObject["credential"])
+            assertNotNull(body.jsonObject["credentials"])
 
             assertNotNull(fakeHandleCredential.lastArgs)
             assertEquals("test-token", fakeHandleCredential.lastArgs!!.accessToken)
@@ -290,7 +305,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeHandleDeferred.result =
                 Ok(
                     CredentialResponse(
-                        credential = JsonPrimitive("eyJ.deferred.credential"),
+                        credentials = listOf(CredentialResponseItem(credential = JsonPrimitive("eyJ.deferred.credential"))),
                     ),
                 )
 
@@ -309,7 +324,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             assertEquals(200, response.statusCode)
             assertNotNull(response.body)
             val body = json.parseToJsonElement(response.body!!)
-            assertNotNull(body.jsonObject["credential"])
+            assertNotNull(body.jsonObject["credentials"])
 
             assertNotNull(fakeHandleDeferred.lastArgs)
             assertEquals("test-token", fakeHandleDeferred.lastArgs!!.accessToken)
@@ -444,4 +459,25 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
                     ?.contains("Invalid credential request") == true,
             )
         }
+
+    /**
+     * JweService stand-in that throws on every method. None of the happy-path tests in this file
+     * exercise credential_response_encryption, so the encryptor's `Plain` short-circuit always
+     * fires and the JWE pipeline is never reached. Throwing makes any accidental test that DOES
+     * trigger the encrypt path loud rather than silently producing fake JWE bytes.
+     */
+    private object ThrowingJweService : com.sphereon.crypto.jose.jwe.JweService {
+        override val commands: com.sphereon.crypto.jose.jwe.JweService.Commands
+            get() = throw UnsupportedOperationException("not used in HTTP-adapter tests")
+
+        override suspend fun prepareJwe(args: com.sphereon.crypto.jose.jwe.PrepareJweArgs) = throw UnsupportedOperationException("ThrowingJweService.prepareJwe")
+
+        override suspend fun createJweCompact(args: com.sphereon.crypto.jose.jwe.CreateJweCompactArgs) = throw UnsupportedOperationException("ThrowingJweService.createJweCompact")
+
+        override suspend fun createJweJsonFlattened(args: com.sphereon.crypto.jose.jwe.CreateJweJsonArgs) = throw UnsupportedOperationException("ThrowingJweService.createJweJsonFlattened")
+
+        override suspend fun createJweJsonGeneral(args: com.sphereon.crypto.jose.jwe.CreateJweJsonGeneralArgs) = throw UnsupportedOperationException("ThrowingJweService.createJweJsonGeneral")
+
+        override suspend fun decryptJwe(args: com.sphereon.crypto.jose.jwe.DecryptJweArgs) = throw UnsupportedOperationException("ThrowingJweService.decryptJwe")
+    }
 }

@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:AddProofAlgorithm.kt$AddProofAlgorithmImpl$private suspend fun signOneProof( unsecuredDocument: JsonObject, options: ProofOptions, produced: List&lt;JsonObject>, index: Int, ): IdkResult&lt;DataIntegrityProof, IdkError></ID>
+    <ID>ReturnCount:VerifyProofAlgorithm.kt$VerifyProofAlgorithmImpl$private suspend fun verifyOneProof( proofJson: JsonObject, proofObjects: List&lt;JsonObject>, unsecuredDocument: JsonObject, expectedProofPurpose: String?, accumulator: ProofAccumulator, )</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.credential.design.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.credential.design.model.AssetReference
@@ -31,7 +32,7 @@ import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
 
 // Credential Design CRUD
 @JsExportCompat
-interface CreateCredentialDesignServiceCommand : ServiceCommand<CreateCredentialDesignArgs, CredentialDesignRecord> {
+interface CreateCredentialDesignServiceCommand : ServiceCommand<CreateCredentialDesignArgs, CredentialDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -40,7 +41,7 @@ interface CreateCredentialDesignServiceCommand : ServiceCommand<CreateCredential
 }
 
 @JsExportCompat
-interface GetCredentialDesignServiceCommand : ServiceCommand<GetCredentialDesignArgs, CredentialDesignRecord> {
+interface GetCredentialDesignServiceCommand : ServiceCommand<GetCredentialDesignArgs, CredentialDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -49,7 +50,7 @@ interface GetCredentialDesignServiceCommand : ServiceCommand<GetCredentialDesign
 }
 
 @JsExportCompat
-interface FindCredentialDesignByBindingServiceCommand : ServiceCommand<FindByBindingArgs, List<CredentialDesignRecord>> {
+interface FindCredentialDesignByBindingServiceCommand : ServiceCommand<FindByBindingArgs, List<CredentialDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -58,7 +59,7 @@ interface FindCredentialDesignByBindingServiceCommand : ServiceCommand<FindByBin
 }
 
 @JsExportCompat
-interface FindCredentialDesignByBindingKeyServiceCommand : ServiceCommand<FindByBindingKeyArgs, List<CredentialDesignRecord>> {
+interface FindCredentialDesignByBindingKeyServiceCommand : ServiceCommand<FindByBindingKeyArgs, List<CredentialDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -67,7 +68,7 @@ interface FindCredentialDesignByBindingKeyServiceCommand : ServiceCommand<FindBy
 }
 
 @JsExportCompat
-interface ListCredentialDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List<CredentialDesignRecord>> {
+interface ListCredentialDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List<CredentialDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -76,7 +77,7 @@ interface ListCredentialDesignsServiceCommand : ServiceCommand<ListDesignsArgs, 
 }
 
 @JsExportCompat
-interface UpdateCredentialDesignServiceCommand : ServiceCommand<UpdateCredentialDesignArgs, CredentialDesignRecord> {
+interface UpdateCredentialDesignServiceCommand : ServiceCommand<UpdateCredentialDesignArgs, CredentialDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -85,7 +86,7 @@ interface UpdateCredentialDesignServiceCommand : ServiceCommand<UpdateCredential
 }
 
 @JsExportCompat
-interface DeleteCredentialDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Boolean> {
+interface DeleteCredentialDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Boolean, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -95,7 +96,7 @@ interface DeleteCredentialDesignServiceCommand : ServiceCommand<DeleteDesignArgs
 
 // Issuer Design CRUD
 @JsExportCompat
-interface CreateIssuerDesignServiceCommand : ServiceCommand<CreateIssuerDesignArgs, IssuerDesignRecord> {
+interface CreateIssuerDesignServiceCommand : ServiceCommand<CreateIssuerDesignArgs, IssuerDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -104,7 +105,7 @@ interface CreateIssuerDesignServiceCommand : ServiceCommand<CreateIssuerDesignAr
 }
 
 @JsExportCompat
-interface GetIssuerDesignServiceCommand : ServiceCommand<GetDesignArgs, IssuerDesignRecord> {
+interface GetIssuerDesignServiceCommand : ServiceCommand<GetDesignArgs, IssuerDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -113,7 +114,7 @@ interface GetIssuerDesignServiceCommand : ServiceCommand<GetDesignArgs, IssuerDe
 }
 
 @JsExportCompat
-interface FindIssuerDesignByBindingServiceCommand : ServiceCommand<FindByBindingArgs, List<IssuerDesignRecord>> {
+interface FindIssuerDesignByBindingServiceCommand : ServiceCommand<FindByBindingArgs, List<IssuerDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -122,7 +123,7 @@ interface FindIssuerDesignByBindingServiceCommand : ServiceCommand<FindByBinding
 }
 
 @JsExportCompat
-interface FindIssuerDesignByBindingKeyServiceCommand : ServiceCommand<FindByBindingKeyArgs, List<IssuerDesignRecord>> {
+interface FindIssuerDesignByBindingKeyServiceCommand : ServiceCommand<FindByBindingKeyArgs, List<IssuerDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -131,7 +132,7 @@ interface FindIssuerDesignByBindingKeyServiceCommand : ServiceCommand<FindByBind
 }
 
 @JsExportCompat
-interface ListIssuerDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List<IssuerDesignRecord>> {
+interface ListIssuerDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List<IssuerDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -140,7 +141,7 @@ interface ListIssuerDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List
 }
 
 @JsExportCompat
-interface UpdateIssuerDesignServiceCommand : ServiceCommand<UpdateIssuerDesignArgs, IssuerDesignRecord> {
+interface UpdateIssuerDesignServiceCommand : ServiceCommand<UpdateIssuerDesignArgs, IssuerDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -149,7 +150,7 @@ interface UpdateIssuerDesignServiceCommand : ServiceCommand<UpdateIssuerDesignAr
 }
 
 @JsExportCompat
-interface DeleteIssuerDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Boolean> {
+interface DeleteIssuerDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Boolean, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -159,7 +160,7 @@ interface DeleteIssuerDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Bo
 
 // Verifier Design CRUD
 @JsExportCompat
-interface CreateVerifierDesignServiceCommand : ServiceCommand<CreateVerifierDesignArgs, VerifierDesignRecord> {
+interface CreateVerifierDesignServiceCommand : ServiceCommand<CreateVerifierDesignArgs, VerifierDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -168,7 +169,7 @@ interface CreateVerifierDesignServiceCommand : ServiceCommand<CreateVerifierDesi
 }
 
 @JsExportCompat
-interface GetVerifierDesignServiceCommand : ServiceCommand<GetDesignArgs, VerifierDesignRecord> {
+interface GetVerifierDesignServiceCommand : ServiceCommand<GetDesignArgs, VerifierDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -177,7 +178,7 @@ interface GetVerifierDesignServiceCommand : ServiceCommand<GetDesignArgs, Verifi
 }
 
 @JsExportCompat
-interface FindVerifierDesignByBindingServiceCommand : ServiceCommand<FindByBindingArgs, List<VerifierDesignRecord>> {
+interface FindVerifierDesignByBindingServiceCommand : ServiceCommand<FindByBindingArgs, List<VerifierDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -186,7 +187,7 @@ interface FindVerifierDesignByBindingServiceCommand : ServiceCommand<FindByBindi
 }
 
 @JsExportCompat
-interface FindVerifierDesignByBindingKeyServiceCommand : ServiceCommand<FindByBindingKeyArgs, List<VerifierDesignRecord>> {
+interface FindVerifierDesignByBindingKeyServiceCommand : ServiceCommand<FindByBindingKeyArgs, List<VerifierDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -195,7 +196,7 @@ interface FindVerifierDesignByBindingKeyServiceCommand : ServiceCommand<FindByBi
 }
 
 @JsExportCompat
-interface ListVerifierDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List<VerifierDesignRecord>> {
+interface ListVerifierDesignsServiceCommand : ServiceCommand<ListDesignsArgs, List<VerifierDesignRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -204,7 +205,7 @@ interface ListVerifierDesignsServiceCommand : ServiceCommand<ListDesignsArgs, Li
 }
 
 @JsExportCompat
-interface UpdateVerifierDesignServiceCommand : ServiceCommand<UpdateVerifierDesignArgs, VerifierDesignRecord> {
+interface UpdateVerifierDesignServiceCommand : ServiceCommand<UpdateVerifierDesignArgs, VerifierDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -213,7 +214,7 @@ interface UpdateVerifierDesignServiceCommand : ServiceCommand<UpdateVerifierDesi
 }
 
 @JsExportCompat
-interface DeleteVerifierDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Boolean> {
+interface DeleteVerifierDesignServiceCommand : ServiceCommand<DeleteDesignArgs, Boolean, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -223,7 +224,7 @@ interface DeleteVerifierDesignServiceCommand : ServiceCommand<DeleteDesignArgs, 
 
 // Render Variants
 @JsExportCompat
-interface CreateRenderVariantServiceCommand : ServiceCommand<CreateRenderVariantArgs, RenderVariantRecord> {
+interface CreateRenderVariantServiceCommand : ServiceCommand<CreateRenderVariantArgs, RenderVariantRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -232,7 +233,7 @@ interface CreateRenderVariantServiceCommand : ServiceCommand<CreateRenderVariant
 }
 
 @JsExportCompat
-interface GetRenderVariantServiceCommand : ServiceCommand<GetRenderVariantArgs, RenderVariantRecord> {
+interface GetRenderVariantServiceCommand : ServiceCommand<GetRenderVariantArgs, RenderVariantRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -241,7 +242,7 @@ interface GetRenderVariantServiceCommand : ServiceCommand<GetRenderVariantArgs, 
 }
 
 @JsExportCompat
-interface UpdateRenderVariantServiceCommand : ServiceCommand<UpdateRenderVariantArgs, RenderVariantRecord> {
+interface UpdateRenderVariantServiceCommand : ServiceCommand<UpdateRenderVariantArgs, RenderVariantRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -250,7 +251,7 @@ interface UpdateRenderVariantServiceCommand : ServiceCommand<UpdateRenderVariant
 }
 
 @JsExportCompat
-interface ListRenderVariantsServiceCommand : ServiceCommand<ListRenderVariantsArgs, List<RenderVariantRecord>> {
+interface ListRenderVariantsServiceCommand : ServiceCommand<ListRenderVariantsArgs, List<RenderVariantRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -259,7 +260,7 @@ interface ListRenderVariantsServiceCommand : ServiceCommand<ListRenderVariantsAr
 }
 
 @JsExportCompat
-interface DeleteRenderVariantServiceCommand : ServiceCommand<DeleteRenderVariantArgs, Boolean> {
+interface DeleteRenderVariantServiceCommand : ServiceCommand<DeleteRenderVariantArgs, Boolean, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -269,7 +270,7 @@ interface DeleteRenderVariantServiceCommand : ServiceCommand<DeleteRenderVariant
 
 // Import / Refresh
 @JsExportCompat
-interface ImportCredentialDesignServiceCommand : ServiceCommand<ImportExternalDesignArgs, CredentialDesignRecord> {
+interface ImportCredentialDesignServiceCommand : ServiceCommand<ImportExternalDesignArgs, CredentialDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -278,7 +279,7 @@ interface ImportCredentialDesignServiceCommand : ServiceCommand<ImportExternalDe
 }
 
 @JsExportCompat
-interface ImportIssuerDesignServiceCommand : ServiceCommand<ImportExternalDesignArgs, IssuerDesignRecord> {
+interface ImportIssuerDesignServiceCommand : ServiceCommand<ImportExternalDesignArgs, IssuerDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -287,7 +288,7 @@ interface ImportIssuerDesignServiceCommand : ServiceCommand<ImportExternalDesign
 }
 
 @JsExportCompat
-interface ImportVerifierDesignServiceCommand : ServiceCommand<ImportExternalDesignArgs, VerifierDesignRecord> {
+interface ImportVerifierDesignServiceCommand : ServiceCommand<ImportExternalDesignArgs, VerifierDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -296,7 +297,7 @@ interface ImportVerifierDesignServiceCommand : ServiceCommand<ImportExternalDesi
 }
 
 @JsExportCompat
-interface RefreshCredentialDesignServiceCommand : ServiceCommand<RefreshDesignArgs, CredentialDesignRecord> {
+interface RefreshCredentialDesignServiceCommand : ServiceCommand<RefreshDesignArgs, CredentialDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -305,7 +306,7 @@ interface RefreshCredentialDesignServiceCommand : ServiceCommand<RefreshDesignAr
 }
 
 @JsExportCompat
-interface RefreshIssuerDesignServiceCommand : ServiceCommand<RefreshDesignArgs, IssuerDesignRecord> {
+interface RefreshIssuerDesignServiceCommand : ServiceCommand<RefreshDesignArgs, IssuerDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -314,7 +315,7 @@ interface RefreshIssuerDesignServiceCommand : ServiceCommand<RefreshDesignArgs, 
 }
 
 @JsExportCompat
-interface RefreshVerifierDesignServiceCommand : ServiceCommand<RefreshDesignArgs, VerifierDesignRecord> {
+interface RefreshVerifierDesignServiceCommand : ServiceCommand<RefreshDesignArgs, VerifierDesignRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -324,7 +325,7 @@ interface RefreshVerifierDesignServiceCommand : ServiceCommand<RefreshDesignArgs
 
 // Snapshots
 @JsExportCompat
-interface GetSourceSnapshotServiceCommand : ServiceCommand<GetSourceSnapshotArgs, SourceSnapshotRecord> {
+interface GetSourceSnapshotServiceCommand : ServiceCommand<GetSourceSnapshotArgs, SourceSnapshotRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -333,7 +334,7 @@ interface GetSourceSnapshotServiceCommand : ServiceCommand<GetSourceSnapshotArgs
 }
 
 @JsExportCompat
-interface RefreshSourceSnapshotServiceCommand : ServiceCommand<RefreshSourceSnapshotArgs, SourceSnapshotRecord> {
+interface RefreshSourceSnapshotServiceCommand : ServiceCommand<RefreshSourceSnapshotArgs, SourceSnapshotRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -343,7 +344,7 @@ interface RefreshSourceSnapshotServiceCommand : ServiceCommand<RefreshSourceSnap
 
 // Resolution
 @JsExportCompat
-interface ResolveCredentialDesignServiceCommand : ServiceCommand<ResolveCredentialDesignArgs, ResolvedCredentialDesign> {
+interface ResolveCredentialDesignServiceCommand : ServiceCommand<ResolveCredentialDesignArgs, ResolvedCredentialDesign, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -352,7 +353,7 @@ interface ResolveCredentialDesignServiceCommand : ServiceCommand<ResolveCredenti
 }
 
 @JsExportCompat
-interface ResolveIssuerDesignServiceCommand : ServiceCommand<ResolveIssuerDesignArgs, ResolvedIssuerDesign> {
+interface ResolveIssuerDesignServiceCommand : ServiceCommand<ResolveIssuerDesignArgs, ResolvedIssuerDesign, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -361,7 +362,7 @@ interface ResolveIssuerDesignServiceCommand : ServiceCommand<ResolveIssuerDesign
 }
 
 @JsExportCompat
-interface ResolveVerifierDesignServiceCommand : ServiceCommand<ResolveVerifierDesignArgs, ResolvedVerifierDesign> {
+interface ResolveVerifierDesignServiceCommand : ServiceCommand<ResolveVerifierDesignArgs, ResolvedVerifierDesign, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -371,7 +372,7 @@ interface ResolveVerifierDesignServiceCommand : ServiceCommand<ResolveVerifierDe
 
 // Assets
 @JsExportCompat
-interface UploadDesignAssetServiceCommand : ServiceCommand<UploadDesignAssetArgs, AssetReference> {
+interface UploadDesignAssetServiceCommand : ServiceCommand<UploadDesignAssetArgs, AssetReference, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -380,7 +381,7 @@ interface UploadDesignAssetServiceCommand : ServiceCommand<UploadDesignAssetArgs
 }
 
 @JsExportCompat
-interface GetDesignAssetServiceCommand : ServiceCommand<GetDesignAssetArgs, ResolvedDesignAsset> {
+interface GetDesignAssetServiceCommand : ServiceCommand<GetDesignAssetArgs, ResolvedDesignAsset, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

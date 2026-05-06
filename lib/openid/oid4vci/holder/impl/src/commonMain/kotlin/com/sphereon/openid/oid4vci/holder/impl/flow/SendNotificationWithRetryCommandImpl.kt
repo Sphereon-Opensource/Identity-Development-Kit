@@ -54,7 +54,7 @@ class SendNotificationWithRetryCommandImpl(
     execution: SessionExecution,
     private val sendNotificationCommand: SendNotificationCommand,
     private val notificationStore: HolderNotificationStore,
-) : TypedServiceCommandAdapter<SendNotificationWithRetryArgs, Unit>(
+) : TypedServiceCommandAdapter<SendNotificationWithRetryArgs, Unit, IdkError>(
         commandId = SendNotificationWithRetryCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<SendNotificationWithRetryArgs>(),

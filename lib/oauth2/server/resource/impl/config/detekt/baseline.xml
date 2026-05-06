@@ -2,21 +2,23 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>BracesOnIfStatements:ResourceServerIntrospectTokenCommandImpl.kt$ResourceServerIntrospectTokenCommandImpl$if</ID>
     <ID>ClassOrdering:ResourceServerVerifyDpopProofCommandImpl.kt$ResourceServerVerifyDpopProofCommandImpl$Companion</ID>
     <ID>ClassOrdering:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$Companion</ID>
+    <ID>ClassOrdering:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$// Cached at session scope: VerifyJwtCommandImpl is @SingleIn(SessionScope), so the config // resolution runs at most once per session and subsequent resource-server requests reuse // the resolved value. Per-request overrides still flow through args.clockSkewSeconds. private val configuredClockSkewSeconds: Long by lazy { resolveClockSkewFromConfig() }</ID>
     <ID>ComplexInterface:DefaultResourceServerConfigModule.kt$DefaultResourceServerConfigModule</ID>
-    <ID>CyclomaticComplexMethod:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$private suspend fun executeInternal( jwt: String, authorizationServer: String, expectedAudience: String?, jwksUri: String? = null, ): IdkResult&lt;TokenPayload.Jwt, ResourceServerError></ID>
+    <ID>CyclomaticComplexMethod:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$private suspend fun executeInternal( jwt: String, authorizationServer: String, expectedAudience: String?, jwksUri: String? = null, clockSkewSeconds: Long = VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS, ): IdkResult&lt;TokenPayload.Jwt, ResourceServerError></ID>
     <ID>LongMethod:ResourceServerIntrospectTokenCommandImpl.kt$ResourceServerIntrospectTokenCommandImpl$private suspend fun executeInternal( token: String, authorizationServer: String, ): IdkResult&lt;TokenPayload.Introspection, ResourceServerError></ID>
     <ID>LongMethod:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$private suspend fun executeInternal( request: ResourceRequest, requiredScope: String?, requiredAudience: String?, ): IdkResult&lt;VerifiedResourceRequest, ResourceServerError></ID>
     <ID>LongMethod:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$private suspend fun validateAndBuildResult( tokenPayload: com.sphereon.oauth2.server.resource.model.TokenPayload, scheme: AuthenticationScheme, token: String, request: ResourceRequest, requiredScope: String?, requiredAudience: String?, ): IdkResult&lt;VerifiedResourceRequest, ResourceServerError></ID>
-    <ID>LongMethod:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$private suspend fun executeInternal( jwt: String, authorizationServer: String, expectedAudience: String?, jwksUri: String? = null, ): IdkResult&lt;TokenPayload.Jwt, ResourceServerError></ID>
+    <ID>LongMethod:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$private suspend fun executeInternal( jwt: String, authorizationServer: String, expectedAudience: String?, jwksUri: String? = null, clockSkewSeconds: Long = VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS, ): IdkResult&lt;TokenPayload.Jwt, ResourceServerError></ID>
     <ID>LongParameterList:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$( tokenPayload: com.sphereon.oauth2.server.resource.model.TokenPayload, scheme: AuthenticationScheme, token: String, request: ResourceRequest, requiredScope: String?, requiredAudience: String?, )</ID>
     <ID>MagicNumber:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$3</ID>
     <ID>MagicNumber:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$3</ID>
     <ID>ReturnCount:ResourceServerIntrospectTokenCommandImpl.kt$ResourceServerIntrospectTokenCommandImpl$private suspend fun executeInternal( token: String, authorizationServer: String, ): IdkResult&lt;TokenPayload.Introspection, ResourceServerError></ID>
     <ID>ReturnCount:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$private suspend fun executeInternal( request: ResourceRequest, requiredScope: String?, requiredAudience: String?, ): IdkResult&lt;VerifiedResourceRequest, ResourceServerError></ID>
     <ID>ReturnCount:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$private suspend fun validateAndBuildResult( tokenPayload: com.sphereon.oauth2.server.resource.model.TokenPayload, scheme: AuthenticationScheme, token: String, request: ResourceRequest, requiredScope: String?, requiredAudience: String?, ): IdkResult&lt;VerifiedResourceRequest, ResourceServerError></ID>
-    <ID>ReturnCount:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$private suspend fun executeInternal( jwt: String, authorizationServer: String, expectedAudience: String?, jwksUri: String? = null, ): IdkResult&lt;TokenPayload.Jwt, ResourceServerError></ID>
+    <ID>ReturnCount:VerifyJwtCommandImpl.kt$VerifyJwtCommandImpl$private suspend fun executeInternal( jwt: String, authorizationServer: String, expectedAudience: String?, jwksUri: String? = null, clockSkewSeconds: Long = VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS, ): IdkResult&lt;TokenPayload.Jwt, ResourceServerError></ID>
     <ID>StringLiteralDuplication:ResourceServerHttpAdapter.kt$ResourceServerHttpAdapter$"Content-Type"</ID>
     <ID>StringLiteralDuplication:ResourceServerHttpAdapter.kt$ResourceServerHttpAdapter$"application/json"</ID>
     <ID>UnusedParameter:ValidateAccessTokenCommandImpl.kt$ValidateAccessTokenCommandImpl$requiredAudience: String?</ID>

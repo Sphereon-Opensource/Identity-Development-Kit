@@ -29,12 +29,29 @@ data class CredentialConfigurationSupported(
     val format: String,
     val scope: String? = null,
     @SerialName("cryptographic_binding_methods_supported") val cryptographicBindingMethodsSupported: List<String>? = null,
-    @SerialName("credential_signing_alg_values_supported") val credentialSigningAlgValuesSupported: List<String>? = null,
+    /**
+     * Per OID4VCI 1.0 final §12.2.3 the algorithm-identifier element type is format-specific:
+     * - JWS-based formats (`dc+sd-jwt`, `jwt_vc_json`, …): JSON strings — JWA names per IANA
+     *   JOSE (e.g. `"ES256"`).
+     * - `mso_mdoc`: JSON integers — numeric COSE algorithm identifiers per IANA COSE
+     *   (e.g. `-7` for ECDSA w/ SHA-256), per §A.3.2 of the spec.
+     *
+     * The list element is therefore [JsonElement] so both shapes round-trip without lossy
+     * normalisation; the metadata builder picks the right element type from the format.
+     */
+    @SerialName("credential_signing_alg_values_supported") val credentialSigningAlgValuesSupported: List<JsonElement>? = null,
     @SerialName("proof_types_supported") val proofTypesSupported: Map<String, ProofTypeSupported>? = null,
     val display: List<DisplayProperties>? = null,
     @SerialName("credential_definition") val credentialDefinition: CredentialDefinition? = null,
     val vct: String? = null,
-    val claims: Map<String, ClaimMetadata>? = null,
+    /**
+     * Per OID4VCI 1.0 final §12.2.3 + Appendix A JSON schema, `claims` is a NON-EMPTY ARRAY of
+     * claim-description objects each with a `path` claims-path-pointer (per §A.5). The
+     * pre-final draft shape (`Map<String, ClaimMetadata>`) is no longer in any current draft
+     * and the conformance suite's `VCICredentialIssuerMetadataValidation` rejects it
+     * outright — there is no compatibility window to honour.
+     */
+    val claims: List<CredentialClaim>? = null,
     val doctype: String? = null,
     val order: List<String>? = null,
     @SerialName("credential_response_encryption") val credentialResponseEncryption: CredentialResponseEncryption? = null,
@@ -62,6 +79,24 @@ data class CredentialDefinition(
     val type: List<String>? = null,
     @SerialName("@context") val context: List<String>? = null,
     @SerialName("credentialSubject") val credentialSubject: Map<String, ClaimMetadata>? = null,
+)
+
+/**
+ * Path-based claim description per OID4VCI 1.0 final §12.2.3 (`claims` array entry).
+ *
+ * `path` is a claims-path-pointer per OID4VCI §A.5 / OID4VP §6.5:
+ * - SD-JWT VC and JWT-based credentials: ordered field names → typically a single-element
+ *   array `["family_name"]` for top-level claims, longer for nested.
+ * - mso_mdoc: exactly two strings — `[namespace, elementIdentifier]`, e.g.
+ *   `["org.iso.18013.5.1", "family_name"]`.
+ */
+@JsExportCompat
+@Serializable
+data class CredentialClaim(
+    val path: List<String>,
+    val mandatory: Boolean? = null,
+    @SerialName("value_type") val valueType: String? = null,
+    val display: List<ClaimDisplay>? = null,
 )
 
 @JsExportCompat

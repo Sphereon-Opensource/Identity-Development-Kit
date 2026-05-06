@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.resolution.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.resolution.model.IdentityResolutionResult
@@ -27,7 +28,7 @@ import com.sphereon.identity.resolution.model.ResolveMatchingIdentityArgs
  * Returns [IdentityResolutionResult] with `resolved=true` if found, or `resolved=false` if not.
  */
 @JsExportCompat
-interface ResolveIdentityCommand : ServiceCommand<ResolveIdentityArgs, IdentityResolutionResult> {
+interface ResolveIdentityCommand : ServiceCommand<ResolveIdentityArgs, IdentityResolutionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -40,7 +41,7 @@ interface ResolveIdentityCommand : ServiceCommand<ResolveIdentityArgs, IdentityR
  * Returns [IdentityResolutionResult] with `resolved=true` if found, or `resolved=false` if not.
  */
 @JsExportCompat
-interface ResolveMatchingIdentityCommand : ServiceCommand<ResolveMatchingIdentityArgs, IdentityResolutionResult> {
+interface ResolveMatchingIdentityCommand : ServiceCommand<ResolveMatchingIdentityArgs, IdentityResolutionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

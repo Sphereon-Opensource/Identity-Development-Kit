@@ -218,7 +218,15 @@ class UserContextManagerImpl(
         principalInput: PrincipalInput,
         makeActive: Boolean,
     ): UserContextInstance {
-        val tenantContext = tenantResolutionHandler.resolveTenant(tenantInput)
+        // Bridge: TenantResolutionHandler.resolveTenant is now suspend (so Ktor
+        // request-path callers don't have to runBlocking on their event loop).
+        // This synchronous facade is still needed for Spring filters and other
+        // non-coroutine callers — they pay the runBlocking cost here, OFF the
+        // Ktor hot path. On JS/wasmJs this only works when the suspend chain
+        // does not actually suspend; otherwise it throws at runtime.
+        val tenantContext =
+            com.sphereon.core.api.coroutines
+                .runBlockingCompat { tenantResolutionHandler.resolveTenant(tenantInput) }
         val principal = principalResolutionHandler.resolvePrincipal(principalInput, tenantContext)
         return createOrGet(tenantContext, principal, makeActive)
     }

@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.oauth2.common.model.ActorClaim
@@ -30,11 +31,23 @@ import kotlinx.serialization.json.JsonElement
 // ============================================================================
 
 /**
- * Arguments for parsing a token request
+ * Arguments for parsing a token request.
+ *
+ * [httpUrl] is the absolute URL of the token endpoint (`scheme://host/path`, no query / fragment).
+ * Used for DPoP `htu` binding per RFC 9449 §4.2; supplied by the HTTP shell from `Host` +
+ * `X-Forwarded-Proto` so proofs verify behind a proxy.
  */
 data class ParseTokenRequestArgs(
     val requestBody: Map<String, List<String>>,
     val requestHeaders: Map<String, String> = emptyMap(),
+    val httpUrl: String = "",
+    /**
+     * Leaf TLS client certificate (DER bytes) extracted at the HTTP shell when the token
+     * endpoint accepts mTLS (RFC 8705 §2). `null` when the request did not arrive over mTLS.
+     * Used by [extractClientAuthentication] to promote a `client_id`-only request to a
+     * [com.sphereon.oauth2.common.model.ClientAuthenticationConfig.MutualTls] auth.
+     */
+    val clientCertificateDer: ByteArray? = null,
 )
 
 /**
@@ -45,7 +58,7 @@ data class ParseTokenRequestArgs(
  * Parses and validates the incoming token request from the client.
  * Extracts grant type and grant-specific parameters.
  */
-interface ParseTokenRequestCommand : ServiceCommand<ParseTokenRequestArgs, TokenRequestData> {
+interface ParseTokenRequestCommand : ServiceCommand<ParseTokenRequestArgs, TokenRequestData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -84,7 +97,7 @@ data class VerifyTokenExchangeGrantArgs(
  * - Determines delegation vs impersonation
  * - Builds actor claim chain for delegation
  */
-interface VerifyTokenExchangeGrantCommand : ServiceCommand<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant> {
+interface VerifyTokenExchangeGrantCommand : ServiceCommand<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -118,7 +131,7 @@ data class VerifyAuthorizationCodeGrantArgs(
  * - Ensures code hasn't been used
  * - Verifies client authentication
  */
-interface VerifyAuthorizationCodeGrantCommand : ServiceCommand<VerifyAuthorizationCodeGrantArgs, VerifiedAuthorizationCodeGrant> {
+interface VerifyAuthorizationCodeGrantCommand : ServiceCommand<VerifyAuthorizationCodeGrantArgs, VerifiedAuthorizationCodeGrant, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -150,7 +163,7 @@ data class VerifyRefreshTokenGrantArgs(
  * - Verifies client authentication
  * - Validates requested scope (must be subset of original)
  */
-interface VerifyRefreshTokenGrantCommand : ServiceCommand<VerifyRefreshTokenGrantArgs, VerifiedRefreshTokenGrant> {
+interface VerifyRefreshTokenGrantCommand : ServiceCommand<VerifyRefreshTokenGrantArgs, VerifiedRefreshTokenGrant, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -180,7 +193,7 @@ data class VerifyClientCredentialsGrantArgs(
  * - Verifies client is authorized for this grant type
  * - Validates requested scope
  */
-interface VerifyClientCredentialsGrantCommand : ServiceCommand<VerifyClientCredentialsGrantArgs, VerifiedClientCredentialsGrant> {
+interface VerifyClientCredentialsGrantCommand : ServiceCommand<VerifyClientCredentialsGrantArgs, VerifiedClientCredentialsGrant, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -193,7 +206,13 @@ interface VerifyClientCredentialsGrantCommand : ServiceCommand<VerifyClientCrede
 // ============================================================================
 
 /**
- * Arguments for creating an access token
+ * Arguments for creating an access token.
+ *
+ * [baseUrlOverride] carries the per-request base URL (resolved from `Host` + `X-Forwarded-Proto`
+ * by the HTTP layer) so the issued `iss` claim matches what discovery emits when the AS is
+ * reached via a proxy/tunnel and `serverConfig.issuer` is unset. Resolution order at issuance:
+ * `serverConfig.issuer` (configured wins), else this override. When neither is available the
+ * command fails. Mirrors `BuildServerMetadataCommandImpl` so OIDF conformance holds.
  */
 data class CreateAccessTokenArgs(
     val subject: String,
@@ -204,6 +223,15 @@ data class CreateAccessTokenArgs(
     val dpopJkt: String? = null,
     val clientInstanceKeyJkt: String? = null,
     val additionalClaims: Map<String, Any> = emptyMap(),
+    val baseUrlOverride: String? = null,
+    /**
+     * RFC 8705 §3.1: SHA-256 thumbprint of the TLS client certificate (DER) presented at the
+     * token endpoint, base64url-encoded without padding. When non-null, the issued access
+     * token carries `cnf.x5t#S256` bound to this thumbprint, restricting its presentation to
+     * resource-server requests over mTLS with a matching certificate. Combines additively with
+     * [dpopJkt] when both bindings apply (RFC 8705 §3 + RFC 9449 §6).
+     */
+    val certificateThumbprintS256: String? = null,
 )
 
 /**
@@ -212,7 +240,7 @@ data class CreateAccessTokenArgs(
  * Generates a new access token (JWT format recommended).
  * Includes all necessary claims and bindings.
  */
-interface CreateAccessTokenCommand : ServiceCommand<CreateAccessTokenArgs, StringResult> {
+interface CreateAccessTokenCommand : ServiceCommand<CreateAccessTokenArgs, StringResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -225,7 +253,12 @@ interface CreateAccessTokenCommand : ServiceCommand<CreateAccessTokenArgs, Strin
 // ============================================================================
 
 /**
- * Arguments for creating a refresh token
+ * Arguments for creating a refresh token.
+ *
+ * The OIDC fields (`authTime`, `acr`, `amr`, `nonce`, `loginSessionId`) are persisted on the
+ * stored `RefreshTokenData` so refresh-token rotation (RFC 6749 §6) can reissue an id_token
+ * per OIDC Core 1.0 §12 with the original authentication context preserved. Non-OIDC grants
+ * (client_credentials, token-exchange) leave them null.
  */
 data class CreateRefreshTokenArgs(
     val subject: String,
@@ -234,6 +267,29 @@ data class CreateRefreshTokenArgs(
     val expiresInSeconds: Int? = null,
     val dpopJkt: String? = null,
     val clientInstanceKeyJkt: String? = null,
+    /**
+     * Epoch seconds of the original end-user authentication. Persisted on the refresh-token
+     * row so refresh-time id_token reissue keeps `auth_time` pinned to the original auth.
+     */
+    val authTime: Long? = null,
+    /**
+     * Authentication Context Class Reference, persisted on the refresh-token row.
+     */
+    val acr: String? = null,
+    /**
+     * Authentication Methods References, persisted on the refresh-token row.
+     */
+    val amr: List<String>? = null,
+    /**
+     * OIDC nonce from the original authorization request, persisted so refresh-time id_token
+     * reissue echoes the original nonce.
+     */
+    val nonce: String? = null,
+    /**
+     * Cookie-keyed `oidc_login_sid` from the original login session, persisted so refresh-time
+     * id_token reissue keeps the same `sid` claim and Back-Channel Logout recipient set.
+     */
+    val loginSessionId: String? = null,
 )
 
 /**
@@ -241,7 +297,7 @@ data class CreateRefreshTokenArgs(
  *
  * Generates a new refresh token (opaque or JWT).
  */
-interface CreateRefreshTokenCommand : ServiceCommand<CreateRefreshTokenArgs, StringResult> {
+interface CreateRefreshTokenCommand : ServiceCommand<CreateRefreshTokenArgs, StringResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -282,7 +338,7 @@ data class CreateTokenResponseArgs(
  * - Scope (optional)
  * - Additional parameters (c_nonce, etc.)
  */
-interface CreateTokenResponseCommand : ServiceCommand<CreateTokenResponseArgs, TokenResponse> {
+interface CreateTokenResponseCommand : ServiceCommand<CreateTokenResponseArgs, TokenResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -374,6 +430,19 @@ sealed interface GrantParameters {
         val scope: String? = null,
         val requestedTokenType: String? = null,
     ) : GrantParameters
+
+    /**
+     * Device authorization grant parameters (RFC 8628 §3.4).
+     *
+     * Per RFC 8628 §3.4 the token request carries `device_code` (REQUIRED) and `client_id`
+     * (REQUIRED if the client is not authenticating with the AS via another mechanism). The
+     * AS poll responses (`authorization_pending`, `slow_down`, `access_denied`, `expired_token`)
+     * are emitted by the token grant branch, not surfaced on these parsed parameters.
+     */
+    data class DeviceCode(
+        val deviceCode: String,
+        val clientId: String? = null,
+    ) : GrantParameters
 }
 
 /**
@@ -435,6 +504,32 @@ data class VerifiedRefreshTokenGrant(
      * Original refresh token ID (for rotation)
      */
     val refreshTokenId: String,
+    /**
+     * Epoch seconds of the ORIGINAL end-user authentication that minted this chain.
+     * Surfaced from `RefreshTokenData.authTime` so OIDC Core 1.0 §12 id_token reissue
+     * populates `auth_time` with the original authentication time, not refresh time.
+     */
+    val authTime: Long? = null,
+    /**
+     * Authentication Context Class Reference (OpenID Connect Core 1.0 §2) preserved from
+     * the original AuthCode grant.
+     */
+    val acr: String? = null,
+    /**
+     * Authentication Methods References (OpenID Connect Core 1.0 §2) preserved from the
+     * original AuthCode grant.
+     */
+    val amr: List<String>? = null,
+    /**
+     * OpenID Connect nonce from the original authorization request, preserved so the
+     * refreshed id_token's `nonce` matches the original.
+     */
+    val nonce: String? = null,
+    /**
+     * Cookie-keyed `oidc_login_sid` for the original login session, used as the refreshed
+     * id_token's `sid` claim.
+     */
+    val loginSessionId: String? = null,
 )
 
 /**
@@ -457,6 +552,11 @@ data class VerifiedClientCredentialsGrant(
 
 /**
  * Verified token exchange grant (RFC 8693)
+ *
+ * @property subjectCnfJkt Confirmation-key JWK thumbprint extracted from `cnf.jkt` on the
+ *                         subject token, when present. Surfaced to the orchestrator so it can
+ *                         enforce RFC 9449 §10.1 proof-jkt continuity: the exchanged token's
+ *                         DPoP proof MUST be from the same key the subject token was bound to.
  */
 data class VerifiedTokenExchangeGrant(
     val subject: String,
@@ -469,4 +569,5 @@ data class VerifiedTokenExchangeGrant(
     val actorSubject: String? = null,
     val actorClaim: ActorClaim? = null,
     val additionalClaims: Map<String, Any> = emptyMap(),
+    val subjectCnfJkt: String? = null,
 )

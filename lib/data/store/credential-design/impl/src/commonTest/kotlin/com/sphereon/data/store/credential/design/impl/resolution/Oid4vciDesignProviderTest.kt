@@ -273,23 +273,27 @@ class Oid4vciDesignProviderTest {
         }
 
     @Test
-    fun credentialProviderMaps10TopLevelClaimsMap() =
+    fun credentialProviderMaps10TopLevelClaimsList() =
         runTest {
+            // OID4VCI 1.0 final §12.2.3: top-level `claims` is a JSON array of claim
+            // descriptions, each with a `path` claims-path-pointer (§A.5).
             val configJson =
                 json.parseToJsonElement(
                     """
                     {
                       "format": "jwt_vc_json",
-                      "claims": {
-                        "given_name": {
+                      "claims": [
+                        {
+                          "path": ["given_name"],
                           "mandatory": true,
                           "display": [{"name": "Given Name", "locale": "en-US"}]
                         },
-                        "family_name": {
+                        {
+                          "path": ["family_name"],
                           "mandatory": false,
                           "display": [{"name": "Family Name", "locale": "en-US"}]
                         }
-                      }
+                      ]
                     }
                     """.trimIndent(),
                 ) as JsonObject
@@ -341,15 +345,16 @@ class Oid4vciDesignProviderTest {
     @Test
     fun credentialProviderPrefers10TopLevelClaimsOverCredentialDefinition() =
         runTest {
-            // If top-level claims is present, credentialDefinition.credentialSubject is ignored.
+            // If top-level claims (OID4VCI 1.0 final array shape) is present,
+            // credentialDefinition.credentialSubject is ignored.
             val configJson =
                 json.parseToJsonElement(
                     """
                     {
                       "format": "jwt_vc_json",
-                      "claims": {
-                        "top_level_claim": {"mandatory": false}
-                      },
+                      "claims": [
+                        {"path": ["top_level_claim"], "mandatory": false}
+                      ],
                       "credential_definition": {
                         "credentialSubject": {
                           "def_claim": {"mandatory": true}

@@ -129,11 +129,11 @@ private class NoOpTestUserAuthenticationProvider : UserAuthenticationProvider {
         hint: AuthenticationHint?,
     ): IdkResult<String, AuthenticationError> =
         com.sphereon.core.api
-            .Err(AuthenticationError.Generic(message = "Not implemented in test"))
+            .Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
     override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> =
         com.sphereon.core.api
-            .Err(AuthenticationError.Generic(message = "Not implemented in test"))
+            .Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)
 

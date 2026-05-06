@@ -17,7 +17,10 @@
 package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.describe.HttpAdapterDescription
+import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
@@ -25,7 +28,12 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.TokenErrorResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2HttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2AuthorizationHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2DiscoveryHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2FederationHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2InternalHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2TokenHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2UserInfoHttpAdapter
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
@@ -112,11 +120,24 @@ class WalletIssuanceHttpE2ETest {
             ?: error("Oid4vciIssuerMetadataHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
     }
 
-    private fun oauthAdapter(): OAuth2HttpAdapter {
+    private fun oauthAdapters(): List<HttpAdapter> {
         val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        return adapters.filterIsInstance<OAuth2HttpAdapter>().firstOrNull()
-            ?: error("OAuth2HttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
+        val oauth2 =
+            adapters.filter { adapter ->
+                adapter is OAuth2DiscoveryHttpAdapter ||
+                    adapter is OAuth2TokenHttpAdapter ||
+                    adapter is OAuth2AuthorizationHttpAdapter ||
+                    adapter is OAuth2UserInfoHttpAdapter ||
+                    adapter is OAuth2FederationHttpAdapter ||
+                    adapter is OAuth2InternalHttpAdapter
+            }
+        require(oauth2.isNotEmpty()) {
+            "No OAuth2 AS HttpAdapter found in DI graph. Found: ${adapters.map { it::class.simpleName }}"
+        }
+        return oauth2
     }
+
+    private fun oauthAdapter(): HttpAdapter = OAuth2DispatchHttpAdapter(oauthAdapters())
 
     // =========================================================================
     // Test 1: Adapters resolve from DI graph
@@ -133,8 +154,30 @@ class WalletIssuanceHttpE2ETest {
         val metadataAdapters = adapters.filterIsInstance<Oid4vciIssuerMetadataHttpAdapter>()
         assertTrue(metadataAdapters.isNotEmpty(), "Oid4vciIssuerMetadataHttpAdapter should be in the DI graph")
 
-        val oauthAdapters = adapters.filterIsInstance<OAuth2HttpAdapter>()
-        assertTrue(oauthAdapters.isNotEmpty(), "OAuth2HttpAdapter should be in the DI graph")
+        assertTrue(
+            adapters.filterIsInstance<OAuth2DiscoveryHttpAdapter>().isNotEmpty(),
+            "OAuth2DiscoveryHttpAdapter should be in the DI graph",
+        )
+        assertTrue(
+            adapters.filterIsInstance<OAuth2TokenHttpAdapter>().isNotEmpty(),
+            "OAuth2TokenHttpAdapter should be in the DI graph",
+        )
+        assertTrue(
+            adapters.filterIsInstance<OAuth2AuthorizationHttpAdapter>().isNotEmpty(),
+            "OAuth2AuthorizationHttpAdapter should be in the DI graph",
+        )
+        assertTrue(
+            adapters.filterIsInstance<OAuth2UserInfoHttpAdapter>().isNotEmpty(),
+            "OAuth2UserInfoHttpAdapter should be in the DI graph",
+        )
+        assertTrue(
+            adapters.filterIsInstance<OAuth2FederationHttpAdapter>().isNotEmpty(),
+            "OAuth2FederationHttpAdapter should be in the DI graph",
+        )
+        assertTrue(
+            adapters.filterIsInstance<OAuth2InternalHttpAdapter>().isNotEmpty(),
+            "OAuth2InternalHttpAdapter should be in the DI graph",
+        )
     }
 
     // =========================================================================
@@ -290,8 +333,11 @@ class WalletIssuanceHttpE2ETest {
                 }
             assertNotNull(errorCode, "Error response should contain an error code")
             assertTrue(
-                errorCode == "invalid_grant" || errorCode == "invalid_request" || errorCode == "UNAUTHORIZED",
-                "Error should be invalid_grant, invalid_request, or UNAUTHORIZED, got: $errorCode",
+                errorCode == "invalid_grant" ||
+                    errorCode == "invalid_request" ||
+                    errorCode == "invalid_client" ||
+                    errorCode == "UNAUTHORIZED",
+                "Error should be invalid_grant, invalid_request, invalid_client, or UNAUTHORIZED, got: $errorCode",
             )
         }
 
@@ -505,13 +551,7 @@ class WalletIssuanceHttpE2ETest {
             val consumed = consumeResult.value
 
             // Generate AS signing key for JWT access tokens (must use the well-known alias)
-            val asKeyResult =
-                kms.generateKeyResult(
-                    alias = "oauth2-server-signing",
-                    use = JwkUse.sig,
-                    alg = SignatureAlgorithm.ECDSA_SHA256,
-                )
-            assertTrue(asKeyResult.isOk, "AS signing key generation should succeed")
+            ctx.ensureAsSigningKey()
 
             // Create access token via the real AS service
             val tokenResult =
@@ -849,4 +889,36 @@ class WalletIssuanceHttpE2ETest {
                 assertTrue(jwksJson.containsKey("keys"), "JWKS response should contain 'keys' array")
             }
         }
+}
+
+/**
+ * Test-only [HttpAdapter] that fans a request out to the OAuth2 AS adapter set, returning the
+ * first response that is not 404. Replaces the legacy single-adapter route fan-out so the wallet
+ * tests keep their `adapter.handleRequest(req)` shape while the production code splits the routes
+ * across six per-area adapters.
+ */
+private class OAuth2DispatchHttpAdapter(
+    private val delegates: List<HttpAdapter>
+) : HttpAdapter {
+    override val id: String = "OAUTH2_AS_DISPATCH"
+
+    override fun describe(): HttpAdapterDescription =
+        HttpAdapterDescription(
+            id = id,
+            mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
+            endpoints = delegates.flatMap { it.describe().endpoints },
+        )
+
+    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
+        for (delegate in delegates) {
+            if (delegate is com.sphereon.core.api.http.RoutableHttpAdapter && !delegate.canHandle(request)) {
+                continue
+            }
+            val response = delegate.handleRequest(request)
+            if (response.statusCode != 404) {
+                return response
+            }
+        }
+        return GenericHttpResponse(statusCode = 404, headers = emptyMap(), body = "Not found")
+    }
 }

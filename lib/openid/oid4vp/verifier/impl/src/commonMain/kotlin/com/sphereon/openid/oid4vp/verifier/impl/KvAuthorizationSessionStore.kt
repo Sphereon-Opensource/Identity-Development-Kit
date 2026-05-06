@@ -87,7 +87,7 @@ class KvAuthorizationSessionStore(
     private val callbackDispatcher: AuthorizationSessionCallbackDispatcher,
     appLogManager: AppLogManager,
     private val execution: SessionExecution,
-    private val clock: Clock = Clock.System,
+    private val clock: Clock,
 ) : AuthorizationSessionStore {
     private val log = appLogManager.withTag("Oid4vpAuthorizationSessionStore")
     private val json = Json
@@ -246,6 +246,8 @@ class KvAuthorizationSessionStore(
         val parsedResponse: ParsedAuthorizationResponseEntry? = null,
         val validationResult: ValidationResultEntry? = null,
         val callback: AuthorizationSessionCallbackEntry? = null,
+        val jarmEncryptionKeyAlias: String? = null,
+        val jarmEncryptionKeyProviderId: String? = null,
         val createdAt: Long,
         val updatedAt: Long,
         val expiresAt: Long,
@@ -273,6 +275,8 @@ class KvAuthorizationSessionStore(
                 parsedResponse = parsedResponse?.toPublic(),
                 validationResult = validationResult?.toPublic(),
                 callback = callback?.toPublic(),
+                jarmEncryptionKeyAlias = jarmEncryptionKeyAlias,
+                jarmEncryptionKeyProviderId = jarmEncryptionKeyProviderId,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
                 expiresAt = expiresAt,
@@ -469,6 +473,8 @@ class KvAuthorizationSessionStore(
                     },
                 validationResult = value.validationResult?.let { ValidationResultEntry(valid = it.valid, errors = it.errors) },
                 callback = value.callback?.let { AuthorizationSessionCallbackEntry(url = it.url, statuses = it.statuses.map(AuthorizationSessionStatus::name)) },
+                jarmEncryptionKeyAlias = value.jarmEncryptionKeyAlias,
+                jarmEncryptionKeyProviderId = value.jarmEncryptionKeyProviderId,
                 createdAt = value.createdAt,
                 updatedAt = now,
                 expiresAt = expiresAt,

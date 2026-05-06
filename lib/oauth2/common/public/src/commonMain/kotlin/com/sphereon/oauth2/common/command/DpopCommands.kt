@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
@@ -51,7 +52,7 @@ data class CreateDpopProofArgs(
  * - nonce: Server-provided nonce (when required)
  */
 @JsExportCompat
-interface CreateDpopProofCommand : ServiceCommand<CreateDpopProofArgs, DpopProofResult> {
+interface CreateDpopProofCommand : ServiceCommand<CreateDpopProofArgs, DpopProofResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -72,7 +73,7 @@ interface CreateDpopProofCommand : ServiceCommand<CreateDpopProofArgs, DpopProof
  * - JWK thumbprint matches expected value (if provided)
  */
 @JsExportCompat
-interface VerifyDpopProofCommand : ServiceCommand<VerifyDpopProofOptions, VerifyDpopProofResult> {
+interface VerifyDpopProofCommand : ServiceCommand<VerifyDpopProofOptions, VerifyDpopProofResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

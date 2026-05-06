@@ -41,7 +41,7 @@ import dev.zacsweers.metro.SingleIn
 class CommandsByModule(
     private val registry: SessionScopedCommandRegistry,
 ) {
-    operator fun get(module: String): Map<String, ServiceCommand<*, *>> =
+    operator fun get(module: String): Map<String, ServiceCommand<*, *, *>> =
         registry
             .listCommandIds()
             .filter { it.substringBefore('.') == module }

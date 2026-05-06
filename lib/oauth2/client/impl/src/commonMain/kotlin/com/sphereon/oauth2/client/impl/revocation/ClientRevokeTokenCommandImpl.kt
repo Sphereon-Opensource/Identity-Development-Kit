@@ -62,7 +62,7 @@ class ClientRevokeTokenCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
     private val applyClientAuthenticationCommand: ApplyClientAuthenticationCommand,
-) : TypedServiceCommandAdapter<ClientRevokeTokenArgs, Unit>(
+) : TypedServiceCommandAdapter<ClientRevokeTokenArgs, Unit, IdkError>(
         commandId = ClientRevokeTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ClientRevokeTokenArgs>(),

@@ -129,6 +129,15 @@ data class AuthorizationSession(
     val parsedResponse: ParsedAuthorizationResponse? = null,
     val validationResult: ValidationResult? = null,
     val callback: AuthorizationSessionCallbackConfig? = null,
+    /**
+     * KMS reference (alias + provider id) for the ephemeral encryption keypair the
+     * wallet uses to encrypt a `direct_post.jwt` JARM response. Set when the auth request
+     * was created with `responseMode == DIRECT_POST_JWT`. Resolved back to a `KeyInfo` at
+     * `/auth/response` time so the verifier can decrypt. NEVER stores key material here —
+     * the private key lives in the ephemeral KMS provider (memory keystore, APP-scoped).
+     */
+    val jarmEncryptionKeyAlias: String? = null,
+    val jarmEncryptionKeyProviderId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
     val expiresAt: Long,

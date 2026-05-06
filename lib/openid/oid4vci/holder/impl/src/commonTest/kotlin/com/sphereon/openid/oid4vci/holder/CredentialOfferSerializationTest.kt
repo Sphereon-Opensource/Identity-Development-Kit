@@ -210,7 +210,6 @@ class CredentialOfferSerializationTest {
 
         val decoded = json.decodeFromString<CredentialResponse>(jsonString)
 
-        assertNull(decoded.credential, "1.1 credentials array must not populate singular credential field")
         assertNotNull(decoded.credentials)
         assertEquals(1, decoded.credentials?.size)
         assertEquals(
@@ -237,41 +236,6 @@ class CredentialOfferSerializationTest {
     }
 
     // =========================================================================
-    // Test 4: Credential Response 1.0 backward compat — singular credential
-    // =========================================================================
-
-    @Test
-    fun credentialResponse10WithSingularCredentialRoundTrip() {
-        val jsonString =
-            """
-            {
-              "credential": "eyJhbGciOiJFUzI1NiJ9.eyJ2Y...",
-              "c_nonce": "fGFF7UkhL",
-              "c_nonce_expires_in": 86400
-            }
-            """.trimIndent()
-
-        val decoded = json.decodeFromString<CredentialResponse>(jsonString)
-
-        assertNotNull(decoded.credential)
-        assertEquals("eyJhbGciOiJFUzI1NiJ9.eyJ2Y...", (decoded.credential as? JsonPrimitive)?.content)
-        assertNull(decoded.credentials, "1.0 must not have credentials array")
-        assertEquals("fGFF7UkhL", decoded.cNonce)
-        assertEquals(86400, decoded.cNonceExpiresIn)
-
-        // Round-trip
-        val reEncoded = json.encodeToString(decoded)
-        val reDecoded = json.decodeFromString<CredentialResponse>(reEncoded)
-        assertEquals(decoded, reDecoded)
-
-        // Verify wire format
-        val wireObj = json.parseToJsonElement(reEncoded).jsonObject
-        assertTrue(wireObj.containsKey("credential"), "must have singular 'credential' key")
-        assertFalse(wireObj.containsKey("credentials"), "must NOT have 'credentials' array")
-        assertEquals("fGFF7UkhL", wireObj["c_nonce"]?.jsonPrimitive?.content)
-        assertEquals(86400, wireObj["c_nonce_expires_in"]?.jsonPrimitive?.int)
-    }
-
     // =========================================================================
     // Test 5: Proofs wire format (OID4VCI 1.1 Section 9.2)
     // =========================================================================
@@ -318,7 +282,6 @@ class CredentialOfferSerializationTest {
 
         val decoded = json.decodeFromString<CredentialResponse>(jsonString)
 
-        assertNull(decoded.credential, "deferred pending must not have credential")
         assertNull(decoded.credentials, "deferred pending must not have credentials array")
         assertEquals("8xLOxBtZp8", decoded.transactionId)
         assertEquals(3600, decoded.interval)

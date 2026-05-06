@@ -21,7 +21,7 @@ import com.sphereon.openid.oid4vc.common.LogoProperties
 import com.sphereon.openid.oid4vci.common.Oid4vciJson
 import com.sphereon.openid.oid4vci.common.model.BatchCredentialIssuance
 import com.sphereon.openid.oid4vci.common.model.ClaimDisplay
-import com.sphereon.openid.oid4vci.common.model.ClaimMetadata
+import com.sphereon.openid.oid4vci.common.model.CredentialClaim
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
@@ -148,7 +148,7 @@ class SignedMetadataE2ETest {
                                     format = "jwt_vc_json",
                                     scope = "degree",
                                     cryptographicBindingMethodsSupported = listOf("did:key", "did:jwk"),
-                                    credentialSigningAlgValuesSupported = listOf("ES256", "ES384"),
+                                    credentialSigningAlgValuesSupported = listOf(JsonPrimitive("ES256"), JsonPrimitive("ES384")),
                                     credentialDefinition =
                                         CredentialDefinition(
                                             type = listOf("VerifiableCredential", "UniversityDegreeCredential"),
@@ -179,14 +179,18 @@ class SignedMetadataE2ETest {
                                     doctype = "org.iso.18013.5.1.mDL",
                                     scope = "driving_license",
                                     claims =
-                                        mapOf(
-                                            "given_name" to
-                                                ClaimMetadata(
-                                                    mandatory = true,
-                                                    valueType = "string",
-                                                    display = listOf(ClaimDisplay(name = "Given Name", locale = "en-US")),
-                                                ),
-                                            "birth_date" to ClaimMetadata(mandatory = true, valueType = "full-date"),
+                                        listOf(
+                                            CredentialClaim(
+                                                path = listOf("org.iso.18013.5.1", "given_name"),
+                                                mandatory = true,
+                                                valueType = "string",
+                                                display = listOf(ClaimDisplay(name = "Given Name", locale = "en-US")),
+                                            ),
+                                            CredentialClaim(
+                                                path = listOf("org.iso.18013.5.1", "birth_date"),
+                                                mandatory = true,
+                                                valueType = "full-date",
+                                            ),
                                         ),
                                 ),
                             "PID" to
@@ -209,7 +213,10 @@ class SignedMetadataE2ETest {
             assertEquals("jwt_vc_json", degree.format)
             assertEquals("degree", degree.scope)
             assertEquals(listOf("did:key", "did:jwk"), degree.cryptographicBindingMethodsSupported)
-            assertEquals(listOf("ES256", "ES384"), degree.credentialSigningAlgValuesSupported)
+            assertEquals(
+                listOf(JsonPrimitive("ES256"), JsonPrimitive("ES384")),
+                degree.credentialSigningAlgValuesSupported,
+            )
             val degreeDefinition = degree.credentialDefinition
             assertNotNull(degreeDefinition)
             assertEquals(listOf("VerifiableCredential", "UniversityDegreeCredential"), degreeDefinition.type)
@@ -235,7 +242,7 @@ class SignedMetadataE2ETest {
             assertEquals("mso_mdoc", license.format)
             assertEquals("org.iso.18013.5.1.mDL", license.doctype)
             assertEquals("driving_license", license.scope)
-            val givenName = license.claims?.get("given_name")
+            val givenName = license.claims?.firstOrNull { it.path == listOf("org.iso.18013.5.1", "given_name") }
             assertNotNull(givenName)
             assertTrue(givenName.mandatory == true)
             assertEquals("string", givenName.valueType)

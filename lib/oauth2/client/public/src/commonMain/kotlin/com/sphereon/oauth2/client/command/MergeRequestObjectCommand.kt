@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
@@ -77,7 +78,7 @@ data class MergedRequestObjectResult(
  * 4. Returns merged parameters as Ktor Parameters
  */
 @JsExportCompat
-interface MergeRequestObjectCommand : ServiceCommand<MergeRequestObjectArgs, MergedRequestObjectResult> {
+interface MergeRequestObjectCommand : ServiceCommand<MergeRequestObjectArgs, MergedRequestObjectResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

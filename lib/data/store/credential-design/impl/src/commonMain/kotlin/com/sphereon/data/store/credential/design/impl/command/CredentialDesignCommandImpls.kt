@@ -57,7 +57,7 @@ class CreateCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
     private val configProvider: CredentialDesignConfigProvider,
-) : TypedServiceCommandAdapter<CreateCredentialDesignArgs, CredentialDesignRecord>(
+) : TypedServiceCommandAdapter<CreateCredentialDesignArgs, CredentialDesignRecord, IdkError>(
         commandId = CreateCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateCredentialDesignArgs>(),
@@ -90,7 +90,7 @@ class CreateCredentialDesignServiceCommandImpl(
 class GetCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<GetCredentialDesignArgs, CredentialDesignRecord>(
+) : TypedServiceCommandAdapter<GetCredentialDesignArgs, CredentialDesignRecord, IdkError>(
         commandId = GetCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetCredentialDesignArgs>(),
@@ -114,7 +114,7 @@ class GetCredentialDesignServiceCommandImpl(
 class FindCredentialDesignByBindingServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<FindByBindingArgs, List<CredentialDesignRecord>>(
+) : TypedServiceCommandAdapter<FindByBindingArgs, List<CredentialDesignRecord>, IdkError>(
         commandId = FindCredentialDesignByBindingServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FindByBindingArgs>(),
@@ -138,7 +138,7 @@ class FindCredentialDesignByBindingServiceCommandImpl(
 class FindCredentialDesignByBindingKeyServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<FindByBindingKeyArgs, List<CredentialDesignRecord>>(
+) : TypedServiceCommandAdapter<FindByBindingKeyArgs, List<CredentialDesignRecord>, IdkError>(
         commandId = FindCredentialDesignByBindingKeyServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FindByBindingKeyArgs>(),
@@ -162,7 +162,7 @@ class FindCredentialDesignByBindingKeyServiceCommandImpl(
 class ListCredentialDesignsServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ListDesignsArgs, List<CredentialDesignRecord>>(
+) : TypedServiceCommandAdapter<ListDesignsArgs, List<CredentialDesignRecord>, IdkError>(
         commandId = ListCredentialDesignsServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListDesignsArgs>(),
@@ -186,7 +186,7 @@ class ListCredentialDesignsServiceCommandImpl(
 class UpdateCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<UpdateCredentialDesignArgs, CredentialDesignRecord>(
+) : TypedServiceCommandAdapter<UpdateCredentialDesignArgs, CredentialDesignRecord, IdkError>(
         commandId = UpdateCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<UpdateCredentialDesignArgs>(),
@@ -210,7 +210,7 @@ class UpdateCredentialDesignServiceCommandImpl(
 class DeleteCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<DeleteDesignArgs, Boolean>(
+) : TypedServiceCommandAdapter<DeleteDesignArgs, Boolean, IdkError>(
         commandId = DeleteCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteDesignArgs>(),

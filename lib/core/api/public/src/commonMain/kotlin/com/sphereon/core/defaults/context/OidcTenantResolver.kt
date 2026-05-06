@@ -82,7 +82,7 @@ class OidcTenantResolver : TenantResolver {
      * @return The extracted tenant ID (trimmed, lowercase)
      * @throws IllegalArgumentException if no tenant claim is found
      */
-    override fun resolveTenant(tenantInput: TenantInput): String {
+    override suspend fun resolveTenant(tenantInput: TenantInput): String {
         val claims = (tenantInput as JwtClaimsInput).claims
         return tenantClaimNames
             .firstNotNullOfOrNull { claimName ->

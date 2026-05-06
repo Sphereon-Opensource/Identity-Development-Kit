@@ -1,64 +1,57 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.sphereon.oauth2.server.authorization.impl.http
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider
+import com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceResolver
 import com.sphereon.oauth2.common.config.FeaturePolicy
+import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
-import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
-import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand
-import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
-import com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeArgs
-import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeArgs
-import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseArgs
-import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationResponseArgs
-import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
-import com.sphereon.oauth2.server.authorization.command.CreatePushedAuthorizationResponseArgs
-import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
-import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
-import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.GetUserInfoArgs
-import com.sphereon.oauth2.server.authorization.command.HandleIaeFollowUpArgs
-import com.sphereon.oauth2.server.authorization.command.HandleIaeFollowUpCommand
-import com.sphereon.oauth2.server.authorization.command.HandleIaeInitialRequestArgs
-import com.sphereon.oauth2.server.authorization.command.HandleIaeInitialRequestCommand
-import com.sphereon.oauth2.server.authorization.command.IaeResult
-import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.command.JwksResult
-import com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestArgs
-import com.sphereon.oauth2.server.authorization.command.ParseIntrospectionRequestArgs
-import com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestArgs
-import com.sphereon.oauth2.server.authorization.command.ParseRevocationRequestArgs
-import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs
-import com.sphereon.oauth2.server.authorization.command.RevokeTokenArgs
-import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
-import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
+import com.sphereon.oauth2.server.authorization.command.UserInfoResponse
+import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
+import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
+import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestArgs
+import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestCommand
+import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestArgs
+import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
-import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapperImpl
-import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
-import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
-import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
-import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
-import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
-import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
-import com.sphereon.oauth2.server.authorization.provider.UserCredentials
-import com.sphereon.oauth2.server.authorization.provider.UserInfo
-import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
-import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
-import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
+import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
+import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.JwksHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.OAuth2ServerMetadataHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.OpenidDiscoveryHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.userinfo.UserInfoHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.resource.command.ValidateAccessTokenArgs
+import com.sphereon.oauth2.server.resource.command.ValidateAccessTokenCommand
+import com.sphereon.oauth2.server.resource.error.ResourceServerError
+import com.sphereon.oauth2.server.resource.model.VerifiedResourceRequest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -84,252 +77,162 @@ private class FakeOAuth2ServersConfigProvider(
         serverId: String,
         tenantId: String,
     ): String {
-        val server = config.getServer(serverId) ?: return "http://localhost:8080"
-        return server.issuer ?: server.issuerTemplate?.replace("{tenant-id}", tenantId) ?: server.baseUrl
+        val server =
+            config.getServer(serverId)
+                ?: error("OAuth2 server '$serverId' not found in configuration")
+        return server.issuer
+            ?: server.issuerTemplate?.replace("{tenant-id}", tenantId)
+            ?: error("OAuth2 server '$serverId' has no issuer or issuerTemplate")
     }
 }
 
-private class FakeUserAuthenticationProvider : UserAuthenticationProvider {
-    override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = Ok(null)
-
-    override suspend fun initiateAuthentication(
-        sessionId: String,
-        returnUrl: String,
-        hint: AuthenticationHint?,
-    ): IdkResult<String, AuthenticationError> = Err(AuthenticationError.Generic(message = "Not implemented in test"))
-
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(message = "Not implemented in test"))
-
-    override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)
-
-    override suspend fun getUserInfo(userId: String): IdkResult<UserInfo, AuthenticationError> =
-        Ok(UserInfo(userId = userId, username = "test-user", displayName = "Test User", email = "test@example.com", emailVerified = true))
-
-    override suspend fun isAuthenticationMethodAvailable(method: AuthenticationMethod): IdkResult<Boolean, AuthenticationError> = Ok(method == AuthenticationMethod.PASSWORD)
-}
-
-private class NoOpIaeInitialCommand : HandleIaeInitialRequestCommand {
-    override val commandId: String get() = HandleIaeInitialRequestCommand.COMMAND_ID
+private class FakeHandleDiscoveryRequestCommand(
+    private val configProvider: OAuth2ServersConfigProvider,
+) : HandleDiscoveryRequestCommand {
+    override val commandId: String get() = HandleDiscoveryRequestCommand.COMMAND_ID
     override val inputTypeToken get() =
         com.sphereon.core.api.binary
-            .typeToken<HandleIaeInitialRequestArgs>()
+            .typeToken<HandleDiscoveryRequestArgs>()
     override val outputTypeToken get() =
         com.sphereon.core.api.binary
-            .typeToken<IaeResult>()
+            .typeToken<AuthorizationServerMetadata>()
     override val isEnabled: Boolean = true
 
-    override suspend fun execute(args: HandleIaeInitialRequestArgs): IdkResult<IaeResult, IdkError> = Err(IdkError.fromString(code = "NOT_IMPLEMENTED", message = "IAE not available in test"))
+    override suspend fun supports(args: Any): Boolean = args is HandleDiscoveryRequestArgs
 
-    override suspend fun supports(args: Any): Boolean = args is HandleIaeInitialRequestArgs
-}
-
-private class NoOpIaeFollowUpCommand : HandleIaeFollowUpCommand {
-    override val commandId: String get() = HandleIaeFollowUpCommand.COMMAND_ID
-    override val inputTypeToken get() =
-        com.sphereon.core.api.binary
-            .typeToken<HandleIaeFollowUpArgs>()
-    override val outputTypeToken get() =
-        com.sphereon.core.api.binary
-            .typeToken<IaeResult>()
-    override val isEnabled: Boolean = true
-
-    override suspend fun execute(args: HandleIaeFollowUpArgs): IdkResult<IaeResult, IdkError> = Err(IdkError.fromString(code = "NOT_IMPLEMENTED", message = "IAE not available in test"))
-
-    override suspend fun supports(args: Any): Boolean = args is HandleIaeFollowUpArgs
-}
-
-private class NoOpPreAuthorizedCodeStorage : PreAuthorizedCodeStorage {
-    override suspend fun storePreAuthorizedCode(
-        code: String,
-        data: PreAuthorizedCodeData,
-    ) = Err(AuthorizationServerError.StorageError(operation = "noop", details = "Not available in routing test"))
-
-    override suspend fun consumePreAuthorizedCode(code: String) = Err(AuthorizationServerError.StorageError(operation = "noop", details = "Not available in routing test"))
-
-    override suspend fun isCodeUsed(code: String) = Err(AuthorizationServerError.StorageError(operation = "noop", details = "Not available in routing test"))
-}
-
-// ============================================================================
-// Test helper to build adapter with fakes
-// ============================================================================
-
-/**
- * Builds an OAuth2HttpAdapter using a real AuthorizationServerService from the
- * DI graph and lightweight fakes for config, auth, and IAE commands.
- *
- * NOTE: These tests require the impl module's DI graph to resolve
- * AuthorizationServerService. If this is unavailable (cross-module test source
- * visibility), these tests should be moved to the impl module or converted to
- * pure-fake tests. For now we construct the adapter with fakes for the parts
- * we can't resolve here.
- */
-private fun buildAdapter(configProvider: OAuth2ServersConfigProvider): OAuth2HttpAdapter =
-    OAuth2HttpAdapter(
-        // AuthorizationServerService cannot be resolved without the full DI graph.
-        // These tests exercise HTTP routing and config-gated feature checks, not
-        // deep business logic. We pass a minimal no-op service stub.
-        authorizationServerService = NoOpAuthorizationServerService(),
-        configProvider = configProvider,
-        userAuthProvider = FakeUserAuthenticationProvider(),
-        scopeClaimsMapper = OidcScopeClaimsMapperImpl(),
-        handleIaeInitialRequestCommand = NoOpIaeInitialCommand(),
-        handleIaeFollowUpCommand = NoOpIaeFollowUpCommand(),
-        preAuthorizedCodeStorage = NoOpPreAuthorizedCodeStorage(),
-    )
-
-/**
- * Minimal stub — the tests below only exercise discovery, userinfo gating,
- * and JWKS routing, none of which require a real AuthorizationServerService.
- * All methods throw; tests that exercise these paths will fail explicitly.
- */
-private class NoOpAuthorizationServerService : AuthorizationServerService {
-    private fun err(): Nothing = throw NotImplementedError("Not available in routing test")
-
-    override suspend fun parseTokenRequest(args: ParseTokenRequestArgs) = err()
-
-    override suspend fun verifyAuthorizationCodeGrant(args: VerifyAuthorizationCodeGrantArgs) = err()
-
-    override suspend fun verifyRefreshTokenGrant(args: VerifyRefreshTokenGrantArgs) = err()
-
-    override suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs) = err()
-
-    override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs) = err()
-
-    override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs) = err()
-
-    override suspend fun createAccessToken(args: CreateAccessTokenArgs) = err()
-
-    override suspend fun createRefreshToken(args: CreateRefreshTokenArgs) = err()
-
-    override suspend fun createTokenResponse(args: CreateTokenResponseArgs) = err()
-
-    override suspend fun parseAuthorizationRequest(args: ParseAuthorizationRequestArgs) = err()
-
-    override suspend fun verifyAuthorizationRequest(args: AuthorizationRequestData) = err()
-
-    override suspend fun createAuthorizationSession(args: VerifiedAuthorizationRequest) = err()
-
-    override suspend fun createAuthorizationCode(args: CreateAuthorizationCodeArgs) = err()
-
-    override suspend fun createAuthorizationResponse(args: CreateAuthorizationResponseArgs) = err()
-
-    override suspend fun createAuthorizationErrorResponse(args: CreateAuthorizationErrorResponseArgs) = err()
-
-    override suspend fun parsePushedAuthorizationRequest(args: ParsePushedAuthorizationRequestArgs) = err()
-
-    override suspend fun verifyPushedAuthorizationRequest(args: VerifyPushedAuthorizationRequestArgs) = err()
-
-    override suspend fun createRequestUri(args: VerifiedAuthorizationRequest) = err()
-
-    override suspend fun createPushedAuthorizationResponse(args: CreatePushedAuthorizationResponseArgs) = err()
-
-    override suspend fun retrieveAuthorizationRequestByUri(requestUri: String) = err()
-
-    override suspend fun parseIntrospectionRequest(args: ParseIntrospectionRequestArgs) = err()
-
-    override suspend fun introspectToken(args: IntrospectTokenArgs) = err()
-
-    override suspend fun parseRevocationRequest(args: ParseRevocationRequestArgs) = err()
-
-    override suspend fun revokeToken(args: RevokeTokenArgs) = err()
-
-    override suspend fun buildServerMetadata(args: BuildServerMetadataArgs): IdkResult<AuthorizationServerMetadata, IdkError> {
-        val config = FakeOAuth2ServersConfigProvider().getDefaultServer()
+    override suspend fun execute(args: HandleDiscoveryRequestArgs): IdkResult<AuthorizationServerMetadata, IdkError> {
+        val server = configProvider.getDefaultServer()
+        val base =
+            server.issuer ?: args.baseUrlOverride
+                ?: return Err(
+                    IdkError.fromString(
+                        code = "server_error",
+                        message = "OAuth2 server has no issuer configured and no request-time baseUrl override",
+                    ),
+                )
         return Ok(
             AuthorizationServerMetadata(
-                issuer = config.baseUrl,
-                tokenEndpoint = "${config.baseUrl}/token",
-                authorizationEndpoint = "${config.baseUrl}/authorize",
-                jwksUri = "${config.baseUrl}/.well-known/jwks.json",
+                issuer = base,
+                tokenEndpoint = "$base/token",
+                authorizationEndpoint = "$base/authorize",
+                jwksUri = "$base/.well-known/jwks.json",
             ),
         )
     }
+}
 
-    override suspend fun verifyClientAuthentication(args: VerifyClientAuthenticationArgs) = err()
+private class FakeHandleUserInfoRequestCommand : HandleUserInfoRequestCommand {
+    override val commandId: String get() = HandleUserInfoRequestCommand.COMMAND_ID
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<HandleUserInfoRequestArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<UserInfoResponse>()
+    override val isEnabled: Boolean = true
 
-    override suspend fun createAttestationChallenge(args: CreateAttestationChallengeArgs) = err()
+    override suspend fun supports(args: Any): Boolean = args is HandleUserInfoRequestArgs
 
-    override suspend fun createIdToken(args: CreateIdTokenArgs) = err()
+    override suspend fun execute(args: HandleUserInfoRequestArgs): IdkResult<UserInfoResponse, IdkError> = Err(IdkError.fromString(code = "invalid_token", message = "Test user info command"))
+}
 
-    override suspend fun getUserInfo(args: GetUserInfoArgs) = err()
+private class FakeHandleJwksRequestCommand : HandleJwksRequestCommand {
+    override val commandId: String get() = HandleJwksRequestCommand.COMMAND_ID
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<HandleJwksRequestArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<JwksResult>()
+    override val isEnabled: Boolean = true
 
-    override suspend fun getJwks(args: GetJwksArgs): IdkResult<JwksResult, IdkError> = Ok(JwksResult(keys = emptyList()))
+    override suspend fun supports(args: Any): Boolean = args is HandleJwksRequestArgs
 
-    override val commands: AuthorizationServerService.Commands =
-        object : AuthorizationServerService.Commands {
-            override val parseTokenRequest get() = err()
-            override val verifyAuthorizationCodeGrant get() = err()
-            override val verifyRefreshTokenGrant get() = err()
-            override val verifyClientCredentialsGrant get() = err()
-            override val verifyTokenExchangeGrant get() = err()
-            override val verifyPreAuthorizedCodeGrant get() = err()
-            override val createAccessToken get() = err()
-            override val createRefreshToken get() = err()
-            override val createTokenResponse get() = err()
-            override val parseAuthorizationRequest get() = err()
-            override val verifyAuthorizationRequest get() = err()
-            override val createAuthorizationSession get() = err()
-            override val createAuthorizationCode get() = err()
-            override val createAuthorizationResponse get() = err()
-            override val createAuthorizationErrorResponse get() = err()
-            override val parsePushedAuthorizationRequest get() = err()
-            override val verifyPushedAuthorizationRequest get() = err()
-            override val createRequestUri get() = err()
-            override val createPushedAuthorizationResponse get() = err()
-            override val retrieveAuthorizationRequestByUri get() = err()
-            override val parseIntrospectionRequest get() = err()
-            override val introspectToken get() = err()
-            override val parseRevocationRequest get() = err()
-            override val revokeToken get() = err()
-            override val buildServerMetadata: BuildServerMetadataCommand =
-                object : BuildServerMetadataCommand {
-                    override val commandId: String get() = BuildServerMetadataCommand.COMMAND_ID
-                    override val inputTypeToken get() =
-                        com.sphereon.core.api.binary
-                            .typeToken<BuildServerMetadataArgs>()
-                    override val outputTypeToken get() =
-                        com.sphereon.core.api.binary
-                            .typeToken<AuthorizationServerMetadata>()
-                    override val isEnabled: Boolean = true
-
-                    override suspend fun execute(args: BuildServerMetadataArgs): IdkResult<AuthorizationServerMetadata, IdkError> {
-                        val config = FakeOAuth2ServersConfigProvider().getDefaultServer()
-                        return Ok(
-                            AuthorizationServerMetadata(
-                                issuer = config.baseUrl,
-                                tokenEndpoint = "${config.baseUrl}/token",
-                                authorizationEndpoint = "${config.baseUrl}/authorize",
-                                jwksUri = "${config.baseUrl}/.well-known/jwks.json",
-                            ),
-                        )
-                    }
-
-                    override suspend fun supports(args: Any): Boolean = args is BuildServerMetadataArgs
-                }
-            override val verifyClientAuthentication get() = err()
-            override val createAttestationChallenge get() = err()
-            override val createIdToken get() = err()
-            override val getUserInfo get() = err()
-            override val getJwks: GetJwksCommand =
-                object : GetJwksCommand {
-                    override val commandId: String get() = GetJwksCommand.COMMAND_ID
-                    override val inputTypeToken get() =
-                        com.sphereon.core.api.binary
-                            .typeToken<GetJwksArgs>()
-                    override val outputTypeToken get() =
-                        com.sphereon.core.api.binary
-                            .typeToken<JwksResult>()
-                    override val isEnabled: Boolean = true
-
-                    override suspend fun execute(args: GetJwksArgs): IdkResult<JwksResult, IdkError> = Ok(JwksResult(keys = emptyList()))
-
-                    override suspend fun supports(args: Any): Boolean = args is GetJwksArgs
-                }
-        }
+    override suspend fun execute(args: HandleJwksRequestArgs): IdkResult<JwksResult, IdkError> = Ok(JwksResult(keys = emptyList()))
 }
 
 /**
- * Tests for OIDC-specific HTTP endpoints:
+ * Fake [ValidateAccessTokenCommand] for the userinfo adapter tests in this file. Always rejects
+ * with a generic `invalid_token` so the negative-path assertions can verify the HTTP shell maps
+ * resource-server errors to the right wire shape; the positive-path assertions in this file do
+ * not invoke userinfo through validate.
+ */
+private object FakeRejectingValidateAccessToken : ValidateAccessTokenCommand {
+    override val commandId: String get() = ValidateAccessTokenCommand.COMMAND_ID
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<ValidateAccessTokenArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<VerifiedResourceRequest>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is ValidateAccessTokenArgs
+
+    override suspend fun execute(args: ValidateAccessTokenArgs): IdkResult<VerifiedResourceRequest, IdkError> =
+        Err(
+            IdkError.fromDTO(
+                ResourceServerError.InvalidToken(reason = "test stub: validate not configured"),
+            ),
+        )
+}
+
+private object FakeNoOpDpopNonceManager : com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager {
+    override suspend fun currentNonce(): String = "test-nonce-current"
+
+    override suspend fun rotate(): String = "test-nonce-rotated"
+
+    override suspend fun isValid(nonce: String): Boolean = true
+}
+
+private object FakeNoOpClientCertExtractor :
+    com.sphereon.oauth2.server.authorization.command.clientauth.ClientCertificateExtractor {
+    override suspend fun extractCertificate(request: GenericHttpRequest): IdkResult<ByteArray?, com.sphereon.oauth2.server.authorization.error.AuthorizationServerError> = Ok(null)
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+private fun execution(): SessionExecution = TestSessionExecution()
+
+private fun resolverFor(configProvider: OAuth2ServersConfigProvider): OAuth2ServerInstanceResolver = DefaultOAuth2ServerInstanceResolver(configProvider)
+
+private fun idProvider(): MutableOAuth2ServerInstanceIdProvider = DefaultOAuth2ServerInstanceIdProvider()
+
+private fun discoveryAdapter(configProvider: OAuth2ServersConfigProvider): OAuth2DiscoveryHttpAdapter {
+    val exec = execution()
+    val handleDiscoveryCommand = FakeHandleDiscoveryRequestCommand(configProvider)
+    return OAuth2DiscoveryHttpAdapter(
+        execution = exec,
+        asInstanceResolver = resolverFor(configProvider),
+        asInstanceIdProvider = idProvider(),
+        oauth2ServerMetadataCommand = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider),
+        openidDiscoveryCommand = OpenidDiscoveryHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider),
+        jwksCommand = JwksHttpEndpointCommandImpl(exec, FakeHandleJwksRequestCommand()),
+    )
+}
+
+private fun userInfoAdapter(configProvider: OAuth2ServersConfigProvider): OAuth2UserInfoHttpAdapter {
+    val exec = execution()
+    return OAuth2UserInfoHttpAdapter(
+        execution = exec,
+        asInstanceResolver = resolverFor(configProvider),
+        asInstanceIdProvider = idProvider(),
+        userInfoEndpointCommand =
+            UserInfoHttpEndpointCommandImpl(
+                execution = exec,
+                handleUserInfoRequestCommand = FakeHandleUserInfoRequestCommand(),
+                validateAccessTokenCommand = FakeRejectingValidateAccessToken,
+                configProvider = configProvider,
+                dpopNonceManager = FakeNoOpDpopNonceManager,
+                clientCertificateExtractor = FakeNoOpClientCertExtractor,
+            ),
+    )
+}
+
+/**
+ * Tests for OIDC-specific HTTP endpoints, covering the discovery and user-info surfaces:
  * - GET /.well-known/openid-configuration
  * - GET /userinfo
  * - GET /.well-known/jwks.json
@@ -351,14 +254,14 @@ class OAuth2HttpAdapterOidcTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.SUPPORTED,
                                         introspection = FeaturePolicy.SUPPORTED,
                                     ),
                             ),
                     ),
                 )
-            val adapter = buildAdapter(configProvider)
+            val adapter = discoveryAdapter(configProvider)
 
             val request =
                 GenericHttpRequest(
@@ -385,13 +288,13 @@ class OAuth2HttpAdapterOidcTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.DISABLED,
                                     ),
                             ),
                     ),
                 )
-            val adapter = buildAdapter(configProvider)
+            val adapter = discoveryAdapter(configProvider)
 
             val request =
                 GenericHttpRequest(
@@ -421,13 +324,13 @@ class OAuth2HttpAdapterOidcTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.DISABLED,
                                     ),
                             ),
                     ),
                 )
-            val adapter = buildAdapter(configProvider)
+            val adapter = userInfoAdapter(configProvider)
 
             val request =
                 GenericHttpRequest(
@@ -454,13 +357,13 @@ class OAuth2HttpAdapterOidcTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.SUPPORTED,
                                     ),
                             ),
                     ),
                 )
-            val adapter = buildAdapter(configProvider)
+            val adapter = userInfoAdapter(configProvider)
 
             val request =
                 GenericHttpRequest(
@@ -483,7 +386,7 @@ class OAuth2HttpAdapterOidcTest {
     fun jwksEndpointReturns200() =
         runTest {
             val configProvider = FakeOAuth2ServersConfigProvider()
-            val adapter = buildAdapter(configProvider)
+            val adapter = discoveryAdapter(configProvider)
 
             val request =
                 GenericHttpRequest(
@@ -512,13 +415,13 @@ class OAuth2HttpAdapterOidcTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.DISABLED,
                                     ),
                             ),
                     ),
                 )
-            val adapter = buildAdapter(configProvider)
+            val adapter = discoveryAdapter(configProvider)
 
             val request =
                 GenericHttpRequest(
@@ -529,30 +432,5 @@ class OAuth2HttpAdapterOidcTest {
 
             val response = adapter.handleRequest(request)
             assertEquals(200, response.statusCode)
-        }
-
-    // ========================================================================
-    // Federation Callback
-    // ========================================================================
-
-    @Test
-    fun federationCallbackReturns404WithoutProvider() =
-        runTest {
-            val configProvider = FakeOAuth2ServersConfigProvider()
-            val adapter = buildAdapter(configProvider)
-
-            val request =
-                GenericHttpRequest(
-                    method = "GET",
-                    path = "/federation/callback",
-                    queryParameters = mapOf("code" to "test-code", "state" to "test-state"),
-                    headers = mapOf("host" to "auth.example.com"),
-                )
-
-            val response = adapter.handleRequest(request)
-
-            assertEquals(404, response.statusCode)
-            val body = json.parseToJsonElement(response.body!!)
-            assertEquals("not_found", body.jsonObject["error"]?.jsonPrimitive?.content)
         }
 }

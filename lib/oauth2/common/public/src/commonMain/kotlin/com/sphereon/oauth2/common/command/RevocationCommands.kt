@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
@@ -48,10 +49,10 @@ data class ClientRevokeTokenArgs(
  * HTTP 200 regardless of whether the revocation was successful.
  */
 @JsExportCompat
-interface ClientRevokeTokenCommand : ServiceCommand<ClientRevokeTokenArgs, Unit> {
+interface ClientRevokeTokenCommand : ServiceCommand<ClientRevokeTokenArgs, Unit, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oauth2.client.revocation.execute"
+        const val COMMAND_ID = "oauth2.client.revoke-token"
     }
 }

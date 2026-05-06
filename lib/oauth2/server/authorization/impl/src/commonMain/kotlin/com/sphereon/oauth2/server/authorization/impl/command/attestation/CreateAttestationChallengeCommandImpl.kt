@@ -39,7 +39,7 @@ import kotlin.native.ObjCName
 class CreateAttestationChallengeCommandImpl(
     execution: SessionExecution,
     private val challengeStorage: AttestationChallengeStorage,
-) : TypedServiceCommandAdapter<CreateAttestationChallengeArgs, AttestationChallengeResponse>(
+) : TypedServiceCommandAdapter<CreateAttestationChallengeArgs, AttestationChallengeResponse, IdkError>(
         commandId = CreateAttestationChallengeCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateAttestationChallengeArgs>(),

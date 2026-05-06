@@ -41,7 +41,7 @@ class CommandInvokerTest {
         private val executeResult: IdkResult<Int, IdkError> = Ok(42),
         private val supportsException: Throwable? = null,
         private val executeException: Throwable? = null,
-    ) : ServiceCommand<String, Int> {
+    ) : ServiceCommand<String, Int, IdkError> {
         override val subsystem: EventSubsystem = EventSubsystems.CUSTOM
         override val inputTypeToken: TypeToken<String> = TypeToken.UNIT as TypeToken<String>
         override val outputTypeToken: TypeToken<Int> = TypeToken.UNIT as TypeToken<Int>
@@ -62,9 +62,9 @@ class CommandInvokerTest {
     }
 
     private class FakeRegistry(
-        private val commands: Map<String, ServiceCommand<*, *>> = emptyMap(),
+        private val commands: Map<String, ServiceCommand<*, *, *>> = emptyMap(),
     ) : SessionScopedCommandRegistry {
-        override fun get(commandId: String): ServiceCommand<*, *>? = commands[commandId]
+        override fun get(commandId: String): ServiceCommand<*, *, *>? = commands[commandId]
 
         override fun has(commandId: String): Boolean = commands.containsKey(commandId)
 
@@ -107,7 +107,7 @@ class CommandInvokerTest {
         val command = TestServiceCommand(commandId = "core.test.get")
         val executor = SessionScopeCommandInvoker(FakeRegistry(mapOf("core.test.get" to command)))
 
-        // ServiceCommand<*, *> is a supertype, but a specific unrelated interface cast will fail
+        // ServiceCommand<*, *, *> is a supertype, but a specific unrelated interface cast will fail
         // Since TestServiceCommand doesn't implement some other interface, cast to String will fail
         val resolved = executor.resolve(commandId = "core.test.get") as? String
 

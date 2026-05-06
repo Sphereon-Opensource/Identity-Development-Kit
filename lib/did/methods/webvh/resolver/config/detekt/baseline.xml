@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:FetchWebvhLogServiceCommandImpl.kt$FetchWebvhLogServiceCommandImpl$override suspend fun doExecute( args: FetchWebvhLogInput, applyDuring: (FetchWebvhLogInput) -> FetchWebvhLogInput, ): IdkResult&lt;FetchWebvhLogOutput, IdkError></ID>
+    <ID>ReturnCount:FetchWebvhLogServiceCommandImpl.kt$FetchWebvhLogServiceCommandImpl$private fun filter( entries: List&lt;WebvhLogEntry>, input: FetchWebvhLogInput ): List&lt;WebvhLogEntry></ID>
+    <ID>ReturnCount:ReplayWebvhLogServiceCommandImpl.kt$ReplayWebvhLogServiceCommandImpl$private fun resolveSelector(input: ReplayWebvhLogInput): ReplaySelector</ID>
+    <ID>ReturnCount:WebvhDidResolverImpl.kt$WebvhDidResolverImpl$override suspend fun dereference( didUrl: String, options: DidDereferenceOptions, ): IdkResult&lt;DidDereferenceResult, IdkError></ID>
+    <ID>ReturnCount:WebvhDidResolverImpl.kt$WebvhDidResolverImpl$override suspend fun resolve( did: String, options: DidResolutionOptions, ): IdkResult&lt;DidResolutionResult, IdkError></ID>
+    <ID>ReturnCount:WebvhEntryProofVerifier.kt$WebvhEntryProofVerifier$private suspend fun verifyOneProof( entry: WebvhLogEntry, proof: DataIntegrityProof, activeUpdateKeys: List&lt;String>, ): Boolean</ID>
+    <ID>ReturnCount:WebvhLogReplayerImpl.kt$WebvhLogReplayerImpl$override suspend fun replay( did: String, entries: List&lt;WebvhLogEntry>, witnessFile: WebvhWitnessFile?, selector: ReplaySelector, ): IdkResult&lt;ReplayResult, IdkError></ID>
+    <ID>ReturnCount:WebvhLogReplayerImpl.kt$WebvhLogReplayerImpl$private suspend fun validateAndApplyEntry( entry: WebvhLogEntry, index: Int, state: ReplayState, ): IdkResult&lt;ReplayState, IdkError></ID>
+    <ID>ReturnCount:WebvhLogReplayerImpl.kt$WebvhLogReplayerImpl$private suspend fun verifyWitnessFile( params: WebvhParameters, witnessFile: WebvhWitnessFile?, latestVersionId: String, ): IdkResult&lt;Unit, IdkError></ID>
+    <ID>ReturnCount:WebvhWitnessProofVerifier.kt$WebvhWitnessProofVerifier$suspend fun isValidWitnessProof( versionId: String, proof: DataIntegrityProof, ): Boolean</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -175,7 +175,15 @@ class CoseCryptoProviderToCallbackAdapter(
         keyInfo: KeyInfoType<*>?,
         requireX5Chain: Boolean?,
     ): VerifySignatureResultType<CoseKeyType> {
-        val chain = input.unprotectedHeader?.x5chain?.value
+        // RFC 9052 §3.1: x5chain is a header parameter that may appear in EITHER the protected
+        // OR unprotected header of a COSE_Sign1. ISO 18013-5 §9.1.2.4 specifically allows mdoc
+        // IssuerAuth to carry x5chain in the protected header (and conformance test mdocs do).
+        // Check both — protected first, since that's where the issuer's authenticated chain
+        // belongs when integrity-protected (RFC 9052 §1.4 "the protected header is integrity
+        // protected by the signature").
+        val chain =
+            input.protectedHeader.x5chain?.value
+                ?: input.unprotectedHeader?.x5chain?.value
         var chainKeyInfo: ResolvedKeyInfoType<Jwk>? = null
         if (chain?.isNotEmpty() == true && keyInfo == null) {
             val cert = x509CertificateFromDer(chain.first().value)
@@ -185,7 +193,21 @@ class CoseCryptoProviderToCallbackAdapter(
         require(chainKeyInfo != null || keyInfo != null) { "No key info supplied for verify1" }
         val resolvedKeyInfo = chainKeyInfo ?: this.resolvePublicKey(keyInfo!!)
         val key = resolvedKeyInfo.key
-        val alg = resolvedKeyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm() ?: throw IllegalArgumentException("No alg was supplied for key")
+        // Algorithm precedence per RFC 9052 §4.4 ("Signing and Verification Process"):
+        //   the COSE_Sign1 protected header `alg` is the authoritative algorithm. The COSE
+        //   key may carry an `alg` constraint (RFC 9052 §7.1) but it isn't always set —
+        //   ISO 18013-5 mdoc DeviceKeys typically omit it and rely on the COSE_Sign1 header.
+        // Order of attempts:
+        //   1. Resolved keyInfo's signatureAlgorithm (caller hint).
+        //   2. The key's own alg (when present, e.g. JWK with alg).
+        //   3. The COSE_Sign1 protected header alg (RFC 9052 authoritative source).
+        val alg =
+            resolvedKeyInfo.signatureAlgorithm
+                ?: key.getSignatureAlgorithm()
+                ?: input.protectedHeader.alg?.let { SignatureAlgorithm.fromCose(it) }
+                ?: throw IllegalArgumentException(
+                    "No alg was supplied for key (and the COSE_Sign1 protected header carried none).",
+                )
         require(input.payload?.value !== null) { "Null payload supplied to verify signature" }
 
         val recalculatedToBeSignedCbor =
@@ -212,7 +234,7 @@ class CoseCryptoProviderToCallbackAdapter(
                 } else {
                     "Signature invalid"
                 },
-            name = "Cose verify1",
+            name = com.sphereon.crypto.core.CryptoConst.COSE_LITERAL,
         )
     }
 

@@ -56,7 +56,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class FollowUpIaeCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<FollowUpIaeArgs, IaeHolderResult>(
+) : TypedServiceCommandAdapter<FollowUpIaeArgs, IaeHolderResult, IdkError>(
         commandId = FollowUpIaeCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FollowUpIaeArgs>(),

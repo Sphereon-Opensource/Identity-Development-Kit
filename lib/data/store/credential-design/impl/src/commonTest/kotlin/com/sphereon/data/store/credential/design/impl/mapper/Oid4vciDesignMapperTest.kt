@@ -31,6 +31,7 @@ import com.sphereon.data.store.credential.design.model.ResolvedCredentialDesign
 import com.sphereon.data.store.credential.design.model.SdPolicy
 import com.sphereon.openid.oid4vci.common.model.ClaimDisplay
 import com.sphereon.openid.oid4vci.common.model.ClaimMetadata
+import com.sphereon.openid.oid4vci.common.model.CredentialClaim
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialMetadata
@@ -452,12 +453,12 @@ class Oid4vciDesignMapperTest {
                             .DisplayProperties(name = "Employee Credential", locale = "en-US"),
                     ),
                 claims =
-                    mapOf(
-                        "employee_id" to
-                            ClaimMetadata(
-                                mandatory = true,
-                                display = listOf(ClaimDisplay(name = "Employee ID", locale = "en-US")),
-                            ),
+                    listOf(
+                        CredentialClaim(
+                            path = listOf("employee_id"),
+                            mandatory = true,
+                            display = listOf(ClaimDisplay(name = "Employee ID", locale = "en-US")),
+                        ),
                     ),
             )
 

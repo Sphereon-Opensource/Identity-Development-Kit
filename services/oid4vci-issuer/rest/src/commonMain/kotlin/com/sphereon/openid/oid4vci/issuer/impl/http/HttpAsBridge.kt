@@ -29,6 +29,8 @@ import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
+import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.openid.oid4vci.issuer.bridge.AugmentAsMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.AuthorizationContextRef
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
@@ -64,6 +66,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * HTTP-based AS bridge for separate-process deployments.
@@ -82,6 +86,8 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class HttpAsBridge(
     private val execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
+    private val verifyDpopProofCommand: VerifyDpopProofCommand,
+    private val dpopProofJtiCache: com.sphereon.oauth2.server.authorization.dpop.DpopProofJtiCache,
 ) : Oid4vciAuthorizationServerBridge {
     private val httpClient: HttpClient by lazy {
         httpClientFactory.createClient(HttpClientOptions())
@@ -183,6 +189,52 @@ class HttpAsBridge(
             val clientId = introspection["client_id"]?.jsonPrimitive?.content ?: ""
             val scope = introspection["scope"]?.jsonPrimitive?.content
 
+            // RFC 9449 §7.1: when the access token carries `cnf.jkt`, the resource server MUST
+            // verify the DPoP proof binds the request to that key. Skipping this is what makes
+            // every DPoP negative test (wrong jkt, missing ath, replayed jti, etc.) succeed.
+            val cnfJkt =
+                introspection["cnf"]
+                    ?.jsonObject
+                    ?.get("jkt")
+                    ?.jsonPrimitive
+                    ?.content
+            if (cnfJkt != null) {
+                val proof =
+                    args.dpopProof
+                        ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "DPoP proof required for DPoP-bound access token (RFC 9449 §7.1)"))
+                val httpUrl = args.httpUrl
+                val httpMethod = args.httpMethod
+                if (httpUrl == null || httpMethod == null) {
+                    return Err(IdkError.UNKNOWN_ERROR(message = "Resource endpoint did not propagate request URL/method for DPoP htu/htm verification"))
+                }
+                val verified =
+                    verifyDpopProofCommand
+                        .execute(
+                            VerifyDpopProofOptions(
+                                dpopProof = proof,
+                                httpMethod = httpMethod,
+                                httpUrl = httpUrl,
+                                accessToken = args.accessToken,
+                                expectedJwkThumbprint = cnfJkt,
+                            ),
+                        ).getOrElse { error ->
+                            return Err(IdkError.UNAUTHORIZED_ERROR(message = "Invalid DPoP proof: ${error.message.defaultMessage}"))
+                        }
+                // RFC 9449 §11.1: protect against proof replay by tracking each `jti` for the
+                // proof iat tolerance window (60s + 60s skew = 120s). The same jti presented
+                // twice within that window is a replay and MUST be rejected — this matches the
+                // FAPI2 conformance suite's `…-dpop-negative-tests` "DPoP reuse" probe.
+                val jti = verified.payload.jti
+                if (dpopProofJtiCache.hasBeenUsed(jti)) {
+                    return Err(IdkError.UNAUTHORIZED_ERROR(message = "DPoP proof jti '$jti' has already been used (replay)"))
+                }
+                val jtiWindowSeconds =
+                    configService.getProperty(CONFIG_JTI_REPLAY_WINDOW_SECONDS, Long::class, DEFAULT_JTI_REPLAY_WINDOW_SECONDS)
+                        ?: DEFAULT_JTI_REPLAY_WINDOW_SECONDS
+                val jtiExpiresAt = Instant.fromEpochSeconds(verified.payload.iat) + jtiWindowSeconds.seconds
+                dpopProofJtiCache.markAsUsed(jti, jtiExpiresAt)
+            }
+
             val authDetailsArray =
                 introspection["authorization_details"]?.let { ad ->
                     try {
@@ -209,6 +261,7 @@ class HttpAsBridge(
                     scope = scope,
                     credentialConfigurationIds = credentialConfigurationIds,
                     credentialIdentifiers = credentialIdentifiers.ifEmpty { null },
+                    cnfJkt = cnfJkt,
                 ),
             )
         } catch (expected: Exception) {
@@ -231,6 +284,14 @@ class HttpAsBridge(
 
     companion object {
         const val CONFIG_PREFIX = "oid4vci.issuer.as-bridge"
+
+        /**
+         * RFC 9449 §11.1: jti-replay tracking window in seconds. Default covers the verifier's
+         * full `iat` tolerance band (`max-age + clock-skew`, both 60s by default) so a captured
+         * proof cannot be replayed before its `iat` ages out. Override via config.
+         */
+        const val CONFIG_JTI_REPLAY_WINDOW_SECONDS: String = "oid4vci.issuer.dpop.jti-replay-window-seconds"
+        const val DEFAULT_JTI_REPLAY_WINDOW_SECONDS: Long = 120L
     }
 }
 

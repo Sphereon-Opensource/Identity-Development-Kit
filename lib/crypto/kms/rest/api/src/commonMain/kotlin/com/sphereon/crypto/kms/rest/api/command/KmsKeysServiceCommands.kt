@@ -16,6 +16,7 @@
 
 package com.sphereon.crypto.kms.rest.api.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -154,7 +155,7 @@ data class RegisterKeyReferenceResponse(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetKeyServiceCommand", exact = true)
 interface GetKeyServiceCommand :
-    ServiceCommand<GetKeyInput, GetKeyResponse>,
+    ServiceCommand<GetKeyInput, GetKeyResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.get"
@@ -182,7 +183,7 @@ interface GetKeyServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ListKeysServiceCommand", exact = true)
 interface ListKeysServiceCommand :
-    ServiceCommand<ListKeysInput, ListKeysResponse>,
+    ServiceCommand<ListKeysInput, ListKeysResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.list"
@@ -210,7 +211,7 @@ interface ListKeysServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("StoreKeyServiceCommand", exact = true)
 interface StoreKeyServiceCommand :
-    ServiceCommand<StoreKeyInput, StoreKeyResponse>,
+    ServiceCommand<StoreKeyInput, StoreKeyResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.store"
@@ -239,7 +240,7 @@ interface StoreKeyServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyServiceCommand", exact = true)
 interface GenerateKeyServiceCommand :
-    ServiceCommand<GenerateKeyInput, GenerateKeyResponse>,
+    ServiceCommand<GenerateKeyInput, GenerateKeyResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.generate"
@@ -268,7 +269,7 @@ interface GenerateKeyServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteKeyServiceCommand", exact = true)
 interface DeleteKeyServiceCommand :
-    ServiceCommand<DeleteKeyInput, DeleteKeyOutput>,
+    ServiceCommand<DeleteKeyInput, DeleteKeyOutput, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.delete"
@@ -296,7 +297,7 @@ interface DeleteKeyServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RegisterKeyReferenceServiceCommand", exact = true)
 interface RegisterKeyReferenceServiceCommand :
-    ServiceCommand<RegisterKeyReferenceInput, RegisterKeyReferenceResponse>,
+    ServiceCommand<RegisterKeyReferenceInput, RegisterKeyReferenceResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.register"

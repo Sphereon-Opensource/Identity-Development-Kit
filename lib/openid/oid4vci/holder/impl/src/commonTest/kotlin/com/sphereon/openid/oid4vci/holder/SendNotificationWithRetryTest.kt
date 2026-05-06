@@ -182,7 +182,7 @@ class SendNotificationWithRetryTest {
 
     @Test
     fun commandIdIsCorrect() {
-        assertEquals("oid4vci.holder.flow.notifyretry", SendNotificationWithRetryCommand.COMMAND_ID)
+        assertEquals("oid4vci.holder.notify-retry", SendNotificationWithRetryCommand.COMMAND_ID)
     }
 
     // ============================================================================

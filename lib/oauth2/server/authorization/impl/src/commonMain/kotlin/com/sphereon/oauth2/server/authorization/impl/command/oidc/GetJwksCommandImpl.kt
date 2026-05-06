@@ -25,25 +25,40 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOpts
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
+import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.resolution.managed.ManagedOptsKid
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.crypto.resolution.tryManagedIdentifierToJwk
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.JwksResult
+import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
+import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Implementation of GetJwksCommand
+ * Default tenant identifier the JWKS publication uses when no per-request tenant has been
+ * threaded through the session. Mirrors the constant in `DefaultOAuth2ConfigModule`; lifted
+ * here as a private const rather than a shared one because the two consumers are in different
+ * source sets (commonMain vs jvmMain).
+ */
+private const val DEFAULT_SIGNING_KEY_TENANT = "default"
+
+/**
+ * Implementation of GetJwksCommand.
  *
- * Returns the server's public signing key(s) for ID token and access token verification.
- * Always available (needed for JWT access token verification regardless of OIDC mode).
+ * Returns every publishable signing key for the default tenant — i.e. the highest-priority
+ * `ACTIVE` key plus any `LEGACY` keys that still verify in-flight tokens issued before the
+ * most recent rotation. RPs cache the JWKS and look up by `kid`, so as long as the tenant's
+ * key history is in the store, every issued token's verification key is reachable.
+ *
+ * Replaces the earlier single-`serverIdentifier`-by-alias model. Multi-key publication is
+ * required for safe rotation: an RP that fetched the previous JWKS still has the LEGACY key
+ * for verifying tokens issued before the rotation completed.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -51,9 +66,9 @@ import kotlin.native.ObjCName
 @ObjCName("GetJwksCommandImpl", exact = true)
 class GetJwksCommandImpl(
     execution: SessionExecution,
-    @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
+    private val signingKeyStore: SigningKeyStore,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
-) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult>(
+) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult, IdkError>(
         commandId = GetJwksCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetJwksArgs>(),
@@ -73,28 +88,48 @@ class GetJwksCommandImpl(
     }
 
     private suspend fun executeInternal(): IdkResult<JwksResult, IdkError> {
-        if (serverIdentifier == null) {
+        val publishableResult = signingKeyStore.listPublishable(DEFAULT_SIGNING_KEY_TENANT)
+        if (!publishableResult.isOk) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to list publishable signing keys: ${publishableResult.error}"))
+        }
+        val publishable = publishableResult.value
+        if (publishable.isEmpty()) {
+            // Empty JWKS is the documented response shape when no key is registered; RPs
+            // treat it as "no public verification key available". Keeps the endpoint healthy
+            // during pre-bootstrap or post-emergency-revoke states.
             return Ok(JwksResult(keys = emptyList()))
         }
 
-        // If the identifier is an unresolved opts (e.g., ManagedOptsAlias), resolve it first
-        val resolvedIdentifier: ManagedIdentifierOptsOrResult =
-            if (serverIdentifier is ManagedIdentifierOpts && serverIdentifier !is ManagedIdentifierResult<*>) {
-                multiManagedIdentifierService
-                    .resolve(serverIdentifier)
-                    .getOrElse { return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to resolve server signing key: ${it.message}")) }
-            } else {
-                serverIdentifier
-            }
+        val publishedJwks = mutableListOf<Jwk>()
+        for (key in publishable) {
+            val jwk = key.resolveAsPublicJwk() ?: continue
+            publishedJwks.add(jwk)
+        }
+        return Ok(JwksResult(keys = publishedJwks))
+    }
 
-        val jwkResult =
-            tryManagedIdentifierToJwk(resolvedIdentifier)
-                .getOrElse { return Err(it) }
-
-        val publicJwk =
-            (jwkResult.identifier.toPublicKey() as? Jwk)
-                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to convert server key to public JWK"))
-
-        return Ok(JwksResult(keys = listOf(publicJwk)))
+    /**
+     * Resolve a single [OAuth2SigningKey] into the public-only JWK that JWKS consumers need.
+     * Pins the advertised `kid` to the entry's [OAuth2SigningKey.kid] so RPs that look up by
+     * `kid` from the JWS header find the right entry even when the underlying key material's
+     * computed `kid` differs.
+     *
+     * Returns null when the resolution fails for this individual key — a per-key failure
+     * should not blank out the whole JWKS, since callers downstream expect at least the
+     * still-resolvable keys to publish. The failed key surfaces as a missing-kid in any RP
+     * verification attempt, which is the correct signal: the operator sees a kid mismatch
+     * in their RP logs and can investigate.
+     */
+    private suspend fun OAuth2SigningKey.resolveAsPublicJwk(): Jwk? {
+        // Prefer addressing by alias (matches the sign-path identifier construction in
+        // DefaultOAuth2ConfigModule); fall back to kid when no alias is configured.
+        val identifier: ManagedIdentifierOpts =
+            keyInfo.alias?.let { ManagedOptsAlias(identifier = it) }
+                ?: ManagedOptsKid(identifier = keyInfo.kid ?: kid)
+        val resolveResult = multiManagedIdentifierService.resolve(identifier)
+        if (!resolveResult.isOk) return null
+        val jwkResult = tryManagedIdentifierToJwk(resolveResult.value).getOrNull() ?: return null
+        val publicJwk = jwkResult.identifier.toPublicKey() as? Jwk ?: return null
+        return if (publicJwk.kid == kid) publicJwk else publicJwk.copy(kid = kid)
     }
 }

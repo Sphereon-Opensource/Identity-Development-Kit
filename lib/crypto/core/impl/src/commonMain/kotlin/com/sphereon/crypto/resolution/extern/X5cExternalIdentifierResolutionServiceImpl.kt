@@ -62,7 +62,14 @@ class X5cExternalIdentifierResolutionServiceImpl(
         log.debug("Resolving external X5C identifier: ${args.identifier.toString().take(100)}...")
         // Note: supports() validation is already performed by parent CommandAdapter.execute()
         val opts = asSupportedOpts(args).value
-        val pems = opts.identifier.map { x509DerOrPemToPem(it) }
+        // Strip ASCII whitespace inside each cert string before decoding. Real-world callers
+        // (PEM-formatted pastes, JWKS pretty-printers) commonly carry line breaks/indentation
+        // inside base64-DER cert strings; supports() already tolerates this and the decoder
+        // must too.
+        val pems =
+            opts.identifier
+                .map { it.replace(Regex("\\s+"), "") }
+                .map { x509DerOrPemToPem(it) }
         if (pems.isEmpty()) {
             IdkError.Companion.COMMAND_ARG_NOT_SUPPORTED_ERROR().asErrorResult()
         }
@@ -97,7 +104,14 @@ class X5cExternalIdentifierResolutionServiceImpl(
     }
 
     override suspend fun isSupportedIdentifier(identifier: Any): Boolean {
-        // Allow a non-empty array or list of base64-encoded DER certificate strings (x5c)
+        // A non-empty array/list of base64-encoded DER certificate strings (x5c).
+        //
+        // Strip ASCII whitespace before the regex check: RFC 7515 §4.1.6 expects single-line
+        // base64-DER, but real-world callers (PEM-formatted pastes, JWKS pretty-printers,
+        // conformance harnesses) commonly carry line breaks/indentation inside the cert
+        // string. The downstream `x509DerOrPemToPem` decoder tolerates this; the supports()
+        // gate must too, otherwise the resolver isn't selected and the chain is silently
+        // rejected.
         val base64Regex = Regex("^[A-Za-z0-9+/]+={0,2}$")
         val strings: List<String>? =
             when (identifier) {
@@ -105,7 +119,7 @@ class X5cExternalIdentifierResolutionServiceImpl(
                 is List<*> -> identifier.filterIsInstance<String>().takeIf { it.isNotEmpty() }
                 else -> null
             }
-        return strings?.all { base64Regex.matches(it) } == true
+        return strings?.all { base64Regex.matches(it.replace(Regex("\\s+"), "")) } == true
     }
 
     override suspend fun resolve(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierResult.X5c, IdkErrorType> = execute(opts)

@@ -16,8 +16,10 @@
 
 package com.sphereon.oauth2.client.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.client.command.CompleteOidcLoginCommand
 import com.sphereon.oauth2.client.command.CreateAuthorizationRequestUrlCommand
 import com.sphereon.oauth2.client.command.CreateEncryptedJarCommand
 import com.sphereon.oauth2.client.command.CreatePkceCommand
@@ -42,6 +44,7 @@ import com.sphereon.oauth2.client.impl.jar.MergeRequestObjectCommandImpl
 import com.sphereon.oauth2.client.impl.jar.ParseJarCommandImpl
 import com.sphereon.oauth2.client.impl.metadata.FetchAuthorizationServerMetadataCommandImpl
 import com.sphereon.oauth2.client.impl.metadata.FetchJwksCommandImpl
+import com.sphereon.oauth2.client.impl.oidc.CompleteOidcLoginCommandImpl
 import com.sphereon.oauth2.client.impl.oidc.FetchUserInfoCommandImpl
 import com.sphereon.oauth2.client.impl.pkce.CreatePkceCommandImpl
 import com.sphereon.oauth2.client.impl.pkce.VerifyPkceCommandImpl
@@ -62,78 +65,82 @@ interface OAuth2ClientCommandDescriptors {
     // PKCE commands
     @Provides @IntoMap
     @StringKey(VerifyPkceCommand.COMMAND_ID)
-    fun verifyPkce(impl: VerifyPkceCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyPkce(impl: VerifyPkceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreatePkceCommand.COMMAND_ID)
-    fun createPkce(impl: CreatePkceCommandImpl): ServiceCommand<*, *> = impl
+    fun createPkce(impl: CreatePkceCommandImpl): ServiceCommand<*, *, *> = impl
 
     // JAR commands
     @Provides @IntoMap
     @StringKey(CreateEncryptedJarCommand.COMMAND_ID)
-    fun createEncryptedJar(impl: CreateEncryptedJarCommandImpl): ServiceCommand<*, *> = impl
+    fun createEncryptedJar(impl: CreateEncryptedJarCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateSignedJarCommand.COMMAND_ID)
-    fun createSignedJar(impl: CreateSignedJarCommandImpl): ServiceCommand<*, *> = impl
+    fun createSignedJar(impl: CreateSignedJarCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(MergeRequestObjectCommand.COMMAND_ID)
-    fun mergeRequestObject(impl: MergeRequestObjectCommandImpl): ServiceCommand<*, *> = impl
+    fun mergeRequestObject(impl: MergeRequestObjectCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ParseJarCommand.COMMAND_ID)
-    fun parseJar(impl: ParseJarCommandImpl): ServiceCommand<*, *> = impl
+    fun parseJar(impl: ParseJarCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Authorization commands
     @Provides @IntoMap
     @StringKey(ParseAuthorizationResponseCommand.COMMAND_ID)
-    fun parseAuthorizationResponse(impl: ParseAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun parseAuthorizationResponse(impl: ParseAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateAuthorizationRequestUrlCommand.COMMAND_ID)
-    fun createAuthorizationRequestUrl(impl: CreateAuthorizationRequestUrlCommandImpl): ServiceCommand<*, *> = impl
+    fun createAuthorizationRequestUrl(impl: CreateAuthorizationRequestUrlCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Metadata commands
     @Provides @IntoMap
     @StringKey(FetchJwksCommand.COMMAND_ID)
-    fun fetchJwks(impl: FetchJwksCommandImpl): ServiceCommand<*, *> = impl
+    fun fetchJwks(impl: FetchJwksCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(FetchAuthorizationServerMetadataCommand.COMMAND_ID)
-    fun fetchAuthorizationServerMetadata(impl: FetchAuthorizationServerMetadataCommandImpl): ServiceCommand<*, *> = impl
+    fun fetchAuthorizationServerMetadata(impl: FetchAuthorizationServerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Introspection commands
     @Provides @IntoMap
     @StringKey(IntrospectTokenCommand.COMMAND_ID)
-    fun clientIntrospectToken(impl: ClientIntrospectTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun clientIntrospectToken(impl: ClientIntrospectTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Revocation commands
     @Provides @IntoMap
     @StringKey(ClientRevokeTokenCommand.COMMAND_ID)
-    fun clientRevokeToken(impl: ClientRevokeTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun clientRevokeToken(impl: ClientRevokeTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Token commands
     @Provides @IntoMap
     @StringKey(ExchangeTokenCommand.COMMAND_ID)
-    fun exchangeToken(impl: ExchangeTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun exchangeToken(impl: ExchangeTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Client auth commands
     @Provides @IntoMap
     @StringKey(ApplyClientAuthenticationCommand.COMMAND_ID)
-    fun applyClientAuthentication(impl: ApplyClientAuthenticationCommandImpl): ServiceCommand<*, *> = impl
+    fun applyClientAuthentication(impl: ApplyClientAuthenticationCommandImpl): ServiceCommand<*, *, *> = impl
 
     // DPoP commands
     @Provides @IntoMap
     @StringKey(CreateDpopProofCommand.COMMAND_ID)
-    fun createDpopProof(impl: CreateDpopProofCommandImpl): ServiceCommand<*, *> = impl
+    fun createDpopProof(impl: CreateDpopProofCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyDpopProofCommand.COMMAND_ID)
-    fun clientVerifyDpopProof(impl: ClientVerifyDpopProofCommandImpl): ServiceCommand<*, *> = impl
+    fun clientVerifyDpopProof(impl: ClientVerifyDpopProofCommandImpl): ServiceCommand<*, *, *> = impl
 
     // OIDC commands
     @Provides @IntoMap
     @StringKey(FetchUserInfoCommand.COMMAND_ID)
-    fun fetchUserInfo(impl: FetchUserInfoCommandImpl): ServiceCommand<*, *> = impl
+    fun fetchUserInfo(impl: FetchUserInfoCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(CompleteOidcLoginCommand.COMMAND_ID)
+    fun completeOidcLogin(impl: CompleteOidcLoginCommandImpl): ServiceCommand<*, *, *> = impl
 }

@@ -30,6 +30,7 @@ import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isEnabled
+import com.sphereon.oauth2.common.model.JwtConfirmation
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenCommand
@@ -99,7 +100,7 @@ class AuthServerIntrospectTokenCommandImpl(
     private val tokenStorage: TokenStorage,
     private val configProvider: OAuth2ServersConfigProvider,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenIntrospectionResponse>(
+) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenIntrospectionResponse, IdkError>(
         commandId = IntrospectTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<IntrospectTokenArgs>(),
@@ -116,7 +117,7 @@ class AuthServerIntrospectTokenCommandImpl(
     ): IdkResult<TokenIntrospectionResponse, IdkError> {
         val applied = applyDuring(args)
         val result =
-            executeInternal(applied.token, applied.tokenTypeHint)
+            executeInternal(applied.token, applied.tokenTypeHint, applied.clientId)
                 .mapError { IdkError.fromDTO(it) }
         emitOutcome(applied, result)
         return result
@@ -154,6 +155,7 @@ class AuthServerIntrospectTokenCommandImpl(
     private suspend fun executeInternal(
         token: String,
         tokenTypeHint: String?,
+        callerClientId: String,
     ): IdkResult<TokenIntrospectionResponse, AuthorizationServerError> {
         // Check if introspection is enabled
         if (!configProvider.serverConfig.introspection.isEnabled) {
@@ -256,6 +258,17 @@ class AuthServerIntrospectTokenCommandImpl(
             return Ok(TokenIntrospectionResponse(active = false))
         }
 
+        // Server-to-server resource-server callers — registered under
+        // `oauth2.servers.<asId>.internal-clients.*` — are by design authorized to introspect
+        // any token issued by this AS, since their job is to validate tokens presented by other
+        // clients (e.g. the OID4VCI credential endpoint introspecting a wallet's access token).
+        // RFC 7662 §4 explicitly calls this out as the canonical resource-server use-case for
+        // introspection. The §2.2 confused-deputy ownership rule still applies to ordinary
+        // clients.
+        val isInternalClient =
+            configProvider.serverConfig.internalClients.values
+                .any { it.first == callerClientId }
+
         // Handle based on token type
         return when (tokenData) {
             is AccessTokenData -> {
@@ -269,12 +282,18 @@ class AuthServerIntrospectTokenCommandImpl(
                     return Ok(TokenIntrospectionResponse(active = false))
                 }
 
-                // RFC 7662 Section 2.1: the AS determines whether the introspecting
-                // client is authorized. Resource servers (e.g., credential issuers)
-                // introspect tokens they did not issue — matching client_id would be wrong.
-                // TODO: implement proper introspection authorization policy
+                // RFC 7662 §2.2: a client may only introspect tokens it owns. Mismatched caller
+                // returns `{"active": false}` — do not leak the token's state to unauthorized
+                // callers. Skipped for registered internal (resource-server) callers per the
+                // policy comment above.
+                if (!isInternalClient && tokenData.clientId != callerClientId) {
+                    return Ok(TokenIntrospectionResponse(active = false))
+                }
 
-                // Token is active - build introspection response
+                // Token is active - build introspection response. RFC 7662 §2.2 + RFC 7800 §3:
+                // surface `cnf.jkt` (RFC 9449 §6) and `cnf.x5t#S256` (RFC 8705 §3.1) so the
+                // resource server can enforce sender constraints before accepting the token.
+                // Skipping these makes the resource server treat sender-bound tokens as bearer.
                 Ok(
                     TokenIntrospectionResponse(
                         active = true,
@@ -289,6 +308,7 @@ class AuthServerIntrospectTokenCommandImpl(
                         aud = tokenData.audience.ifEmpty { null },
                         iss = tokenData.issuer,
                         jti = null,
+                        cnf = buildJwtConfirmation(tokenData.dpopJkt, tokenData.certificateThumbprintS256),
                     ),
                 )
             }
@@ -305,9 +325,16 @@ class AuthServerIntrospectTokenCommandImpl(
                     return Ok(TokenIntrospectionResponse(active = false))
                 }
 
-                // RFC 7662: introspection authorization — see access token branch comment
+                // RFC 7662 §2.2: scope ownership check — matches access-token branch.
+                // Skipped for registered internal (resource-server) callers per the policy
+                // comment above.
+                if (!isInternalClient && tokenData.clientId != callerClientId) {
+                    return Ok(TokenIntrospectionResponse(active = false))
+                }
 
-                // Token is active - build introspection response
+                // Token is active - build introspection response (refresh token; same `cnf`
+                // surfacing rationale as the access-token branch — RFC 9449 also binds refresh
+                // tokens to the DPoP key for confidential clients).
                 Ok(
                     TokenIntrospectionResponse(
                         active = true,
@@ -327,6 +354,7 @@ class AuthServerIntrospectTokenCommandImpl(
                         aud = null,
                         iss = null,
                         jti = null,
+                        cnf = buildJwtConfirmation(tokenData.dpopJkt, certThumbprintS256 = null),
                     ),
                 )
             }
@@ -337,4 +365,19 @@ class AuthServerIntrospectTokenCommandImpl(
             }
         }
     }
+
+    /**
+     * Assemble the RFC 7800 `cnf` claim from the token's stored sender constraints. Returns
+     * `null` when neither DPoP nor mTLS binds the token, so the introspection JSON omits the
+     * field entirely (a lone `cnf:{}` would mislead resource servers into requiring a proof).
+     */
+    private fun buildJwtConfirmation(
+        dpopJkt: String?,
+        certThumbprintS256: String?,
+    ): JwtConfirmation? =
+        if (dpopJkt == null && certThumbprintS256 == null) {
+            null
+        } else {
+            JwtConfirmation(jkt = dpopJkt, certificateThumbprintS256 = certThumbprintS256)
+        }
 }

@@ -71,6 +71,11 @@ kotlin {
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
                 implementation(projects.libCoreApiDefault)
+                // oauth2-common-impl is required at test runtime so bindings such as
+                // ValidateIdTokenCommandImpl are available when the graph instantiates OAuth2Client.
+                implementation(projects.libOauth2CommonImpl)
+                // Ktor MockEngine for HTTP-layer test doubles in discovery-order tests.
+                implementation(sphereonlib.io.ktor.client.mock)
             }
         }
         val jvmTest by getting {
@@ -78,6 +83,8 @@ kotlin {
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
                 implementation(projects.libCoreApiDefault)
+                implementation(projects.libOauth2CommonImpl)
+                implementation(sphereonlib.io.ktor.client.mock)
             }
         }
     }

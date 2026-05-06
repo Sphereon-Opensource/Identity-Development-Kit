@@ -17,10 +17,12 @@
 package com.sphereon.crypto.kms.rest.server.controller
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
+import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.crypto.kms.rest.server.TestApiAppGraph
 import com.sphereon.crypto.kms.rest.server.createTestApiAppGraph
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
+import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.client.HttpClient
 import io.ktor.client.request.accept
 import io.ktor.client.request.delete
@@ -32,11 +34,13 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.request.header
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -98,6 +102,14 @@ class MultiTenantKmsIsolationTest {
             embeddedServer(CIO, port = port) {
                 install(KotlinInjectPlugin) {
                     this.appGraph = this@MultiTenantKmsIsolationTest.appGraph
+                    // The isolation tests drive tenants via the X-Tenant-ID header. Mark this
+                    // explicitly: client-supplied headers are accepted ONLY because the test
+                    // runs in-process with a closed client; production must front this with a
+                    // resolver backed by the IDK TenantResolutionHandler chain.
+                    tenantResolver =
+                        object : TenantResolver {
+                            override fun resolve(call: ApplicationCall) = DefaultTenantInputString(call.request.header("X-Tenant-ID") ?: "default")
+                        }
                 }
                 installUniversalHttpAdapters {
                     verboseLogging = true

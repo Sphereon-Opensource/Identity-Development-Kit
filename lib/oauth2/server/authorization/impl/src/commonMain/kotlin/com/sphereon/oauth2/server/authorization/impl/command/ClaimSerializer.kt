@@ -17,6 +17,8 @@
 package com.sphereon.oauth2.server.authorization.impl.command
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -66,8 +68,17 @@ fun JsonObjectBuilder.putClaims(
 }
 
 /**
- * Serializes a single claim value into the JsonObjectBuilder, handling
- * strings, numbers, booleans, JSON objects, JSON arrays, and lists.
+ * Serializes a single claim value into the JsonObjectBuilder.
+ *
+ * Accepts the native Kotlin types (String / Number / Boolean / List) the AS
+ * produces directly, **and** the [JsonElement] family that flows in from cached
+ * upstream-claim bags (the federation outcome handler stores claims as
+ * `Map<String, JsonElement>`, then projects them through `UserInfo.attributes`
+ * unchanged). Without explicit handling for [JsonPrimitive] / [JsonNull] /
+ * [JsonElement], every value coming off that path falls through the `when`
+ * unmatched and is silently dropped — the symptom we saw with the federated
+ * id_token retaining only `name` + `email` (the two claims `UserInfo` re-emits
+ * as `String`).
  */
 fun JsonObjectBuilder.putClaimValue(
     key: String,
@@ -94,6 +105,22 @@ fun JsonObjectBuilder.putClaimValue(
             put(key, value)
         }
 
+        // JsonElement subtypes (other than JsonObject/JsonArray, handled above).
+        // Putting the JsonElement straight in preserves the source type
+        // information (string vs number vs boolean vs null) without round-tripping
+        // through Any-typed conversions that would lose it.
+        is JsonNull -> {
+            put(key, JsonNull)
+        }
+
+        is JsonPrimitive -> {
+            put(key, value)
+        }
+
+        is JsonElement -> {
+            put(key, value)
+        }
+
         is List<*> -> {
             put(
                 key,
@@ -105,6 +132,9 @@ fun JsonObjectBuilder.putClaimValue(
                             is Boolean -> add(JsonPrimitive(item))
                             is JsonObject -> add(item)
                             is JsonArray -> add(item)
+                            is JsonNull -> add(JsonNull)
+                            is JsonPrimitive -> add(item)
+                            is JsonElement -> add(item)
                             else -> item?.toString()?.let { add(JsonPrimitive(it)) }
                         }
                     }

@@ -47,9 +47,15 @@ data class CredentialIssuerMetadata(
 )
 
 /**
- * OID4VCI 1.1 top-level credential response encryption metadata.
+ * OID4VCI 1.0 §11.2.4 / 1.1 top-level credential response encryption metadata.
  *
  * Declares what encryption algorithms the issuer supports for encrypting credential responses.
+ *
+ * Per OID4VCI 1.0 §11.2.4 `encryption_required` is REQUIRED whenever this object is present.
+ * `@EncodeDefault.ALWAYS` defeats `Json { encodeDefaults = false }` so the boolean is emitted
+ * even when it equals the data-class default (`false`) — otherwise the wire shape silently
+ * loses the field and OIDF `VCICheckCredentialResponseEncryptionSupported` (which inspects
+ * the field with `getAsBoolean()`) NPEs on a strict-mode run.
  */
 @JsExportCompat
 @Serializable
@@ -57,13 +63,20 @@ data class MetadataCredentialResponseEncryption(
     @SerialName("alg_values_supported") val algValuesSupported: List<String>,
     @SerialName("enc_values_supported") val encValuesSupported: List<String>,
     @SerialName("zip_values_supported") val zipValuesSupported: List<String>? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS)
     @SerialName("encryption_required") val encryptionRequired: Boolean = false,
 )
 
 /**
- * OID4VCI 1.1 credential request encryption metadata.
+ * OID4VCI 1.0 §11.2.4 credential request encryption metadata.
  *
  * Declares the issuer's encryption key and supported algorithms for receiving encrypted requests.
+ *
+ * Per OID4VCI 1.0 §11.2.4 `encryption_required` is REQUIRED whenever this object is present.
+ * `@EncodeDefault.ALWAYS` defeats `Json { encodeDefaults = false }` so the boolean is emitted
+ * even when it equals the data-class default (`false`) — same fix as
+ * [MetadataCredentialResponseEncryption.encryptionRequired]; without it, OIDF
+ * `VCICredentialIssuerMetadataValidation` flags the field as missing.
  */
 @JsExportCompat
 @Serializable
@@ -71,6 +84,7 @@ data class MetadataCredentialRequestEncryption(
     val jwks: JsonObject,
     @SerialName("enc_values_supported") val encValuesSupported: List<String>,
     @SerialName("zip_values_supported") val zipValuesSupported: List<String>? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS)
     @SerialName("encryption_required") val encryptionRequired: Boolean = false,
 )
 

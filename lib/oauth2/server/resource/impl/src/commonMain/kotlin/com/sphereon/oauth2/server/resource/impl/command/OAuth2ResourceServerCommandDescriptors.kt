@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.resource.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.resource.command.IntrospectTokenCommand
@@ -31,17 +32,17 @@ import dev.zacsweers.metro.StringKey
 interface OAuth2ResourceServerCommandDescriptors {
     @Provides @IntoMap
     @StringKey(IntrospectTokenCommand.COMMAND_ID)
-    fun resourceServerIntrospectToken(impl: ResourceServerIntrospectTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun resourceServerIntrospectToken(impl: ResourceServerIntrospectTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ValidateAccessTokenCommand.COMMAND_ID)
-    fun validateAccessToken(impl: ValidateAccessTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun validateAccessToken(impl: ValidateAccessTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyDpopProofCommand.COMMAND_ID)
-    fun resourceServerVerifyDpopProof(impl: ResourceServerVerifyDpopProofCommandImpl): ServiceCommand<*, *> = impl
+    fun resourceServerVerifyDpopProof(impl: ResourceServerVerifyDpopProofCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyJwtCommand.COMMAND_ID)
-    fun verifyJwt(impl: VerifyJwtCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyJwt(impl: VerifyJwtCommandImpl): ServiceCommand<*, *, *> = impl
 }

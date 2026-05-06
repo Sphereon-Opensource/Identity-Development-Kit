@@ -212,9 +212,9 @@ class DeviceAuthTest {
         val deviceAuth =
             DeviceAuthentication.fromOid4vp(
                 clientId = "https://client.example.com",
+                nonce = "test-auth-nonce",
+                jwkThumbprint = null,
                 responseUri = "https://response.example.com/callback",
-                mdocNonce = "test-mdoc-nonce",
-                authorizationRequestNonce = "test-auth-nonce",
                 docType = docType,
                 deviceNamespaces = deviceNamespaces,
             )
@@ -233,9 +233,9 @@ class DeviceAuthTest {
         val deviceAuth =
             DeviceAuthentication.fromOid4vp(
                 clientId = "https://client.example.com",
+                nonce = "test-auth-nonce",
+                jwkThumbprint = null,
                 responseUri = "https://response.example.com/callback",
-                mdocNonce = "test-mdoc-nonce",
-                authorizationRequestNonce = "test-auth-nonce",
                 docType = docType,
                 deviceNamespaces = deviceNamespaces,
             )

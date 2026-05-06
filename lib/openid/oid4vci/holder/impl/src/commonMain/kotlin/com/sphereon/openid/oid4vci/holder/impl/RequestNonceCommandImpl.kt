@@ -51,7 +51,7 @@ import io.ktor.http.isSuccess
 class RequestNonceCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<RequestNonceArgs, NonceResponse>(
+) : TypedServiceCommandAdapter<RequestNonceArgs, NonceResponse, IdkError>(
         commandId = RequestNonceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RequestNonceArgs>(),

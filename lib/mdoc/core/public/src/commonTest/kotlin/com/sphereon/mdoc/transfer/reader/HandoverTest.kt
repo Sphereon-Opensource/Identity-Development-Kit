@@ -54,43 +54,61 @@ class HandoverTest {
     }
 
     @Test
-    fun oid4vpHandover_keeps_hashes_and_nonce() {
+    fun oid4vpHandover_keeps_inputs_for_b26_handover_info() {
         val handover =
             OID4VPHandover(
-                clientIdHash = byteArrayOf(0x01, 0x02),
-                responseUriHash = byteArrayOf(0x03, 0x04),
-                nonce = "nonce-123",
+                clientId = "x509_hash:abc",
+                nonce = "auth-nonce",
+                jwkThumbprint = byteArrayOf(0x10, 0x11, 0x12),
+                responseUri = "https://verifier.example.org/cb",
             )
 
-        assertContentEquals(byteArrayOf(0x01, 0x02), handover.clientIdHash)
-        assertContentEquals(byteArrayOf(0x03, 0x04), handover.responseUriHash)
-        assertEquals("nonce-123", handover.nonce)
+        assertEquals("x509_hash:abc", handover.clientId)
+        assertEquals("auth-nonce", handover.nonce)
+        assertContentEquals(byteArrayOf(0x10, 0x11, 0x12), handover.jwkThumbprint)
+        assertEquals("https://verifier.example.org/cb", handover.responseUri)
     }
 
     @Test
-    fun oid4vpHandover_factory_derives_hashes_and_keeps_authorization_nonce() {
+    fun oid4vpHandover_factory_passes_inputs_through() {
         val handover =
-            OID4VPHandover.fromClientIdAndResponseUri(
+            OID4VPHandover.fromOid4vpInputs(
                 clientId = "client-123",
+                nonce = "auth-nonce",
+                jwkThumbprint = byteArrayOf(0x20),
                 responseUri = "https://wallet.example.org/callback",
-                mdocNonce = "mdoc-nonce",
-                authorizationRequestNonce = "auth-nonce",
             )
 
-        assertTrue(handover.clientIdHash.isNotEmpty())
-        assertTrue(handover.responseUriHash.isNotEmpty())
+        assertEquals("client-123", handover.clientId)
         assertEquals("auth-nonce", handover.nonce)
+        assertContentEquals(byteArrayOf(0x20), handover.jwkThumbprint)
+        assertEquals("https://wallet.example.org/callback", handover.responseUri)
+    }
+
+    @Test
+    fun oid4vpHandover_unencrypted_uses_null_thumbprint() {
+        val handover =
+            OID4VPHandover.fromOid4vpInputs(
+                clientId = "client-123",
+                nonce = "auth-nonce",
+                jwkThumbprint = null,
+                responseUri = "https://wallet.example.org/callback",
+            )
+
+        assertNull(handover.jwkThumbprint)
     }
 
     @Test
     fun oid4vpHandover_equality_and_hashcode_follow_payload() {
-        val first = OID4VPHandover(byteArrayOf(0x01), byteArrayOf(0x02), "nonce")
-        val second = OID4VPHandover(byteArrayOf(0x01), byteArrayOf(0x02), "nonce")
-        val different = OID4VPHandover(byteArrayOf(0x09), byteArrayOf(0x02), "nonce")
+        val first = OID4VPHandover("c", "n", byteArrayOf(0x01), "u")
+        val second = OID4VPHandover("c", "n", byteArrayOf(0x01), "u")
+        val different = OID4VPHandover("c", "n", byteArrayOf(0x09), "u")
+        val nullThumb = OID4VPHandover("c", "n", null, "u")
 
         assertEquals(first, second)
         assertEquals(first.hashCode(), second.hashCode())
         assertNotEquals(first, different)
+        assertNotEquals(first, nullThumb)
     }
 
     @Test

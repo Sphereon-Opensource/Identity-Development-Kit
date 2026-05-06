@@ -4,6 +4,7 @@
   <CurrentIssues>
     <ID>CyclomaticComplexMethod:GraphServiceResolver.jvm.kt$GraphServiceResolver$private fun &lt;T : Any> findServiceInClass( graph: Any, javaClass: Class&lt;*>, serviceType: KClass&lt;T>, ): T?</ID>
     <ID>InstanceOfCheckForException:GraphServiceResolver.jvm.kt$GraphServiceResolver$expected is java.lang.reflect.InvocationTargetException</ID>
+    <ID>LongMethod:GraphServiceResolver.jvm.kt$GraphServiceResolver$private fun &lt;T : Any> findServiceInClass( graph: Any, javaClass: Class&lt;*>, serviceType: KClass&lt;T>, ): T?</ID>
     <ID>LoopWithTooManyJumpStatements:GraphServiceResolver.jvm.kt$GraphServiceResolver$for</ID>
     <ID>NestedBlockDepth:GraphServiceResolver.jvm.kt$GraphServiceResolver$private fun &lt;T : Any> findServiceInClass( graph: Any, javaClass: Class&lt;*>, serviceType: KClass&lt;T>, ): T?</ID>
     <ID>PrintStackTrace:GraphServiceResolver.jvm.kt$GraphServiceResolver$expected</ID>

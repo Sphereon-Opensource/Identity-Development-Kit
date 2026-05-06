@@ -42,7 +42,7 @@ import kotlin.time.Clock
 class VerifyRefreshTokenGrantCommandImpl(
     execution: SessionExecution,
     private val tokenStorage: TokenStorage,
-) : TypedServiceCommandAdapter<VerifyRefreshTokenGrantArgs, VerifiedRefreshTokenGrant>(
+) : TypedServiceCommandAdapter<VerifyRefreshTokenGrantArgs, VerifiedRefreshTokenGrant, IdkError>(
         commandId = VerifyRefreshTokenGrantCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyRefreshTokenGrantArgs>(),
@@ -97,11 +97,16 @@ class VerifyRefreshTokenGrantCommandImpl(
             )
         }
 
-        // Verify token is not revoked
+        // Verify token is not revoked. The wire shape stays `invalid_grant` per RFC 6749 §5.2;
+        // the structured meta key lets the grant handler upstream tell apart reuse-detection
+        // (a previously-rotated chain replayed) from other invalid_grant flavors so it can emit
+        // an OAuth2AuditEventType.REFRESH_TOKEN_REUSE_DETECTED event without parsing the
+        // human-readable details string.
         if (tokenData.revoked) {
             return Err(
                 AuthorizationServerError.InvalidGrant(
                     details = "Refresh token has been revoked",
+                    meta = mapOf(REUSE_DETECTED_META_KEY to true),
                 ),
             )
         }
@@ -149,7 +154,9 @@ class VerifyRefreshTokenGrantCommandImpl(
                 tokenData.scope
             }
 
-        // Return verified grant
+        // Return verified grant. OIDC Core 1.0 §12: the refresh-token grant MAY reissue an
+        // id_token; downstream orchestration uses the preserved authTime/acr/amr/nonce/sid
+        // surfaced here so the refreshed id_token mirrors the original authentication context.
         return Ok(
             VerifiedRefreshTokenGrant(
                 subject = tokenData.subject,
@@ -157,7 +164,24 @@ class VerifyRefreshTokenGrantCommandImpl(
                 scope = finalScope,
                 dpopJkt = tokenData.dpopJkt,
                 refreshTokenId = tokenData.refreshToken,
+                authTime = tokenData.authTime,
+                acr = tokenData.acr,
+                amr = tokenData.amr,
+                nonce = tokenData.nonce,
+                loginSessionId = tokenData.loginSessionId,
             ),
         )
+    }
+
+    companion object {
+        /**
+         * Meta key set on the [AuthorizationServerError.InvalidGrant] returned when a presented
+         * refresh token is rejected because its `revoked` flag is set. Set means: the chain was
+         * already rotated and the consumed token is being replayed, which is the OAuth 2.1
+         * RFC 6749 §10.4 reuse-detection signal. Consumers (the grant handler upstream) inspect
+         * this key to emit `OAuth2AuditEventType.REFRESH_TOKEN_REUSE_DETECTED` separately from
+         * the generic `invalid_grant` flow.
+         */
+        const val REUSE_DETECTED_META_KEY: String = "refresh_token_reuse_detected"
     }
 }

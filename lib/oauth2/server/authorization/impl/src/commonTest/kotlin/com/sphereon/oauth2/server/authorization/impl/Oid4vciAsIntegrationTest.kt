@@ -30,6 +30,7 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAuth
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryClientRegistryImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryPreAuthorizedCodeStorage
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
@@ -114,6 +115,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyPreAuthorizedCodeGrantCommandImpl(
                     execution = execution,
                     preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
                 )
 
             val result =
@@ -178,6 +180,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyAuthorizationCodeGrantCommandImpl(
                     execution = execution,
                     authorizationCodeStorage = codeStorage,
+                    tokenStorage = InMemoryTokenStorageImpl(storage),
                     clientRegistry = clientRegistry,
                     configProvider = configProvider,
                 )
@@ -231,6 +234,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyPreAuthorizedCodeGrantCommandImpl(
                     execution = execution,
                     preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
                 )
 
             // First exchange - should succeed
@@ -295,6 +299,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyAuthorizationCodeGrantCommandImpl(
                     execution = execution,
                     authorizationCodeStorage = codeStorage,
+                    tokenStorage = InMemoryTokenStorageImpl(storage),
                     clientRegistry = clientRegistry,
                     configProvider = configProvider,
                 )
@@ -346,6 +351,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyPreAuthorizedCodeGrantCommandImpl(
                     execution = execution,
                     preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
                 )
 
             // Exchange with correct tx_code
@@ -395,6 +401,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyPreAuthorizedCodeGrantCommandImpl(
                     execution = execution,
                     preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
                 )
 
             // Exchange with wrong tx_code
@@ -438,6 +445,7 @@ class Oid4vciAsIntegrationTest {
                 VerifyPreAuthorizedCodeGrantCommandImpl(
                     execution = execution,
                     preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
                 )
 
             // Exchange without tx_code (null)

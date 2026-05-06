@@ -52,7 +52,7 @@ import dev.zacsweers.metro.SingleIn
 class CreateEncryptedJarCommandImpl(
     execution: SessionExecution,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<CreateEncryptedJarArgs, StringResult>(
+) : TypedServiceCommandAdapter<CreateEncryptedJarArgs, StringResult, IdkError>(
         commandId = CreateEncryptedJarCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateEncryptedJarArgs>(),

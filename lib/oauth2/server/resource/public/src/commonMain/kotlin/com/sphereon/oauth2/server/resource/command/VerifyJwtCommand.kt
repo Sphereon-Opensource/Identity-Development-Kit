@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.resource.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.server.resource.model.TokenPayload
@@ -28,6 +29,10 @@ import kotlin.native.ObjCName
  * @property jwt The JWT string (compact serialization)
  * @property authorizationServer The expected issuer (authorization server URL)
  * @property expectedAudience The expected audience (this resource server)
+ * @property clockSkewSeconds Per-request override for the tolerance window applied to `exp` and
+ *   `nbf`. When `null` (the default) the impl resolves it from `ConfigService` at key
+ *   [CONFIG_KEY_CLOCK_SKEW], falling back to [DEFAULT_CLOCK_SKEW_SECONDS] when unset. Raise with
+ *   care: every second of skew widens the replay window.
  */
 @JsExportCompat
 data class VerifyJwtArgs(
@@ -35,7 +40,16 @@ data class VerifyJwtArgs(
     val authorizationServer: String,
     val expectedAudience: String? = null,
     val jwksUri: String? = null,
-)
+    val clockSkewSeconds: Long? = null,
+) {
+    public companion object {
+        /** Config key consumed by `VerifyJwtCommand` when [clockSkewSeconds] is unset. */
+        public const val CONFIG_KEY_CLOCK_SKEW: String = "cmd.oauth2.resource.verifyjwt.clock-skew-seconds"
+
+        /** Fallback skew used when neither the args nor config supply a value. */
+        public const val DEFAULT_CLOCK_SKEW_SECONDS: Long = 60
+    }
+}
 
 /**
  * Command: Verify JWT Access Token
@@ -70,7 +84,7 @@ data class VerifyJwtArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyJwtCommand", exact = true)
 @JsExportCompat
-interface VerifyJwtCommand : ServiceCommand<VerifyJwtArgs, TokenPayload.Jwt> {
+interface VerifyJwtCommand : ServiceCommand<VerifyJwtArgs, TokenPayload.Jwt, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

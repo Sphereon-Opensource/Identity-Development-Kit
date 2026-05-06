@@ -47,7 +47,7 @@ class DeleteCredentialOfferServiceCommandImpl(
     private val credentialOfferSessionStore: CredentialOfferSessionStore,
     private val credentialOfferStore: CredentialOfferStore,
     private val sessionEventService: SessionEventService,
-) : TypedServiceCommandAdapter<GetCredentialOfferStatusInput, DeleteCredentialOfferOutput>(
+) : TypedServiceCommandAdapter<GetCredentialOfferStatusInput, DeleteCredentialOfferOutput, IdkError>(
         commandId = DeleteCredentialOfferServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetCredentialOfferStatusInput>(),

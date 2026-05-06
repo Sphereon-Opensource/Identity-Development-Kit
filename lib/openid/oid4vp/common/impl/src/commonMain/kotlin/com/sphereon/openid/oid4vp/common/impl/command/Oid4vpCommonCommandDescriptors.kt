@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.common.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.ParseClientIdCommand
@@ -39,25 +40,25 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vpCommonCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ParseClientIdCommand.COMMAND_ID)
-    fun parseClientId(impl: ParseClientIdCommandImpl): ServiceCommand<*, *> = impl
+    fun parseClientId(impl: ParseClientIdCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyTransactionDataCommand.COMMAND_ID)
-    fun verifyTransactionData(impl: VerifyTransactionDataCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyTransactionData(impl: VerifyTransactionDataCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ParseTransactionDataCommand.COMMAND_ID)
-    fun parseTransactionData(impl: ParseTransactionDataCommandImpl): ServiceCommand<*, *> = impl
+    fun parseTransactionData(impl: ParseTransactionDataCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveScopeCommand.COMMAND_ID)
-    fun resolveScope(impl: ResolveScopeCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveScope(impl: ResolveScopeCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyVerifierAttestationCommand.COMMAND_ID)
-    fun verifyVerifierAttestation(impl: VerifyVerifierAttestationCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyVerifierAttestation(impl: VerifyVerifierAttestationCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ValidateClientIdCommand.COMMAND_ID)
-    fun validateClientId(impl: ValidateClientIdCommandImpl): ServiceCommand<*, *> = impl
+    fun validateClientId(impl: ValidateClientIdCommandImpl): ServiceCommand<*, *, *> = impl
 }

@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.ValidationErrorDetail
 import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
@@ -31,7 +32,6 @@ import com.sphereon.oauth2.client.command.FetchJwksArgs
 import com.sphereon.oauth2.client.command.FetchJwksCommand
 import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.common.error.MetadataError
-import com.sphereon.core.api.validation.ValidationErrorDetail
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
@@ -53,7 +53,7 @@ import kotlinx.serialization.json.Json
 class FetchJwksCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<FetchJwksArgs, JwkSet>(
+) : TypedServiceCommandAdapter<FetchJwksArgs, JwkSet, IdkError>(
         commandId = FetchJwksCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FetchJwksArgs>(),

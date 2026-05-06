@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.issuer.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
@@ -47,6 +48,30 @@ data class CreateCredentialOfferArgs(
     val txCodeRequired: Boolean = false,
     val preSeededAttributes: Map<String, JsonElement>? = null,
     val offerTtlSeconds: Long = 600,
+    /**
+     * Opaque usage-token the calling flow wants bound to this issuance.
+     * Carried forward onto the created [IssuanceSession.boundUsageToken] so
+     * post-issuance hooks (webhooks, redemption consume, etc.) can correlate
+     * the signed credential back to the invitation / ticket / workflow
+     * instance it belongs to. Null for flows that don't need correlation.
+     */
+    val boundUsageToken: String? = null,
+    /**
+     * Optional per-offer allow-list of post-issuance hook command IDs. When
+     * non-null the issuer intersects the deployment-level resolved hook set
+     * with this list so the caller (e.g. a redemption batch) can scope
+     * hook fan-out. Null = no narrowing (default).
+     */
+    val postIssuanceHookAllowList: List<String>? = null,
+    /**
+     * Outer deeplink prefix for `offerUri` (OID4VCI 1.0 §4.1.1). Examples:
+     * `"openid-credential-offer://"` (default), `"haip://"`, or a full HTTPS URL such as
+     * `"https://wallet.example.com/credential_offer"` for universal-link / app-link wallets.
+     * The created `offerUri` is `${scheme}{?|&}credential_offer_uri=…` — i.e. the scheme is
+     * prefixed and `credential_offer_uri` is appended with `?` (or `&` when the scheme
+     * already carries a query). Null falls back to `openid-credential-offer://`.
+     */
+    val scheme: String? = null,
 )
 
 @JsExportCompat
@@ -59,7 +84,7 @@ data class CreatedCredentialOffer(
 )
 
 @JsExportCompat
-interface CreateCredentialOfferCommand : ServiceCommand<CreateCredentialOfferArgs, CreatedCredentialOffer> {
+interface CreateCredentialOfferCommand : ServiceCommand<CreateCredentialOfferArgs, CreatedCredentialOffer, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -84,7 +109,7 @@ data class BuildIssuerMetadataArgs(
 )
 
 @JsExportCompat
-interface BuildIssuerMetadataCommand : ServiceCommand<BuildIssuerMetadataArgs, CredentialIssuerMetadata> {
+interface BuildIssuerMetadataCommand : ServiceCommand<BuildIssuerMetadataArgs, CredentialIssuerMetadata, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -102,7 +127,7 @@ data class IssueNonceArgs(
 )
 
 @JsExportCompat
-interface IssueNonceCommand : ServiceCommand<IssueNonceArgs, NonceResponse> {
+interface IssueNonceCommand : ServiceCommand<IssueNonceArgs, NonceResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -121,10 +146,21 @@ data class HandleCredentialRequestArgs(
     val credentialRequest: CredentialRequest,
     val issuerIdentifier: String? = null,
     val credentialConfigurations: Map<String, CredentialConfigurationSupported> = emptyMap(),
+    /**
+     * Full request URL the credential endpoint received (with scheme + host but stripped of
+     * query/fragment). Forwarded to the AS bridge so DPoP `htu` can be verified against the
+     * actual incoming request — RFC 9449 §7.1 requires this for any DPoP-bound access token.
+     */
+    val httpUrl: String? = null,
+    /**
+     * HTTP method the credential endpoint was invoked with (always `POST` per OID4VCI 1.0 §8).
+     * Forwarded to the AS bridge for DPoP `htm` verification.
+     */
+    val httpMethod: String? = null,
 )
 
 @JsExportCompat
-interface HandleCredentialRequestCommand : ServiceCommand<HandleCredentialRequestArgs, CredentialResponse> {
+interface HandleCredentialRequestCommand : ServiceCommand<HandleCredentialRequestArgs, CredentialResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -141,10 +177,14 @@ data class HandleDeferredCredentialRequestArgs(
     val accessToken: String,
     val dpopProof: String? = null,
     val deferredRequest: DeferredCredentialRequest,
+    /** Public-facing request URL — required for DPoP `htu` verification (RFC 9449 §7.1). */
+    val httpUrl: String? = null,
+    /** HTTP method — required for DPoP `htm` verification. */
+    val httpMethod: String? = null,
 )
 
 @JsExportCompat
-interface HandleDeferredCredentialRequestCommand : ServiceCommand<HandleDeferredCredentialRequestArgs, CredentialResponse> {
+interface HandleDeferredCredentialRequestCommand : ServiceCommand<HandleDeferredCredentialRequestArgs, CredentialResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -160,10 +200,16 @@ interface HandleDeferredCredentialRequestCommand : ServiceCommand<HandleDeferred
 data class HandleNotificationArgs(
     val accessToken: String,
     val notification: CredentialNotification,
+    /** Public-facing request URL — required for DPoP `htu` verification (RFC 9449 §7.1). */
+    val httpUrl: String? = null,
+    /** HTTP method — required for DPoP `htm` verification. */
+    val httpMethod: String? = null,
+    /** DPoP proof header — required for DPoP-bound access tokens. */
+    val dpopProof: String? = null,
 )
 
 @JsExportCompat
-interface HandleNotificationCommand : ServiceCommand<HandleNotificationArgs, Unit> {
+interface HandleNotificationCommand : ServiceCommand<HandleNotificationArgs, Unit, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -183,7 +229,7 @@ data class BuildSignedIssuerMetadataArgs(
 )
 
 @JsExportCompat
-interface BuildSignedIssuerMetadataCommand : ServiceCommand<BuildSignedIssuerMetadataArgs, JwtCompactResult> {
+interface BuildSignedIssuerMetadataCommand : ServiceCommand<BuildSignedIssuerMetadataArgs, JwtCompactResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

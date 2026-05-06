@@ -52,7 +52,7 @@ class GetCredentialOfferStatusServiceCommandImpl(
     private val credentialOfferSessionStore: CredentialOfferSessionStore,
     private val issuanceSessionStore: CredentialIssuanceSessionStore,
     private val sessionEventService: SessionEventService,
-) : TypedServiceCommandAdapter<GetCredentialOfferStatusInput, GetCredentialOfferStatusOutput>(
+) : TypedServiceCommandAdapter<GetCredentialOfferStatusInput, GetCredentialOfferStatusOutput, IdkError>(
         commandId = GetCredentialOfferStatusServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetCredentialOfferStatusInput>(),

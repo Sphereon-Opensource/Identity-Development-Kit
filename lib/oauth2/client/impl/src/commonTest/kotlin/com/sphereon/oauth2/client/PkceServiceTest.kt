@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.client
 
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.VerifyPkceArgs
 import com.sphereon.oauth2.client.impl.pkce.CreatePkceCommandImpl
@@ -47,7 +48,7 @@ class PkceServiceTest {
     val execution = session.asCoreApiServiceGraph().serviceExecution
 
     private fun createPkceService(): PkceService {
-        val createCommand = CreatePkceCommandImpl(execution)
+        val createCommand = CreatePkceCommandImpl(execution, defaultSecureRandom())
         val verifyCommand = VerifyPkceCommandImpl(execution)
         return PkceServiceImpl(createCommand, verifyCommand)
     }

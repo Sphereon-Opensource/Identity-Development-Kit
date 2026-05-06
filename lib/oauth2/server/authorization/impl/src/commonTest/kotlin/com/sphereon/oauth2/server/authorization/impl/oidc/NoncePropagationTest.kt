@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.oidc
 
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
@@ -23,6 +24,7 @@ import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeA
 import com.sphereon.oauth2.server.authorization.impl.command.authorization.CreateAuthorizationCodeCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAuthorizationCodeStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryPushedAuthorizationRequestStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
@@ -57,7 +59,7 @@ class NoncePropagationTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.SUPPORTED,
                                     ),
                             ),
@@ -100,6 +102,16 @@ class NoncePropagationTest {
                     execution = ctx.execution,
                     authorizationCodeStorage = codeStorage,
                     configProvider = configProvider,
+                    secureRandom = defaultSecureRandom(),
+                    loginSessionIdProvider =
+                        com.sphereon.oauth2.server.authorization.impl.storage
+                            .DefaultOidcLoginSessionIdProvider(),
+                    pushedAuthorizationRequestStorage = InMemoryPushedAuthorizationRequestStorageImpl(storage, Clock.System),
+                    acrEnforcer =
+                        com.sphereon.oauth2.server.authorization.impl.stepup
+                            .DefaultOAuth2AcrEnforcer(),
+                    clientRegistry = noncePropagationStubClientRegistry(),
+                    requiredActionEvaluators = emptySet(),
                 )
 
             val codeResult =
@@ -136,7 +148,7 @@ class NoncePropagationTest {
                             mapOf(
                                 "default" to
                                     OAuth2ServerInstanceConfig(
-                                        baseUrl = "https://auth.example.com",
+                                        issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.SUPPORTED,
                                     ),
                             ),
@@ -179,6 +191,16 @@ class NoncePropagationTest {
                     execution = ctx.execution,
                     authorizationCodeStorage = codeStorage,
                     configProvider = configProvider,
+                    secureRandom = defaultSecureRandom(),
+                    loginSessionIdProvider =
+                        com.sphereon.oauth2.server.authorization.impl.storage
+                            .DefaultOidcLoginSessionIdProvider(),
+                    pushedAuthorizationRequestStorage = InMemoryPushedAuthorizationRequestStorageImpl(storage, Clock.System),
+                    acrEnforcer =
+                        com.sphereon.oauth2.server.authorization.impl.stepup
+                            .DefaultOAuth2AcrEnforcer(),
+                    clientRegistry = noncePropagationStubClientRegistry(),
+                    requiredActionEvaluators = emptySet(),
                 )
 
             val codeResult =
@@ -196,5 +218,60 @@ class NoncePropagationTest {
             val consumed = codeStorage.consumeAuthorizationCode(code)
             assertTrue(consumed.isOk)
             assertNull(consumed.value!!.nonce, "Null nonce should remain null")
+        }
+
+    /**
+     * Permissive ClientRegistry stub. The required-actions gate looks up the client
+     * unconditionally but this test class doesn't exercise required actions; the stub
+     * returns a minimal registration so the lookup succeeds and the empty evaluator
+     * set short-circuits the gate.
+     */
+    private fun noncePropagationStubClientRegistry(): com.sphereon.oauth2.server.authorization.storage.ClientRegistry =
+        object : com.sphereon.oauth2.server.authorization.storage.ClientRegistry {
+            private val client =
+                com.sphereon.oauth2.server.authorization.model.ClientRegistration(
+                    clientId = "test-client",
+                    grantTypes = listOf(com.sphereon.oauth2.common.model.GrantType.AUTHORIZATION_CODE),
+                    redirectUris = listOf("https://client.example.com/callback"),
+                )
+
+            override suspend fun getClient(clientId: String) =
+                com.sphereon.core.api
+                    .Ok(if (clientId == client.clientId) client else null)
+
+            override suspend fun registerClient(registration: com.sphereon.oauth2.server.authorization.model.ClientRegistration) =
+                com.sphereon.core.api
+                    .Ok(registration)
+
+            override suspend fun updateClient(
+                clientId: String,
+                registration: com.sphereon.oauth2.server.authorization.model.ClientRegistration,
+            ): com.sphereon.core.api.IdkResult<com.sphereon.oauth2.server.authorization.model.ClientRegistration, com.sphereon.oauth2.server.authorization.error.AuthorizationServerError> =
+                com.sphereon.core.api
+                    .Ok(registration)
+
+            override suspend fun deleteClient(clientId: String): com.sphereon.core.api.IdkResult<Unit, com.sphereon.oauth2.server.authorization.error.AuthorizationServerError> =
+                com.sphereon.core.api
+                    .Ok(Unit)
+
+            override suspend fun listClients(
+                limit: Int,
+                offset: Int
+            ) = com.sphereon.core.api
+                .Ok(emptyList<com.sphereon.oauth2.server.authorization.model.ClientRegistration>())
+
+            override suspend fun findClientsByName(name: String) =
+                com.sphereon.core.api
+                    .Ok(emptyList<com.sphereon.oauth2.server.authorization.model.ClientRegistration>())
+
+            override suspend fun clientExists(clientId: String) =
+                com.sphereon.core.api
+                    .Ok(true)
+
+            override suspend fun verifyClientCredentials(
+                clientId: String,
+                clientSecret: String
+            ) = com.sphereon.core.api
+                .Ok(true)
         }
 }

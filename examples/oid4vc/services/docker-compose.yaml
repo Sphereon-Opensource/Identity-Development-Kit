@@ -35,6 +35,10 @@ services:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - ISSUER_URL=http://oid4vci-issuer:8080
       - VERIFIER_URL=http://oid4vp-verifier:8080
+      # Compose env-file profile (default / did-jwk / x509-san-dns / x509-hash / haip).
+      # The webapp surfaces this to the frontend via /api/config so the verifier UI can
+      # lock the options HAIP fixes (direct_post.jwt + request_uri_method=post).
+      - DEMO_PROFILE=${DEMO_PROFILE:-default}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 10s
@@ -59,9 +63,32 @@ services:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
+      # HAIP-shaped defaults are off; profiles/conformance-haip-as.env flips them on.
+      - OAUTH2_DPOP_POLICY=${OAUTH2_DPOP_POLICY:-SUPPORTED}
+      - OAUTH2_DPOP_NONCE_REQUIRED=${OAUTH2_DPOP_NONCE_REQUIRED:-false}
+      - OAUTH2_ATTESTATION_POLICY=${OAUTH2_ATTESTATION_POLICY:-DISABLED}
+      - OAUTH2_PAR_POLICY=${OAUTH2_PAR_POLICY:-SUPPORTED}
+      - OAUTH2_PKCE_POLICY=${OAUTH2_PKCE_POLICY:-REQUIRED}
+      - OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS=${OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS:-client_secret_basic,client_secret_post}
+      # OIDC Basic Profile cert clients (separate alias so HAIP and OIDC Basic plans coexist).
+      - OIDF_OIDC_BASIC_ALIAS=${OIDF_OIDC_BASIC_ALIAS:-sphereon-oidc-basic}
+      - OIDC_BASIC_CLIENT1_SECRET=${OIDC_BASIC_CLIENT1_SECRET:-basic-client1-secret-change-me}
+      - OIDC_BASIC_CLIENT2_SECRET=${OIDC_BASIC_CLIENT2_SECRET:-basic-client2-secret-change-me}
+      - OIDC_BASIC_CLIENT_POST_SECRET=${OIDC_BASIC_CLIENT_POST_SECRET:-basic-clientpost-secret-change-me}
+      # HAIP §4.4.1 wallet-attestation x5c trust. Off by default — the AS uses per-client
+      # `trustedAttesterJwks` JWK pinning then. The HAIP profile flips these on and points the
+      # bundle at trust-anchors/wallet-attester-ca.pem (mounted read-only from the host below).
+      - TRUST_ANCHORS_X509_ENABLED=${TRUST_ANCHORS_X509_ENABLED:-false}
+      - TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0=${TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0:-}
+      # Unique-per-organization ALIAS used in the OIDF conformance suite redirect URI:
+      # https://www.certification.openid.net/test/a/<ALIAS>/callback. Pre-registered for the
+      # `sphereon-client1`/`sphereon-client2` wallet clients in `config/oauth2-as.yml`. Set the
+      # same value in the OIDF test plan UI's "Alias" field; default `sphereon-haip`.
+      - OIDF_CONFORMANCE_ALIAS=${OIDF_CONFORMANCE_ALIAS:-sphereon-haip}
     volumes:
       - ./config/oauth2-as.yml:/app/config/application.yml:ro
       - ./keystores/oauth2-as:/app/keystore
+      - ./trust-anchors:/app/trust-anchors:ro
     healthcheck:
       # Hits AS discovery metadata in addition to /health — verifies config, JWKS key
       # resolution, and issuer URL construction are working end-to-end.
@@ -89,9 +116,48 @@ services:
       - OAUTH2_AS_INTERNAL_URL=http://oauth2-as:8080
       - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
+      # OID4VCI 1.0 §11.2.4 credential response encryption support. Defaults advertise
+      # ECDH-ES + A256GCM/A128GCM (matches HAIP §8 cipher choices). Encryption is supported
+      # but not required, so the suite's plain-variant runs still pass; the encrypted variant
+      # works because the wallet supplies its JWK and the issuer encrypts to it.
+      # `OID4VCI_RESPONSE_ENC_ZIP_VALUES=DEF` advertises DEFLATE (RFC 7516 §4.1.3); the OIDF
+      # `performCompressedEncryptionRequest` step asks for `zip=DEF` on every encrypted run.
+      - OID4VCI_RESPONSE_ENC_ALG_VALUES=${OID4VCI_RESPONSE_ENC_ALG_VALUES:-ECDH-ES,ECDH-ES+A128KW,ECDH-ES+A256KW}
+      - OID4VCI_RESPONSE_ENC_ENC_VALUES=${OID4VCI_RESPONSE_ENC_ENC_VALUES:-A256GCM,A128GCM}
+      - OID4VCI_RESPONSE_ENC_ZIP_VALUES=${OID4VCI_RESPONSE_ENC_ZIP_VALUES:-DEF}
+      - OID4VCI_RESPONSE_ENCRYPTION_REQUIRED=${OID4VCI_RESPONSE_ENCRYPTION_REQUIRED:-false}
+      # OID4VCI 1.0 §11.2.4 credential_request_encryption — issuer's KMS alias for the ECDH-ES
+      # P-256 keypair whose public JWK is published as `credential_request_encryption.jwks`.
+      # Default alias matches the one minted by lib/generate-keystores.{sh,ps1}.
+      - OID4VCI_REQUEST_DECRYPTION_KEY_ALIAS=${OID4VCI_REQUEST_DECRYPTION_KEY_ALIAS:-oid4vci-request-decryption}
+      - OID4VCI_REQUEST_ENC_ENC_VALUES=${OID4VCI_REQUEST_ENC_ENC_VALUES:-A256GCM,A128GCM}
+      - OID4VCI_REQUEST_ENC_ZIP_VALUES=${OID4VCI_REQUEST_ENC_ZIP_VALUES:-}
+      - OID4VCI_REQUEST_ENCRYPTION_REQUIRED=${OID4VCI_REQUEST_ENCRYPTION_REQUIRED:-false}
+      # OID4VCI 1.0 §7.2 / §11.2.3 key attestations. The REQUIRED flags default to `false`
+      # so plain dev advertises no requirement and accepts proofs without an attestation.
+      # The conformance encryption-required profile flips both to `true` (see
+      # profiles/conformance-haip-enc-required.env). When enabled, the policy values
+      # default to `iso_18045_moderate`; KEY_STORAGE / USER_AUTH overrides accept a single
+      # comma-separated list of ISO 18045 attack-potential-resistance levels. JWKS is a
+      # JSON array of JWK objects pasted from the OIDF plan's `vci_key_attestation_jwks`.
+      - OID4VCI_EUPID_KEY_ATTESTATIONS_REQUIRED=${OID4VCI_EUPID_KEY_ATTESTATIONS_REQUIRED:-false}
+      - OID4VCI_EUPID_KEY_ATTESTATIONS_KEY_STORAGE=${OID4VCI_EUPID_KEY_ATTESTATIONS_KEY_STORAGE:-iso_18045_moderate}
+      - OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH=${OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH:-iso_18045_moderate}
+      - OID4VCI_EUPID_KEY_ATTESTER_JWKS=${OID4VCI_EUPID_KEY_ATTESTER_JWKS:-}
+      - OID4VCI_MDL_KEY_ATTESTATIONS_REQUIRED=${OID4VCI_MDL_KEY_ATTESTATIONS_REQUIRED:-false}
+      - OID4VCI_MDL_KEY_ATTESTATIONS_KEY_STORAGE=${OID4VCI_MDL_KEY_ATTESTATIONS_KEY_STORAGE:-iso_18045_moderate}
+      - OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH=${OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH:-iso_18045_moderate}
+      - OID4VCI_MDL_KEY_ATTESTER_JWKS=${OID4VCI_MDL_KEY_ATTESTER_JWKS:-}
+      # Global X.509 trust anchors for OID4VCI 1.0 §7.2 key-attestation x5c chain
+      # validation. Mirrors the AS wallet-attestation wiring (same wallet attester signs
+      # both): the conformance HAIP profile points this at wallet-attester-ca.pem so
+      # the issuer accepts attestations carrying x5c chains anchored at that CA.
+      - TRUST_ANCHORS_X509_ENABLED=${TRUST_ANCHORS_X509_ENABLED:-false}
+      - TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0=${TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0:-}
     volumes:
       - ./config/oid4vci-issuer.yml:/app/config/application.yml:ro
       - ./keystores/oid4vci-issuer:/app/keystore
+      - ./trust-anchors:/app/trust-anchors:ro
     healthcheck:
       # Hits the full metadata endpoint instead of bare /health: this verifies the
       # service is up AND the config provider, DI graph, and signed_metadata pipeline
@@ -118,9 +184,26 @@ services:
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
+      # Client ID prefix selection (OID4VP §5.9.3). Default: did:jwk.
+      # Switch to x509_san_dns or x509_hash via profiles/conformance-*.env.
+      - VERIFIER_CLIENT_ID_PREFIX=${VERIFIER_CLIENT_ID_PREFIX:-did:jwk}
+      # Default matches the SAN baked into the cert that lib/generate-keystores.{sh,ps1}
+      # generates for the verifier alias. Always populated so the per-request multi-mode
+      # signer can produce `x509_san_dns:verifier.example.com` regardless of which env
+      # profile is layered on top.
+      - VERIFIER_SAN_DNS_NAME=${VERIFIER_SAN_DNS_NAME:-verifier.example.com}
+      - VERIFIER_CERT_HASH=${VERIFIER_CERT_HASH:-}
+      # X.509 trust anchors for the shared `trust.*` framework. The OID4VP mDoc
+      # IACA path uses these for the IssuerAuth chain check (ISO 18013-5 §9.3.1);
+      # the same loader feeds X509TrustValidationService for any other x5c-bound
+      # credential format. Defaults to /app/trust-anchors/iaca.pem (mounted
+      # below from ./trust-anchors). Drop the OIDF suite's IACA cert into
+      # services/trust-anchors/iaca.pem before running iso_mdl plans.
+      - VERIFIER_TRUST_X509_CA_BUNDLE_PATH=${VERIFIER_TRUST_X509_CA_BUNDLE_PATH:-/app/trust-anchors/iaca.pem}
     volumes:
       - ./config/oid4vp-verifier.yml:/app/config/application.yml:ro
       - ./keystores/oid4vp-verifier:/app/keystore
+      - ./trust-anchors:/app/trust-anchors:ro
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 10s

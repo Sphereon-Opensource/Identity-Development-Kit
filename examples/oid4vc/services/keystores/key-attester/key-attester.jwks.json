@@ -1,0 +1,15 @@
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "sig",
+      "alg": "ES256",
+      "kid": "key-attester",
+      "x": "GDXvEvlApreKQQFDEd53o51JG4aaZo_-Tjch1J2wcJg",
+      "y": "9cLKSsBSa7zq86Eba7-gcJxf1agnyj5pOx7-NOUb4l4",
+      "d": "OdanOuuDe6TgCF53ykRE_BmUeiTHbYWBm81TzZ5R9nE",
+      "x5c": ["MIIBuTCCAWCgAwIBAgIUBLQhxPwu6uo4EloFsWwkv19Kwe4wCgYIKoZIzj0EAwIwJzElMCMGA1UEAwwcSURLIEUyRSBDQSwgTz1TcGhlcmVvbiwgQz1OTDAeFw0yNjA1MDEwMDA0NTBaFw0zNjA0MjgwMDA0NTBaMDExLzAtBgNVBAMMJklESyBFMkUgS2V5IEF0dGVzdGVyLCBPPVNwaGVyZW9uLCBDPU5MMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGDXvEvlApreKQQFDEd53o51JG4aaZo/+Tjch1J2wcJj1wspKwFJrvOrzoRtrv6BwnF/VqCfKPmk7Hv405RviXqNgMF4wDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0OBBYEFFhovl/9QomixpmZMeY0FNwz8oKkMB8GA1UdIwQYMBaAFOMhmqA/36jY0W7Q/qC2C1NucXquMAoGCCqGSM49BAMCA0cAMEQCIA2ebgxHlXkE51V+S4lzJ5buPcOUMktuTAYjaysbm9PRAiBJ6jU3W1xTzOue0ThrkHuSesGVxZX2aRhxDlI2MAlkAA=="]
+    }
+  ]
+}

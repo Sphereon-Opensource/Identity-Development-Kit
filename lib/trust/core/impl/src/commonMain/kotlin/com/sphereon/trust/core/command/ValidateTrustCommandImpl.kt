@@ -36,7 +36,7 @@ class ValidateTrustCommandImpl(
     execution: SessionExecution,
     private val validators: Set<TrustValidationService>,
     private val extractors: Set<EntityInfoExtractor>,
-) : TypedServiceCommandAdapter<ValidateTrustArgs, TrustValidationResult>(
+) : TypedServiceCommandAdapter<ValidateTrustArgs, TrustValidationResult, IdkError>(
         commandId = ValidateTrustCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateTrustArgs>(),

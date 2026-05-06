@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.config
 
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.ResponseType
@@ -34,6 +35,8 @@ internal data class ConfiguredOAuth2Client(
     val redirectUris: List<String> = emptyList(),
     val allowedScopes: List<String>? = null,
     val tokenEndpointAuthMethod: ClientAuthenticationMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+    val jwks: List<Jwk>? = null,
+    val jwksUri: String? = null,
     val requirePkce: Boolean = clientType == ClientType.PUBLIC,
     val requirePushedAuthorizationRequests: Boolean = false,
     val dpopBoundAccessTokens: Boolean = false,
@@ -41,7 +44,24 @@ internal data class ConfiguredOAuth2Client(
     val refreshTokenLifetime: Int? = null,
     val authorizationCodeLifetime: Int = 600,
     val trustedAttesterIssuers: List<String>? = null,
-    val trustedAttesterJwksUris: Map<String, String>? = null,
+    val trustedAttesterJwks: List<Jwk>? = null,
+    val trustedAttesterJwksUris: List<String>? = null,
+    val postLogoutRedirectUris: List<String> = emptyList(),
+    val frontchannelLogoutUri: String? = null,
+    val frontchannelLogoutSessionRequired: Boolean = false,
+    val backchannelLogoutUri: String? = null,
+    val backchannelLogoutSessionRequired: Boolean = false,
+    val authorizationSignedResponseAlg: String? = null,
+    val authorizationEncryptedResponseAlg: String? = null,
+    val authorizationEncryptedResponseEnc: String? = null,
+    val requestObjectSigningAlg: String? = null,
+    val requestUris: List<String> = emptyList(),
+    val tlsClientAuthSubjectDn: String? = null,
+    val tlsClientAuthSanDns: String? = null,
+    val tlsClientAuthSanEmail: String? = null,
+    val tlsClientAuthSanIp: String? = null,
+    val tlsClientAuthSanUri: String? = null,
+    val tlsClientCertificateBoundAccessTokens: Boolean = false,
 ) {
     fun toClientRegistration(): ClientRegistration =
         ClientRegistration(
@@ -54,6 +74,8 @@ internal data class ConfiguredOAuth2Client(
             redirectUris = redirectUris,
             allowedScopes = allowedScopes,
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            jwks = jwks,
+            jwksUri = jwksUri,
             requirePkce = requirePkce,
             requirePushedAuthorizationRequests = requirePushedAuthorizationRequests,
             dpopBoundAccessTokens = dpopBoundAccessTokens,
@@ -61,6 +83,23 @@ internal data class ConfiguredOAuth2Client(
             refreshTokenLifetime = refreshTokenLifetime,
             authorizationCodeLifetime = authorizationCodeLifetime,
             trustedAttesterIssuers = trustedAttesterIssuers,
+            trustedAttesterJwks = trustedAttesterJwks,
             trustedAttesterJwksUris = trustedAttesterJwksUris,
+            postLogoutRedirectUris = postLogoutRedirectUris,
+            frontchannelLogoutUri = frontchannelLogoutUri,
+            frontchannelLogoutSessionRequired = frontchannelLogoutSessionRequired,
+            backchannelLogoutUri = backchannelLogoutUri,
+            backchannelLogoutSessionRequired = backchannelLogoutSessionRequired,
+            authorizationSignedResponseAlg = authorizationSignedResponseAlg,
+            authorizationEncryptedResponseAlg = authorizationEncryptedResponseAlg,
+            authorizationEncryptedResponseEnc = authorizationEncryptedResponseEnc,
+            requestObjectSigningAlg = requestObjectSigningAlg,
+            requestUris = requestUris,
+            tlsClientAuthSubjectDn = tlsClientAuthSubjectDn,
+            tlsClientAuthSanDns = tlsClientAuthSanDns,
+            tlsClientAuthSanEmail = tlsClientAuthSanEmail,
+            tlsClientAuthSanIp = tlsClientAuthSanIp,
+            tlsClientAuthSanUri = tlsClientAuthSanUri,
+            tlsClientCertificateBoundAccessTokens = tlsClientCertificateBoundAccessTokens,
         )
 }

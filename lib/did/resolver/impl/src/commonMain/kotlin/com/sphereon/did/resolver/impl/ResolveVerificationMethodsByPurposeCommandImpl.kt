@@ -42,7 +42,7 @@ import dev.zacsweers.metro.SingleIn
 class ResolveVerificationMethodsByPurposeCommandImpl(
     execution: SessionExecution,
     private val registry: DidResolverRegistry,
-) : TypedServiceCommandAdapter<ResolveVerificationMethodsByPurposeArgs, List<VerificationMethod>>(
+) : TypedServiceCommandAdapter<ResolveVerificationMethodsByPurposeArgs, List<VerificationMethod>, IdkError>(
         commandId = ResolveVerificationMethodsByPurposeCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveVerificationMethodsByPurposeArgs>(),

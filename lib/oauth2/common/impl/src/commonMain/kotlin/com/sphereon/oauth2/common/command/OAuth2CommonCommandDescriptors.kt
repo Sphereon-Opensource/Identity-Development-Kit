@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseCommand
@@ -31,13 +32,13 @@ import dev.zacsweers.metro.StringKey
 interface OAuth2CommonCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ValidateIdTokenCommand.COMMAND_ID)
-    fun validateIdToken(impl: ValidateIdTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun validateIdToken(impl: ValidateIdTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyJarmResponseCommand.COMMAND_ID)
-    fun verifyJarmResponse(impl: VerifyJarmResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyJarmResponse(impl: VerifyJarmResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJarmResponseCommand.COMMAND_ID)
-    fun createJarmResponse(impl: CreateJarmResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun createJarmResponse(impl: CreateJarmResponseCommandImpl): ServiceCommand<*, *, *> = impl
 }

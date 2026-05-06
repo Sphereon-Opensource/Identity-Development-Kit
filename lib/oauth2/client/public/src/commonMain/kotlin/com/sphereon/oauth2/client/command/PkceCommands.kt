@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.EmptyResult
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
@@ -55,7 +56,7 @@ data class VerifyPkceArgs(
  * Command for creating PKCE challenge/verifier pairs (RFC 7636)
  */
 @JsExportCompat
-interface CreatePkceCommand : ServiceCommand<CreatePkceArgs, PkceData> {
+interface CreatePkceCommand : ServiceCommand<CreatePkceArgs, PkceData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -67,7 +68,7 @@ interface CreatePkceCommand : ServiceCommand<CreatePkceArgs, PkceData> {
  * Command for verifying PKCE challenge/verifier pairs (RFC 7636)
  */
 @JsExportCompat
-interface VerifyPkceCommand : ServiceCommand<VerifyPkceArgs, EmptyResult> {
+interface VerifyPkceCommand : ServiceCommand<VerifyPkceArgs, EmptyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -215,7 +215,7 @@ data class ClientIdValidationError(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ValidateClientIdCommand", exact = true)
 @JsExportCompat
-interface ValidateClientIdCommand : ServiceCommand<ValidateClientIdArgs, ValidateClientIdResult> {
+interface ValidateClientIdCommand : ServiceCommand<ValidateClientIdArgs, ValidateClientIdResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

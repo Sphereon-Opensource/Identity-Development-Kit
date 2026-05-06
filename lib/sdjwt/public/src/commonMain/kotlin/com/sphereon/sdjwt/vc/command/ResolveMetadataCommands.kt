@@ -15,6 +15,7 @@
  */
 package com.sphereon.sdjwt.vc.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.vc.IssuerMetadataResolutionResult
@@ -26,7 +27,7 @@ import com.sphereon.sdjwt.vc.TypeMetadataResolutionResult
  * Command for resolving SD-JWT-VC type metadata
  */
 @JsExportCompat
-interface ResolveTypeMetadataCommand : ServiceCommand<ResolveTypeMetadataArgs, TypeMetadataResolutionResult> {
+interface ResolveTypeMetadataCommand : ServiceCommand<ResolveTypeMetadataArgs, TypeMetadataResolutionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -38,7 +39,7 @@ interface ResolveTypeMetadataCommand : ServiceCommand<ResolveTypeMetadataArgs, T
  * Command for resolving SD-JWT-VC issuer metadata
  */
 @JsExportCompat
-interface ResolveIssuerMetadataCommand : ServiceCommand<ResolveIssuerMetadataArgs, IssuerMetadataResolutionResult> {
+interface ResolveIssuerMetadataCommand : ServiceCommand<ResolveIssuerMetadataArgs, IssuerMetadataResolutionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

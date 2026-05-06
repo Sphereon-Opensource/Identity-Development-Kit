@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.model
 
+import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -45,6 +46,12 @@ data class AuthorizationSession(
      * Requested response type(s)
      */
     val responseType: String,
+    /**
+     * Resolved response mode for this session. Used by the approval handler to pick between
+     * query-param redirect, fragment redirect, and `form_post` HTML response. Populated by the
+     * verifier (OIDC Core §3.1.2.1 default per response_type when not specified in the request).
+     */
+    val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
     /**
      * Redirect URI from the authorization request
      */
@@ -102,10 +109,37 @@ data class AuthorizationSession(
      */
     val requestUri: String? = null,
     /**
+     * Requested `acr_values` from the authorization request (OIDC Core §3.1.2.1). The AS uses
+     * this list at code-issuance time to populate the granted `acr` claim on the id_token
+     * when the authenticator didn't surface a specific level — picking the first requested
+     * value satisfies the OIDC SHOULD on `acr_values` echo.
+     */
+    val acrValues: List<String>? = null,
+    /**
+     * Requested OIDC `max_age` (seconds) from the original authorization request. Carried
+     * through so the AS can enforce auth freshness at code-issuance time as a
+     * belt-and-suspenders check on top of the existing prompt/session-eval handling
+     * in [com.sphereon.oauth2.server.authorization.command.StandardAuthorizeRequestCommand].
+     * Null means the request did not pin a max_age (no freshness gate).
+     */
+    val maxAge: Long? = null,
+    /**
      * Additional session data
      */
     val additionalData: Map<String, @Contextual Any> = emptyMap(),
 )
+
+/**
+ * Well-known keys used inside [AuthorizationSession.additionalData] /
+ * `AuthorizationCodeData.additionalData` / `AccessTokenData.additionalData` for the OIDC
+ * Core §5.5 `claims` request parameter. The values stored under these keys are
+ * `List<String>` of claim names — `userinfo` is consumed by `GetUserInfoCommandImpl`,
+ * `id_token` by `CreateIdTokenCommandImpl`. Carried across hops as map entries (not
+ * promoted to typed fields) so the existing additionalData propagation path works
+ * without touching every model in the chain.
+ */
+const val SESSION_KEY_OIDC_CLAIMS_USERINFO: String = "oidc.claims.userinfo"
+const val SESSION_KEY_OIDC_CLAIMS_ID_TOKEN: String = "oidc.claims.id_token"
 
 /**
  * Authorization session status

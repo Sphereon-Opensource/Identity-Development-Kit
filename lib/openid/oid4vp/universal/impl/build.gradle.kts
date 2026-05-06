@@ -109,6 +109,12 @@ kotlin {
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
                 implementation(projects.libSdjwtImpl)
+                // mdoc + trust bindings required by VerifyHolderBindingCommandImpl
+                // (transitively pulled in via verifier-impl on the test classpath).
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libCborImpl)
+                implementation(projects.libTrustX509)
+                implementation(projects.libTrustCoreImpl)
                 implementation(sphereonlib.io.ktor.client.mock)
             }
         }
@@ -132,6 +138,10 @@ kotlin {
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
                 implementation(projects.libSdjwtImpl)
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libCborImpl)
+                implementation(projects.libTrustX509)
+                implementation(projects.libTrustCoreImpl)
                 implementation(sphereonlib.io.ktor.client.mock)
                 implementation(sphereonlib.org.jetbrains.kotlin.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)

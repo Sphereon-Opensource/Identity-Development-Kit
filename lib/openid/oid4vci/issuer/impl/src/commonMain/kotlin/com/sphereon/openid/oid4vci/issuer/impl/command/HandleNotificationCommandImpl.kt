@@ -57,7 +57,7 @@ class HandleNotificationCommandImpl(
     private val asBridge: Oid4vciAuthorizationServerBridge,
     private val notificationStore: NotificationStateStore,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<HandleNotificationArgs, Unit>(
+) : TypedServiceCommandAdapter<HandleNotificationArgs, Unit, IdkError>(
         commandId = HandleNotificationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<HandleNotificationArgs>(),
@@ -110,7 +110,12 @@ class HandleNotificationCommandImpl(
         // 0. Validate access token
         asBridge
             .validateAccessToken(
-                ValidateAccessTokenArgs(accessToken = applied.accessToken),
+                ValidateAccessTokenArgs(
+                    accessToken = applied.accessToken,
+                    dpopProof = applied.dpopProof,
+                    httpUrl = applied.httpUrl,
+                    httpMethod = applied.httpMethod,
+                ),
             ).getOrElse { return Err(it) }
 
         // 1. Validate notification_id is not blank — malformed request per OID4VCI spec

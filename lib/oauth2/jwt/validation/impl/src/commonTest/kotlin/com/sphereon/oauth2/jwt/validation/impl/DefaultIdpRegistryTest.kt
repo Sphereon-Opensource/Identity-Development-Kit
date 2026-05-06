@@ -169,11 +169,12 @@ class DefaultIdpRegistryTest {
     }
 
     @Test
-    fun testGetIdpByIssuerFallsBackToDefault() {
+    fun testGetIdpByIssuerFallsBackToDefaultInLaxMode() {
         val config =
             JwtValidationConfig(
                 enabled = true,
                 defaultIdp = defaultIdp,
+                strictIssuerMatching = false,
             )
         val registry = DefaultIdpRegistry(config)
 
@@ -184,7 +185,22 @@ class DefaultIdpRegistryTest {
     }
 
     @Test
-    fun testGetIdpByIssuerReturnsErrorWhenNoMatch() {
+    fun testGetIdpByIssuerStrictModeRejectsUnknownIssuerEvenWithDefault() {
+        val config =
+            JwtValidationConfig(
+                enabled = true,
+                defaultIdp = defaultIdp,
+            )
+        val registry = DefaultIdpRegistry(config)
+
+        when (val result = registry.getIdpByIssuer("https://unknown-issuer.com")) {
+            is Ok -> fail("Expected Err(UntrustedIssuer) in strict mode but got Ok=${result.value}")
+            is Err -> assertEquals(JwtValidationErrorType.UNTRUSTED_ISSUER, result.error.type)
+        }
+    }
+
+    @Test
+    fun testGetIdpByIssuerReturnsErrorWhenNoMatchAndNoDefault() {
         val config = JwtValidationConfig(enabled = true)
         val registry = DefaultIdpRegistry(config)
 
@@ -330,5 +346,35 @@ class DefaultIdpRegistryTest {
         val registry = DefaultIdpRegistry(config)
 
         assertFalse(registry.removeIdp("non-existent"))
+    }
+
+    @Test
+    fun testRegisteredIdpPersistsAcrossSessions() {
+        // The registry is AppScope, so a single instance serves every session.
+        // Simulate "session A" registering a dynamic IdP and "session B" resolving it:
+        // both sessions see the same registry instance, and the registration persists.
+        val config = JwtValidationConfig(enabled = true, defaultIdp = defaultIdp)
+        val registry = DefaultIdpRegistry(config)
+
+        // Session A: register a dynamic IdP whose issuer does not match the default.
+        val dynamicIssuer = "https://dynamic-idp.example.com"
+        val dynamicIdp =
+            IdpConfig.oidc(
+                id = "dynamic-idp",
+                issuer = dynamicIssuer,
+                audience = "dynamic-api",
+            )
+        registry.registerIdp(dynamicIdp)
+
+        // Session B: resolve the IdP by issuer and by id against the same instance.
+        when (val byIssuer = registry.getIdpByIssuer(dynamicIssuer)) {
+            is Ok -> assertEquals(dynamicIdp, byIssuer.value)
+            is Err -> fail("Expected Ok but got Err: ${byIssuer.error}")
+        }
+        when (val byId = registry.getIdpById("dynamic-idp")) {
+            is Ok -> assertEquals(dynamicIdp, byId.value)
+            is Err -> fail("Expected Ok but got Err: ${byId.error}")
+        }
+        assertTrue(registry.isTrustedIssuer(dynamicIssuer))
     }
 }

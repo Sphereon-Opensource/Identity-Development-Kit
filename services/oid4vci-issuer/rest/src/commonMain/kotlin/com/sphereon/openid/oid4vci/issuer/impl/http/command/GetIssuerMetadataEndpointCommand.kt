@@ -29,7 +29,15 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierOpts
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
+import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
+import com.sphereon.crypto.resolution.tryManagedIdentifierToJwk
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataArgs
@@ -41,6 +49,10 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * Endpoint command for OID4VCI Issuer Metadata discovery.
@@ -78,6 +90,7 @@ class GetIssuerMetadataEndpointCommandImpl(
     private val buildSignedMetadataCommand: BuildSignedIssuerMetadataCommand,
     private val configProvider: Oid4vciIssuerConfigProvider,
     private val restConfigProvider: Oid4vciRestConfigProvider,
+    private val multiManagedIdentifierService: MultiManagedIdentifierService,
 ) : HttpEndpointCommandAdapter(
         id = GetIssuerMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -100,6 +113,13 @@ class GetIssuerMetadataEndpointCommandImpl(
             acceptHeader.contains(ACCEPT_JWT, ignoreCase = true) ||
                 acceptHeader.contains(ACCEPT_ISSUER_METADATA_JWT, ignoreCase = true)
 
+        // Resolve `credential_request_encryption.jwks` from the KMS at request time so we
+        // never store private key material in YAML / git. Mirrors how the OAuth2 AS publishes
+        // its signing JWKS via `GetJwksCommandImpl`.
+        val resolvedRequestEncryption =
+            resolveCredentialRequestEncryption(configProvider.credentialRequestEncryption)
+                .getOrElse { error -> return Err(error) }
+
         val metadataResult =
             buildMetadataCommand.execute(
                 BuildIssuerMetadataArgs(
@@ -109,7 +129,7 @@ class GetIssuerMetadataEndpointCommandImpl(
                     credentialConfigurations = configProvider.credentialConfigurations,
                     display = configProvider.display,
                     credentialResponseEncryption = configProvider.credentialResponseEncryption,
-                    credentialRequestEncryption = configProvider.credentialRequestEncryption,
+                    credentialRequestEncryption = resolvedRequestEncryption,
                     batchCredentialIssuance = configProvider.batchCredentialIssuance,
                 ),
             )
@@ -151,5 +171,67 @@ class GetIssuerMetadataEndpointCommandImpl(
         }
 
         return Ok(jsonResponse(200, protocolJson.encodeToString(metadata)))
+    }
+
+    /**
+     * Walks the KMS to materialise the `credential_request_encryption.jwks` field whenever the
+     * config provider supplied a [Oid4vciIssuerConfigProvider.credentialRequestDecryptionKey]
+     * alias. The metadata template the config provider returns carries a placeholder `jwks`
+     * (`{"keys": []}`) that we replace with the real public JWK here. When no decryption key
+     * alias is configured (and no static jwks is in YAML either) the template arrives `null`
+     * and we pass that through unchanged so the metadata field is omitted on the wire.
+     *
+     * Mirrors `GetJwksCommandImpl.executeInternal` — same `tryManagedIdentifierToJwk`
+     * primitive, same kid-pinning rule (use `keyInfo.kid` when set so the published kid
+     * matches what JWS / JWE signers stamp into headers).
+     */
+    private suspend fun resolveCredentialRequestEncryption(template: MetadataCredentialRequestEncryption?,): IdkResult<MetadataCredentialRequestEncryption?, IdkError> {
+        if (template == null) return Ok(null)
+
+        val decryptionOpts =
+            configProvider.credentialRequestDecryptionKey
+                ?: return Ok(template) // static-jwks path or null jwks — already correct on the template
+
+        val resolvedIdentifier: ManagedIdentifierOptsOrResult =
+            if (decryptionOpts is ManagedIdentifierOpts && decryptionOpts !is ManagedIdentifierResult<*>) {
+                multiManagedIdentifierService
+                    .resolve(decryptionOpts)
+                    .getOrElse { return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to resolve credential_request_encryption decryption key: ${it.message}")) }
+            } else {
+                decryptionOpts
+            }
+
+        val jwkResult =
+            tryManagedIdentifierToJwk(resolvedIdentifier).getOrElse { return Err(it) }
+        val publicJwk =
+            (jwkResult.identifier.toPublicKey() as? Jwk)
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to convert credential_request_encryption key to public JWK"))
+
+        // Pin kid to keyInfo.kid the same way the AS JWKS endpoint does, so a wallet that
+        // includes `kid` in its JWE header can resolve back to the same KMS alias on decrypt.
+        // Also stamp `use=enc` (RFC 7517 §4.2) and the default JWE key-management `alg`
+        // (RFC 7517 §4.4) so RFC 7517 / OIDF `VCICheckCredentialRequestEncryptionSupported`
+        // can confirm the key is intended for encryption — the suite rejects a JWK with no
+        // `use` AND no JWE-compatible `alg` because it can't tell encryption keys from
+        // signing keys. ECDH-ES is the only HAIP-permitted alg for P-256, so it's the
+        // natural advertised default; wallets MAY still pick a more specific +A*KW variant.
+        val publishedJwk =
+            jwkResult.keyInfo.kid
+                ?.takeIf { it.isNotBlank() }
+                ?.let { keyInfoKid ->
+                    if (publicJwk.kid == keyInfoKid) publicJwk else publicJwk.copy(kid = keyInfoKid)
+                } ?: publicJwk
+        val annotatedJwk =
+            publishedJwk.copy(
+                use = publishedJwk.use ?: "enc",
+                alg = publishedJwk.alg ?: JwaAlgorithm.ECDH_ES,
+            )
+
+        val publicJwkElement =
+            Json.Default.encodeToJsonElement(Jwk.serializer(), annotatedJwk).let {
+                it as? JsonObject ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Public JWK did not serialize to a JSON object"))
+            }
+        val realJwks = JsonObject(mapOf("keys" to JsonArray(listOf(publicJwkElement))))
+        return Ok(template.copy(jwks = realJwks))
     }
 }

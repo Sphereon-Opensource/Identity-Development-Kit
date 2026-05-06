@@ -27,6 +27,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import com.sphereon.core.api.coroutines.runBlockingCompat as runBlocking
 
 class JwtClaimsParserTest {
     // Sample JWT: header.payload.signature
@@ -147,37 +148,37 @@ class OidcTenantResolverTest {
     @Test
     fun resolveTenantFromTenantIdClaim() {
         val input = JwtClaimsInput(mapOf("tenant_id" to JsonPrimitive("ACME")))
-        assertEquals("acme", resolver.resolveTenant(input))
+        assertEquals("acme", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantFromTidClaim() {
         val input = JwtClaimsInput(mapOf("tid" to JsonPrimitive("Contoso")))
-        assertEquals("contoso", resolver.resolveTenant(input))
+        assertEquals("contoso", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantFromTenantIdCamelCaseClaim() {
         val input = JwtClaimsInput(mapOf("tenantId" to JsonPrimitive("MyTenant")))
-        assertEquals("mytenant", resolver.resolveTenant(input))
+        assertEquals("mytenant", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantFromOrgIdClaim() {
         val input = JwtClaimsInput(mapOf("org_id" to JsonPrimitive("org-123")))
-        assertEquals("org-123", resolver.resolveTenant(input))
+        assertEquals("org-123", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantFromOrganizationIdClaim() {
         val input = JwtClaimsInput(mapOf("organization_id" to JsonPrimitive("ORG-ABC")))
-        assertEquals("org-abc", resolver.resolveTenant(input))
+        assertEquals("org-abc", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantFromTenantClaim() {
         val input = JwtClaimsInput(mapOf("tenant" to JsonPrimitive("MyTenant")))
-        assertEquals("mytenant", resolver.resolveTenant(input))
+        assertEquals("mytenant", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
@@ -190,20 +191,20 @@ class OidcTenantResolverTest {
                     "tenant_id" to JsonPrimitive("preferred-tenant"),
                 ),
             )
-        assertEquals("preferred-tenant", resolver.resolveTenant(input))
+        assertEquals("preferred-tenant", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantTrimsWhitespace() {
         val input = JwtClaimsInput(mapOf("tenant_id" to JsonPrimitive("  acme  ")))
-        assertEquals("acme", resolver.resolveTenant(input))
+        assertEquals("acme", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantThrowsWhenNoTenantClaim() {
         val input = JwtClaimsInput(mapOf("sub" to JsonPrimitive("user123")))
         assertFailsWith<IllegalArgumentException> {
-            resolver.resolveTenant(input)
+            runBlocking { resolver.resolveTenant(input) }
         }
     }
 
@@ -216,7 +217,7 @@ class OidcTenantResolverTest {
                     "tid" to JsonPrimitive("valid-tenant"),
                 ),
             )
-        assertEquals("valid-tenant", resolver.resolveTenant(input))
+        assertEquals("valid-tenant", runBlocking { resolver.resolveTenant(input) })
     }
 }
 
@@ -349,7 +350,7 @@ class OidcResolverIntegrationTest {
         val handler = TenantResolutionHandlerImpl(setOf(oidcResolver, staticResolver))
 
         val jwtInput = JwtClaimsInput(mapOf("tenant_id" to JsonPrimitive("jwt-tenant")))
-        val result = handler.resolveTenant(jwtInput)
+        val result = runBlocking { handler.resolveTenant(jwtInput) }
 
         assertEquals("jwt-tenant", result.tenant.tenantId)
     }
@@ -377,7 +378,7 @@ class OidcResolverIntegrationTest {
         val tenantHandler = TenantResolutionHandlerImpl(setOf(OidcTenantResolver(), StaticTenantResolver()))
         val principalHandler = PrincipalResolutionHandlerImpl(setOf(OidcPrincipalResolver(), StaticPrincipalResolver()))
 
-        val tenantAware = tenantHandler.resolveTenant(jwtInput)
+        val tenantAware = runBlocking { tenantHandler.resolveTenant(jwtInput) }
         assertEquals("acme", tenantAware.tenant.tenantId)
 
         val principalAware = principalHandler.resolvePrincipal(jwtInput, tenantAware)

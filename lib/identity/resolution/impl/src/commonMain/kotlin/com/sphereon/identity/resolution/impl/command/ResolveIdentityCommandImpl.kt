@@ -40,7 +40,7 @@ import dev.zacsweers.metro.SingleIn
 class ResolveIdentityCommandImpl(
     execution: SessionExecution,
     private val resolvers: Set<IdentityResolver>,
-) : TypedServiceCommandAdapter<ResolveIdentityArgs, IdentityResolutionResult>(
+) : TypedServiceCommandAdapter<ResolveIdentityArgs, IdentityResolutionResult, IdkError>(
         commandId = ResolveIdentityCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveIdentityArgs>(),

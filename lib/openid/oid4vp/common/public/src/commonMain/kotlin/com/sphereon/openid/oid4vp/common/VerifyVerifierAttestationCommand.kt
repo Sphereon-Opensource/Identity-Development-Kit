@@ -124,7 +124,7 @@ data class VerifierAttestationValidationError(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyVerifierAttestationCommand", exact = true)
 @JsExportCompat
-interface VerifyVerifierAttestationCommand : ServiceCommand<VerifyVerifierAttestationArgs, VerifyVerifierAttestationResult> {
+interface VerifyVerifierAttestationCommand : ServiceCommand<VerifyVerifierAttestationArgs, VerifyVerifierAttestationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

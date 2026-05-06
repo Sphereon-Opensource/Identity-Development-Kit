@@ -62,7 +62,7 @@ class TestRequestObjectSigningConfig(
 
     override suspend fun resolveSigningKey(): KeyInfoType<*> = KeyInfo<Nothing>(alias = SIGNING_KEY_ALIAS)
 
-    override suspend fun resolveSignerBinding(): VerifierSignerBinding? {
+    override suspend fun resolveSignerBinding(scheme: com.sphereon.openid.oid4vp.common.ClientIdScheme?): VerifierSignerBinding? {
         if (!signingEnabled) return null
         val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = SIGNING_KEY_ALIAS))
         check(keyResult.isOk) { "Failed to load signing key '$SIGNING_KEY_ALIAS' from KMS: ${keyResult.error}" }

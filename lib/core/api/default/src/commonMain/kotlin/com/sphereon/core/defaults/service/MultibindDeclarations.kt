@@ -34,11 +34,11 @@ import dev.zacsweers.metro.Named
 @ContributesTo(SessionScope::class)
 interface SessionScopeMultibindDeclarations {
     @Multibinds(allowEmpty = true)
-    fun localCommands(): Map<String, ServiceCommand<*, *>>
+    fun localCommands(): Map<String, ServiceCommand<*, *, *>>
 
     @Multibinds(allowEmpty = true)
     @Named("remote")
-    fun remoteCommands(): Map<String, ServiceCommand<*, *>>
+    fun remoteCommands(): Map<String, ServiceCommand<*, *, *>>
 }
 
 /**

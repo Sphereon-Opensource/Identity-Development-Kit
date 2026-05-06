@@ -65,7 +65,7 @@ import dev.zacsweers.metro.SingleIn
 class VerifyTransactionDataCommandImpl(
     private val parseTransactionDataCommand: ParseTransactionDataCommand,
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<VerifyTransactionDataArgs, VerifyTransactionDataResult>(
+) : TypedServiceCommandAdapter<VerifyTransactionDataArgs, VerifyTransactionDataResult, IdkError>(
         commandId = VerifyTransactionDataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyTransactionDataArgs>(),

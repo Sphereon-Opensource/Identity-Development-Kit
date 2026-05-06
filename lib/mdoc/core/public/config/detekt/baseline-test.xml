@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:MdocVerificationE2ETest.kt$MdocVerificationE2ETest$else</ID>
+    <ID>BracesOnIfStatements:MdocVerificationE2ETest.kt$MdocVerificationE2ETest$if</ID>
+    <ID>Deprecation:MdocVerificationE2ETest.kt$MdocVerificationE2ETest$generateKeyAsync</ID>
+    <ID>LongMethod:MdocVerificationE2ETest.kt$MdocVerificationE2ETest$@Suppress("UNCHECKED_CAST") private suspend fun buildSignedHolderDocument(): SignedHolderDocument</ID>
+    <ID>UnusedParameter:MdocVerificationE2ETest.kt$MdocVerificationE2ETest$mdocNonce: String</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -47,7 +47,7 @@ import dev.zacsweers.metro.SingleIn
 class CreateRawSignatureCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<CreateRawSignatureArgs, CreateRawSignatureResult>(
+) : TypedServiceCommandAdapter<CreateRawSignatureArgs, CreateRawSignatureResult, IdkError>(
         commandId = CreateRawSignatureCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateRawSignatureArgs>(),
@@ -90,7 +90,7 @@ class CreateRawSignatureCommandImpl(
 class VerifyRawSignatureCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<VerifyRawSignatureArgs, VerifyRawSignatureResult>(
+) : TypedServiceCommandAdapter<VerifyRawSignatureArgs, VerifyRawSignatureResult, IdkError>(
         commandId = VerifyRawSignatureCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyRawSignatureArgs>(),

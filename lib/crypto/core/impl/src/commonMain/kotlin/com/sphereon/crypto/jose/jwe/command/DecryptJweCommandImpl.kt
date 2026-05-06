@@ -87,7 +87,7 @@ class DecryptJweCommandImpl(
     execution: SessionExecution,
     private val identifierService: MultiManagedIdentifierService,
     private val keyManagerService: KeyManagerService,
-) : TypedServiceCommandAdapter<DecryptJweArgs, JweDecryptionResult>(
+) : TypedServiceCommandAdapter<DecryptJweArgs, JweDecryptionResult, IdkError>(
         commandId = DecryptJweCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DecryptJweArgs>(),
@@ -209,15 +209,33 @@ class DecryptJweCommandImpl(
                 return IdkResult.err(IdkError.fromString("Decryption failed: ${expected.message}"))
             }
 
-        // Step 8: Decompress if needed (TODO: implement compression support)
-        if (header.zip == "DEF") {
-            return IdkResult.err(IdkError.fromString("Decompression not yet implemented"))
-        }
+        // Step 8: RFC 7516 §4.1.3 decompression — when `zip=DEF`, INFLATE the plaintext (raw
+        // RFC 1951, no zlib wrapper). Other `zip` values aren't IANA-registered — RFC 7516
+        // says implementations MAY accept private values but we don't, so reject anything
+        // other than DEF as a malformed JWE.
+        val finalPlaintext =
+            when (val zip = header.zip) {
+                null -> {
+                    plaintext
+                }
+
+                "DEF" -> {
+                    try {
+                        inflate(plaintext)
+                    } catch (expected: Throwable) {
+                        return IdkResult.err(IdkError.fromString("Failed to INFLATE compressed JWE plaintext: ${expected.message}"))
+                    }
+                }
+
+                else -> {
+                    return IdkResult.err(IdkError.fromString("Unsupported JWE zip algorithm: $zip (only DEF / RFC 1951 is supported)"))
+                }
+            }
 
         // Step 9: Return the result
         val result =
             JweDecryptionResult(
-                plaintext = plaintext,
+                plaintext = finalPlaintext,
                 header = header,
                 aad = aad,
             )
@@ -585,13 +603,32 @@ class DecryptJweCommandImpl(
                         additionalAuthenticatedData = aad,
                     )
 
-                // Check compression
-                if (header.zip == "DEF") {
-                    return IdkResult.err(IdkError.fromString("Decompression not yet implemented"))
-                }
+                // RFC 7516 §4.1.3 decompression for the JSON-General multi-recipient path —
+                // mirrors the compact path above. INFLATE raw DEFLATE (RFC 1951, no zlib
+                // wrapper); reject any other `zip` value as malformed.
+                val finalPlaintext =
+                    when (val zip = header.zip) {
+                        null -> {
+                            plaintext
+                        }
+
+                        "DEF" -> {
+                            try {
+                                inflate(plaintext)
+                            } catch (expected: Throwable) {
+                                lastError = IdkError.fromString("Failed to INFLATE compressed JWE plaintext: ${expected.message}")
+                                continue
+                            }
+                        }
+
+                        else -> {
+                            lastError = IdkError.fromString("Unsupported JWE zip algorithm: $zip (only DEF / RFC 1951 is supported)")
+                            continue
+                        }
+                    }
 
                 return JweDecryptionResult(
-                    plaintext = plaintext,
+                    plaintext = finalPlaintext,
                     header = header,
                     aad = aad,
                 ).asOkResult()

@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
@@ -44,7 +45,6 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
-import kotlin.random.Random
 import kotlin.time.Clock
 
 /**
@@ -57,7 +57,8 @@ import kotlin.time.Clock
 class CreateDpopProofCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
-) : TypedServiceCommandAdapter<CreateDpopProofArgs, DpopProofResult>(
+    private val secureRandom: SecureRandom,
+) : TypedServiceCommandAdapter<CreateDpopProofArgs, DpopProofResult, IdkError>(
         commandId = CreateDpopProofCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateDpopProofArgs>(),
@@ -163,11 +164,9 @@ class CreateDpopProofCommandImpl(
     /**
      * Generates a unique JWT ID using a random UUID-like string
      */
-    private fun generateJti(): String {
-        // Generate 16 random bytes and encode as base64url
-        val bytes = Random.Default.nextBytes(JTI_RANDOM_BYTES)
-        return bytes.encodeToBase64Url()
-    }
+    private suspend fun generateJti(): String =
+        // 16 random bytes (128 bits) encoded as base64url
+        secureRandom.newToken(lengthBytes = JTI_RANDOM_BYTES)
 
     /**
      * Calculates the SHA-256 hash of an access token (RFC 9449 Section 4.2)

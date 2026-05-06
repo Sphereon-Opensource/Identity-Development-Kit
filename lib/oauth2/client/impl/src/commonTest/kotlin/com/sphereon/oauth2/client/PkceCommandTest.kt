@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.client
 
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.VerifyPkceArgs
 import com.sphereon.oauth2.client.impl.pkce.CreatePkceCommandImpl
@@ -40,7 +41,7 @@ class PkceCommandTest {
     @Test
     fun testCreatePkceCommandDirectly() =
         runTest {
-            val command = CreatePkceCommandImpl(execution)
+            val command = CreatePkceCommandImpl(execution, defaultSecureRandom())
 
             val result =
                 command.execute(
@@ -72,7 +73,7 @@ class PkceCommandTest {
     @Test
     fun testCreatePkceWithKnownVerifier() =
         runTest {
-            val command = CreatePkceCommandImpl(execution)
+            val command = CreatePkceCommandImpl(execution, defaultSecureRandom())
 
             // Use a known verifier to test challenge calculation
             val knownVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -101,7 +102,7 @@ class PkceCommandTest {
     @Test
     fun testVerifyPkceCommand() =
         runTest {
-            val createCommand = CreatePkceCommandImpl(execution)
+            val createCommand = CreatePkceCommandImpl(execution, defaultSecureRandom())
             val verifyCommand = VerifyPkceCommandImpl(execution)
 
             // First create

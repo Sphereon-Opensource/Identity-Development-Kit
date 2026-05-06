@@ -130,7 +130,7 @@ data class CreateRawSignatureResult(
  * ```
  */
 @JsExportCompat
-interface CreateRawSignatureCommand : ServiceCommand<CreateRawSignatureArgs, CreateRawSignatureResult> {
+interface CreateRawSignatureCommand : ServiceCommand<CreateRawSignatureArgs, CreateRawSignatureResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -230,7 +230,7 @@ data class VerifyRawSignatureResult(
  * ```
  */
 @JsExportCompat
-interface VerifyRawSignatureCommand : ServiceCommand<VerifyRawSignatureArgs, VerifyRawSignatureResult> {
+interface VerifyRawSignatureCommand : ServiceCommand<VerifyRawSignatureArgs, VerifyRawSignatureResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

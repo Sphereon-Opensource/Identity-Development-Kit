@@ -24,6 +24,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
@@ -44,7 +45,6 @@ import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.client.JarService
 import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
 import com.sphereon.oauth2.common.model.AuthorizationRequest
-import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
@@ -90,7 +90,7 @@ class ParseAuthorizationRequestCommandImpl(
     private val jarService: JarService,
     private val httpClientFactory: HttpClientFactory,
     private val externalIdentifierService: MultiExternalIdentifierService,
-) : TypedServiceCommandAdapter<ParseAuthorizationRequestArgs, AuthorizationRequest>(
+) : TypedServiceCommandAdapter<ParseAuthorizationRequestArgs, AuthorizationRequest, IdkError>(
         commandId = ParseAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseAuthorizationRequestArgs>(),

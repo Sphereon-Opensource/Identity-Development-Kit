@@ -2,12 +2,25 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>BracesOnIfStatements:LoginPageRenderer.kt$LoginPageAsset$if</ID>
+    <ID>BracesOnIfStatements:Prompt.kt$Prompt.Companion$if</ID>
     <ID>ClassOrdering:AuthorizationServerService.kt$AuthorizationServerService$/** * Access to all authorization server commands */ val commands: Commands</ID>
     <ID>ComplexInterface:AuthorizationServerService.kt$AuthorizationServerService</ID>
     <ID>ComplexInterface:AuthorizationServerService.kt$AuthorizationServerService$Commands</ID>
     <ID>ComplexInterface:OAuth2AuthServerCommandBindings.kt$OAuth2AuthServerCommandBindings</ID>
     <ID>ComplexInterface:SessionStorage.kt$SessionStorage</ID>
     <ID>ComplexInterface:TokenStorage.kt$TokenStorage</ID>
+    <ID>LongParameterList:FederationSessionStore.kt$FederationSessionStore$( state: String, userId: String, claims: CachedUserInfo, claimsTtl: Duration, upstreamAcr: String? = null, upstreamAmr: List&lt;String>? = null, )</ID>
+    <ID>LongParameterList:OAuth2AuditEmitter.kt$OAuth2AuditEmitter$( type: OAuth2AuditEventType, clientId: String? = null, subject: String? = null, metadata: Map&lt;String, String> = emptyMap(), errorCode: String? = null, errorMessage: String? = null, )</ID>
+    <ID>StringLiteralDuplication:AuthorizationHttpCommands.kt$AuthorizeHttpEndpointCommand.Companion$"authorization"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerError.kt$AuthorizationServerError.UnauthorizedClient$"client_id"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationHttpCommands.kt$DeviceVerificationEntryHttpEndpointCommand.Companion$"device"</ID>
+    <ID>StringLiteralDuplication:DiscoveryHttpCommands.kt$OAuth2ServerMetadataHttpEndpointCommand.Companion$"discovery"</ID>
+    <ID>StringLiteralDuplication:FederatedAuthHttpCommands.kt$FederationAuthorizeHttpEndpointCommand.Companion$"federation"</ID>
+    <ID>StringLiteralDuplication:LoginHttpCommands.kt$LoginPageHttpEndpointCommand.Companion$"authorization"</ID>
+    <ID>StringLiteralDuplication:LoginHttpCommands.kt$LoginPageHttpEndpointCommand.Companion$"login"</ID>
+    <ID>StringLiteralDuplication:NoOpUserAuthenticationProvider.kt$NoOpUserAuthenticationProvider$"No authentication provider configured"</ID>
+    <ID>StringLiteralDuplication:TokenHttpCommands.kt$TokenHttpEndpointCommand.Companion$"token"</ID>
     <ID>TooManyFunctions:AuthorizationServerService.kt$AuthorizationServerService</ID>
     <ID>TooManyFunctions:OAuth2AuthServerCommandBindings.kt$OAuth2AuthServerCommandBindings</ID>
   </CurrentIssues>

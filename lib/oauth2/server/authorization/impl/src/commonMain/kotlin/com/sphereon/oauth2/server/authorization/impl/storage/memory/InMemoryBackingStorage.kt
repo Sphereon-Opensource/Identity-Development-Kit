@@ -87,6 +87,11 @@ data class OAuth2StoragePartition(
     val requestUris: MutableMap<String, StoredAuthorizationRequest> = mutableMapOf(),
     // Pre-authorized code storage (OID4VCI)
     val preAuthorizedCodes: MutableMap<String, com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData> = mutableMapOf(),
+    // Device authorization grant storage (RFC 8628). Records are keyed by `device_code`; an
+    // additional `userCode -> deviceCode` index is kept on the storage implementation so the
+    // verification UI can resolve a typed user code to its record without scanning.
+    val deviceAuthorizations: MutableMap<String, com.sphereon.oauth2.server.authorization.storage.DeviceAuthorizationRecord> = mutableMapOf(),
+    val deviceAuthorizationUserCodeIndex: MutableMap<String, String> = mutableMapOf(),
 )
 
 /**

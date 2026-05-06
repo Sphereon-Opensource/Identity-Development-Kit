@@ -18,6 +18,7 @@ package com.sphereon.core.api.session
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.compat.JsExportCompat
@@ -51,15 +52,15 @@ interface CommandInvoker {
      * Resolve a command by ID. Returns the raw [ServiceCommand].
      * Use the reified extension for typed resolution.
      */
-    fun resolve(commandId: String): ServiceCommand<*, *>?
+    fun resolve(commandId: String): ServiceCommand<*, *, *>?
 
     /**
      * Execute a command. Types are inferred from the [ServiceCommand] parameter.
      */
-    suspend fun <TInput : Any, TOutput : Any> execute(
-        command: ServiceCommand<TInput, TOutput>,
+    suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
+        command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
-    ): IdkResult<TOutput, IdkError>
+    ): IdkResult<TOutput, TError>
 
     fun has(commandId: String): Boolean
 
@@ -74,7 +75,7 @@ interface CommandInvoker {
  * ```
  */
 @Suppress("UNCHECKED_CAST")
-inline fun <reified C : ServiceCommand<*, *>> CommandInvoker.resolve(commandId: String): C? = resolve(commandId) as? C
+inline fun <reified C : ServiceCommand<*, *, *>> CommandInvoker.resolve(commandId: String): C? = resolve(commandId) as? C
 
 /**
  * Convenience: resolve + execute by commandId in one call.
@@ -85,7 +86,11 @@ inline fun <reified C : ServiceCommand<*, *>> CommandInvoker.resolve(commandId: 
  * ```
  */
 @Suppress("UNCHECKED_CAST")
-suspend inline fun <reified C : ServiceCommand<TInput, TOutput>, TInput : Any, TOutput : Any> CommandInvoker.executeById(
+suspend inline fun <
+    reified C : ServiceCommand<TInput, TOutput, IdkError>,
+    TInput : Any,
+    TOutput : Any,
+> CommandInvoker.executeById(
     commandId: String,
     input: TInput,
 ): IdkResult<TOutput, IdkError> {
@@ -112,18 +117,19 @@ class SessionScopeCommandInvoker(
     private val registry: SessionScopedCommandRegistry,
     private val errorMapper: CommandErrorMapper<IdkError> = IdkErrorCommandErrorMapper,
 ) : CommandInvoker {
-    override fun resolve(commandId: String): ServiceCommand<*, *>? = registry.get(commandId)
+    override fun resolve(commandId: String): ServiceCommand<*, *, *>? = registry.get(commandId)
 
-    override suspend fun <TInput : Any, TOutput : Any> execute(
-        command: ServiceCommand<TInput, TOutput>,
+    @Suppress("UNCHECKED_CAST")
+    override suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
+        command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
-    ): IdkResult<TOutput, IdkError> {
+    ): IdkResult<TOutput, TError> {
         try {
             if (!command.isEnabled) {
-                return IdkResult.err(errorMapper.commandDisabled(command.commandId))
+                return IdkResult.err(errorMapper.commandDisabled(command.commandId) as TError)
             }
             if (!command.supports(input)) {
-                return IdkResult.err(errorMapper.unsupportedArg(command, input))
+                return IdkResult.err(errorMapper.unsupportedArg(command, input) as TError)
             }
             return command.execute(input)
         } catch (expected: Exception) {
@@ -131,7 +137,7 @@ class SessionScopeCommandInvoker(
                 errorMapper.unknown(
                     message = "Error executing command '${command.commandId}'",
                     cause = expected,
-                ),
+                ) as TError,
             )
         }
     }
@@ -160,12 +166,12 @@ class UserScopeCommandInvoker(
         return (session.graph as CommandInvokerGraph).commandInvoker
     }
 
-    override fun resolve(commandId: String): ServiceCommand<*, *>? = sessionExecutor().resolve(commandId)
+    override fun resolve(commandId: String): ServiceCommand<*, *, *>? = sessionExecutor().resolve(commandId)
 
-    override suspend fun <TInput : Any, TOutput : Any> execute(
-        command: ServiceCommand<TInput, TOutput>,
+    override suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
+        command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
-    ): IdkResult<TOutput, IdkError> = sessionExecutor().execute(command, input)
+    ): IdkResult<TOutput, TError> = sessionExecutor().execute(command, input)
 
     override fun has(commandId: String): Boolean = sessionExecutor().has(commandId)
 

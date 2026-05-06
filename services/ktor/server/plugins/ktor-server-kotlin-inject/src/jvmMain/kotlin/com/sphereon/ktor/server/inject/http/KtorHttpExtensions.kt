@@ -76,10 +76,12 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
     return GenericHttpRequest(
         method = method,
         path = path,
-        // Lazy headers - avoid allocation and string joining if never accessed
+        // Lazy headers — avoid allocation and string joining if never accessed. Backed by a
+        // case-insensitive TreeMap (RFC 9110 §5.1: header names are case-insensitive) so any
+        // upstream case normalisation does not affect downstream lookups.
         headers =
             LazyMap {
-                val headerMap = mutableMapOf<String, String>()
+                val headerMap: MutableMap<String, String> = java.util.TreeMap(String.CASE_INSENSITIVE_ORDER)
                 request.headers.entries().forEach { (key, values) ->
                     headerMap[key] =
                         if (values.size == 1) {
@@ -90,6 +92,13 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
                 }
                 headerMap
             },
+        // Preserve multi-value occurrence (RFC 9110 §5.3 / RFC 9449 §4.1). Ktor's CIO engine
+        // emits `entries()` as one entry per *occurrence*, so feeding that into a Map collapses
+        // duplicates. `names()` + `getAll()` is the only way to get the full list per name.
+        multiValueHeaders =
+            request.headers
+                .names()
+                .associateWith { name -> request.headers.getAll(name) ?: emptyList() },
         // Lazy query parameters - avoid allocation if never accessed
         queryParameters =
             LazyMap {

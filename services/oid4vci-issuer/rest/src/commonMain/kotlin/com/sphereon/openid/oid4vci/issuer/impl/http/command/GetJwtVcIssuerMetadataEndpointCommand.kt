@@ -66,7 +66,7 @@ import kotlinx.serialization.json.put
  */
 interface GetJwtVcIssuerMetadataRootEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vci.sdjwtvc.issuer-metadata.root"
+        const val COMMAND_ID = "oid4vci.sdjwtvc.issuer-metadata-root"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -82,7 +82,7 @@ interface GetJwtVcIssuerMetadataRootEndpointCommand : HttpEndpointCommand {
 
 interface GetJwtVcIssuerMetadataScopedEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vci.sdjwtvc.issuer-metadata.scoped"
+        const val COMMAND_ID = "oid4vci.sdjwtvc.issuer-metadata-scoped"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,

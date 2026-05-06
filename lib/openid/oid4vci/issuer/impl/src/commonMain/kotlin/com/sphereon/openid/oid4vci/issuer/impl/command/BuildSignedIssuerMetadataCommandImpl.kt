@@ -33,7 +33,10 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlin.time.Clock
 
 @Inject
 @SingleIn(SessionScope::class)
@@ -41,7 +44,7 @@ import kotlinx.serialization.json.jsonObject
 class BuildSignedIssuerMetadataCommandImpl(
     execution: SessionExecution,
     private val createJwsCompactCommand: CreateJwsCompactCommand,
-) : TypedServiceCommandAdapter<BuildSignedIssuerMetadataArgs, JwtCompactResult>(
+) : TypedServiceCommandAdapter<BuildSignedIssuerMetadataArgs, JwtCompactResult, IdkError>(
         commandId = BuildSignedIssuerMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BuildSignedIssuerMetadataArgs>(),
@@ -58,6 +61,12 @@ class BuildSignedIssuerMetadataCommandImpl(
     ): IdkResult<JwtCompactResult, IdkError> {
         val applied = applyDuring(args)
 
+        // Per OID4VCI 1.0 final §12.2.3 the signed-metadata JWS payload MUST contain:
+        //   - sub: REQUIRED, MUST equal the Credential Issuer Identifier
+        //   - iat: REQUIRED, issuance time
+        //   - iss / exp: OPTIONAL
+        // and MUST also surface every metadata parameter as a top-level claim. We start with the
+        // metadata object encoded to JSON and then overlay the JWT registered claims on top.
         val metadataPayload =
             Oid4vciJson.lenientNoDefaults
                 .encodeToJsonElement(
@@ -65,10 +74,17 @@ class BuildSignedIssuerMetadataCommandImpl(
                     applied.metadata,
                 ).jsonObject
 
+        val payloadWithJwtClaims =
+            buildJsonObject {
+                metadataPayload.forEach { (key, value) -> put(key, value) }
+                put("sub", JsonPrimitive(applied.metadata.credentialIssuer))
+                put("iat", JsonPrimitive(Clock.System.now().epochSeconds))
+            }
+
         val jwsArgs =
             createJwsArgs {
                 issuer(applied.signingKey)
-                payload(metadataPayload)
+                payload(payloadWithJwtClaims)
                 mode(applied.identifierMode)
                 options {
                     protectedHeader {

@@ -17,6 +17,7 @@
 
 package com.sphereon.ktor.server.inject.resolver
 
+import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.di.context.TenantInput
 import io.ktor.server.application.ApplicationCall
 
@@ -26,21 +27,10 @@ import io.ktor.server.application.ApplicationCall
  * Implement this interface to provide custom tenant resolution logic
  * (e.g., from JWT claims, subdomain, database lookup, etc.).
  *
- * **Default Implementation:**
- * [DefaultTenantResolver] extracts tenant ID from a configured HTTP header.
- *
- * **Custom Implementation Example:**
- * ```kotlin
- * class JwtTenantResolver : TenantResolver {
- *     override fun resolve(call: ApplicationCall): TenantInput {
- *         val jwt = extractJwt(call)
- *         val tenantId = jwt.getClaim("tenant_id")
- *         return DefaultTenantInputString(tenantId)
- *     }
- * }
- * ```
- *
- * @see DefaultTenantResolver
+ * For deployments needing trusted multi-source resolution (JWT, custom domain,
+ * platform subdomain), install the `TenantResolutionPlugin` from
+ * `services/ktor-server-tenant-resolution`. For tests, demos, and single-tenant
+ * services use [FixedTenantResolver].
  */
 interface TenantResolver {
     /**
@@ -50,4 +40,17 @@ interface TenantResolver {
      * @return TenantInput containing tenant identification information
      */
     fun resolve(call: ApplicationCall): TenantInput
+}
+
+/**
+ * Fixed tenant resolver that returns the same [tenantId] for every call.
+ *
+ * Use for tests, demos, and single-tenant deployments where tenant identity
+ * is not derived from the request. NOT a substitute for proper trusted
+ * resolution in multi-tenant production deployments.
+ */
+class FixedTenantResolver(
+    private val tenantId: String,
+) : TenantResolver {
+    override fun resolve(call: ApplicationCall): TenantInput = DefaultTenantInputString(tenantId)
 }

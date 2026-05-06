@@ -191,7 +191,10 @@ class MdocValidationsImpl(
                     }
 
                     MdocVerification.DIGEST_VALUES -> {
-                        issuerAuthValidation.verifyDigests(auth)
+                        // Pass the document so verifyDigests can iterate disclosed items. When only
+                        // the raw issuerAuth is supplied (the `fromIssuerAuth` entry point), the
+                        // document is null and the step skips with a non-error result.
+                        issuerAuthValidation.verifyDigests(auth, document)
                     }
                 }
             }

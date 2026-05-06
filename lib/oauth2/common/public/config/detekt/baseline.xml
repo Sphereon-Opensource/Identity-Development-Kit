@@ -2,12 +2,17 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>BracesOnIfStatements:ClientAuthentication.kt$ClientAuthenticationConfig.MutualTls$if</ID>
+    <ID>BracesOnIfStatements:OAuth2ResponseMode.kt$OAuth2ResponseMode.Companion$else</ID>
+    <ID>BracesOnIfStatements:OAuth2ResponseMode.kt$OAuth2ResponseMode.Companion$if</ID>
     <ID>CyclomaticComplexMethod:AuthorizationRequest.kt$AuthorizationRequestSerializer$override fun serialize( encoder: Encoder, value: AuthorizationRequest, )</ID>
     <ID>CyclomaticComplexMethod:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$override fun serialize( encoder: Encoder, value: AuthorizationServerMetadata, )</ID>
     <ID>CyclomaticComplexMethod:ClientRegistration.kt$ClientRegistrationSerializer$override fun deserialize(decoder: Decoder): ClientRegistration</ID>
     <ID>CyclomaticComplexMethod:ClientRegistration.kt$ClientRegistrationSerializer$override fun serialize( encoder: Encoder, value: ClientRegistration, )</ID>
     <ID>CyclomaticComplexMethod:IdToken.kt$IdTokenPayloadSerializer$override fun serialize( encoder: Encoder, value: IdTokenPayload, )</ID>
     <ID>CyclomaticComplexMethod:TokenResponse.kt$TokenRequestSerializer$override fun serialize( encoder: Encoder, value: TokenRequest, )</ID>
+    <ID>LongMethod:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$override fun deserialize(decoder: Decoder): AuthorizationServerMetadata</ID>
+    <ID>LongMethod:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$override fun serialize( encoder: Encoder, value: AuthorizationServerMetadata, )</ID>
     <ID>LongMethod:ClientRegistration.kt$ClientRegistrationSerializer$override fun deserialize(decoder: Decoder): ClientRegistration</ID>
     <ID>StringLiteralDuplication:AuthorizationRequest.kt$AuthorizationRequestSerializer$"acr_values"</ID>
     <ID>StringLiteralDuplication:AuthorizationRequest.kt$AuthorizationRequestSerializer$"client_id"</ID>
@@ -38,15 +43,24 @@
     <ID>StringLiteralDuplication:AuthorizationResponse.kt$PushedAuthorizationRequestSerializer$"request_uri"</ID>
     <ID>StringLiteralDuplication:AuthorizationResponse.kt$PushedAuthorizationResponseSerializer$"expires_in"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"authorization_challenge_endpoint"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"authorization_encryption_alg_values_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"authorization_encryption_enc_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"authorization_endpoint"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"authorization_response_iss_parameter_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"authorization_signing_alg_values_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"backchannel_logout_session_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"backchannel_logout_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"challenge_endpoint"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"claims_parameter_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"claims_supported"</ID>
-    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"client_attestation_pop_nonce_required"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"client_attestation_pop_signing_alg_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"client_attestation_signing_alg_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"code_challenge_methods_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"device_authorization_endpoint"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"dpop_signing_alg_values_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"end_session_endpoint"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"frontchannel_logout_session_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"frontchannel_logout_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"grant_types_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"id_token_signing_alg_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"interactive_authorization_endpoint"</ID>
@@ -55,12 +69,15 @@
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"introspection_endpoint_auth_signing_alg_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"issuer"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"jwks_uri"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"mtls_endpoint_aliases"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"pre-authorized_grant_anonymous_access_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"pushed_authorization_request_endpoint"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"request_object_signing_alg_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"request_parameter_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"request_uri_parameter_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"require_interactive_authorization_request"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"require_pushed_authorization_requests"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"require_request_uri_registration"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"response_modes_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"response_types_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"revocation_endpoint"</ID>
@@ -68,7 +85,9 @@
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"revocation_endpoint_auth_signing_alg_values_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"scopes_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"service_documentation"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"signed_metadata"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"subject_types_supported"</ID>
+    <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"tls_client_certificate_bound_access_tokens"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"token_endpoint"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"token_endpoint_auth_methods_supported"</ID>
     <ID>StringLiteralDuplication:AuthorizationServerMetadata.kt$AuthorizationServerMetadataSerializer$"token_endpoint_auth_signing_alg_values_supported"</ID>

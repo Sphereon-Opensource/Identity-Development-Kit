@@ -52,7 +52,7 @@ import kotlin.native.ObjCName
 @ObjCName("ApplyClientAuthenticationCommandImpl", exact = true)
 class ApplyClientAuthenticationCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ApplyClientAuthenticationArgs, ClientAuthenticationResult>(
+) : TypedServiceCommandAdapter<ApplyClientAuthenticationArgs, ClientAuthenticationResult, IdkError>(
         commandId = ApplyClientAuthenticationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ApplyClientAuthenticationArgs>(),
@@ -87,6 +87,7 @@ class ApplyClientAuthenticationCommandImpl(
                     is ClientAuthenticationConfig.PrivateKeyJwt -> applyPrivateKeyJwtAuth(config)
                     is ClientAuthenticationConfig.None -> applyNoneAuth(config)
                     is ClientAuthenticationConfig.AttestationJwt -> applyAttestationJwtAuth(config)
+                    is ClientAuthenticationConfig.MutualTls -> applyMutualTlsAuth(config)
                     ClientAuthenticationConfig.Anonymous -> applyAnonymousAuth()
                 }
             Ok(result)
@@ -195,5 +196,18 @@ class ApplyClientAuthenticationCommandImpl(
         ClientAuthenticationResult(
             headers = emptyMap(),
             bodyParameters = emptyMap(),
+        )
+
+    /**
+     * Mutual-TLS client authentication (RFC 8705 §2). The client presents the cert at the TLS
+     * handshake, configured upstream on the [com.sphereon.ktor.http.client.config.ClientSslConfig]
+     * passed to [com.sphereon.ktor.http.client.provider.HttpClientFactory]. At the application
+     * layer the only requirement is to identify the client; per RFC 8705 §2.3 the AS extracts the
+     * `client_id` from the form body when no shared secret is sent.
+     */
+    private fun applyMutualTlsAuth(config: ClientAuthenticationConfig.MutualTls): ClientAuthenticationResult =
+        ClientAuthenticationResult(
+            headers = emptyMap(),
+            bodyParameters = mapOf("client_id" to config.clientId),
         )
 }

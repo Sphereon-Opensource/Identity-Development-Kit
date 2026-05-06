@@ -20,15 +20,17 @@ package com.sphereon.oauth2.jwt.validation.impl
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
-import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.jwt.validation.IdpConfig
 import com.sphereon.oauth2.jwt.validation.IdpRegistry
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import com.sphereon.oauth2.jwt.validation.JwtValidationError
+import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * Default implementation of IdpRegistry.
@@ -37,19 +39,24 @@ import dev.zacsweers.metro.binding
  * - Default IdP for general requests
  * - Per-tenant IdP overrides
  * - Dynamic IdP discovery by issuer
+ *
+ * Scoped to [AppScope] so configured IdPs are loaded once at startup and
+ * `registerIdp` mutations persist across sessions. Reads and writes are
+ * guarded by [SynchronizedObject] so the mutable maps are safe under
+ * concurrent request traffic. Dynamic per-tenant overrides beyond the
+ * config-loaded set are provided by an EDK wrapper, not this default.
  */
 @Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<IdpRegistry>())
+@SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class, binding = binding<IdpRegistry>())
 class DefaultIdpRegistry(
     private val config: JwtValidationConfig,
-) : IdpRegistry {
-    // Mutable registries for dynamic registration
+) : SynchronizedObject(),
+    IdpRegistry {
     private val idpsById = mutableMapOf<String, IdpConfig>()
     private val tenantIdps = mutableMapOf<String, IdpConfig>()
 
     init {
-        // Register configured IdPs
         config.defaultIdp?.let {
             idpsById[it.id] = it
         }
@@ -64,57 +71,70 @@ class DefaultIdpRegistry(
             ?: Err(JwtValidationError.idpConfigurationError("No default IdP configured"))
 
     override fun getIdpForTenant(tenantId: String): IdkResult<IdpConfig, JwtValidationError> {
-        // First check tenant-specific override
-        tenantIdps[tenantId]?.let { return Ok(it) }
-
-        // Fall back to default
+        val tenantIdp = synchronized(this) { tenantIdps[tenantId] }
+        tenantIdp?.let { return Ok(it) }
         return getDefaultIdp()
     }
 
     override fun getIdpByIssuer(issuer: String): IdkResult<IdpConfig, JwtValidationError> {
-        // Normalize issuer (remove trailing slash)
         val normalizedIssuer = issuer.trimEnd('/')
 
-        // Find IdP matching this issuer
+        val snapshot = synchronized(this) { idpsById.values.toList() }
         val matchingIdp =
-            idpsById.values.firstOrNull { idp ->
+            snapshot.firstOrNull { idp ->
                 idp.issuer.trimEnd('/') == normalizedIssuer
             }
 
-        return matchingIdp?.let { Ok(it) }
-            ?: config.defaultIdp?.let { Ok(it) }
-            ?: Err(JwtValidationError.untrustedIssuer(issuer, idpsById.values.map { it.issuer }))
+        if (matchingIdp != null) {
+            return Ok(matchingIdp)
+        }
+
+        // In strict mode, an unknown issuer never falls back to the default IdP — the
+        // caller gets UntrustedIssuer so upstream token validation fails closed.
+        if (config.strictIssuerMatching) {
+            return Err(JwtValidationError.untrustedIssuer(issuer, snapshot.map { it.issuer }))
+        }
+
+        return config.defaultIdp?.let { Ok(it) }
+            ?: Err(JwtValidationError.untrustedIssuer(issuer, snapshot.map { it.issuer }))
     }
 
-    override fun getIdpById(idpId: String): IdkResult<IdpConfig, JwtValidationError> =
-        idpsById[idpId]?.let { Ok(it) }
+    override fun getIdpById(idpId: String): IdkResult<IdpConfig, JwtValidationError> {
+        val idp = synchronized(this) { idpsById[idpId] }
+        return idp?.let { Ok(it) }
             ?: Err(JwtValidationError.idpConfigurationError("IdP not found: $idpId"))
+    }
 
-    override fun getAllIdps(): List<IdpConfig> = idpsById.values.toList()
+    override fun getAllIdps(): List<IdpConfig> = synchronized(this) { idpsById.values.toList() }
 
     override fun isTrustedIssuer(issuer: String): Boolean {
         val normalizedIssuer = issuer.trimEnd('/')
-        return idpsById.values.any { idp ->
+        val snapshot = synchronized(this) { idpsById.values.toList() }
+        return snapshot.any { idp ->
             idp.issuer.trimEnd('/') == normalizedIssuer
         }
     }
 
     override fun registerIdp(config: IdpConfig) {
-        idpsById[config.id] = config
+        synchronized(this) {
+            idpsById[config.id] = config
+        }
     }
 
     override fun registerTenantIdp(
         tenantId: String,
         config: IdpConfig,
     ) {
-        idpsById[config.id] = config
-        tenantIdps[tenantId] = config
+        synchronized(this) {
+            idpsById[config.id] = config
+            tenantIdps[tenantId] = config
+        }
     }
 
-    override fun removeIdp(idpId: String): Boolean {
-        // Remove from tenant mappings first
-        val tenantsToRemove = tenantIdps.entries.filter { it.value.id == idpId }.map { it.key }
-        tenantsToRemove.forEach { tenantIdps.remove(it) }
-        return idpsById.remove(idpId) != null
-    }
+    override fun removeIdp(idpId: String): Boolean =
+        synchronized(this) {
+            val tenantsToRemove = tenantIdps.entries.filter { it.value.id == idpId }.map { it.key }
+            tenantsToRemove.forEach { tenantIdps.remove(it) }
+            idpsById.remove(idpId) != null
+        }
 }

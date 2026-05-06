@@ -2,8 +2,8 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>LongMethod:Oid4vcDemoServer.kt$fun Application.configureOid4vcDemo( issuerUrl: String, verifierUrl: String, externalBaseUrl: String, )</ID>
-    <ID>UnreachableCode:Oid4vcDemoServer.kt$call.respondBytes(response.readBytes(), ContentType.Application.Json, HttpStatusCode(response.status.value, ""))</ID>
+    <ID>LongMethod:Oid4vcDemoServer.kt$fun Application.configureOid4vcDemo( issuerUrl: String, verifierUrl: String, externalBaseUrl: String, demoProfile: String = "default", )</ID>
+    <ID>UnreachableCode:Oid4vcDemoServer.kt$call.respondBytes(response.readRawBytes(), ContentType.Application.Json, HttpStatusCode(response.status.value, ""))</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val response = httpClient.get("$externalBaseUrl/oid4vci/vct/$type")</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val response = httpClient.get("$issuerUrl/oid4vci/backend/credential/offers/$id")</ID>

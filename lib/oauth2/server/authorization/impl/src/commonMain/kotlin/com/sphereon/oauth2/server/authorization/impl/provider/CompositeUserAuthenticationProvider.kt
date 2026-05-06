@@ -26,6 +26,10 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.SingleIn
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * Composite authentication provider that routes to the appropriate sub-provider
@@ -36,21 +40,40 @@ import com.sphereon.oauth2.server.authorization.provider.UserInfo
  * - No `oid4vp:` prefix or no login_hint → federation provider (default)
  *
  * This allows a single STS to support both federated (OIDC) and wallet (OID4VP) authentication.
+ *
+ * ## Scoping requirement
+ *
+ * This class MUST be constructed at [AppScope]: the `sessionProviderMap` is cross-session
+ * routing state that tracks which sub-provider owns which OIDC session id, and a SessionScope
+ * instance would lose that routing the moment the HTTP session ends (the callback arrives in
+ * a different HTTP session than the initiation). The `@SingleIn(AppScope::class)` annotation
+ * makes the intent explicit for any assembly that wires this via Metro.
+ *
+ * ## Multi-replica caveat (Sprint 2)
+ *
+ * `sessionProviderMap` is in-process. A load-balanced deployment where node A takes the
+ * initiate call and node B handles the callback will fail to resolve the provider on node B.
+ * Sprint 2 replaces this with a persistent `FederationSessionStore` (same pattern as
+ * `AuthenticationSessionStore` in EDK auth).
  */
+@SingleIn(AppScope::class)
 class CompositeUserAuthenticationProvider(
     val federationProvider: UserAuthenticationProvider,
-    private val walletProvider: UserAuthenticationProvider? = null,
-) : UserAuthenticationProvider {
+    private val walletProvider: UserAuthenticationProvider?,
+) : SynchronizedObject(),
+    UserAuthenticationProvider {
     companion object {
         const val OID4VP_PREFIX = "oid4vp:"
     }
 
-    // Track which provider was used per session for proper delegation
+    // Track which provider was used per session for proper delegation. Reads and writes are
+    // guarded via `synchronized(this)` (atomicfu SynchronizedObject) so concurrent initiate /
+    // callback traffic cannot corrupt the routing table.
     private val sessionProviderMap = mutableMapOf<String, UserAuthenticationProvider>()
 
     override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> {
         // Check if we know which provider this session belongs to
-        val knownProvider = sessionProviderMap[sessionId]
+        val knownProvider = synchronized(this) { sessionProviderMap[sessionId] }
         if (knownProvider != null) {
             return knownProvider.getAuthenticatedUser(sessionId)
         }
@@ -73,7 +96,7 @@ class CompositeUserAuthenticationProvider(
         hint: AuthenticationHint?,
     ): IdkResult<String, AuthenticationError> {
         val provider = selectProvider(hint)
-        sessionProviderMap[sessionId] = provider
+        synchronized(this) { sessionProviderMap[sessionId] = provider }
         return provider.initiateAuthentication(sessionId, returnUrl, hint)
     }
 

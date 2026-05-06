@@ -28,6 +28,7 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.CnfExternalIdentifierResolutionService
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierCnfOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwkOpts
 import com.sphereon.sdjwt.DisclosureDigest
 import com.sphereon.sdjwt.DisclosureDigestUtil
@@ -76,6 +77,8 @@ internal class SdJwtVerifier(
      * @param expectedAudience Expected audience for KB-JWT verification (if KB-JWT present)
      * @param expectedNonce Expected nonce for KB-JWT verification (if KB-JWT present)
      * @param validateDisclosures Whether to validate disclosure digests (default true)
+     * @param kbJwtMaxAgeSeconds KB-JWT iat lower-bound window (see [VerifySdJwtArgs]).
+     * @param kbJwtFutureSkewSeconds KB-JWT iat clock-skew tolerance (see [VerifySdJwtArgs]).
      * @return Verification result
      */
     suspend fun verify(
@@ -84,6 +87,8 @@ internal class SdJwtVerifier(
         expectedAudience: String? = null,
         expectedNonce: String? = null,
         validateDisclosures: Boolean = true,
+        kbJwtMaxAgeSeconds: Long = 300L,
+        kbJwtFutureSkewSeconds: Long = 60L,
     ): IdkResult<SdJwtVerificationResult, IdkError> {
         // Step 1: Parse SD-JWT from compact format
         val parseResult = SdJwtCodec.parse(sdJwtString)
@@ -96,13 +101,25 @@ internal class SdJwtVerifier(
 
         // Step 2: Verify JWT signature
         val jwsValidation = verifyJwtSignature(sdJwt, identifier)
-        val signatureValid =
-            if (jwsValidation.isErr) {
-                errorMessages.add("JWT signature verification failed: ${jwsValidation.error.message}")
-                false
-            } else {
-                jwsValidation.value.isValid
-            }
+        // Track trust establishment vs. crypto separately so callers can tell whether
+        // we couldn't even resolve the issuer's verification key (e.g. SD-JWT VC issued
+        // a JWS with relative `kid: "#0"` and the resolver chain never composed it
+        // against `iss`) from a real cryptographic mismatch.
+        val signatureValid: Boolean
+        val issuerTrustEstablished: Boolean
+        val issuerCryptoVerified: Boolean?
+        if (jwsValidation.isErr) {
+            errorMessages.add("JWT signature verification failed: ${jwsValidation.error.message}")
+            signatureValid = false
+            // We never got far enough to attempt resolution either; treat as trust-not-established.
+            issuerTrustEstablished = false
+            issuerCryptoVerified = null
+        } else {
+            val jws = jwsValidation.value
+            signatureValid = jws.isValid
+            issuerTrustEstablished = jws.trustEstablished
+            issuerCryptoVerified = jws.cryptoVerified
+        }
 
         // Step 3: Verify disclosure digests
         val disclosuresValid =
@@ -115,7 +132,15 @@ internal class SdJwtVerifier(
         // Step 4: Verify Key Binding JWT if present
         val keyBindingValid =
             if (sdJwt.keyBindingJwt != null) {
-                verifyKeyBinding(sdJwt, sdJwtString, expectedAudience, expectedNonce, errorMessages)
+                verifyKeyBinding(
+                    sdJwt = sdJwt,
+                    fullSdJwtString = sdJwtString,
+                    expectedAudience = expectedAudience,
+                    expectedNonce = expectedNonce,
+                    kbJwtMaxAgeSeconds = kbJwtMaxAgeSeconds,
+                    kbJwtFutureSkewSeconds = kbJwtFutureSkewSeconds,
+                    errorMessages = errorMessages,
+                )
             } else {
                 true
             }
@@ -131,25 +156,70 @@ internal class SdJwtVerifier(
                 keyBindingValid = keyBindingValid,
                 errorMessages = errorMessages,
                 verificationTime = Clock.System.now().toEpochMilliseconds(),
+                issuerTrustEstablished = issuerTrustEstablished,
+                issuerCryptoVerified = issuerCryptoVerified,
             )
 
         return IdkResult.ok(result)
     }
 
     /**
-     * Verify the JWT signature using existing JWS verification infrastructure
+     * Verify the JWT signature using existing JWS verification infrastructure.
+     *
+     * SD-JWT VC §3.5 / DIIPv4 issuers typically emit the issuer JWT with a *relative*
+     * `kid` (e.g. `"#0"`) which is a JSON-LD–style same-document fragment reference.
+     * The verifier MUST qualify it against the `iss` claim before handing it to a
+     * resolver — otherwise generic JWS resolvers see "kid=#0", fail KMS lookup, fall
+     * back to CNF (which is the *holder* key, not the issuer's), and the issuer
+     * signature is silently checked against the wrong key.
+     *
+     * If the caller already passed an explicit [identifier], we don't second-guess
+     * it. Otherwise: peek at the JWS protected header; if `kid` starts with `#` and
+     * the SD-JWT payload has a DID `iss`, build [ExternalIdentifierDidOpts] over the
+     * qualified DID URL (`iss + kid`) so the did:* resolver chain (incl. did:web)
+     * actually gets asked. HTTPS `iss` (SD-JWT VC type metadata path) is left for a
+     * follow-up — that's a JWKS-URI fetch, not a DID resolve.
      */
     private suspend fun verifyJwtSignature(
         sdJwt: SdJwtCompact,
         identifier: IdentifierOptsOrResult?,
     ): IdkResult<JwsValidationResult, IdkError> {
         val jws = sdJwt.jwt
+        val effectiveIdentifier = identifier ?: qualifyRelativeKidIdentifier(jws, sdJwt.payload.fullPayload)
         val args =
             VerifyJwsArgs(
                 jws = jws,
-                identifier = identifier,
+                identifier = effectiveIdentifier,
             )
         return verifyJwsCommand.execute(args)
+    }
+
+    /**
+     * Build a qualified-identifier override for SD-JWT VC issuer JWTs that use a
+     * relative `kid: "#…"`. Returns `null` to leave header-driven resolution alone
+     * for any other shape (absolute kids, missing kid, non-DID `iss`, …).
+     */
+    private fun qualifyRelativeKidIdentifier(
+        jws: JwsCompact,
+        payload: JsonObject,
+    ): IdentifierOptsOrResult? {
+        return try {
+            val protectedSegment = jws.value.substringBefore('.')
+            if (protectedSegment.isEmpty() || protectedSegment == jws.value) return null
+            val protectedHeader = JwsUtils.decodeBase64UrlToJson(protectedSegment)
+            val kid = protectedHeader["kid"]?.jsonPrimitive?.content ?: return null
+            if (!kid.startsWith("#")) return null
+            val iss = payload["iss"]?.jsonPrimitive?.content ?: return null
+            // Only DID issuers are handled here. For HTTPS `iss` (SD-JWT VC type
+            // metadata path) the qualified reference is a different shape and
+            // resolves through JWKS-URI / metadata fetch, not did:* resolvers.
+            if (!iss.startsWith("did:")) return null
+            val qualified = "$iss$kid"
+            ExternalIdentifierDidOpts(identifier = qualified)
+        } catch (expected: Throwable) {
+            // Best-effort qualification — never let header parsing wreck the verifier.
+            null
+        }
     }
 
     /**
@@ -222,6 +292,8 @@ internal class SdJwtVerifier(
         fullSdJwtString: String,
         expectedAudience: String?,
         expectedNonce: String?,
+        kbJwtMaxAgeSeconds: Long,
+        kbJwtFutureSkewSeconds: Long,
         errorMessages: MutableList<String>,
     ): Boolean {
         val kbJwt = sdJwt.keyBindingJwt ?: return true
@@ -245,9 +317,35 @@ internal class SdJwtVerifier(
             valid = false
         }
 
-        if (kbJwt.issuedAt == null) {
+        // SD-JWT §7.3 (Verification): "Check that the creation time of the Key Binding JWT, as
+        // determined by the iat claim, is within an acceptable window." Anchors replay-prevention
+        // (OID4VP §10): a wallet with a stolen presentation cannot replay it indefinitely. The
+        // window is bounded above by [kbJwtMaxAgeSeconds] (past) and below by
+        // [kbJwtFutureSkewSeconds] (clock skew tolerance) — both negotiable via VerifySdJwtArgs.
+        val iat = kbJwt.issuedAt
+        if (iat == null) {
             errorMessages.add("Key Binding JWT missing required 'iat' claim")
             valid = false
+        } else {
+            val now = Clock.System.now().epochSeconds
+            val ageSeconds = now - iat
+            when {
+                ageSeconds > kbJwtMaxAgeSeconds -> {
+                    errorMessages.add(
+                        "Key Binding JWT 'iat' is too far in the past: iat=$iat, now=$now, " +
+                            "age=${ageSeconds}s exceeds the max allowed ${kbJwtMaxAgeSeconds}s.",
+                    )
+                    valid = false
+                }
+
+                ageSeconds < -kbJwtFutureSkewSeconds -> {
+                    errorMessages.add(
+                        "Key Binding JWT 'iat' is too far in the future: iat=$iat, now=$now, " +
+                            "skew=${-ageSeconds}s exceeds the max allowed ${kbJwtFutureSkewSeconds}s.",
+                    )
+                    valid = false
+                }
+            }
         }
 
         // Verify sd_hash binding (RFC 9901 §4.3)

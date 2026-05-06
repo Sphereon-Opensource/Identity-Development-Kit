@@ -82,7 +82,7 @@ class ServiceCommandSessionContextSafetyTest {
         val result: String = "ok",
     )
 
-    interface TestServiceCommand : ServiceCommand<TestInput, TestOutput> {
+    interface TestServiceCommand : ServiceCommand<TestInput, TestOutput, IdkError> {
         companion object {
             const val COMMAND_ID = "test.session.safety"
         }
@@ -130,7 +130,7 @@ class ServiceCommandSessionContextSafetyTest {
      */
     private class TestDualTransportCommand(
         execution: SessionExecution,
-    ) : TypedServiceCommandAdapter<TestInput, TestOutput>(
+    ) : TypedServiceCommandAdapter<TestInput, TestOutput, IdkError>(
             commandId = TestServiceCommand.COMMAND_ID,
             execution = execution,
             inputTypeToken = typeToken<TestInput>(),
@@ -159,7 +159,7 @@ class ServiceCommandSessionContextSafetyTest {
      */
     private class TestTypedCommand(
         execution: SessionExecution,
-    ) : TypedServiceCommandAdapter<TestInput, TestOutput>(
+    ) : TypedServiceCommandAdapter<TestInput, TestOutput, IdkError>(
             commandId = "test.typed.safety",
             execution = execution,
             inputTypeToken = typeToken<TestInput>(),

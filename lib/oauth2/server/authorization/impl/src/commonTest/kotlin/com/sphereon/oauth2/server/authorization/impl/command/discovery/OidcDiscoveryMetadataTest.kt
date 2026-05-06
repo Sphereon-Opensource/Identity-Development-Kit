@@ -22,6 +22,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.newBuildServerMetadataCommand
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +43,7 @@ class OidcDiscoveryMetadataTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     oidc = FeaturePolicy.SUPPORTED,
                     introspection = FeaturePolicy.SUPPORTED,
                     revocation = FeaturePolicy.SUPPORTED,
@@ -51,7 +52,7 @@ class OidcDiscoveryMetadataTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -63,7 +64,11 @@ class OidcDiscoveryMetadataTest {
             assertNotNull(metadata.subjectTypesSupported)
             assertTrue(metadata.subjectTypesSupported!!.contains("public"))
             assertNotNull(metadata.idTokenSigningAlgValuesSupported)
-            assertTrue(metadata.idTokenSigningAlgValuesSupported!!.contains("ES256"))
+            // Test wires no signing key, so the discovery builder falls back to the
+            // OIDC-mandated RS256 baseline (OpenID Connect Core 1.0 §10.1) — the only id-token
+            // alg every conformant RP must accept. The historical hardcoded `ES256` fallback
+            // is the bug the OIDF Conformance Group D fix replaced.
+            assertTrue(metadata.idTokenSigningAlgValuesSupported!!.contains("RS256"))
             assertNotNull(metadata.claimsSupported)
             assertTrue(metadata.claimsSupported!!.contains("sub"))
             assertTrue(metadata.claimsSupported!!.contains("email"))
@@ -75,14 +80,14 @@ class OidcDiscoveryMetadataTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     oidc = FeaturePolicy.DISABLED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -101,14 +106,14 @@ class OidcDiscoveryMetadataTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     // oidc not set — defaults to DISABLED
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -122,16 +127,17 @@ class OidcDiscoveryMetadataTest {
     @Test
     fun oidcEnabledWithBaseUrlOverride() =
         runTest {
+            // No `issuer` configured, so the per-request `baseUrlOverride` (resolved by the HTTP
+            // shell from `Host` + `X-Forwarded-Proto`) is what discovery uses for outbound URLs.
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://internal.example.com",
                     oidc = FeaturePolicy.SUPPORTED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result =
                 command.execute(
@@ -150,7 +156,7 @@ class OidcDiscoveryMetadataTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     oidc = FeaturePolicy.SUPPORTED,
                     claimsSupported = listOf("sub", "email", "custom_claim"),
                 )
@@ -158,7 +164,7 @@ class OidcDiscoveryMetadataTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 

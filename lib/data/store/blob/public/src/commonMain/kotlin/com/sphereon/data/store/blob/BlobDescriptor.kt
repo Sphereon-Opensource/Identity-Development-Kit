@@ -22,6 +22,11 @@ import kotlin.time.Instant
 
 /**
  * Descriptor for a stored blob, returned by put/stat/list operations.
+ *
+ * Classification hint fields mirror [BlobMetadata] so callers reading a descriptor
+ * can surface the classification without reaching into [metadata]. Authoritative
+ * values live on the consumer's own row (for example, vault_document); these
+ * are hints only.
  */
 @Serializable
 @JsExportCompat
@@ -36,4 +41,14 @@ data class BlobDescriptor(
     val lastModified: Instant? = null,
     val metadata: BlobMetadata = BlobMetadata.EMPTY,
     val contentHash: String? = null,
+    /** Consumer-supplied sensitivity classification hint mirrored from [BlobMetadata.classification]. */
+    val classification: String? = null,
+    /** Consumer-supplied legal basis hint mirrored from [BlobMetadata.legalBasis]. */
+    val legalBasis: String? = null,
+    /** Consumer-supplied retention-days hint mirrored from [BlobMetadata.retentionDays]. */
+    val retentionDays: Int? = null,
+    /** Consumer-supplied processing-purpose hint mirrored from [BlobMetadata.processingPurpose]. */
+    val processingPurpose: String? = null,
+    /** Consumer-supplied jurisdiction hint mirrored from [BlobMetadata.jurisdiction]. */
+    val jurisdiction: String? = null,
 )

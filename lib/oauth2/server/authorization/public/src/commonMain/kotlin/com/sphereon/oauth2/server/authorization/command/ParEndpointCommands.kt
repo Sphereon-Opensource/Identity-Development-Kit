@@ -16,19 +16,29 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 // ============================================================================
 // ParsePushedAuthorizationRequestCommand
 // ============================================================================
 
 /**
- * Arguments for parsing a pushed authorization request
+ * Arguments for parsing a pushed authorization request.
+ *
+ * [baseUrlOverride] propagates the request-derived AS base URL so the parser can validate a
+ * RFC 9101 (JAR) `request` parameter when the server config leaves `issuer` unset (per-tenant
+ * virtual hosting). The same value the HTTP shell uses to advertise discovery URLs feeds the
+ * JAR `aud` check, so a JAR signed for `https://op.example/issuer1` only validates against the
+ * matching base URL.
  */
 data class ParsePushedAuthorizationRequestArgs(
     val requestBody: Map<String, List<String>>,
     val clientAuthentication: ClientAuthenticationConfig,
+    val baseUrlOverride: String? = null,
 )
 
 /**
@@ -40,7 +50,7 @@ data class ParsePushedAuthorizationRequestArgs(
  * PAR allows clients to push authorization request parameters to the AS
  * via a direct HTTP POST before redirecting the user.
  */
-interface ParsePushedAuthorizationRequestCommand : ServiceCommand<ParsePushedAuthorizationRequestArgs, AuthorizationRequestData> {
+interface ParsePushedAuthorizationRequestCommand : ServiceCommand<ParsePushedAuthorizationRequestArgs, AuthorizationRequestData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -70,7 +80,7 @@ data class VerifyPushedAuthorizationRequestArgs(
  * - Request parameter validation
  * - JAR (if present)
  */
-interface VerifyPushedAuthorizationRequestCommand : ServiceCommand<VerifyPushedAuthorizationRequestArgs, VerifiedAuthorizationRequest> {
+interface VerifyPushedAuthorizationRequestCommand : ServiceCommand<VerifyPushedAuthorizationRequestArgs, VerifiedAuthorizationRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -90,7 +100,7 @@ interface VerifyPushedAuthorizationRequestCommand : ServiceCommand<VerifyPushedA
  * Generates a unique request_uri that references the stored authorization request.
  * The request_uri is short-lived (typically 90 seconds) and single-use.
  */
-interface CreateRequestUriCommand : ServiceCommand<VerifiedAuthorizationRequest, RequestUriData> {
+interface CreateRequestUriCommand : ServiceCommand<VerifiedAuthorizationRequest, RequestUriData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -117,7 +127,7 @@ data class CreatePushedAuthorizationResponseArgs(
  *
  * Creates the PAR response containing the request_uri and expires_in.
  */
-interface CreatePushedAuthorizationResponseCommand : ServiceCommand<CreatePushedAuthorizationResponseArgs, PushedAuthorizationResponse> {
+interface CreatePushedAuthorizationResponseCommand : ServiceCommand<CreatePushedAuthorizationResponseArgs, PushedAuthorizationResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -147,7 +157,7 @@ data class RetrieveByRequestUriArgs(
  * Note: The output may be null if the request_uri is not found or expired.
  * The nullable semantics are handled at the implementation level.
  */
-interface RetrieveAuthorizationRequestByUriCommand : ServiceCommand<RetrieveByRequestUriArgs, VerifiedAuthorizationRequest> {
+interface RetrieveAuthorizationRequestByUriCommand : ServiceCommand<RetrieveByRequestUriArgs, VerifiedAuthorizationRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -184,13 +194,16 @@ data class RequestUriData(
  *
  * RFC 9126 Section 2.2: Successful Response
  */
+@Serializable
 data class PushedAuthorizationResponse(
     /**
      * The request URI
      */
+    @SerialName("request_uri")
     val requestUri: String,
     /**
      * Expiration time in seconds
      */
+    @SerialName("expires_in")
     val expiresIn: Int,
 )

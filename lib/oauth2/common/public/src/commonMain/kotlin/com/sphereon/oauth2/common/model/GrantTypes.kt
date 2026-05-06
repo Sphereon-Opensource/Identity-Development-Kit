@@ -45,6 +45,9 @@ enum class GrantType(
 
     @SerialName("urn:ietf:params:oauth:grant-type:token-exchange")
     TOKEN_EXCHANGE("urn:ietf:params:oauth:grant-type:token-exchange"),
+
+    @SerialName("urn:ietf:params:oauth:grant-type:device_code")
+    DEVICE_CODE("urn:ietf:params:oauth:grant-type:device_code"),
 }
 
 /**
@@ -63,4 +66,10 @@ enum class ResponseType(
 
     @SerialName("id_token")
     ID_TOKEN("id_token"),
+    ;
+
+    companion object {
+        /** Map a wire-form value (`"code"`, `"id_token"`, `"token"`) to the enum, or null. */
+        fun fromValue(value: String): ResponseType? = entries.find { it.value.equals(value, ignoreCase = true) }
+    }
 }

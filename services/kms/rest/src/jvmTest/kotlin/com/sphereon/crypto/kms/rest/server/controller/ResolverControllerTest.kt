@@ -21,6 +21,7 @@ import com.sphereon.crypto.kms.rest.server.TestApiAppGraph
 import com.sphereon.crypto.kms.rest.server.createTestApiAppGraph
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import io.ktor.client.HttpClient
 import io.ktor.client.request.accept
 import io.ktor.client.request.get
@@ -81,6 +82,7 @@ class ResolverControllerTest {
             embeddedServer(CIO, port = port) {
                 install(KotlinInjectPlugin) {
                     this.appGraph = this@ResolverControllerTest.appGraph
+                    tenantResolver = FixedTenantResolver("default")
                 }
                 installUniversalHttpAdapters {
                     verboseLogging = true

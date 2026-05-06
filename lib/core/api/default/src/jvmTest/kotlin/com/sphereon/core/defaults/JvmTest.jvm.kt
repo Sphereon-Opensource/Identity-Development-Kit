@@ -103,7 +103,7 @@ class JvmTest {
             val out = appGraph.commandInvoker.execute(
                 tenantInput = DefaultTenantInputString("test@principal.com"),
                 principalInput = DefaultPrincipalInputString("test@principal.com"),
-                command = cmd as com.sphereon.core.api.service.ServiceCommand<String, String>,
+                command = cmd as com.sphereon.core.api.service.ServiceCommand<String, String, com.sphereon.core.api.error.IdkError>,
                 input = "Hello world"
             )
             assertTrue(out.isOk)

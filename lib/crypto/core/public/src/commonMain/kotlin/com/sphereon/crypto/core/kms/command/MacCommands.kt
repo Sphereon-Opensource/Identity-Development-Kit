@@ -16,6 +16,7 @@
 
 package com.sphereon.crypto.core.kms.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.generic.DigestAlg
@@ -117,7 +118,7 @@ data class GenerateMacResult(
  * MAC output is multihash-encoded (self-describing hash format).
  */
 @JsExportCompat
-interface GenerateMacCommand : ServiceCommand<GenerateMacArgs, GenerateMacResult> {
+interface GenerateMacCommand : ServiceCommand<GenerateMacArgs, GenerateMacResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -190,7 +191,7 @@ data class VerifyMacResult(
  * Command for verifying a MAC via the KMS.
  */
 @JsExportCompat
-interface VerifyMacCommand : ServiceCommand<VerifyMacArgs, VerifyMacResult> {
+interface VerifyMacCommand : ServiceCommand<VerifyMacArgs, VerifyMacResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -16,7 +16,7 @@
 
 package com.sphereon.identity.reconciliation.api
 
-import com.sphereon.identity.idv.model.AttributeBag
+import com.sphereon.attribute.flow.AttributeBag
 import com.sphereon.identity.idv.model.AttributePredicate
 import com.sphereon.identity.idv.model.AttributePredicateEvaluator
 import com.sphereon.identity.reconciliation.model.BindingPolicy

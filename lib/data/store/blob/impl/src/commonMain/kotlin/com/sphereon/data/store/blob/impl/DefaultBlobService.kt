@@ -145,17 +145,86 @@ class DefaultBlobService(
         return blobStoreService.getStore(id)
     }
 
-    /** Build a tenant-namespaced BlobInfo for the underlying store. */
+    /** Build a tenant-namespaced BlobInfo for the underlying store.
+     *
+     * Idempotent w.r.t. the tenant prefix: if `info.path` is already
+     * `<tenantId>/...` (e.g. it was returned by a previous round-trip
+     * through this service via [getBlob] / [storeBlob]), the prefix is not
+     * re-applied. This guards against the previously-existing
+     * double-prefix bug where callers stored a descriptor whose `path`
+     * already included the tenant segment, then handed it back to
+     * [getBlob], which produced a `<tenantId>/<tenantId>/...` lookup.
+     *
+     * For new writes the typical path is the un-prefixed logical key the
+     * caller chose (or a generated UUID); for reads the path is whatever
+     * the caller cached from a previous `storeBlob` descriptor — and
+     * since [storeBlob] now always returns the LOGICAL path, callers
+     * round-trip correctly without ever seeing the storage layer's
+     * tenant scoping.
+     */
     private fun tenantScopedInfo(
         info: BlobInfo,
         tenantId: String,
         store: BlobStore,
     ): BlobInfo {
-        val path =
+        val logicalPath =
             info.path ?: kotlin.uuid.Uuid
                 .random()
                 .toString()
-        return info.copy(path = "$tenantId/$path", storeId = store.storeId)
+        val scopedPath =
+            if (logicalPath == tenantId || logicalPath.startsWith("$tenantId/")) {
+                logicalPath
+            } else {
+                "$tenantId/$logicalPath"
+            }
+        // Preserve the caller-supplied storeId (the CONFIGURED id, e.g.
+        // "default", that maps to the registered `BlobStoreFactory` entry
+        // in `BlobStoreService`). Falling back to `store.storeId` would
+        // overwrite it with the BACKEND SCHEME constant (e.g.
+        // `BlobStoreSchemes.FILESYSTEM = "filesystem"`) which is not
+        // round-trippable: a later `getBlob` would call
+        // `resolveStoreId("filesystem")` → `blobStoreService.getStore("filesystem")`
+        // → no such configured id → "Blob store config not found".
+        return info.copy(path = scopedPath, storeId = info.storeId ?: store.storeId)
+    }
+
+    /**
+     * Strips the tenant prefix from a storage-layer descriptor and
+     * normalises `storeId` back to the CONFIGURED id (e.g. `"default"`
+     * from `blob.stores.default.*`) so callers can round-trip the
+     * descriptor through [getBlob] without surfacing storage-layer
+     * implementation details:
+     *
+     *  - **Path**: backend stores write under `<tenantId>/<logical>`;
+     *    callers must see only the logical path or a later `getBlob`
+     *    will re-scope and produce `<tenantId>/<tenantId>/...` (the
+     *    historical "double-prefix" bug).
+     *
+     *  - **storeId**: backend `BlobStore` impls hardcode `storeId =
+     *    BlobStoreSchemes.<scheme>` (e.g. `"filesystem"`), not the
+     *    configured registry id. A descriptor carrying the scheme would
+     *    fail the next `getBlob` lookup with "Blob store config not
+     *    found for store ID: filesystem". Rewriting back to the
+     *    configured id keeps the round-trip stable.
+     *
+     * Idempotent on path; preserves descriptor's storeId when no
+     * configured id is known. Pass `configuredStoreId = null` if the
+     * caller deliberately wants the raw scheme-id (uncommon).
+     */
+    private fun unscopeForCaller(
+        descriptor: BlobDescriptor,
+        tenantId: String,
+        configuredStoreId: String?,
+    ): BlobDescriptor {
+        val prefix = "$tenantId/"
+        val unscopedPath =
+            if (descriptor.path.startsWith(prefix)) {
+                descriptor.path.removePrefix(prefix)
+            } else {
+                descriptor.path
+            }
+        val effectiveStoreId = configuredStoreId ?: descriptor.storeId
+        return descriptor.copy(path = unscopedPath, storeId = effectiveStoreId)
     }
 
     private fun getCas(
@@ -221,7 +290,12 @@ class DefaultBlobService(
             log.warn("Failed to index metadata for ${emitInfoString(scopedInfo)}: ${indexResult.error}")
         }
         emitBlobEvent(BlobEventTypes.BLOB_CREATED, scopedInfo, sizeBytes = descriptor.sizeBytes, contentType = descriptor.contentType)
-        return Ok(descriptor)
+        // Hand back the LOGICAL path (no tenant prefix) and the CONFIGURED
+        // storeId so a later getBlob call can re-scope cleanly without
+        // producing `<tenant>/<tenant>/…` and without "Blob store config
+        // not found" lookups. Both are storage-layer implementation
+        // details that should not leak to callers.
+        return Ok(unscopeForCaller(descriptor, tenantId, configuredStoreId = scopedInfo.storeId))
     }
 
     override suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError> {

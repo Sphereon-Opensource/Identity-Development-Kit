@@ -30,6 +30,17 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/**
+ * OID4VCI 1.0 final §8.3 Credential Response shape:
+ *  - `credentials`: REQUIRED for synchronous issuance — array of `{ credential: <jwt> }`.
+ *  - `transaction_id`: REQUIRED for deferred issuance.
+ *  - `notification_id`: OPTIONAL.
+ *  - `interval`: OPTIONAL polling hint with `transaction_id`.
+ *
+ * Nonces are not on this response — wallets fetch them from the dedicated `/nonce` endpoint
+ * (§7.2). Anything else in the body is captured into [CredentialResponse.additionalParameters]
+ * for forward-compat / extension fields.
+ */
 class CredentialResponseSerializationTest {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -37,19 +48,21 @@ class CredentialResponseSerializationTest {
     fun singleCredentialRoundTrip() {
         val response =
             CredentialResponse(
-                credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.eyJ2Y3QiOiJodHRwczovL2NyZWRlbnRpYWxzLmV4YW1wbGUuY29tL2lkZW50aXR5X2NyZWRlbnRpYWwifQ.signature"),
+                credentials =
+                    listOf(
+                        CredentialResponseItem(
+                            credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.eyJ2Y3QiOiJodHRwczovL2NyZWRlbnRpYWxzLmV4YW1wbGUuY29tL2lkZW50aXR5X2NyZWRlbnRpYWwifQ.signature"),
+                        ),
+                    ),
             )
 
         val encoded = json.encodeToString(response)
         val decoded = json.decodeFromString<CredentialResponse>(encoded)
 
         assertEquals(response, decoded)
-        assertNotNull(decoded.credential)
-        assertTrue(decoded.credential is JsonPrimitive)
-        assertNull(decoded.credentials)
+        assertNotNull(decoded.credentials)
+        assertEquals(1, decoded.credentials?.size)
         assertNull(decoded.transactionId)
-        assertNull(decoded.cNonce)
-        assertNull(decoded.cNonceExpiresIn)
         assertNull(decoded.notificationId)
         assertTrue(decoded.additionalParameters.isEmpty())
     }
@@ -71,7 +84,6 @@ class CredentialResponseSerializationTest {
         val decoded = json.decodeFromString<CredentialResponse>(encoded)
 
         assertEquals(response, decoded)
-        assertNull(decoded.credential)
         assertNotNull(decoded.credentials)
         assertEquals(3, decoded.credentials?.size)
         assertEquals("notification-abc123", decoded.notificationId)
@@ -82,72 +94,20 @@ class CredentialResponseSerializationTest {
         val response =
             CredentialResponse(
                 transactionId = "txn-8dfc3e6a-b5f1-4e7d-a3c0-9b2f1e4d6a8c",
+                interval = 5,
             )
 
         val encoded = json.encodeToString(response)
         val decoded = json.decodeFromString<CredentialResponse>(encoded)
 
         assertEquals(response, decoded)
-        assertNull(decoded.credential)
         assertNull(decoded.credentials)
         assertEquals("txn-8dfc3e6a-b5f1-4e7d-a3c0-9b2f1e4d6a8c", decoded.transactionId)
+        assertEquals(5, decoded.interval)
     }
 
     @Test
-    fun responseWithNonceRoundTrip() {
-        val response =
-            CredentialResponse(
-                credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.credential.sig"),
-                cNonce = "fGFF7UkhLa",
-                cNonceExpiresIn = 86400,
-                notificationId = "notification-xyz789",
-            )
-
-        val encoded = json.encodeToString(response)
-        val decoded = json.decodeFromString<CredentialResponse>(encoded)
-
-        assertEquals(response, decoded)
-        assertNotNull(decoded.credential)
-        assertEquals("fGFF7UkhLa", decoded.cNonce)
-        assertEquals(86400, decoded.cNonceExpiresIn)
-        assertEquals("notification-xyz789", decoded.notificationId)
-    }
-
-    @Test
-    fun version10ImmediateResponseWithSingleCredentialWireFormat() {
-        val jsonString =
-            """
-            {
-                "credential": "eyJhbGciOiJFUzI1NiJ9.eyJ2Y3QiOiJodHRwczovL2NyZWRlbnRpYWxzLmV4YW1wbGUuY29tL2lkZW50aXR5X2NyZWRlbnRpYWwifQ.signature",
-                "c_nonce": "fGFF7UkhLa",
-                "c_nonce_expires_in": 86400
-            }
-            """.trimIndent()
-
-        val decoded = json.decodeFromString<CredentialResponse>(jsonString)
-
-        assertNotNull(decoded.credential)
-        assertTrue(decoded.credential is JsonPrimitive, "1.0 credential is a single string")
-        assertEquals("fGFF7UkhLa", decoded.cNonce)
-        assertEquals(86400, decoded.cNonceExpiresIn)
-        assertNull(decoded.credentials, "1.0 does not use credentials array")
-        assertNull(decoded.transactionId)
-
-        // Re-serialize and verify wire format
-        val reEncoded = json.encodeToString(decoded)
-        val reObj = json.parseToJsonElement(reEncoded).jsonObject
-        assertTrue(reObj.containsKey("credential"), "must have 'credential' key")
-        assertFalse(reObj.containsKey("credentials"), "1.0 must not have 'credentials' key")
-        assertEquals("fGFF7UkhLa", reObj["c_nonce"]?.jsonPrimitive?.content)
-        assertEquals(86400, reObj["c_nonce_expires_in"]?.jsonPrimitive?.intOrNull)
-
-        val reDecoded = json.decodeFromString<CredentialResponse>(reEncoded)
-        assertEquals(decoded, reDecoded)
-    }
-
-    @Test
-    fun version11ImmediateResponseWithCredentialsArrayWireFormat() {
-        // OID4VCI 1.1: credentials is an array of objects each with a "credential" field
+    fun immediateResponseWireFormatUsesCredentialsArray() {
         val jsonString =
             """
             {
@@ -155,36 +115,29 @@ class CredentialResponseSerializationTest {
                     { "credential": "eyJhbGciOiJFUzI1NiJ9.credential1.sig1" },
                     { "credential": "eyJhbGciOiJFUzI1NiJ9.credential2.sig2" }
                 ],
-                "c_nonce": "new-nonce-123",
-                "c_nonce_expires_in": 3600
+                "notification_id": "notify-1"
             }
             """.trimIndent()
 
         val decoded = json.decodeFromString<CredentialResponse>(jsonString)
 
-        assertNull(decoded.credential, "1.1 batch does not use singular credential")
         assertNotNull(decoded.credentials)
         assertEquals(2, decoded.credentials?.size)
-        assertEquals("new-nonce-123", decoded.cNonce)
-        assertEquals(3600, decoded.cNonceExpiresIn)
+        assertEquals("notify-1", decoded.notificationId)
 
-        // Verify each item has a credential field
         decoded.credentials?.forEach { item ->
             assertTrue(item.credential is JsonPrimitive, "each item.credential should be a primitive string")
         }
 
-        // Re-serialize and verify wire format
         val reEncoded = json.encodeToString(decoded)
         val reObj = json.parseToJsonElement(reEncoded).jsonObject
-        assertFalse(reObj.containsKey("credential"), "1.1 must not have singular 'credential' key")
-        assertTrue(reObj.containsKey("credentials"), "1.1 must have 'credentials' key")
+        assertTrue(reObj.containsKey("credentials"), "must have 'credentials' key")
+        assertFalse(reObj.containsKey("credential"), "must not emit singular 'credential' key (dropped in 1.0 final)")
 
         val credentialsArray = reObj["credentials"]!!.jsonArray
         assertEquals(2, credentialsArray.size)
-        // Each element must be an object with a "credential" key
         credentialsArray.forEach { element ->
-            val obj = element.jsonObject
-            assertTrue(obj.containsKey("credential"), "each credentials array element must have 'credential' key")
+            assertTrue(element.jsonObject.containsKey("credential"), "each credentials array element must have 'credential' key")
         }
 
         val reDecoded = json.decodeFromString<CredentialResponse>(reEncoded)
@@ -192,32 +145,25 @@ class CredentialResponseSerializationTest {
     }
 
     @Test
-    fun version11DeferredResponseWithTransactionIdAndInterval() {
+    fun deferredResponseWireFormat() {
         val jsonString =
             """
             {
                 "transaction_id": "txn-8dfc3e6a-b5f1-4e7d-a3c0-9b2f1e4d6a8c",
-                "interval": 5,
-                "c_nonce": "deferred-nonce",
-                "c_nonce_expires_in": 600
+                "interval": 5
             }
             """.trimIndent()
 
         val decoded = json.decodeFromString<CredentialResponse>(jsonString)
 
-        assertNull(decoded.credential)
         assertNull(decoded.credentials)
         assertEquals("txn-8dfc3e6a-b5f1-4e7d-a3c0-9b2f1e4d6a8c", decoded.transactionId)
         assertEquals(5, decoded.interval)
-        assertEquals("deferred-nonce", decoded.cNonce)
-        assertEquals(600, decoded.cNonceExpiresIn)
 
-        // Re-serialize and verify wire format
         val reEncoded = json.encodeToString(decoded)
         val reObj = json.parseToJsonElement(reEncoded).jsonObject
         assertEquals("txn-8dfc3e6a-b5f1-4e7d-a3c0-9b2f1e4d6a8c", reObj["transaction_id"]?.jsonPrimitive?.content)
         assertEquals(5, reObj["interval"]?.jsonPrimitive?.intOrNull)
-        assertFalse(reObj.containsKey("credential"), "deferred response must not have credential")
         assertFalse(reObj.containsKey("credentials"), "deferred response must not have credentials")
 
         val reDecoded = json.decodeFromString<CredentialResponse>(reEncoded)
@@ -225,7 +171,7 @@ class CredentialResponseSerializationTest {
     }
 
     @Test
-    fun version10DeferredResponseWithTransactionIdNoInterval() {
+    fun deferredResponseWithoutIntervalRoundTrip() {
         val jsonString =
             """
             {
@@ -235,30 +181,27 @@ class CredentialResponseSerializationTest {
 
         val decoded = json.decodeFromString<CredentialResponse>(jsonString)
 
-        assertNull(decoded.credential)
         assertNull(decoded.credentials)
         assertEquals("txn-pending-001", decoded.transactionId)
-        assertNull(decoded.interval, "1.0 deferred may omit interval")
-        assertNull(decoded.cNonce)
+        assertNull(decoded.interval)
 
-        // Re-serialize and verify wire format
         val reEncoded = json.encodeToString(decoded)
         val reObj = json.parseToJsonElement(reEncoded).jsonObject
         assertEquals("txn-pending-001", reObj["transaction_id"]?.jsonPrimitive?.content)
         assertFalse(reObj.containsKey("interval"), "should not serialize null interval")
-        assertFalse(reObj.containsKey("credential"))
         assertFalse(reObj.containsKey("credentials"))
-
-        val reDecoded = json.decodeFromString<CredentialResponse>(reEncoded)
-        assertEquals(decoded, reDecoded)
     }
 
     @Test
     fun unknownFieldsCapturedInAdditionalParameters() {
+        // Legacy `c_nonce` / `c_nonce_expires_in` from a pre-1.0-final issuer flow into
+        // additionalParameters — they're no longer first-class fields on the model.
         val jsonString =
             """
             {
-                "credential": "eyJhbGciOiJFUzI1NiJ9.payload.sig",
+                "credentials": [
+                    { "credential": "eyJhbGciOiJFUzI1NiJ9.payload.sig" }
+                ],
                 "c_nonce": "abc123",
                 "c_nonce_expires_in": 3600,
                 "custom_status": "active",
@@ -268,13 +211,13 @@ class CredentialResponseSerializationTest {
 
         val decoded = json.decodeFromString<CredentialResponse>(jsonString)
 
-        assertEquals("abc123", decoded.cNonce)
-        assertEquals(3600, decoded.cNonceExpiresIn)
-        assertEquals(2, decoded.additionalParameters.size)
+        assertNotNull(decoded.credentials)
+        assertEquals(4, decoded.additionalParameters.size)
+        assertEquals("abc123", decoded.additionalParameters["c_nonce"]?.jsonPrimitive?.content)
+        assertEquals(3600, decoded.additionalParameters["c_nonce_expires_in"]?.jsonPrimitive?.intOrNull)
         assertEquals("active", decoded.additionalParameters["custom_status"]?.jsonPrimitive?.content)
         assertEquals("state-ref-456", decoded.additionalParameters["issuer_state"]?.jsonPrimitive?.content)
 
-        // Round-trip preserves additional parameters
         val reEncoded = json.encodeToString(decoded)
         val reDecoded = json.decodeFromString<CredentialResponse>(reEncoded)
         assertEquals(decoded, reDecoded)

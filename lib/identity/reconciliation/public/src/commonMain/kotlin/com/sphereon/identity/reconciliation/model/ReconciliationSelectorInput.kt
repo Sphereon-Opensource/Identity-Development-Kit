@@ -16,9 +16,9 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.attribute.flow.AttributeBag
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
-import com.sphereon.identity.idv.model.AttributeBag
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 

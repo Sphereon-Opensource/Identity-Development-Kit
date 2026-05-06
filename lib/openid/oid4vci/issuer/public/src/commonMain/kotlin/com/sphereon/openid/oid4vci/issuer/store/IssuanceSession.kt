@@ -37,6 +37,24 @@ data class IssuanceSession(
     val preSeededAttributes: Map<String, JsonElement>? = null,
     @JsExportIgnoreCompat
     val accumulatedAttributes: Map<String, JsonElement>? = null,
+    /**
+     * Opaque usage-token bound to this issuance (set when the offer was minted
+     * from an invitation / redemption flow). Carried end-to-end so
+     * post-issuance hooks can correlate the credential to its source without
+     * the offer/issuance layers needing to understand invitation semantics.
+     */
+    val boundUsageToken: String? = null,
+    /** Pre-authorized code for this issuance when the pre-auth flow was used. */
+    val preAuthCode: String? = null,
+    /**
+     * Optional per-session allow-list narrowing which post-issuance hook
+     * command IDs fire for this issuance. Null = no narrowing (the deployment-
+     * level resolved set wins). Non-null = the hook dispatcher intersects
+     * the deployment-level set with this list so a single batch / single
+     * offer can scope hooks (test batch limiting to the consume hook,
+     * audit-only batch skipping webhooks, etc.).
+     */
+    val postIssuanceHookAllowList: List<String>? = null,
     val createdAt: Long,
     val expiresAt: Long,
 )

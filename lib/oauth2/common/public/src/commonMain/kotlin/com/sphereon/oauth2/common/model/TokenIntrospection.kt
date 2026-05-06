@@ -41,6 +41,13 @@ data class JwtConfirmation(
      * RFC 9449 Section 6 - DPoP Access Token Binding
      */
     val jkt: String? = null,
+    /**
+     * RFC 8705 §3.1: SHA-256 thumbprint (base64url) of the TLS client certificate this token
+     * is bound to. Resource servers MUST require the bearer to present a matching cert at the
+     * mTLS handshake.
+     */
+    @SerialName("x5t#S256")
+    val certificateThumbprintS256: String? = null,
 )
 
 /**

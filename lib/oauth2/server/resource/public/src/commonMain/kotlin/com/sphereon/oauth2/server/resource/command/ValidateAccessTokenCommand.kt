@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.resource.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.server.resource.model.ResourceRequest
@@ -67,7 +68,7 @@ data class ValidateAccessTokenArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ValidateAccessTokenCommand", exact = true)
 @JsExportCompat
-interface ValidateAccessTokenCommand : ServiceCommand<ValidateAccessTokenArgs, VerifiedResourceRequest> {
+interface ValidateAccessTokenCommand : ServiceCommand<ValidateAccessTokenArgs, VerifiedResourceRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

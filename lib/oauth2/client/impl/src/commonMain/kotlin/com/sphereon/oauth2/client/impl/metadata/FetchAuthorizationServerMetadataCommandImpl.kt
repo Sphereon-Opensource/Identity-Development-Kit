@@ -23,16 +23,17 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.oauth2.client.command.DiscoveryMode
 import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
 import com.sphereon.oauth2.client.command.FetchServerMetadataArgs
 import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.client.validation.validateAuthorizationServerMetadata
 import com.sphereon.oauth2.common.error.MetadataError
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
-import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
@@ -55,7 +56,7 @@ import kotlinx.serialization.json.Json
 class FetchAuthorizationServerMetadataCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<FetchServerMetadataArgs, AuthorizationServerMetadata>(
+) : TypedServiceCommandAdapter<FetchServerMetadataArgs, AuthorizationServerMetadata, IdkError>(
         commandId = FetchAuthorizationServerMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FetchServerMetadataArgs>(),
@@ -77,10 +78,14 @@ class FetchAuthorizationServerMetadataCommandImpl(
         applyDuring: (FetchServerMetadataArgs) -> FetchServerMetadataArgs,
     ): IdkResult<AuthorizationServerMetadata, IdkError> {
         val applied = applyDuring(args)
-        return fetchAuthorizationServerMetadataInternal(applied.issuer).mapError { IdkError.fromDTO(it) }
+        return fetchAuthorizationServerMetadataInternal(applied.issuer, applied.discoveryMode)
+            .mapError { IdkError.fromDTO(it) }
     }
 
-    private suspend fun fetchAuthorizationServerMetadataInternal(issuer: String): IdkResult<AuthorizationServerMetadata, MetadataError> {
+    private suspend fun fetchAuthorizationServerMetadataInternal(
+        issuer: String,
+        discoveryMode: DiscoveryMode,
+    ): IdkResult<AuthorizationServerMetadata, MetadataError> {
         // Validate issuer format (allow HTTP for localhost/127.0.0.1 in development)
         if (!isSecureUrl(issuer)) {
             return Err(
@@ -124,42 +129,44 @@ class FetchAuthorizationServerMetadataCommandImpl(
         val legacyOauthServerWellKnownUrl = "$issuer/.well-known/oauth-authorization-server"
         val openIdConfigurationUrl = "$issuer/.well-known/openid-configuration"
 
+        // OAUTH2_FIRST tries RFC 8414 first (legacy OAuth2 callers — prior behaviour);
+        // OIDC_FIRST tries OIDC Discovery first so OIDC RPs see the richer metadata document.
+        val candidates: List<String> =
+            when (discoveryMode) {
+                DiscoveryMode.OAUTH2_FIRST -> {
+                    buildList {
+                        add(oauthServerWellKnownUrl)
+                        if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
+                            add(legacyOauthServerWellKnownUrl)
+                        }
+                        add(openIdConfigurationUrl)
+                    }
+                }
+
+                DiscoveryMode.OIDC_FIRST -> {
+                    buildList {
+                        add(openIdConfigurationUrl)
+                        add(oauthServerWellKnownUrl)
+                        if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
+                            add(legacyOauthServerWellKnownUrl)
+                        }
+                    }
+                }
+            }
+
         val attemptedUrls = mutableListOf<String>()
         var firstError: MetadataError? = null
-
-        // Try OAuth 2.0 Authorization Server Metadata (RFC 8414 compliant)
-        attemptedUrls.add(oauthServerWellKnownUrl)
-        val oauthResult = fetchMetadata(oauthServerWellKnownUrl)
-        when {
-            oauthResult is Ok -> return validateAndCheckIssuer(oauthResult.value, issuer, oauthServerWellKnownUrl)
-            oauthResult is Err && oauthResult.error !is MetadataError.FetchFailed -> firstError = oauthResult.error
-        }
-
-        // Try legacy non-compliant URL (if different)
-        if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
-            attemptedUrls.add(legacyOauthServerWellKnownUrl)
-            val legacyResult = fetchMetadata(legacyOauthServerWellKnownUrl)
+        for (url in candidates) {
+            attemptedUrls.add(url)
+            val result = fetchMetadata(url)
             when {
-                legacyResult is Ok -> {
-                    return validateAndCheckIssuer(legacyResult.value, issuer, legacyOauthServerWellKnownUrl)
+                result is Ok -> {
+                    return validateAndCheckIssuer(result.value, issuer, url)
                 }
 
-                legacyResult is Err && legacyResult.error !is MetadataError.FetchFailed && firstError == null -> {
-                    firstError = legacyResult.error
+                result is Err && result.error !is MetadataError.FetchFailed && firstError == null -> {
+                    firstError = result.error
                 }
-            }
-        }
-
-        // Try OpenID Connect Discovery
-        attemptedUrls.add(openIdConfigurationUrl)
-        val openIdResult = fetchMetadata(openIdConfigurationUrl)
-        when {
-            openIdResult is Ok -> {
-                return validateAndCheckIssuer(openIdResult.value, issuer, openIdConfigurationUrl)
-            }
-
-            openIdResult is Err && openIdResult.error !is MetadataError.FetchFailed && firstError == null -> {
-                firstError = openIdResult.error
             }
         }
 

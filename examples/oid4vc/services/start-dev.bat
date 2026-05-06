@@ -6,9 +6,17 @@ REM starts Docker images from those JARs. Use this when iterating on IDK code.
 REM For users running published images, use start.bat instead.
 REM
 REM Usage:
-REM   start-dev.bat                                              Auto-detect LAN IP
+REM   start-dev.bat                                              Auto-detect LAN IP, default profile
 REM   start-dev.bat https://my.ngrok.app                         Pass URL as argument
+REM   start-dev.bat https://my.ngrok.app haip                    Layer the HAIP conformance profile
 REM   set EXTERNAL_BASE_URL=http://myhost:8080 && start-dev.bat  Use env var
+REM
+REM Conformance profile values for the second argument:
+REM   default       Plain demo (did:jwk verifier, plain AS); identical to omitting the arg.
+REM   did-jwk       Explicit did:jwk verifier prefix, plain AS.
+REM   x509-san-dns  x509_san_dns verifier prefix (OID4VP plan), plain AS.
+REM   x509-hash     x509_hash verifier prefix (OID4VP plan), plain AS.
+REM   haip          HAIP conformance combo: x509_hash verifier + HAIP-shaped AS auth methods.
 
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -21,8 +29,26 @@ if not defined EXTERNAL_BASE_URL (
 )
 echo EXTERNAL_BASE_URL=%EXTERNAL_BASE_URL%
 
-REM Resolve IDK_VERSION from IDK gradle.properties
-set "IDK_ROOT=%~dp0..\..\.."
+REM Resolve conformance profile (second positional arg)
+set "PROFILE_NAME="
+set "COMPOSE_PROFILE_ARGS="
+set "_profileLine=0"
+for /f "usebackq delims=" %%l in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lib\resolve-profile-args.ps1" -RawProfile "%~2"`) do (
+    set /a _profileLine+=1
+    if !_profileLine! equ 1 set "PROFILE_NAME=%%l"
+    if !_profileLine! equ 2 set "COMPOSE_PROFILE_ARGS=%%l"
+)
+if not defined PROFILE_NAME (
+    echo Failed to resolve conformance profile.
+    exit /b 1
+)
+echo PROFILE=!PROFILE_NAME!
+if defined COMPOSE_PROFILE_ARGS if not "!COMPOSE_PROFILE_ARGS!"=="" echo PROFILE_ENV_FILES=!COMPOSE_PROFILE_ARGS!
+
+REM Resolve IDK_VERSION from IDK gradle.properties.
+REM Normalize IDK_ROOT to an absolute path — `pushd` + `call gradlew.bat` against
+REM a `..\..\..`-relative path fails to find gradlew.bat in some cmd hosts.
+for %%d in ("%~dp0..\..\..") do set "IDK_ROOT=%%~fd"
 for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
 echo IDK_VERSION=%IDK_VERSION%
 echo Dev mode: building from local IDK source at %IDK_ROOT%
@@ -37,10 +63,11 @@ REM Template VCT files
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lib\template-vcts.ps1" -BaseUrl "%EXTERNAL_BASE_URL%"
 if errorlevel 1 exit /b 1
 
-REM Build fat JARs
+REM Build fat JARs — call gradlew with an absolute path so it works regardless
+REM of which cmd host invoked the bat (some hosts don't search cwd for .bat files).
 echo Building fat JARs from %IDK_ROOT%...
 pushd "%IDK_ROOT%"
-call gradlew.bat ^
+call "%IDK_ROOT%\gradlew.bat" ^
     :services-oauth2-as-rest:buildFatJar ^
     :services-oid4vci-issuer-rest:buildFatJar ^
     :services-oid4vp-verifier-rest:buildFatJar ^
@@ -64,6 +91,8 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Starting IDK services environment...
+echo   Profile:           !PROFILE_NAME!
+if defined COMPOSE_PROFILE_ARGS if not "!COMPOSE_PROFILE_ARGS!"=="" echo   Layered env files: !COMPOSE_PROFILE_ARGS!
 echo   Issuer identifier: %EXTERNAL_BASE_URL%/oid4vci
 echo   Issuer metadata:   %EXTERNAL_BASE_URL%/.well-known/openid-credential-issuer/oid4vci
 echo   AS issuer:         %EXTERNAL_BASE_URL%/auth
@@ -71,7 +100,7 @@ echo   AS discovery:      %EXTERNAL_BASE_URL%/.well-known/oauth-authorization-se
 echo   Login form:        %EXTERNAL_BASE_URL%/auth/login
 echo.
 
-docker compose up -d --build
+docker compose !COMPOSE_PROFILE_ARGS! up -d --build
 
 echo.
 echo Services starting. Check health:

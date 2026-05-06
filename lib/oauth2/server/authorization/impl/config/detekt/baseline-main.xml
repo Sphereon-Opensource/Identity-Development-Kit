@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:HashPasswordCli.kt$3</ID>
+    <ID>ReturnCount:DefaultOAuth2ConfigModule.kt$DefaultOAuth2ConfigModule$@Provides @SingleIn(SessionScope::class) @Named("oauth2.serverIdentifier") fun provideDefaultServerIdentifier( configProvider: OAuth2ServersConfigProvider, signingKeyStore: SigningKeyStore, ): ManagedIdentifierOptsOrResult?</ID>
+  </CurrentIssues>
+</SmellBaseline>

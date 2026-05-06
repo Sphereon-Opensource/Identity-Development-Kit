@@ -79,7 +79,7 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOpe
 class GetKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<GetKeyInput, GetKeyResponse>(
+) : TypedServiceCommandAdapter<GetKeyInput, GetKeyResponse, IdkError>(
         commandId = GetKeyServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetKeyInput>(),
@@ -122,7 +122,7 @@ class GetKeyServiceCommandImpl(
 class ListKeysServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<ListKeysInput, ListKeysResponse>(
+) : TypedServiceCommandAdapter<ListKeysInput, ListKeysResponse, IdkError>(
         commandId = ListKeysServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListKeysInput>(),
@@ -165,7 +165,7 @@ class ListKeysServiceCommandImpl(
 class StoreKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<StoreKeyInput, StoreKeyResponse>(
+) : TypedServiceCommandAdapter<StoreKeyInput, StoreKeyResponse, IdkError>(
         commandId = StoreKeyServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<StoreKeyInput>(),
@@ -212,7 +212,7 @@ class StoreKeyServiceCommandImpl(
 class GenerateKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<GenerateKeyInput, GenerateKeyResponse>(
+) : TypedServiceCommandAdapter<GenerateKeyInput, GenerateKeyResponse, IdkError>(
         commandId = GenerateKeyServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GenerateKeyInput>(),
@@ -266,7 +266,7 @@ class GenerateKeyServiceCommandImpl(
 class DeleteKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<DeleteKeyInput, DeleteKeyOutput>(
+) : TypedServiceCommandAdapter<DeleteKeyInput, DeleteKeyOutput, IdkError>(
         commandId = DeleteKeyServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteKeyInput>(),
@@ -310,7 +310,7 @@ class RegisterKeyReferenceServiceCommandImpl(
     execution: SessionExecution,
     private val registrar: ManagedKeyReferenceRegistrar,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<RegisterKeyReferenceInput, RegisterKeyReferenceResponse>(
+) : TypedServiceCommandAdapter<RegisterKeyReferenceInput, RegisterKeyReferenceResponse, IdkError>(
         commandId = RegisterKeyReferenceServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RegisterKeyReferenceInput>(),

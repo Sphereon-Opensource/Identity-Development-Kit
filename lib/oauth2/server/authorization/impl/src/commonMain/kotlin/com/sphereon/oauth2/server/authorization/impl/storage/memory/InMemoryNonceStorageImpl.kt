@@ -16,9 +16,11 @@
 
 package com.sphereon.oauth2.server.authorization.impl.storage.memory
 
+import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.storage.NonceStorage
 import dev.zacsweers.metro.AppScope
@@ -28,7 +30,6 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -51,6 +52,7 @@ import kotlin.time.Instant
 @ObjCName("InMemoryNonceStorageImpl", exact = true)
 class InMemoryNonceStorageImpl(
     private val backingStorage: InMemoryOAuth2BackingStorage,
+    private val secureRandom: SecureRandom,
 ) : NonceStorage {
     private val partitionKey = OAuth2StoragePartitionKey.appLevel()
     private val partition get() = backingStorage.getPartition(partitionKey)
@@ -62,10 +64,8 @@ class InMemoryNonceStorageImpl(
 
     override suspend fun generateNonce(expiresAt: Instant): IdkResult<String, AuthorizationServerError.StorageError> =
         try {
-            // Generate 128-bit (16 bytes) random nonce
-            val bytes = Random.Default.nextBytes(NONCE_BYTE_SIZE)
-            val nonce = bytes.joinToString("") { it.toUByte().toString(HEX_RADIX).padStart(HEX_PAD_LENGTH, '0') }
-
+            // Generate 128-bit (16 bytes) random nonce, hex-encoded.
+            val nonce = secureRandom.newToken(lengthBytes = NONCE_BYTE_SIZE, encoding = Encoding.HEX)
             partition.nonces[nonce] = NonceData(expiresAt = expiresAt, used = false)
             Ok(nonce)
         } catch (expected: Exception) {
@@ -255,7 +255,5 @@ class InMemoryNonceStorageImpl(
 
     companion object {
         private const val NONCE_BYTE_SIZE = 16
-        private const val HEX_RADIX = 16
-        private const val HEX_PAD_LENGTH = 2
     }
 }

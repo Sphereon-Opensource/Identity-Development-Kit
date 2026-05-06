@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="{{locale}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{msg.loginAccountTitle}}</title>
+<link rel="stylesheet" href="{{assetsBase}}/css/login.css">
+</head>
+<body class="sphereon-login">
+<div class="login-page">
+  <div class="login-background">
+    <img src="{{assetsBase}}/img/login-background.svg" alt="" class="login-background-img">
+  </div>
+  <div class="login-shell">
+    <header class="login-header">
+      <img class="login-logo" src="{{assetsBase}}/img/sphereon-logo.svg" alt="Sphereon">
+    </header>
+    <main class="login-card">
+      <h1 class="login-title">{{msg.loginAccountTitle}}</h1>
+      {{errorBlockOrEmpty}}
+      <form class="form-sections" method="post" action="{{formAction}}" autocomplete="on">
+        <input type="hidden" name="session_id" value="{{sessionId}}">
+        <input type="hidden" name="tab_id" value="{{tabId}}">
+        <input type="hidden" name="session_code" value="{{sessionCode}}">
+        <input type="hidden" name="return_url" value="{{returnUrl}}">
+        <div class="form-fields">
+          <div class="input-group">
+            <div class="input-container">
+              <div class="input-wrapper">
+                <input id="username" name="username" type="text" class="input-field" placeholder="{{msg.usernamePlaceholder}}" value="{{loginHintEscaped}}" autofocus autocomplete="username">
+                <label for="username" class="input-label">{{msg.username}}</label>
+              </div>
+            </div>
+          </div>
+          <div class="input-group">
+            <div class="input-container">
+              <div class="input-wrapper">
+                <input id="password" name="password" type="password" class="input-field" placeholder="{{msg.passwordPlaceholder}}" autocomplete="current-password">
+                <label for="password" class="input-label">{{msg.password}}</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="primary-button">{{msg.doLogIn}}</button>
+      </form>
+      {{federationBlockOrEmpty}}
+      <form class="form-sections form-cancel" method="post" action="{{cancelAction}}">
+        <input type="hidden" name="session_id" value="{{sessionId}}">
+        <input type="hidden" name="tab_id" value="{{tabId}}">
+        <input type="hidden" name="session_code" value="{{sessionCode}}">
+        <button type="submit" class="secondary-button">{{msg.doCancel}}</button>
+      </form>
+    </main>
+  </div>
+</div>
+</body>
+</html>

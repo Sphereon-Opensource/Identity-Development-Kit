@@ -27,7 +27,6 @@ import com.sphereon.core.api.auth.AuthHeaders
  * All header lookups are case-insensitive (per HTTP/1.1 RFC 7230 §3.2).
  */
 object RequestUtils {
-
     private const val HTTP_SCHEME = "http"
     private const val HTTPS_SCHEME = "https"
 
@@ -39,7 +38,10 @@ object RequestUtils {
      * Extract a header value with case-insensitive lookup.
      * Tries direct key access first (fast path), then iterates entries for a case-insensitive match.
      */
-    fun extractHeaderValue(headers: Map<String, String>, name: String): String? {
+    fun extractHeaderValue(
+        headers: Map<String, String>,
+        name: String
+    ): String? {
         headers[name]?.let { return it }
         val lowerName = name.lowercase()
         return headers.entries.firstOrNull { it.key.lowercase() == lowerName }?.value
@@ -49,10 +51,10 @@ object RequestUtils {
      * Extract tenant ID from headers.
      * Uses the canonical [AuthHeaders.X_TENANT_ID] header with case-insensitive fallback.
      */
-    fun extractTenantId(headers: Map<String, String>): String? {
-        return extractHeaderValue(headers, AuthHeaders.X_TENANT_ID)
-            ?.trim()?.takeIf { it.isNotBlank() }
-    }
+    fun extractTenantId(headers: Map<String, String>): String? =
+        extractHeaderValue(headers, AuthHeaders.X_TENANT_ID)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
 
     // ========================================
     // Proxy-aware request properties
@@ -67,9 +69,14 @@ object RequestUtils {
      * 2. Port-based inference from `Host` header (443 → https)
      * 3. [defaultScheme] fallback when valid, otherwise http
      */
-    fun getScheme(headers: Map<String, String>, defaultScheme: String = "http"): String {
+    fun getScheme(
+        headers: Map<String, String>,
+        defaultScheme: String = "http"
+    ): String {
         extractHeaderValue(headers, AuthHeaders.X_FORWARDED_PROTO)
-            ?.firstHeaderValue()?.let(::normalizeScheme)?.let { return it }
+            ?.firstHeaderValue()
+            ?.let(::normalizeScheme)
+            ?.let { return it }
 
         // Infer from Host port when no forwarding header is present
         val host = extractHeaderValue(headers, AuthHeaders.HOST)?.firstHeaderValue()
@@ -87,12 +94,11 @@ object RequestUtils {
      * Checks `X-Forwarded-Host` first, then falls back to the `Host` header.
      * Returns "localhost" if neither is present.
      */
-    fun getHostWithPort(headers: Map<String, String>): String {
-        return extractHeaderValue(headers, AuthHeaders.X_FORWARDED_HOST)
+    fun getHostWithPort(headers: Map<String, String>): String =
+        extractHeaderValue(headers, AuthHeaders.X_FORWARDED_HOST)
             ?.firstHeaderValue()
             ?: extractHeaderValue(headers, AuthHeaders.HOST)?.firstHeaderValue()
             ?: "localhost"
-    }
 
     /**
      * Resolve the request hostname without any port suffix.
@@ -100,9 +106,7 @@ object RequestUtils {
      * This strips `:port` from regular host headers and unwraps bracketed IPv6
      * host values such as `[2001:db8::1]:8443`.
      */
-    fun getHostname(headers: Map<String, String>): String {
-        return parseHostHeader(getHostWithPort(headers)).hostname
-    }
+    fun getHostname(headers: Map<String, String>): String = parseHostHeader(getHostWithPort(headers)).hostname
 
     /**
      * Resolve the forwarded port, if any.
@@ -111,9 +115,10 @@ object RequestUtils {
      * the port is the default for the scheme (443 for https, 80 for http).
      */
     fun getPort(headers: Map<String, String>): String? {
-        val port = extractHeaderValue(headers, AuthHeaders.X_FORWARDED_PORT)
-            ?.firstHeaderValue()
-            ?: return null
+        val port =
+            extractHeaderValue(headers, AuthHeaders.X_FORWARDED_PORT)
+                ?.firstHeaderValue()
+                ?: return null
         val scheme = getScheme(headers)
         // Suppress default ports
         if (scheme == "https" && port == "443") return null
@@ -128,8 +133,8 @@ object RequestUtils {
      * `X-Forwarded-Prefix` so the backend can reconstruct the original URL.
      * The returned value has no trailing slash.
      */
-    fun getPrefix(headers: Map<String, String>): String {
-        return extractHeaderValue(headers, AuthHeaders.X_FORWARDED_PREFIX)
+    fun getPrefix(headers: Map<String, String>): String =
+        extractHeaderValue(headers, AuthHeaders.X_FORWARDED_PREFIX)
             ?.firstHeaderValue()
             ?.let {
                 val trimmed = it.trim().trimEnd('/')
@@ -140,7 +145,6 @@ object RequestUtils {
                 }
             }
             ?: ""
-    }
 
     /**
      * Resolve the client IP address from proxy headers.
@@ -148,10 +152,11 @@ object RequestUtils {
      * Takes the first address from `X-Forwarded-For` (the original client),
      * ignoring any intermediate proxies in the chain.
      */
-    fun getClientIp(headers: Map<String, String>): String? {
-        return extractHeaderValue(headers, AuthHeaders.X_FORWARDED_FOR)
-            ?.split(",")?.firstOrNull()?.trim()
-    }
+    fun getClientIp(headers: Map<String, String>): String? =
+        extractHeaderValue(headers, AuthHeaders.X_FORWARDED_FOR)
+            ?.split(",")
+            ?.firstOrNull()
+            ?.trim()
 
     // ========================================
     // URL construction
@@ -188,7 +193,10 @@ object RequestUtils {
      * @param headers Request headers (case-insensitive lookup)
      * @param basePath Optional application base path appended after the prefix (e.g. "/api/v1")
      */
-    fun buildBaseUrl(headers: Map<String, String>, basePath: String = ""): String {
+    fun buildBaseUrl(
+        headers: Map<String, String>,
+        basePath: String = ""
+    ): String {
         val scheme = getScheme(headers)
         val authority = getAuthority(headers)
         val prefix = getPrefix(headers)
@@ -206,24 +214,25 @@ object RequestUtils {
      * @param path The request path (e.g. "/oauth2/token")
      * @param basePath Optional application base path
      */
-    fun buildFullUrl(headers: Map<String, String>, path: String, basePath: String = ""): String {
+    fun buildFullUrl(
+        headers: Map<String, String>,
+        path: String,
+        basePath: String = ""
+    ): String {
         val base = buildBaseUrl(headers, basePath)
         val normalizedPath = if (path.startsWith("/")) path else "/$path"
         return "$base$normalizedPath"
     }
 }
 
-private fun normalizeScheme(scheme: String): String? {
-    return when (scheme.lowercase().trim()) {
+private fun normalizeScheme(scheme: String): String? =
+    when (scheme.lowercase().trim()) {
         "http", "ws" -> "http"
         "https", "wss" -> "https"
         else -> null
     }
-}
 
-private fun String.firstHeaderValue(): String? {
-    return split(",").firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
-}
+private fun String.firstHeaderValue(): String? = split(",").firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
 
 private data class ParsedHostHeader(
     val hostname: String,
@@ -256,10 +265,12 @@ private fun parseHostHeader(hostHeader: String): ParsedHostHeader {
     return ParsedHostHeader(hostname = value, hasExplicitPort = false)
 }
 
-private fun formatAuthority(hostname: String, port: String): String {
-    return if (hostname.contains(':') && !hostname.startsWith("[")) {
+private fun formatAuthority(
+    hostname: String,
+    port: String
+): String =
+    if (hostname.contains(':') && !hostname.startsWith("[")) {
         "[$hostname]:$port"
     } else {
         "$hostname:$port"
     }
-}

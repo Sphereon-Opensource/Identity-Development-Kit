@@ -6,6 +6,7 @@
 
 package com.sphereon.trust.oidfed
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.trust.core.model.TrustValidationResult
@@ -18,7 +19,7 @@ import kotlinx.serialization.Serializable
  * (openid-federation-trust module) where it has access to ResolveTrustChainCommand
  * and VerifyTrustChainCommand.
  */
-interface ValidateOidfTrustCommand : ServiceCommand<ValidateOidfTrustArgs, TrustValidationResult> {
+interface ValidateOidfTrustCommand : ServiceCommand<ValidateOidfTrustArgs, TrustValidationResult, IdkError> {
     companion object {
         const val COMMAND_ID = "trust.oidfed.validate"
     }

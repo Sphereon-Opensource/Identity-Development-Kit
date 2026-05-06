@@ -43,7 +43,7 @@ import kotlin.time.Clock
 class GetReconciliationSessionCommandImpl(
     execution: SessionExecution,
     private val sessionStore: ReconciliationSessionStore,
-) : TypedServiceCommandAdapter<GetReconciliationSessionArgs, ReconciliationSession>(
+) : TypedServiceCommandAdapter<GetReconciliationSessionArgs, ReconciliationSession, IdkError>(
         commandId = GetReconciliationSessionCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetReconciliationSessionArgs>(),

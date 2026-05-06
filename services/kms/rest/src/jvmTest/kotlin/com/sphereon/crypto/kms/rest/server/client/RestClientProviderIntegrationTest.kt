@@ -36,11 +36,14 @@ import com.sphereon.crypto.kms.rest.server.TestApiAppGraph
 import com.sphereon.crypto.kms.rest.server.createTestApiAppGraph
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
+import com.sphereon.ktor.server.inject.resolver.TenantResolver
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.request.header
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -50,7 +53,6 @@ import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -98,6 +100,13 @@ class RestClientProviderIntegrationTest {
             embeddedServer(CIO, port = port) {
                 install(KotlinInjectPlugin) {
                     this.appGraph = this@RestClientProviderIntegrationTest.appGraph
+                    // The RestClient pushes tenant context as the X-Tenant-ID header (see
+                    // RestClientAuthConfig.useTenantFromContext); this test resolver echoes the
+                    // header so server-side context matches what the client put on the wire.
+                    tenantResolver =
+                        object : TenantResolver {
+                            override fun resolve(call: ApplicationCall) = DefaultTenantInputString(call.request.header("X-Tenant-ID") ?: "default")
+                        }
                 }
                 installUniversalHttpAdapters {
                     verboseLogging = true
@@ -276,17 +285,6 @@ class RestClientProviderIntegrationTest {
                 val verification = restClientKmsProvider.isValidRawSignature(keyInfo = keyInfo, signature = signature, input = "test".encodeToByteArray())
                 assertTrue(verification)
             }
-        }
-
-    @Test
-    fun testGenerateKeyThrowsExceptionForUnsupportedCurve() =
-        runTest {
-            val unsupportedAlg = SignatureAlgorithm.ED25519
-            val exception =
-                assertFailsWith<IllegalArgumentException> {
-                    restClientKmsProvider.generateKeyAsync(alg = unsupportedAlg)
-                }
-            assertEquals("Curve ${unsupportedAlg.curve!!.jose.name} not supported for EcDSA", exception.message)
         }
 
     @Test

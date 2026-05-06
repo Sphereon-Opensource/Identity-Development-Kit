@@ -18,19 +18,202 @@ kms:
         path: /app/keystore/keystore.p12
 
 oauth2:
+  # Switch from the default `federated` provider (which routes to an upstream IdP) to the IDK
+  # config-backed provider so the conformance suite hits an inline /login form instead of
+  # bouncing off to an unconfigured federation provider. The AS authorize endpoint detects this
+  # mode via UserAuthenticationProvider.isAuthenticationMethodAvailable(OAUTH)=false and falls
+  # through to SessionEvaluation.RedirectToLogin (StandardAuthorizeRequestCommandImpl §415-433).
+  user-provider:
+    mode: local-config
+  # PBKDF2-HMAC-SHA256 (OWASP 2024 floor: 210k iters). Per-account salt is sha256(pepper||':'||username).
+  # Pepper here is base64("sphereon-idk-e2e-salt-pepper"); the testuser hash below is for password
+  # "testpass" so the conformance suite can authenticate via the AS's first-party login form.
+  # NOT for production — rotate with `./gradlew :lib-oauth2-server-authorization-impl:hashPassword
+  # -Pusername=<u> -Ppassword=<p> -Pdeployment.salt=<base64-pepper>` before any deployment.
+  users:
+    password:
+      salt: "c3BoZXJlb24taWRrLWUyZS1zYWx0LXBlcHBlcg=="
+      iterations: 210000
+    accounts:
+      testuser:
+        password: "6FBn+23P8dU26yRGBfD9LvLgzOldD3Hmoh6E5m+JlYM="
+        sub: testuser
+        email: testuser@example.com
+        email-verified: true
+        # OIDC Core §5.1 — full standard "profile" scope claim set so
+        # `oidcc-scope-profile` finds every claim it expects on `/userinfo` when the RP
+        # requests `scope=openid profile`.
+        # Bracket-quote each key so `PropertyKeyNormalizer`'s underscore-to-dot pass
+        # leaves them alone (`given_name` would otherwise become the path `given.name`).
+        # `ConfigBackedUserAuthenticationProvider` strips the brackets on read.
+        claims:
+          "[name]": Test User
+          "[given_name]": Test
+          "[family_name]": User
+          "[middle_name]": Q
+          "[nickname]": Tess
+          "[preferred_username]": testuser
+          "[profile]": "https://sphereon-oid4vc.ngrok.dev/profile/testuser"
+          "[picture]": "https://sphereon-oid4vc.ngrok.dev/picture/testuser.png"
+          "[website]": "https://sphereon.com"
+          "[gender]": other
+          "[birthdate]": "1985-03-15"
+          "[zoneinfo]": "Europe/Amsterdam"
+          "[locale]": "en-NL"
+          # OIDC Core §5.1: updated_at MUST be a JSON number (seconds since epoch).
+          # Unquoted in YAML → propagates as the literal number 1714521600. The user-info
+          # serializer's `toJson` handles bare-number strings AND typed numerics generically;
+          # leaving the value unquoted reads cleaner than the round-trip path.
+          "[updated_at]": 1714521600
+          # OIDC Core §5.1.1: address is a JSON object claim. Stored as a single-line JSON
+          # literal so the config-string round-trip preserves it; the user-info serializer's
+          # `toJson` parses literal-shaped strings back into the structured wire form.
+          "[address]": '{"formatted":"Keizersgracht 123\n1012 AB Amsterdam\nNL","street_address":"Keizersgracht 123","locality":"Amsterdam","region":"Noord-Holland","postal_code":"1012 AB","country":"NL"}'
+          # OIDC Core §5.1: phone scope claims. `phone_number_verified` is JSON boolean —
+          # unquoted YAML `true` plus the generic `toJson` literal-parse keeps it correctly typed.
+          "[phone_number]": "+31201234567"
+          "[phone_number_verified]": true
   servers:
     default:
       mode: HOSTED
       issuer: "${env:EXTERNAL_BASE_URL}/auth"
       oidc: SUPPORTED
-      pkce: REQUIRED
+      # PKCE is REQUIRED by default (FAPI2-SP §5.3.2.1, RFC 9700). The OIDC Basic Profile
+      # Authorization Server certification predates PKCE and runs without it — flip via
+      # OAUTH2_PKCE_POLICY=SUPPORTED for that test (profile: conformance-oidc-basic).
+      pkce: "${env:OAUTH2_PKCE_POLICY:REQUIRED}"
       token-format: JWT
+      # Standard OIDC + OAuth2 scopes the AS publishes in `scopes_supported`. Required by
+      # OIDC Discovery §3 and probed by the OIDC Basic Profile cert. `offline_access` gates
+      # refresh-token issuance (OIDC Core §11). Keep the list explicit — without
+      # `scopes-supported` set the metadata field is omitted, which the OIDC test rejects.
+      scopes-supported: "openid,profile,email,address,phone,offline_access"
+      # OIDC subject types the AS issues. `public` = same `sub` across clients (Basic Profile).
+      # Pairwise would need a salt + per-client derivation; not implemented here.
+      subject-types-supported: "public"
       access-token-lifetime-seconds: 3600
-      authorization-code-lifetime-seconds: 600
+      # FAPI2-SP-FINAL §5.3.2.1-11 requires short-lived authorization codes; the conformance
+      # suite waits 60s before its expired-code test. 60s comfortably accommodates a wallet
+      # round-trip without leaving stolen codes usable for long.
+      authorization-code-lifetime-seconds: 60
       grant-types-enabled: "authorization_code,urn:ietf:params:oauth:grant-type:pre-authorized_code,client_credentials,refresh_token"
+      # FAPI2 conformance's `…-refresh-token` test re-uses the same refresh_token across
+      # consecutive refresh calls and expects both to succeed. Refresh-token rotation is a
+      # RFC 6749 §6 SHOULD, not a MUST — disabling it here keeps the demo aligned with the
+      # suite. Production deployments that don't run the conformance suite should flip this
+      # back on.
+      refresh-token-rotation: false
+      # HAIP-shaped defaults are switched on via profiles/conformance-haip-as.env. The
+      # defaults below preserve the demo's plain-OAuth2 behaviour when no HAIP profile is
+      # selected so existing flows keep working.
+      dpop: "${env:OAUTH2_DPOP_POLICY:SUPPORTED}"
+      dpop-nonce-required: "${env:OAUTH2_DPOP_NONCE_REQUIRED:false}"
+      attestation: "${env:OAUTH2_ATTESTATION_POLICY:DISABLED}"
+      # RFC 9126 + FAPI2-SP §5.3.1.1: PAR is REQUIRED in HAIP / FAPI2 deployments. Default
+      # SUPPORTED so the plain demo keeps accepting in-line authorization requests; the
+      # haip profile flips this to REQUIRED so unsigned in-line requests are rejected.
+      par: "${env:OAUTH2_PAR_POLICY:SUPPORTED}"
+      token-endpoint-auth-methods-supported: "${env:OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS:client_secret_basic,client_secret_post}"
       public-clients:
         allow-any: true
       internal-clients:
         issuer:
           client-id: issuer-service
           client-secret: "${env:INTERNAL_CLIENT_SECRET}"
+
+  # Wallet client registrations for the OIDF VCI conformance suite. The suite acts as the
+  # wallet and posts authorization requests with `client_id=sphereon-client{1,2}`; per
+  # https://openid.net/specs/openid-connect-test/ the redirect URI is fixed at
+  # `https://www.certification.openid.net/test/a/<ALIAS>/callback`, where ALIAS is a string
+  # unique to your organization. Set OIDF_CONFORMANCE_ALIAS in `.env` (defaults to `sphereon-haip`)
+  # — the same ALIAS goes into the conformance plan UI's "Alias" field.
+  #
+  # Auth method `attest_jwt_client_auth` (HAIP §4.4.1): the wallet authenticates by sending
+  # a Client Attestation JWT whose x5c chain anchors at trust.anchors.x509.* — no per-client
+  # JWK pinning needed here. Both clients are PUBLIC because the wallet is a native app
+  # without a back-channel client secret.
+  clients:
+    sphereon-client1:
+      client-id: sphereon-client1
+      client-name: "Sphereon Wallet (conformance client 1)"
+      client-type: PUBLIC
+      # Comma-separated lists rather than YAML sequences: the property binder reads multi-valued
+      # client config via `toStringList` which splits CSVs but does not collapse YAML `[N]`
+      # indexed keys into the expected dot-indexed form for nested property maps.
+      grant-types: "authorization_code,refresh_token"
+      response-types: "code"
+      # Both OIDF host variants are registered: `demo.certification.openid.net` is the
+      # sandbox conformance instance most operators run against, `www.certification.openid.net`
+      # is the production cert site. The suite uses whichever host it's actually running on
+      # for the test/a/<ALIAS>/callback redirect, so registering both keeps the same client
+      # config working regardless of which one is in use.
+      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback,https://www.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback"
+      token-endpoint-auth-method: attest_jwt_client_auth
+      require-pkce: true
+    sphereon-client2:
+      client-id: sphereon-client2
+      client-name: "Sphereon Wallet (conformance client 2)"
+      client-type: PUBLIC
+      grant-types: "authorization_code,refresh_token"
+      response-types: "code"
+      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback,https://www.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback"
+      token-endpoint-auth-method: attest_jwt_client_auth
+      require-pkce: true
+
+    # OIDC Basic Profile Authorization Server certification clients. The OIDF Basic plan
+    # asks for two confidential clients so cross-client tests (wrong-client, scope leak,
+    # token reuse) can run. Both use `client_secret_basic` per RFC 6749 §2.3.1, which the
+    # default `OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS` list publishes — DO NOT layer the haip
+    # profile on top of this run; that profile narrows the auth method list to
+    # `attest_jwt_client_auth` only and will hide these clients from the suite.
+    #
+    # Redirect URIs use a SEPARATE alias env (`OIDF_OIDC_BASIC_ALIAS`, default
+    # `sphereon-oidc-basic`) so HAIP and OIDC Basic test plans can coexist without
+    # stepping on each other's per-org callback paths.
+    oidc-basic-client1:
+      client-id: oidc-basic-client1
+      client-name: "OIDC Basic conformance client 1"
+      client-type: CONFIDENTIAL
+      client-secret: "${env:OIDC_BASIC_CLIENT1_SECRET:basic-client1-secret-change-me}"
+      grant-types: "authorization_code,refresh_token"
+      # Code + Hybrid response types so the OIDF "OP Basic" and "OP Hybrid" certifications
+      # can both run against this client. Our verifier checks set-membership, so listing each
+      # primitive type once covers all four wire combinations (`code`, `code id_token`,
+      # `code token`, `code id_token token`).
+      response-types: "code,id_token,token"
+      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_OIDC_BASIC_ALIAS:sphereon-oidc-basic}/callback,https://www.certification.openid.net/test/a/${env:OIDF_OIDC_BASIC_ALIAS:sphereon-oidc-basic}/callback"
+      token-endpoint-auth-method: client_secret_basic
+      # OIDC Basic predates PKCE; the suite doesn't send it. Disable per-client so the
+      # server's REQUIRED policy doesn't reject the auth request.
+      require-pkce: false
+    oidc-basic-client2:
+      client-id: oidc-basic-client2
+      client-name: "OIDC Basic conformance client 2"
+      client-type: CONFIDENTIAL
+      client-secret: "${env:OIDC_BASIC_CLIENT2_SECRET:basic-client2-secret-change-me}"
+      grant-types: "authorization_code,refresh_token"
+      # Code + Hybrid response types so the OIDF "OP Basic" and "OP Hybrid" certifications
+      # can both run against this client. Our verifier checks set-membership, so listing each
+      # primitive type once covers all four wire combinations (`code`, `code id_token`,
+      # `code token`, `code id_token token`).
+      response-types: "code,id_token,token"
+      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_OIDC_BASIC_ALIAS:sphereon-oidc-basic}/callback,https://www.certification.openid.net/test/a/${env:OIDF_OIDC_BASIC_ALIAS:sphereon-oidc-basic}/callback"
+      token-endpoint-auth-method: client_secret_basic
+      require-pkce: false
+    # Third confidential client using `client_secret_post` (RFC 6749 §2.3.1) — the OIDC
+    # Basic suite tests both the Basic and Post variants of secret-based auth and expects
+    # the AS to accept either depending on what the client is registered for.
+    oidc-basic-client-post:
+      client-id: oidc-basic-client-post
+      client-name: "OIDC Basic conformance client (client_secret_post)"
+      client-type: CONFIDENTIAL
+      client-secret: "${env:OIDC_BASIC_CLIENT_POST_SECRET:basic-clientpost-secret-change-me}"
+      grant-types: "authorization_code,refresh_token"
+      # Code + Hybrid response types so the OIDF "OP Basic" and "OP Hybrid" certifications
+      # can both run against this client. Our verifier checks set-membership, so listing each
+      # primitive type once covers all four wire combinations (`code`, `code id_token`,
+      # `code token`, `code id_token token`).
+      response-types: "code,id_token,token"
+      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_OIDC_BASIC_ALIAS:sphereon-oidc-basic}/callback,https://www.certification.openid.net/test/a/${env:OIDF_OIDC_BASIC_ALIAS:sphereon-oidc-basic}/callback"
+      token-endpoint-auth-method: client_secret_post
+      require-pkce: false

@@ -37,7 +37,7 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<BuildIssuerMetadataCommand>())
 class BuildIssuerMetadataCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<BuildIssuerMetadataArgs, CredentialIssuerMetadata>(
+) : TypedServiceCommandAdapter<BuildIssuerMetadataArgs, CredentialIssuerMetadata, IdkError>(
         commandId = BuildIssuerMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BuildIssuerMetadataArgs>(),

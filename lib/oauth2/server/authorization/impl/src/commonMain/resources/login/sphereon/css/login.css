@@ -1,0 +1,391 @@
+/* ============================================
+   Sphereon AS Login Page (IDK default)
+   Structural primitives: .form-sections, .form-fields, .input-group,
+   .input-container, .input-wrapper, .input-field, .input-label, .input-error,
+   .primary-button, .tertiary-button.
+   ============================================ */
+
+/* --- Self-hosted Poppins (vendored under fonts/) --- */
+/* Self-host avoids the IP+timing leak that would happen if the login page
+   fetched fonts from a third-party CDN, and lets a CSP of `default-src 'self'`
+   succeed. Latin subset only; the AS login flow is text-light and the four
+   weights below cover every selector in this stylesheet. */
+
+@font-face {
+    font-family: 'Poppins';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/poppins-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Poppins';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../fonts/poppins-500.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Poppins';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../fonts/poppins-600.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Poppins';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../fonts/poppins-700.woff2') format('woff2');
+}
+
+/* --- Reset & Base --- */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body.sphereon-login {
+    font-family: 'Poppins', sans-serif;
+    background-color: #202537;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Page Layout --- */
+
+.login-page {
+    position: relative;
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+.login-background {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.login-background-img {
+    position: absolute;
+    min-width: 100%;
+    min-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: cover;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.login-shell {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 32px 16px;
+}
+
+/* --- Header / Logo --- */
+
+.login-header {
+    margin-bottom: 32px;
+    flex-shrink: 0;
+}
+
+.login-logo {
+    width: 261px;
+    height: 55px;
+    object-fit: contain;
+}
+
+/* --- Card --- */
+
+.login-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 525px;
+    gap: 24px;
+    padding: 48px;
+    background-color: #fbfbfb;
+    border: 1px solid #c4c4c4;
+    border-radius: 8px;
+    position: relative;
+}
+
+.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8px;
+    border-radius: 8px 8px 0 0;
+    background: linear-gradient(172deg, #7276f7 0%, #7c40e8 100%);
+}
+
+.login-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #303030;
+    text-align: center;
+    line-height: 32px;
+    margin: 0;
+}
+
+/* --- Form --- */
+
+.form-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* --- Input Fields --- */
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+}
+
+.input-container {
+    position: relative;
+    width: 100%;
+    height: 56px;
+}
+
+.input-wrapper {
+    position: absolute;
+    inset: 0;
+    border: 1px solid #c4c4c4;
+    border-radius: 4px;
+    background-color: #fbfbfb;
+}
+
+.input-wrapper:focus-within {
+    border-color: #7276f7;
+}
+
+.input-wrapper.input-wrapper-error {
+    border-color: #dc2626;
+}
+
+.input-field {
+    width: 100%;
+    height: 100%;
+    padding: 0 16px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 21px;
+    color: #303030;
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    outline: none;
+}
+
+.input-field::placeholder {
+    color: #727272;
+}
+
+.input-field:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.input-label {
+    position: absolute;
+    top: -10px;
+    left: 12px;
+    padding: 0 4px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+    color: #303030;
+    background-color: #fbfbfb;
+}
+
+.input-error {
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 4px;
+    padding-left: 2px;
+}
+
+/* --- Buttons --- */
+
+.primary-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 9px;
+    background: linear-gradient(135deg, #7276f7 0%, #7c40e8 100%);
+    border: none;
+    border-radius: 8px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 21px;
+    color: #fbfbfb;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.primary-button:hover {
+    opacity: 0.9;
+}
+
+.primary-button:active {
+    opacity: 0.8;
+}
+
+.primary-button:focus-visible {
+    outline: 2px solid #7276f7;
+    outline-offset: 2px;
+}
+
+.secondary-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 9px;
+    background: transparent;
+    border: 1px solid #cfd0e8;
+    border-radius: 8px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 21px;
+    color: #4a4d6b;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondary-button:hover {
+    background-color: #f3f3fb;
+}
+
+.secondary-button:active {
+    background-color: #e8e8f3;
+}
+
+.secondary-button:focus-visible {
+    outline: 2px solid #7276f7;
+    outline-offset: 2px;
+}
+
+.form-cancel {
+    margin-top: 12px;
+}
+
+.tertiary-button {
+    display: inline;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    background-image: linear-gradient(178deg, #7276f7 0%, #7c40e8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    text-decoration: none;
+}
+
+.tertiary-button:hover {
+    opacity: 0.8;
+    text-decoration: none;
+}
+
+/* --- Federation broker block (rendered when LoginPageContext.federationOptions
+   is non-empty). Visually separates the password form from the upstream-IdP
+   buttons without forcing either into a tab interface. --- */
+
+.federation-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    color: #6c6f80;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.federation-divider::before,
+.federation-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #e3e4ea;
+}
+
+.federation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.federation-list .form-federation {
+    margin: 0;
+}
+
+.federation-button {
+    width: 100%;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 640px) {
+    .login-shell {
+        justify-content: flex-start;
+        padding: 24px 16px;
+    }
+
+    .login-header {
+        margin-bottom: 16px;
+    }
+
+    .login-logo {
+        width: 180px;
+        height: 38px;
+    }
+
+    .login-card {
+        padding: 24px;
+    }
+
+    .login-title {
+        font-size: 20px;
+    }
+}

@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.IdTokenValidationOptions
@@ -40,7 +41,7 @@ data class ValidateIdTokenArgs(
  * and performs all OpenID Connect ID Token validation requirements.
  */
 @JsExportCompat
-interface ValidateIdTokenCommand : ServiceCommand<ValidateIdTokenArgs, ValidatedIdToken> {
+interface ValidateIdTokenCommand : ServiceCommand<ValidateIdTokenArgs, ValidatedIdToken, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -24,3 +24,10 @@ actual fun readClasspathResource(name: String): String? {
             ?: ClasspathResourceAnchor::class.java.classLoader
     return classLoader?.getResource(name)?.readText()
 }
+
+actual fun readClasspathResourceBytes(name: String): ByteArray? {
+    val classLoader =
+        Thread.currentThread().contextClassLoader
+            ?: ClasspathResourceAnchor::class.java.classLoader
+    return classLoader?.getResource(name)?.openStream()?.use { it.readBytes() }
+}

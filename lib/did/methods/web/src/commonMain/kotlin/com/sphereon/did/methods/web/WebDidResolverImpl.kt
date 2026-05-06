@@ -133,11 +133,14 @@ class WebDidResolverImpl(
                 )
             }
 
-        // Validate that the document ID matches the DID
-        if (didDocument.id != did) {
+        // Validate that the document ID matches the DID. The caller may pass a DID URL
+        // (with path/query/fragment) per W3C DID Core §3.2; the document `id` is always
+        // the bare DID, so compare against the stripped form.
+        val bareDid = WebDidUrlBuilder.stripDidUrlSyntax(did)
+        if (didDocument.id != bareDid) {
             return Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(
-                    message = "DID document ID mismatch: expected '$did', got '${didDocument.id}'",
+                    message = "DID document ID mismatch: expected '$bareDid', got '${didDocument.id}'",
                 ),
             )
         }

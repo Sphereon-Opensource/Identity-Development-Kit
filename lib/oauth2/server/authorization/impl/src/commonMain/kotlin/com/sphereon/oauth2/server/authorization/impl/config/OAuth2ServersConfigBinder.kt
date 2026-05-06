@@ -26,6 +26,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.PublicClientConfig
+import com.sphereon.oauth2.common.config.SessionConfig
 import com.sphereon.oauth2.common.config.TokenFormat
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -40,8 +41,7 @@ import dev.zacsweers.metro.binding
  * ```properties
  * sphereon.app.oauth2.servers.default-server=primary
  * sphereon.app.oauth2.servers.primary.mode=HOSTED
- * sphereon.app.oauth2.servers.primary.issuer-template=https://auth.example.com/{tenant-id}
- * sphereon.app.oauth2.servers.primary.base-url=https://auth.example.com
+ * sphereon.app.oauth2.servers.primary.issuer=https://auth.example.com
  * sphereon.app.oauth2.servers.primary.access-token-lifetime-seconds=1800
  * sphereon.app.oauth2.servers.primary.revocation=SUPPORTED
  * ```
@@ -70,13 +70,26 @@ class OAuth2ServersConfigBinder(
         serverId: String,
         tenantId: String,
     ): String {
-        val server = _config.getServer(serverId) ?: return "http://localhost:8080"
+        val server =
+            _config.getServer(serverId)
+                ?: error("OAuth2 server '$serverId' not found in configuration")
         val issuer = server.issuer
         val template = server.issuerTemplate
         return when {
-            issuer != null -> issuer
-            template != null -> template.replace("{tenant-id}", tenantId)
-            else -> server.baseUrl
+            issuer != null -> {
+                issuer
+            }
+
+            template != null -> {
+                template.replace("{tenant-id}", tenantId)
+            }
+
+            else -> {
+                error(
+                    "OAuth2 server '$serverId' has no issuer configured; " +
+                        "set oauth2.servers.$serverId.issuer or oauth2.servers.$serverId.issuer-template",
+                )
+            }
         }
     }
 
@@ -87,7 +100,7 @@ class OAuth2ServersConfigBinder(
                 "default",
             ) ?: "default"
 
-        // Discover server IDs by scanning known config keys
+        // Scan the oauth2.servers.* keyspace to find every configured server id.
         val serverIds = discoverServerIds()
 
         val servers =
@@ -103,32 +116,47 @@ class OAuth2ServersConfigBinder(
         )
     }
 
+    /**
+     * Discovers configured server ids by scanning every property under the `oauth2.servers.`
+     * keyspace and collecting the first path segment of each stripped key.
+     *
+     * For a property map of the form
+     * ```
+     * oauth2.servers.default-server = production
+     * oauth2.servers.production.issuer = https://auth.example.com
+     * oauth2.servers.production.mode  = HOSTED
+     * oauth2.servers.auth-eu.issuer   = https://auth.eu.example.com
+     * ```
+     * the scan strips the `oauth2.servers.` prefix, takes the first dotted segment of each
+     * stripped key (`default-server`, `production`, `production`, `auth-eu`), deduplicates, and
+     * filters out the reserved [DEFAULT_SERVER_KEY] segment (which selects the default server,
+     * not a server named `default-server`). The remaining set is the discovered server ids.
+     *
+     * The reserved [DEFAULT_SERVER_KEY] is the only sibling-of-server-id key under
+     * `oauth2.servers.`; every other key path is `oauth2.servers.<id>.<...>` per the
+     * [OAuth2ServerInstanceConfig] property layout.
+     */
     private fun discoverServerIds(): Set<String> {
-        val ids = mutableSetOf<String>()
-
-        // Try the default server name
-        val defaultId = configService.getPropertyAsString("$prefix.default-server", "default") ?: "default"
-        if (hasServerConfig(defaultId)) {
-            ids.add(defaultId)
+        val stripped = configService.getSubProperties(prefixes = setOf(prefix), stripPrefix = true)
+        if (stripped.isEmpty()) {
+            return emptySet()
         }
-
-        // Try common server IDs
-        for (candidateId in listOf("default", "primary", "keycloak")) {
-            if (hasServerConfig(candidateId)) {
-                ids.add(candidateId)
-            }
-        }
-
-        // If no servers found, return empty (will use default)
-        return ids
+        return stripped.keys
+            .asSequence()
+            .map { it.substringBefore('.') }
+            .filter { it.isNotEmpty() }
+            .filter { it != DEFAULT_SERVER_KEY }
+            .toSet()
     }
 
-    private fun hasServerConfig(id: String): Boolean {
-        // A server config exists if at least one property is set
-        return configService.getPropertyAsString("$prefix.$id.mode", null) != null ||
-            configService.getPropertyAsString("$prefix.$id.base-url", null) != null ||
-            configService.getPropertyAsString("$prefix.$id.issuer", null) != null ||
-            configService.getPropertyAsString("$prefix.$id.issuer-template", null) != null
+    private companion object {
+        /**
+         * Reserved sibling key under `oauth2.servers.` that selects which discovered server id is
+         * the default. Excluded from the discovered-id set so an operator's
+         * `oauth2.servers.default-server=production` does not synthesise a phantom server named
+         * `default-server`.
+         */
+        const val DEFAULT_SERVER_KEY = "default-server"
     }
 
     private fun loadServerConfig(id: String): OAuth2ServerInstanceConfig {
@@ -143,9 +171,6 @@ class OAuth2ServersConfigBinder(
                     ?: defaults.mode,
             issuerTemplate = configService.getPropertyAsString("$serverPrefix.issuer-template", null),
             issuer = configService.getPropertyAsString("$serverPrefix.issuer", null),
-            baseUrl =
-                configService.getPropertyAsString("$serverPrefix.base-url", null)
-                    ?: defaults.baseUrl,
             accessTokenLifetimeSeconds =
                 configService.getProperty(
                     "$serverPrefix.access-token-lifetime-seconds",
@@ -196,12 +221,23 @@ class OAuth2ServersConfigBinder(
                     ?.map { it.trim() },
             // OpenID Connect
             oidc = readFeaturePolicy("$serverPrefix.oidc", defaults.oidc),
+            // OIDC RP-Initiated Logout 1.0 + Front-Channel Logout 1.0 + Back-Channel Logout 1.0
+            logout = readFeaturePolicy("$serverPrefix.logout", defaults.logout),
             idTokenLifetimeSeconds =
                 configService.getProperty(
                     "$serverPrefix.id-token-lifetime-seconds",
                     Int::class,
                     defaults.idTokenLifetimeSeconds,
                 ) ?: defaults.idTokenLifetimeSeconds,
+            // Optional knob (deviates from OIDC §5.4 — see model docs):
+            // `embed-userinfo-claims-in-id-token: true` forces all projected user
+            // claims into the id_token in addition to the standard /userinfo response.
+            embedUserinfoClaimsInIdToken =
+                configService.getProperty(
+                    "$serverPrefix.embed-userinfo-claims-in-id-token",
+                    Boolean::class,
+                    defaults.embedUserinfoClaimsInIdToken,
+                ) ?: defaults.embedUserinfoClaimsInIdToken,
             subjectTypesSupported =
                 configService
                     .getPropertyAsString("$serverPrefix.subject-types-supported", null)
@@ -223,8 +259,30 @@ class OAuth2ServersConfigBinder(
             revocation = readFeaturePolicy("$serverPrefix.revocation", defaults.revocation),
             par = readFeaturePolicy("$serverPrefix.par", defaults.par),
             tokenExchange = readFeaturePolicy("$serverPrefix.token-exchange", defaults.tokenExchange),
+            // RFC 8628 (Device Authorization Grant): feature gate plus the two timing knobs that
+            // shape the issued device-authorization record (`expires_in`, `interval`).
+            deviceFlow = readFeaturePolicy("$serverPrefix.device-flow", defaults.deviceFlow),
+            deviceCodeLifetimeSeconds =
+                configService.getProperty(
+                    "$serverPrefix.device-code-lifetime-seconds",
+                    Int::class,
+                    defaults.deviceCodeLifetimeSeconds,
+                ) ?: defaults.deviceCodeLifetimeSeconds,
+            devicePollIntervalSeconds =
+                configService.getProperty(
+                    "$serverPrefix.device-poll-interval-seconds",
+                    Int::class,
+                    defaults.devicePollIntervalSeconds,
+                ) ?: defaults.devicePollIntervalSeconds,
             pkce = readFeaturePolicy("$serverPrefix.pkce", defaults.pkce),
             dpop = readFeaturePolicy("$serverPrefix.dpop", defaults.dpop),
+            dpopNonceRequired =
+                configService.getProperty(
+                    "$serverPrefix.dpop-nonce-required",
+                    Boolean::class,
+                    defaults.dpopNonceRequired,
+                ) ?: defaults.dpopNonceRequired,
+            iae = readFeaturePolicy("$serverPrefix.iae", defaults.iae),
             pkceMethodsSupported =
                 configService
                     .getPropertyAsString("$serverPrefix.pkce-methods-supported", null)
@@ -259,7 +317,9 @@ class OAuth2ServersConfigBinder(
                     ?.split(",")
                     ?.map { it.trim() }
                     ?.toSet(),
-            signingKeyAlias = configService.getPropertyAsString("$serverPrefix.signing-key-alias", null),
+            // signing-key-alias removed (P0-K4): the AS now owns a SigningKeyStore SPI; per-
+            // server signing-key configuration moved to that store and is no longer
+            // expressed via this config field.
             signingAlgorithmsSupported =
                 configService
                     .getPropertyAsString("$serverPrefix.signing-algorithms-supported", null)
@@ -288,6 +348,118 @@ class OAuth2ServersConfigBinder(
             jwksUri = configService.getPropertyAsString("$serverPrefix.jwks-uri", null),
             internalClients = loadInternalClients(serverPrefix),
             publicClients = loadPublicClients(serverPrefix),
+            // OAuth2 Attestation-Based Client Authentication
+            // (draft-ietf-oauth-attestation-based-client-auth). Discovery hides the surface
+            // entirely until [attestation] is opted in; [attestationChallengeRequired] toggles
+            // the /attestation-challenge endpoint and forces the verifier to demand a fresh
+            // server-issued nonce in the PoP. The two `*-signing-alg-values-supported` lists
+            // cap which JOSE algs the AS will accept on the attestation and PoP JWTs.
+            attestation = readFeaturePolicy("$serverPrefix.attestation", defaults.attestation),
+            attestationChallengeRequired =
+                configService.getProperty(
+                    "$serverPrefix.attestation-challenge-required",
+                    Boolean::class,
+                    defaults.attestationChallengeRequired,
+                ) ?: defaults.attestationChallengeRequired,
+            clientAttestationSigningAlgValuesSupported =
+                configService
+                    .getPropertyAsString("$serverPrefix.client-attestation-signing-alg-values-supported", null)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.toSet(),
+            clientAttestationPopSigningAlgValuesSupported =
+                configService
+                    .getPropertyAsString("$serverPrefix.client-attestation-pop-signing-alg-values-supported", null)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.toSet(),
+            attestationMaxLifetimeSeconds =
+                configService.getProperty(
+                    "$serverPrefix.attestation-max-lifetime-seconds",
+                    Int::class,
+                    defaults.attestationMaxLifetimeSeconds,
+                ) ?: defaults.attestationMaxLifetimeSeconds,
+            attestationPopMaxAgeSeconds =
+                configService.getProperty(
+                    "$serverPrefix.attestation-pop-max-age-seconds",
+                    Int::class,
+                    defaults.attestationPopMaxAgeSeconds,
+                ) ?: defaults.attestationPopMaxAgeSeconds,
+            attestationPopJtiReplayWindowSeconds =
+                configService.getProperty(
+                    "$serverPrefix.attestation-pop-jti-replay-window-seconds",
+                    Int::class,
+                    defaults.attestationPopJtiReplayWindowSeconds,
+                ) ?: defaults.attestationPopJtiReplayWindowSeconds,
+            // RFC 8705 (OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access
+            // Tokens). [mtls] gates discovery's `mtls_endpoint_aliases` and the AS's acceptance
+            // of `tls_client_auth` / `self_signed_tls_client_auth`. The bound flag is the
+            // server-wide default for cnf.x5t#S256 binding on issued access tokens; per-client
+            // opt-in on [ClientRegistration.tlsClientCertificateBoundAccessTokens] overrides.
+            // [mtlsEndpointHostOverride] is the hostname inserted into `mtls_endpoint_aliases`
+            // when the operator deploys a separate TLS-terminating front door.
+            mtls = readFeaturePolicy("$serverPrefix.mtls", defaults.mtls),
+            tlsClientCertificateBoundAccessTokens =
+                configService.getProperty(
+                    "$serverPrefix.tls-client-certificate-bound-access-tokens",
+                    Boolean::class,
+                    defaults.tlsClientCertificateBoundAccessTokens,
+                ) ?: defaults.tlsClientCertificateBoundAccessTokens,
+            mtlsEndpointHostOverride =
+                configService.getPropertyAsString("$serverPrefix.mtls-endpoint-host-override", null),
+            // OIDF JARM (https://openid.net/specs/oauth-v2-jarm.html)
+            jarm = readFeaturePolicy("$serverPrefix.jarm", defaults.jarm),
+            authorizationSigningAlgValuesSupported =
+                configService
+                    .getPropertyAsString("$serverPrefix.authorization-signing-alg-values-supported", null)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.toSet(),
+            authorizationEncryptionAlgValuesSupported =
+                configService
+                    .getPropertyAsString("$serverPrefix.authorization-encryption-alg-values-supported", null)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.toSet(),
+            authorizationEncryptionEncValuesSupported =
+                configService
+                    .getPropertyAsString("$serverPrefix.authorization-encryption-enc-values-supported", null)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.toSet(),
+            jarmExpirationSeconds =
+                configService.getProperty(
+                    "$serverPrefix.jarm-expiration-seconds",
+                    Long::class,
+                    defaults.jarmExpirationSeconds,
+                ) ?: defaults.jarmExpirationSeconds,
+            // RFC 9101 JAR feature gate + request_uri pre-registration policy.
+            jar = readFeaturePolicy("$serverPrefix.jar", defaults.jar),
+            requireRequestUriRegistration =
+                configService.getProperty(
+                    "$serverPrefix.require-request-uri-registration",
+                    Boolean::class,
+                    defaults.requireRequestUriRegistration,
+                ) ?: defaults.requireRequestUriRegistration,
+            session = loadSessionConfig(serverPrefix),
+        )
+    }
+
+    private fun loadSessionConfig(serverPrefix: String): SessionConfig {
+        val defaults = SessionConfig()
+        return SessionConfig(
+            idleTtlSeconds =
+                configService.getProperty(
+                    "$serverPrefix.session.idle-ttl-seconds",
+                    Int::class,
+                    defaults.idleTtlSeconds,
+                ) ?: defaults.idleTtlSeconds,
+            absoluteTtlSeconds =
+                configService.getProperty(
+                    "$serverPrefix.session.absolute-ttl-seconds",
+                    Int::class,
+                    defaults.absoluteTtlSeconds,
+                ) ?: defaults.absoluteTtlSeconds,
         )
     }
 
@@ -304,20 +476,31 @@ class OAuth2ServersConfigBinder(
     }
 
     private fun loadPublicClients(serverPrefix: String): PublicClientConfig {
+        val defaults = PublicClientConfig()
         val allowAny =
             configService.getProperty(
                 "$serverPrefix.public-clients.allow-any",
                 Boolean::class,
-                false,
-            ) ?: false
+                defaults.allowAny,
+            ) ?: defaults.allowAny
         val allowedClientIds =
             configService
                 .getPropertyAsString("$serverPrefix.public-clients.allowed-client-ids", null)
                 ?.split(",")
                 ?.map { it.trim() }
                 ?.filter { it.isNotEmpty() }
-                ?: emptyList()
-        return PublicClientConfig(allowAny = allowAny, allowedClientIds = allowedClientIds)
+                ?: defaults.allowedClientIds
+        val permissiveRedirectUri =
+            configService.getProperty(
+                "$serverPrefix.public-clients.permissive-redirect-uri",
+                Boolean::class,
+                defaults.permissiveRedirectUri,
+            ) ?: defaults.permissiveRedirectUri
+        return PublicClientConfig(
+            allowAny = allowAny,
+            allowedClientIds = allowedClientIds,
+            permissiveRedirectUri = permissiveRedirectUri,
+        )
     }
 
     private fun readFeaturePolicy(

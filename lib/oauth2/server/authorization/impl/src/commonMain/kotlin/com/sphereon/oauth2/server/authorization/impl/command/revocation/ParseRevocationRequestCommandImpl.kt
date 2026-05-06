@@ -50,7 +50,7 @@ import kotlin.native.ObjCName
 @ObjCName("ParseRevocationRequestCommandImpl", exact = true)
 class ParseRevocationRequestCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParseRevocationRequestArgs, RevocationRequestData>(
+) : TypedServiceCommandAdapter<ParseRevocationRequestArgs, RevocationRequestData, IdkError>(
         commandId = ParseRevocationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseRevocationRequestArgs>(),

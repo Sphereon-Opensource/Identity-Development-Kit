@@ -48,7 +48,7 @@ import dev.zacsweers.metro.DependencyGraph
  *         createCommand: CreateAuthRequestServiceCommand,
  *         getStatusCommand: GetAuthRequestStatusServiceCommand,
  *         deleteCommand: DeleteAuthRequestServiceCommand
- *     ): Set<ServiceCommand<*, *>> = setOf(
+ *     ): Set<ServiceCommand<*, *, *>> = setOf(
  *         createCommand, getStatusCommand, deleteCommand
  *     )
  * }

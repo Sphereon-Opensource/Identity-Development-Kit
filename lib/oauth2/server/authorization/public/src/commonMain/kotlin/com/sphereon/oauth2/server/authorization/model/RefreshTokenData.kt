@@ -70,6 +70,39 @@ data class RefreshTokenData(
      */
     val dpopJkt: String? = null,
     /**
+     * Epoch seconds of the original end-user authentication that produced this token chain.
+     * Preserved across refresh-token rotation so OIDC Core 1.0 §12 reissue can populate the
+     * refreshed id_token's `auth_time` claim with the original authentication time, never
+     * the rotation time. Null for non-OIDC flows (client_credentials, token-exchange).
+     */
+    val authTime: Long? = null,
+    /**
+     * Authentication Context Class Reference (OpenID Connect Core 1.0 §2). Preserved from the
+     * original AuthCode grant so refresh-time id_token reissue keeps the same `acr` claim
+     * the wallet/RP saw at first issuance. Null when the original auth had no acr.
+     */
+    val acr: String? = null,
+    /**
+     * Authentication Methods References (OpenID Connect Core 1.0 §2). Preserved from the
+     * original AuthCode grant so refresh-time id_token reissue keeps the same `amr` array
+     * the RP saw at first issuance. Null when the original auth had no amr.
+     */
+    val amr: List<String>? = null,
+    /**
+     * OpenID Connect nonce captured at the original authorization request. Preserved so the
+     * refresh-time id_token's `nonce` matches the original (OIDC Core 1.0 §3.1.3.7 step 11
+     * binds nonce to the user agent, not to a single id_token issuance). Null when the
+     * original /authorize had no nonce parameter.
+     */
+    val nonce: String? = null,
+    /**
+     * Cookie-keyed `oidc_login_sid` for the OIDC login session that produced this chain.
+     * Used as the refreshed id_token's `sid` claim (OIDC Front-Channel and Back-Channel
+     * Logout 1.0). Null for flows not bound to a login session (pre-authorized code,
+     * machine-to-machine).
+     */
+    val loginSessionId: String? = null,
+    /**
      * Additional metadata
      */
     val additionalData: Map<String, @Contextual Any> = emptyMap(),

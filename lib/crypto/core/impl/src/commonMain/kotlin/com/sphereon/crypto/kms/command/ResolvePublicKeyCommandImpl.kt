@@ -44,7 +44,7 @@ import dev.zacsweers.metro.SingleIn
 class ResolvePublicKeyCommandImpl(
     execution: SessionExecution,
     private val resolverRegistry: KeyResolverRegistry,
-) : TypedServiceCommandAdapter<ResolvePublicKeyArgs, ResolvePublicKeyResult>(
+) : TypedServiceCommandAdapter<ResolvePublicKeyArgs, ResolvePublicKeyResult, IdkError>(
         commandId = ResolvePublicKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolvePublicKeyArgs>(),

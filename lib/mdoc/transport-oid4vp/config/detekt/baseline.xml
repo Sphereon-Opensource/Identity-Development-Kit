@@ -2,10 +2,11 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>BracesOnIfStatements:Oid4VpTransport.kt$Oid4VpTransport$else</ID>
+    <ID>BracesOnIfStatements:Oid4VpTransport.kt$Oid4VpTransport$if</ID>
     <ID>LongMethod:Oid4VpTransport.kt$Oid4VpTransport$override suspend fun open( senderKey: CoseKeyType, id: String, engagementData: EngagementData?, ): IdkResult&lt;String, IdkErrorType></ID>
     <ID>LongParameterList:Oid4VpTransport.kt$Oid4VpTransport$( connectionMethod: Oid4vpConnectionMethod, execution: SessionExecution, private val httpClient: HttpClient, private val oid4vpService: MdocOid4vpService, private val oid4vpHolder: Oid4vpHolderService, private val deviceRequestCborCodec: DeviceRequestCborCodec, private val deviceResponseCborCodec: DeviceResponseCborCodec, engagementData: EngagementData?, )</ID>
     <ID>MagicNumber:Oid4VpTransport.kt$Oid4VpTransport$16</ID>
-    <ID>MaxLineLength:Oid4vpConnectionMethod.kt$Oid4vpConnectionMethod$"Oid4vpConnectionMethod(clientId='${options.clientId}', requestUri='${options.requestUri}', responseUri='${options.responseUri}', nonce=${if (options.nonce != null) { "'***'" } else { "null" }})"</ID>
     <ID>NestedBlockDepth:DcqlMdocRequestMapper.kt$DcqlMdocRequestMapper$private fun buildDocRequestsFromDcql( dcqlQuery: DcqlQuery, log: LogService?, ): List&lt;DocRequest></ID>
     <ID>StringLiteralDuplication:Oid4VpTransport.kt$Oid4VpTransport$"presentation_definition_uri"</ID>
     <ID>StringLiteralDuplication:Oid4vpError.kt$Oid4vpError.InvalidRequest$"reason"</ID>

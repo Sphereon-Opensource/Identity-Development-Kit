@@ -96,6 +96,11 @@ kotlin {
                 implementation(projects.libCryptoKmsProviderSoftware)
                 implementation(sphereonlib.io.mockk.mockk)
                 implementation(sphereonlib.io.ktor.client.mock)
+                // nimbus-jose-jwt: independent JOSE library used by JweCrossStackInteropTest to
+                // prove IDK-emitted JWEs decrypt under a third-party stack and vice versa.
+                // RFC 7516 wire-format compatibility is the contract every JOSE library must
+                // honour; the test guards against IDK drifting into a non-interop emission path.
+                implementation("com.nimbusds:nimbus-jose-jwt:9.40")
             }
         }
         findByName("jsMain")?.dependencies {

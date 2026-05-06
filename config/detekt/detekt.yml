@@ -424,6 +424,7 @@ style:
     active: false
   BracesOnIfStatements:
     active: true
+    autoCorrect: true
     singleLine: 'always'
     multiLine: 'always'
   BracesOnWhenStatements:

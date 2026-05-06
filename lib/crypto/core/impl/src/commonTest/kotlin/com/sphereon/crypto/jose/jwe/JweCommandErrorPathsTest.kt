@@ -36,6 +36,7 @@ import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 
@@ -1174,10 +1175,33 @@ class JweCommandErrorPathsTest {
     // ========================================================================
 
     @Test
-    fun testDecryptJwe_CompressionNotImplemented() =
+    fun testEncryptAndDecryptCompactWithDeflate() =
         runTest {
-            // Create JWE with compression enabled during preparation
-            // This way the zip=DEF header will be included in the AAD and the auth tag will be valid
+            // RFC 7516 §4.1.3 / RFC 1951 raw DEFLATE. The whole point of zip=DEF is that the
+            // ciphertext shrinks for redundant payloads — so use a long, repetitive plaintext
+            // that actually exercises the deflate codec (a 12-byte "Test message" wouldn't
+            // compress meaningfully). We assert round-trip equality, not size, because the
+            // contract is "compressed input round-trips to the same plaintext after decrypt"
+            // — `deflate` may produce different byte sequences across implementations as long
+            // as `inflate` recovers the original.
+            //
+            // PLATFORM SUPPORT: this test depends on platform actuals for `deflate` /
+            // `inflate`. JVM (java.util.zip), JS + wasmJs (WHATWG CompressionStream) are
+            // implemented; Apple (`compression_stream_*` cinterop) and linuxX64 (zlib
+            // cinterop) are TODOs that throw UnsupportedOperationException — for those the
+            // probe below skips cleanly rather than failing the test.
+            val compressionSupported =
+                try {
+                    com.sphereon.crypto.jose.jwe.command
+                        .deflate(byteArrayOf(0x01, 0x02, 0x03))
+                    true
+                } catch (_: UnsupportedOperationException) {
+                    false
+                }
+            if (!compressionSupported) {
+                println("[SKIP] testEncryptAndDecryptCompactWithDeflate: DEFLATE actuals not implemented on this platform")
+                return@runTest
+            }
             val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.RSA_SHA256)
             val keyInfo = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
 
@@ -1202,8 +1226,7 @@ class JweCommandErrorPathsTest {
                         ),
                 )
 
-            // Create JWE with compression enabled
-            val plaintext = "Test message".encodeToByteArray()
+            val plaintext = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(50)).encodeToByteArray()
             val prepareResult =
                 jweService.prepareJwe(
                     PrepareJweArgs(
@@ -1211,39 +1234,31 @@ class JweCommandErrorPathsTest {
                         recipient = recipient,
                         keyEncryptionAlg = "RSA-OAEP",
                         contentEncryptionAlg = "A256GCM",
-                        opts = CreateJweOpts(compress = true), // Enable compression
+                        opts = CreateJweOpts(compress = true),
                     ),
                 )
-            assertTrue(prepareResult.isOk, "Prepare should succeed: ${if (prepareResult.isErr) prepareResult.error else ""}")
-            kotlin.test.assertEquals("DEF", prepareResult.value.header.zip, "Header should have zip=DEF")
+            assertTrue(prepareResult.isOk, "Prepare with compress=true should succeed: ${if (prepareResult.isErr) prepareResult.error else ""}")
+            kotlin.test.assertEquals("DEF", prepareResult.value.header.zip, "Header should advertise zip=DEF")
 
             val createResult =
                 jweService.createJweCompact(
                     CreateJweCompactArgs(preparedJwe = prepareResult.value),
                 )
-            assertTrue(createResult.isOk, "Create should succeed: ${if (createResult.isErr) createResult.error else ""}")
-            kotlin.test.assertEquals("DEF", createResult.value.header.zip, "Created JWE should have zip=DEF")
+            assertTrue(createResult.isOk, "Create compact should succeed: ${if (createResult.isErr) createResult.error else ""}")
+            kotlin.test.assertEquals("DEF", createResult.value.header.zip, "Created JWE should carry zip=DEF")
 
-            // Now try to decrypt - should fail because decompression is not implemented
-            val result =
+            val decryptResult =
                 jweService.decryptJwe(
                     DecryptJweArgs(
                         jwe = createResult.value,
                         decryptor = decryptor,
                     ),
                 )
-
-            assertTrue(result.isErr, "Decrypt should fail with compression (not yet implemented)")
-            assertTrue(
-                result.error
-                    .toString()
-                    .lowercase()
-                    .contains("compress") || result.error.toString().contains("DEF") ||
-                    result.error
-                        .toString()
-                        .lowercase()
-                        .contains("implement"),
-                "Error should mention compression is not implemented: ${result.error}",
+            assertTrue(decryptResult.isOk, "Decrypt should succeed and inflate the deflated content: ${if (decryptResult.isErr) decryptResult.error else ""}")
+            kotlin.test.assertContentEquals(
+                plaintext,
+                decryptResult.value.plaintext,
+                "Decrypted plaintext should equal original after deflate → encrypt → decrypt → inflate round-trip",
             )
         }
 

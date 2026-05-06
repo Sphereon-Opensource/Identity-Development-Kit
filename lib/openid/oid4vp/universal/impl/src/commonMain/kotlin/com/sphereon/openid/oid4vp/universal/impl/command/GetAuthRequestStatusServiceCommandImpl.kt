@@ -59,7 +59,7 @@ class GetAuthRequestStatusServiceCommandImpl(
     execution: SessionExecution,
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val sessionEventService: SessionEventService,
-) : TypedServiceCommandAdapter<GetAuthRequestStatusInput, GetAuthorizationRequestStatusOutput>(
+) : TypedServiceCommandAdapter<GetAuthRequestStatusInput, GetAuthorizationRequestStatusOutput, IdkError>(
         commandId = GetAuthRequestStatusServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetAuthRequestStatusInput>(),

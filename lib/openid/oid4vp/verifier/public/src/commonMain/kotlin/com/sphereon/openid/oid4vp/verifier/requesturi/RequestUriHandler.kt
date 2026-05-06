@@ -86,12 +86,19 @@ interface RequestObjectSigningConfig {
      *   - JOSE header for the JAR (`kid` for DID, `x5c` for X.509)
      *   - JAR payload `iss` (equals client_id)
      *
+     * The optional [scheme] parameter requests a specific binding: when non-null the
+     * caller is asking for that particular client-identifier prefix (e.g. the wallet
+     * page chose did:jwk vs x509_hash at request time). When null, implementations
+     * fall back to a deployment-configured default. Implementations MAY share one
+     * key + cert across multiple bindings (the JOSE header switches between `kid`
+     * and `x5c` based on [scheme]).
+     *
      * When signing is enabled and binding resolution fails, implementations MUST
      * throw — never silently fall back to the HTTPS/redirect_uri client_id.
      *
      * Default: null.
      */
-    suspend fun resolveSignerBinding(): VerifierSignerBinding? = null
+    suspend fun resolveSignerBinding(scheme: ClientIdScheme? = null): VerifierSignerBinding? = null
 
     companion object {
         /**

@@ -21,11 +21,11 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
@@ -34,6 +34,7 @@ import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -49,11 +50,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
-
-private const val RANDOM_TOKEN_BYTES = 32
 
 /**
  * Implementation of CreateAccessTokenCommand
@@ -89,10 +87,11 @@ class CreateAccessTokenCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val tokenStorage: TokenStorage,
-    @Named("oauth2.issuerUrl") private val issuerUrl: String,
+    private val secureRandom: SecureRandom,
+    private val configProvider: OAuth2ServersConfigProvider,
     @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<CreateAccessTokenArgs, StringResult>(
+) : TypedServiceCommandAdapter<CreateAccessTokenArgs, StringResult, IdkError>(
         commandId = CreateAccessTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateAccessTokenArgs>(),
@@ -108,6 +107,39 @@ class CreateAccessTokenCommandImpl(
         applyDuring: (CreateAccessTokenArgs) -> CreateAccessTokenArgs,
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
+        val issuerUrl =
+            configProvider.serverConfig.issuer
+                ?: applied.baseUrlOverride
+        if (issuerUrl == null) {
+            val failure: IdkResult<StringResult, IdkError> =
+                Err(
+                    IdkError.fromDTO(
+                        AuthorizationServerError.ServerError(
+                            details =
+                                "OAuth2 server has no issuer configured and no request-time baseUrl override; " +
+                                    "set oauth2.servers.<id>.issuer or ensure the request carries Host + X-Forwarded-Proto headers",
+                        ),
+                    ),
+                )
+            emitOutcome(applied, failure)
+            return failure
+        }
+
+        // RFC 9068 access tokens carry a tenant_id custom claim sourced from the issuing
+        // SessionExecution so resource servers can resolve tenant from the bearer token via
+        // the OidcTenantResolver pipeline. Skip when the AS request is anonymous (no real
+        // tenant context bound) — the resource server's tenant resolver will fall through.
+        val sessionTenantId =
+            runCatching { execution.sessionContext.context.tenant.tenantId }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() && it != "anonymous" }
+        val mergedClaims: Map<String, Any> =
+            if (sessionTenantId != null && "tenant_id" !in applied.additionalClaims) {
+                applied.additionalClaims + ("tenant_id" to sessionTenantId)
+            } else {
+                applied.additionalClaims
+            }
+
         val result =
             executeInternal(
                 applied.subject,
@@ -116,7 +148,9 @@ class CreateAccessTokenCommandImpl(
                 applied.audience,
                 applied.expiresInSeconds,
                 applied.dpopJkt,
-                applied.additionalClaims,
+                applied.certificateThumbprintS256,
+                mergedClaims,
+                issuerUrl,
             ).map { StringResult(it) }.mapError { IdkError.fromDTO(it) }
         emitOutcome(applied, result)
         return result
@@ -155,7 +189,9 @@ class CreateAccessTokenCommandImpl(
         audience: List<String>,
         expiresInSeconds: Int,
         dpopJkt: String?,
+        certificateThumbprintS256: String?,
         additionalClaims: Map<String, Any>,
+        issuerUrl: String,
     ): IdkResult<String, AuthorizationServerError> {
         return try {
             val now = Clock.System.now()
@@ -169,9 +205,11 @@ class CreateAccessTokenCommandImpl(
                     scope,
                     audience,
                     dpopJkt,
+                    certificateThumbprintS256,
                     additionalClaims,
                     now,
                     expiresAt,
+                    issuerUrl,
                 )
             }
 
@@ -208,18 +246,28 @@ class CreateAccessTokenCommandImpl(
                         put("scope", scope)
                     }
 
-                    // DPoP binding (RFC 9449 Section 6)
-                    if (dpopJkt != null) {
+                    // DPoP binding (RFC 9449 §6) and / or RFC 8705 §3.1 cert binding combine
+                    // additively in the cnf claim. Skip the claim entirely when neither binding
+                    // applies so the access token shape stays unchanged for plain Bearer flows.
+                    if (dpopJkt != null || certificateThumbprintS256 != null) {
                         put(
                             "cnf",
                             buildJsonObject {
-                                put("jkt", dpopJkt)
+                                if (dpopJkt != null) {
+                                    put("jkt", dpopJkt)
+                                }
+                                if (certificateThumbprintS256 != null) {
+                                    put("x5t#S256", certificateThumbprintS256)
+                                }
                             },
                         )
                     }
 
-                    // Additional claims
-                    putClaims(additionalClaims)
+                    // Additional claims. Filter `oidc.*`-namespaced internal entries (e.g. the
+                    // §5.5 `claims` request-parameter wishlist threaded through to /userinfo)
+                    // out of the JWT payload — they belong on the stored token's metadata only,
+                    // not in the at+jwt body where every RP that introspects can read them.
+                    putClaims(additionalClaims.filterKeys { !it.startsWith("oidc.") })
                 }
 
             // Create JWT header with typ="at+jwt" per RFC 9068 Section 2.1
@@ -270,6 +318,7 @@ class CreateAccessTokenCommandImpl(
                     issuedAt = now,
                     expiresAt = expiresAt,
                     dpopJkt = dpopJkt,
+                    certificateThumbprintS256 = certificateThumbprintS256,
                     revoked = false,
                     refreshTokenId = null, // Set by caller if refresh token is issued
                     additionalData = additionalClaims,
@@ -306,9 +355,11 @@ class CreateAccessTokenCommandImpl(
         scope: String?,
         audience: List<String>,
         dpopJkt: String?,
+        certificateThumbprintS256: String?,
         additionalClaims: Map<String, Any>,
         now: kotlin.time.Instant,
         expiresAt: kotlin.time.Instant,
+        issuerUrl: String,
     ): IdkResult<String, AuthorizationServerError> {
         // Generate cryptographically secure random token
         val accessToken = generateTokenId()
@@ -331,6 +382,7 @@ class CreateAccessTokenCommandImpl(
                 issuedAt = now,
                 expiresAt = expiresAt,
                 dpopJkt = dpopJkt,
+                certificateThumbprintS256 = certificateThumbprintS256,
                 revoked = false,
                 refreshTokenId = null,
                 additionalData = additionalClaims,
@@ -348,11 +400,8 @@ class CreateAccessTokenCommandImpl(
     }
 
     /**
-     * Generates a cryptographically secure token ID
-     * 32 bytes (256 bits) of entropy, base64url encoded
+     * Generates a cryptographically secure token ID (jti).
+     * 32 bytes (256 bits) of entropy, base64url encoded.
      */
-    private fun generateTokenId(): String {
-        val randomBytes = Random.Default.nextBytes(RANDOM_TOKEN_BYTES)
-        return randomBytes.encodeToBase64Url()
-    }
+    private suspend fun generateTokenId(): String = secureRandom.newToken()
 }

@@ -39,7 +39,7 @@ import kotlin.native.ObjCName
 class ListIdentityMatchesCommandImpl(
     execution: SessionExecution,
     private val store: IdentityMatchStore,
-) : TypedServiceCommandAdapter<ListIdentityMatchesArgs, List<IdentityMatch>>(
+) : TypedServiceCommandAdapter<ListIdentityMatchesArgs, List<IdentityMatch>, IdkError>(
         commandId = ListIdentityMatchesCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListIdentityMatchesArgs>(),

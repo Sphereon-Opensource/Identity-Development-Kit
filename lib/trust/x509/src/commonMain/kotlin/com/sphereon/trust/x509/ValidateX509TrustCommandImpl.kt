@@ -30,7 +30,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
-interface ValidateX509TrustCommand : ServiceCommand<ValidateX509TrustArgs, TrustValidationResult> {
+interface ValidateX509TrustCommand : ServiceCommand<ValidateX509TrustArgs, TrustValidationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
 
@@ -50,7 +50,7 @@ data class ValidateX509TrustArgs(
 class ValidateX509TrustCommandImpl(
     execution: SessionExecution,
     private val x509TrustValidationService: X509TrustValidationService,
-) : TypedServiceCommandAdapter<ValidateX509TrustArgs, TrustValidationResult>(
+) : TypedServiceCommandAdapter<ValidateX509TrustArgs, TrustValidationResult, IdkError>(
         commandId = ValidateX509TrustCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateX509TrustArgs>(),
@@ -91,5 +91,5 @@ class ValidateX509TrustCommandImpl(
 interface X509TrustCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ValidateX509TrustCommand.COMMAND_ID)
-    fun validateX509Trust(impl: ValidateX509TrustCommandImpl): ServiceCommand<*, *> = impl
+    fun validateX509Trust(impl: ValidateX509TrustCommandImpl): ServiceCommand<*, *, *> = impl
 }

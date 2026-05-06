@@ -767,26 +767,40 @@ class MdocReaderEngagementManagerImpl(
     /**
      * Validate issuer authentication (MSO).
      *
-     * **Not yet implemented** - This is a placeholder that always returns true.
-     * Full implementation requires certificate validation, COSE signature verification,
-     * and digest validation.
+     * **Still a placeholder for the BLE/NFC reader-engagement path.**
+     *
+     * The OID4VP verifier path (`VerifyHolderBindingCommandImpl`) does NOT call this method;
+     * it goes through `MdocValidations.fromDocument(...)` in `lib/mdoc/core/impl`, which runs
+     * the real ISO 18013-5 §9.3.1 cert-chain + COSE_Sign1 + validity + docType + digests
+     * pipeline via `IssuerAuthValidationImpl`. To wire the reader-engagement path, change
+     * this method to `suspend`, inject `MdocValidations`, and call `fromDocument(document, …)`.
+     * Out of scope for the OID4VP conformance work; this stays as a footgun reminder for the
+     * next maintainer of the BLE/NFC reader path.
      */
     override fun validateIssuerAuthentication(document: Document): Boolean {
-        log.warn("Issuer authentication validation not yet implemented - returning true")
-        // TODO: Phase N - Implement full MSO validation
+        log.warn(
+            "Reader-engagement IssuerAuth validation is still a placeholder. The OID4VP path " +
+                "uses MdocValidations.fromDocument(...) directly and IS fully verified.",
+        )
         return true
     }
 
     /**
      * Validate device authentication (MAC or signature).
      *
-     * **Not yet implemented** - This is a placeholder that always returns true.
-     * Full implementation requires MAC/signature verification using session keys
-     * or device public key from MSO.
+     * **Still a placeholder for the BLE/NFC reader-engagement path.**
+     *
+     * The OID4VP verifier path uses `DeviceAuthValidationImpl.verifyDeviceAuth(...)` directly
+     * (`lib/mdoc/core/impl`). Wiring this BLE/NFC method to the same validator requires
+     * making the method `suspend`, injecting `DeviceAuthValidation`, and supplying a
+     * SessionTranscript appropriate for the BLE/NFC handover. Out of scope for the OID4VP
+     * conformance work.
      */
     override fun validateDeviceAuthentication(document: Document): Boolean {
-        log.warn("Device authentication validation not yet implemented - returning true")
-        // TODO: Phase N - Implement full device authentication validation
+        log.warn(
+            "Reader-engagement DeviceAuth validation is still a placeholder. The OID4VP path " +
+                "uses DeviceAuthValidationImpl.verifyDeviceAuth(...) directly and IS fully verified.",
+        )
         return true
     }
 

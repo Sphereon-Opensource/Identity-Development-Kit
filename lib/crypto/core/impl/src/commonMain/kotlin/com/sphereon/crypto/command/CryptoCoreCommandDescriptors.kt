@@ -16,6 +16,7 @@
 
 package com.sphereon.crypto.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.DecryptCommand
@@ -78,107 +79,107 @@ interface CryptoCoreCommandDescriptors {
     // Signature commands
     @Provides @IntoMap
     @StringKey(CreateRawSignatureCommand.COMMAND_ID)
-    fun createRawSignature(impl: CreateRawSignatureCommandImpl): ServiceCommand<*, *> = impl
+    fun createRawSignature(impl: CreateRawSignatureCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyRawSignatureCommand.COMMAND_ID)
-    fun verifyRawSignature(impl: VerifyRawSignatureCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyRawSignature(impl: VerifyRawSignatureCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Key resolution commands
     @Provides @IntoMap
     @StringKey(ResolvePublicKeyCommand.COMMAND_ID)
-    fun resolvePublicKey(impl: ResolvePublicKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun resolvePublicKey(impl: ResolvePublicKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Key management commands
     @Provides @IntoMap
     @StringKey(GenerateKeyCommand.COMMAND_ID)
-    fun generateKey(impl: GenerateKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun generateKey(impl: GenerateKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ListKeysCommand.COMMAND_ID)
-    fun listKeys(impl: ListKeysCommandImpl): ServiceCommand<*, *> = impl
+    fun listKeys(impl: ListKeysCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(GetKeyCommand.COMMAND_ID)
-    fun getKey(impl: GetKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun getKey(impl: GetKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(StoreKeyCommand.COMMAND_ID)
-    fun storeKey(impl: StoreKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun storeKey(impl: StoreKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DeleteKeyCommand.COMMAND_ID)
-    fun deleteKey(impl: DeleteKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun deleteKey(impl: DeleteKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Encryption commands
     @Provides @IntoMap
     @StringKey(EncryptCommand.COMMAND_ID)
-    fun encrypt(impl: EncryptCommandImpl): ServiceCommand<*, *> = impl
+    fun encrypt(impl: EncryptCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DecryptCommand.COMMAND_ID)
-    fun decrypt(impl: DecryptCommandImpl): ServiceCommand<*, *> = impl
+    fun decrypt(impl: DecryptCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(WrapKeyCommand.COMMAND_ID)
-    fun wrapKey(impl: WrapKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun wrapKey(impl: WrapKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(UnwrapKeyCommand.COMMAND_ID)
-    fun unwrapKey(impl: UnwrapKeyCommandImpl): ServiceCommand<*, *> = impl
+    fun unwrapKey(impl: UnwrapKeyCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(PerformKeyAgreementCommand.COMMAND_ID)
-    fun performKeyAgreement(impl: PerformKeyAgreementCommandImpl): ServiceCommand<*, *> = impl
+    fun performKeyAgreement(impl: PerformKeyAgreementCommandImpl): ServiceCommand<*, *, *> = impl
 
     // JWE commands
     @Provides @IntoMap
     @StringKey(PrepareJweCommand.COMMAND_ID)
-    fun prepareJwe(impl: PrepareJweCommandImpl): ServiceCommand<*, *> = impl
+    fun prepareJwe(impl: PrepareJweCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DecryptJweCommand.COMMAND_ID)
-    fun decryptJwe(impl: DecryptJweCommandImpl): ServiceCommand<*, *> = impl
+    fun decryptJwe(impl: DecryptJweCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJweJsonGeneralCommand.COMMAND_ID)
-    fun createJweJsonGeneral(impl: CreateJweJsonGeneralCommandImpl): ServiceCommand<*, *> = impl
+    fun createJweJsonGeneral(impl: CreateJweJsonGeneralCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJweJsonFlattenedCommand.COMMAND_ID)
-    fun createJweJsonFlattened(impl: CreateJweJsonFlattenedCommandImpl): ServiceCommand<*, *> = impl
+    fun createJweJsonFlattened(impl: CreateJweJsonFlattenedCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJweCompactCommand.COMMAND_ID)
-    fun createJweCompact(impl: CreateJweCompactCommandImpl): ServiceCommand<*, *> = impl
+    fun createJweCompact(impl: CreateJweCompactCommandImpl): ServiceCommand<*, *, *> = impl
 
     // JWS commands
     @Provides @IntoMap
     @StringKey(VerifyJwsCommand.COMMAND_ID)
-    fun verifyJws(impl: VerifyJwsCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyJws(impl: VerifyJwsCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJwsJsonGeneralCommand.COMMAND_ID)
-    fun createJwsJsonGeneral(impl: CreateJwsJsonGeneralCommandImpl): ServiceCommand<*, *> = impl
+    fun createJwsJsonGeneral(impl: CreateJwsJsonGeneralCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(PrepareJwsCommand.COMMAND_ID)
-    fun prepareJws(impl: PrepareJwsCommandImpl): ServiceCommand<*, *> = impl
+    fun prepareJws(impl: PrepareJwsCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJwsJsonFlattenedCommand.COMMAND_ID)
-    fun createJwsJsonFlattened(impl: CreateJwsJsonFlattenedCommandImpl): ServiceCommand<*, *> = impl
+    fun createJwsJsonFlattened(impl: CreateJwsJsonFlattenedCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateJwsCompactCommand.COMMAND_ID)
-    fun createJwsCompact(impl: CreateJwsCompactCommandImpl): ServiceCommand<*, *> = impl
+    fun createJwsCompact(impl: CreateJwsCompactCommandImpl): ServiceCommand<*, *, *> = impl
 
     // MAC commands
     @Provides @IntoMap
     @StringKey(GenerateMacCommand.COMMAND_ID)
-    fun generateMac(impl: GenerateMacCommandImpl): ServiceCommand<*, *> = impl
+    fun generateMac(impl: GenerateMacCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyMacCommand.COMMAND_ID)
-    fun verifyMac(impl: VerifyMacCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyMac(impl: VerifyMacCommandImpl): ServiceCommand<*, *, *> = impl
 }

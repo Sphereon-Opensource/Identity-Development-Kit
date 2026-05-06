@@ -37,7 +37,7 @@ import kotlin.time.Duration.Companion.minutes
  * Fetches the LoTL from configured URL, parses pointer entries to member state
  * trust lists, resolves each member state list, and caches all results.
  */
-interface ResolveEtsiTrustListCommand : ServiceCommand<ResolveEtsiTrustListArgs, ResolveEtsiTrustListResult> {
+interface ResolveEtsiTrustListCommand : ServiceCommand<ResolveEtsiTrustListArgs, ResolveEtsiTrustListResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
 
@@ -69,7 +69,7 @@ class ResolveEtsiTrustListCommandImpl(
     private val trustListResolver: ETSITrustListResolver,
     private val trustListParser: ETSITrustListParser,
     private val cacheService: CacheService,
-) : TypedServiceCommandAdapter<ResolveEtsiTrustListArgs, ResolveEtsiTrustListResult>(
+) : TypedServiceCommandAdapter<ResolveEtsiTrustListArgs, ResolveEtsiTrustListResult, IdkError>(
         commandId = ResolveEtsiTrustListCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveEtsiTrustListArgs>(),
@@ -206,5 +206,5 @@ class ResolveEtsiTrustListCommandImpl(
 interface EtsiResolveCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ResolveEtsiTrustListCommand.COMMAND_ID)
-    fun resolveEtsiTrustList(impl: ResolveEtsiTrustListCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveEtsiTrustList(impl: ResolveEtsiTrustListCommandImpl): ServiceCommand<*, *, *> = impl
 }

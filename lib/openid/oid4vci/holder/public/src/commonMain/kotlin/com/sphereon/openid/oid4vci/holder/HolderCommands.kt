@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.holder
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
@@ -41,7 +42,7 @@ data class ParseCredentialOfferArgs(
     val rawOffer: String,
 )
 
-interface ParseCredentialOfferCommand : ServiceCommand<ParseCredentialOfferArgs, CredentialOffer> {
+interface ParseCredentialOfferCommand : ServiceCommand<ParseCredentialOfferArgs, CredentialOffer, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -57,7 +58,7 @@ data class ResolveCredentialOfferArgs(
     val offer: CredentialOffer,
 )
 
-interface ResolveCredentialOfferCommand : ServiceCommand<ResolveCredentialOfferArgs, ResolvedCredentialOffer> {
+interface ResolveCredentialOfferCommand : ServiceCommand<ResolveCredentialOfferArgs, ResolvedCredentialOffer, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -73,7 +74,7 @@ data class ResolveIssuerMetadataArgs(
     val issuerUrl: String,
 )
 
-interface ResolveIssuerMetadataCommand : ServiceCommand<ResolveIssuerMetadataArgs, CredentialIssuerMetadata> {
+interface ResolveIssuerMetadataCommand : ServiceCommand<ResolveIssuerMetadataArgs, CredentialIssuerMetadata, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -109,7 +110,7 @@ data class ResolvedAuthorizationServer(
         get() = metadata["issuer"]?.jsonPrimitive?.contentOrNull
 }
 
-interface SelectAuthorizationServerCommand : ServiceCommand<SelectAuthorizationServerArgs, ResolvedAuthorizationServer> {
+interface SelectAuthorizationServerCommand : ServiceCommand<SelectAuthorizationServerArgs, ResolvedAuthorizationServer, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -125,7 +126,7 @@ data class RequestNonceArgs(
     val nonceEndpoint: String,
 )
 
-interface RequestNonceCommand : ServiceCommand<RequestNonceArgs, NonceResponse> {
+interface RequestNonceCommand : ServiceCommand<RequestNonceArgs, NonceResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -156,7 +157,7 @@ data class TokenResponseWithContext(
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
 )
 
-interface ExchangePreAuthorizedCodeCommand : ServiceCommand<ExchangePreAuthorizedCodeArgs, TokenResponseWithContext> {
+interface ExchangePreAuthorizedCodeCommand : ServiceCommand<ExchangePreAuthorizedCodeArgs, TokenResponseWithContext, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -185,7 +186,7 @@ data class CreatedProof(
     val proofs: CredentialRequestProofs,
 )
 
-interface CreateCredentialRequestProofCommand : ServiceCommand<CreateCredentialRequestProofArgs, CreatedProof> {
+interface CreateCredentialRequestProofCommand : ServiceCommand<CreateCredentialRequestProofArgs, CreatedProof, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -235,7 +236,7 @@ data class RequestCredentialArgs(
     val requestEncryptionEnc: String? = null,
 )
 
-interface RequestCredentialCommand : ServiceCommand<RequestCredentialArgs, CredentialResponse> {
+interface RequestCredentialCommand : ServiceCommand<RequestCredentialArgs, CredentialResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -277,7 +278,7 @@ data class RequestDeferredCredentialArgs(
     val requestEncryptionEnc: String? = null,
 )
 
-interface RequestDeferredCredentialCommand : ServiceCommand<RequestDeferredCredentialArgs, CredentialResponse> {
+interface RequestDeferredCredentialCommand : ServiceCommand<RequestDeferredCredentialArgs, CredentialResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -297,7 +298,7 @@ data class SendNotificationArgs(
     val eventDescription: String? = null,
 )
 
-interface SendNotificationCommand : ServiceCommand<SendNotificationArgs, Unit> {
+interface SendNotificationCommand : ServiceCommand<SendNotificationArgs, Unit, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

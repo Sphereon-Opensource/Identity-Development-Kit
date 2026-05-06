@@ -151,7 +151,7 @@ data class EncryptResult(
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface EncryptCommand : ServiceCommand<EncryptArgs, EncryptResult> {
+interface EncryptCommand : ServiceCommand<EncryptArgs, EncryptResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -274,7 +274,7 @@ data class DecryptResult(
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface DecryptCommand : ServiceCommand<DecryptArgs, DecryptResult> {
+interface DecryptCommand : ServiceCommand<DecryptArgs, DecryptResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -372,7 +372,7 @@ data class WrapKeyResult(
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface WrapKeyCommand : ServiceCommand<WrapKeyArgs, WrapKeyResult> {
+interface WrapKeyCommand : ServiceCommand<WrapKeyArgs, WrapKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -470,7 +470,7 @@ data class UnwrapKeyResult(
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface UnwrapKeyCommand : ServiceCommand<UnwrapKeyArgs, UnwrapKeyResult> {
+interface UnwrapKeyCommand : ServiceCommand<UnwrapKeyArgs, UnwrapKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -541,7 +541,7 @@ data class PerformKeyAgreementResult(
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface PerformKeyAgreementCommand : ServiceCommand<PerformKeyAgreementArgs, PerformKeyAgreementResult> {
+interface PerformKeyAgreementCommand : ServiceCommand<PerformKeyAgreementArgs, PerformKeyAgreementResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

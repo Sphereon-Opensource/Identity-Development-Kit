@@ -64,7 +64,7 @@ interface CreateOid4vpAuthSessionCommand : HttpEndpointCommand {
 @JsExportCompat
 interface GetOid4vpAuthStatusCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.auth.session.status"
+        const val COMMAND_ID = "oid4vp.auth.session-status"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -90,7 +90,7 @@ interface GetOid4vpAuthStatusCommand : HttpEndpointCommand {
 @JsExportCompat
 interface CompleteOid4vpAuthCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.auth.session.complete"
+        const val COMMAND_ID = "oid4vp.auth.complete-session"
 
         val ENDPOINT =
             HttpEndpointDescriptor(

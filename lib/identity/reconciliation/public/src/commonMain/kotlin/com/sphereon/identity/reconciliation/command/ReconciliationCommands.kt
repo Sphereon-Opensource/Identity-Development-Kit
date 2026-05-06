@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.reconciliation.model.CancelReconciliationSessionArgs
@@ -27,7 +28,7 @@ import com.sphereon.identity.reconciliation.model.GetReconciliationSessionArgs
 import com.sphereon.identity.reconciliation.model.ReconciliationSession
 
 @JsExportCompat
-interface CreateReconciliationSessionCommand : ServiceCommand<CreateReconciliationSessionArgs, CreateReconciliationSessionResult> {
+interface CreateReconciliationSessionCommand : ServiceCommand<CreateReconciliationSessionArgs, CreateReconciliationSessionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -36,7 +37,7 @@ interface CreateReconciliationSessionCommand : ServiceCommand<CreateReconciliati
 }
 
 @JsExportCompat
-interface CompleteReconciliationCommand : ServiceCommand<CompleteReconciliationArgs, CompleteReconciliationResult> {
+interface CompleteReconciliationCommand : ServiceCommand<CompleteReconciliationArgs, CompleteReconciliationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -45,7 +46,7 @@ interface CompleteReconciliationCommand : ServiceCommand<CompleteReconciliationA
 }
 
 @JsExportCompat
-interface GetReconciliationSessionCommand : ServiceCommand<GetReconciliationSessionArgs, ReconciliationSession> {
+interface GetReconciliationSessionCommand : ServiceCommand<GetReconciliationSessionArgs, ReconciliationSession, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -54,7 +55,7 @@ interface GetReconciliationSessionCommand : ServiceCommand<GetReconciliationSess
 }
 
 @JsExportCompat
-interface CancelReconciliationSessionCommand : ServiceCommand<CancelReconciliationSessionArgs, ReconciliationSession> {
+interface CancelReconciliationSessionCommand : ServiceCommand<CancelReconciliationSessionArgs, ReconciliationSession, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

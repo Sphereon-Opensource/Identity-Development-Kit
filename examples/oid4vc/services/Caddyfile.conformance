@@ -1,0 +1,51 @@
+# Conformance variant of the demo Caddyfile.
+#
+# Imports the regular Caddyfile (global options + (cors) snippet + (routes) snippet +
+# the plain-HTTP :8080 listener) and layers a TLS-terminating :8443 listener on top.
+# The OIDF FAPI2 conformance suite handshakes against :8443 via an ngrok TLS-passthrough
+# tunnel, so Caddy is the entity the suite sees during TLS negotiation — meaning the
+# cipher list configured here is what `RequireOnlyBCP195RecommendedCiphersForTLS12`
+# observes.
+#
+# Loaded by start-conformance-dev.{sh,bat} via docker-compose.conformance.yaml. Regular
+# devs use the unadorned Caddyfile and never run this listener.
+
+import Caddyfile
+
+# Public TLS listener. The ngrok agent (Pay-as-you-go plan) runs in TLS-passthrough mode
+# and forwards the public TLS handshake to this address verbatim. Hostname is the reserved
+# ngrok domain pointed at this listener.
+sphereon-oid4vc.ngrok.dev:8443 {
+	tls {
+		# RFC 9325 (BCP 195) §4.2 / FAPI2-SP §5.2.2: only TLS 1.2+, only AEAD ciphers,
+		# only ECDHE key exchange. TLS 1.3 cipher suites are mandated by Go's TLS stack
+		# and don't need to be listed here — the suite is non-negotiable for TLS 1.3.
+		protocols tls1.2 tls1.3
+		# RSA cert key type (not Caddy's default ECDSA P-256). The OIDF FAPI conformance
+		# `DisallowInsecureCipher` test uses the strict FAPI 1.2 cipher allowlist — which
+		# contains ZERO ECDSA cipher suites — so an ECDSA cert forces the test to negotiate
+		# a non-allowlisted cipher and fail. With an RSA cert, only RSA AEAD ciphers are
+		# negotiated, all of which sit in both the BCP195 and strict-FAPI allowlists.
+		# Let's Encrypt issues both ECDSA and RSA certs for the same domain; Caddy
+		# re-provisions when key_type changes.
+		key_type rsa2048
+		# Intersection of BCP195 (RFC 9325 §4.2) and the strict FAPI 1.2 cipher list
+		# (FAPI_TLS_1_2_CIPHERS in OIDF FAPITLSClient.java). RSA AES GCM only — the
+		# ECDSA ciphers from BCP195 fail strict-FAPI's DisallowInsecureCipher, and the
+		# CHACHA20-POLY1305 entries (BCP195-recommended but not on the strict-FAPI list)
+		# fail it too. Both 128-bit and 256-bit AES are kept; FAPI doesn't differentiate.
+		ciphers TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 \
+			TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+		curves x25519 secp256r1 secp384r1
+		# TLS-ALPN-01 is the only ACME challenge that survives behind a TLS-passthrough
+		# tunnel: Let's Encrypt opens a TLS connection to :443 (public ngrok endpoint),
+		# ngrok forwards the ALPN-tagged handshake straight here, Caddy answers it. The
+		# HTTP-01 challenge needs :80 (no listener; ngrok TLS mode doesn't expose it),
+		# so disable it. DNS-01 isn't auto-enabled in the Caddyfile adapter — it only
+		# activates when a DNS provider is wired up — so no explicit disable needed.
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	import routes
+}

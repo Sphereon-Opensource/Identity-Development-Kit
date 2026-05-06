@@ -72,6 +72,23 @@ data class CreateAuthorizationRequestArgs(
     val clientMetadata: ClientMetadata? = null,
     val clientMetadataUri: String? = null,
     val clientIdScheme: ClientIdScheme = ClientIdScheme.REDIRECT_URI,
+    /**
+     * KMS reference for the wallet→verifier JARM response encryption keypair. Caller
+     * generates the keypair in an ephemeral KMS provider and passes the alias/providerId
+     * so they land on the persisted `AuthorizationSession`; the response endpoint resolves
+     * the alias back to a `KeyInfo` for JWE decryption. Required for `direct_post.jwt`;
+     * ignored for unencrypted modes.
+     */
+    val jarmEncryptionKeyAlias: String? = null,
+    val jarmEncryptionKeyProviderId: String? = null,
+    /**
+     * HTTP method the wallet must use when fetching the JAR from `request_uri` per OID4VP
+     * §5.10 (`get` or `post`). Lands as a `request_uri_method` query parameter on the OUTER
+     * OAuth2 authorization URL (the `openid4vp://` deeplink), NOT inside the signed Request
+     * Object — the wallet needs it BEFORE fetching the JAR. Null means the parameter is
+     * omitted entirely, in which case the wallet defaults to GET per RFC 9101.
+     */
+    val requestUriMethod: String? = null,
 )
 
 /**
@@ -159,6 +176,12 @@ data class ValidateAuthorizationResponseArgs(
     val originalRequest: AuthorizationRequest,
     val dcqlQuery: DcqlQuery,
     val expectedNonce: String,
+    /**
+     * mDoc-only: raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's encryption-
+     * key JWK, used to reconstruct the §B.2.6 OpenID4VPHandover for DeviceAuth signature
+     * verification. Required for `direct_post.jwt`; null for plain `direct_post`.
+     */
+    val verifierEncryptionJwkThumbprint: ByteArray? = null,
 )
 
 /**
@@ -211,6 +234,22 @@ data class VerifyHolderBindingArgs(
     val format: String,
     val expectedNonce: String,
     val expectedAudience: String,
+    /**
+     * mDoc-only: the verifier's OID4VP `client_id` (after §5.9.3 prefixing). Used with
+     * [responseUri] and [verifierEncryptionJwkThumbprint] to reconstruct the
+     * SessionTranscript per OID4VP 1.0 final §B.2.6. Ignored for SD-JWT and JWT VP.
+     */
+    val clientId: String? = null,
+    /**
+     * mDoc-only: the verifier's `response_uri` from the OID4VP authorization request.
+     */
+    val responseUri: String? = null,
+    /**
+     * mDoc-only: raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's encryption-
+     * key JWK. Required for encrypted response modes (`direct_post.jwt`, `dc_api.jwt`);
+     * null for plain modes per OID4VP 1.0 final §B.2.6.2.
+     */
+    val verifierEncryptionJwkThumbprint: ByteArray? = null,
 )
 
 /**
@@ -242,6 +281,22 @@ data class HolderBindingResult(
     val audienceValid: Boolean = false,
     val sdHashValid: Boolean? = null,
     val errors: List<String> = emptyList(),
+    /**
+     * For SD-JWT credentials: did the verifier resolve a verification key for the
+     * issuer JWT through its trust chain? `false` here means the failure is upstream
+     * of the cryptographic check — the resolver chain (KMS / DID / x5c / pinned JWKS)
+     * never produced a usable key. In that state [signatureValid] is misleading on
+     * its own and you'd be chasing a "bad signature" that doesn't exist.
+     *
+     * Default: null (unknown / not surfaced by this binding method, e.g. mdoc).
+     */
+    val issuerTrustEstablished: Boolean? = null,
+    /**
+     * For SD-JWT credentials: result of the cryptographic check on the issuer JWT
+     * once a key was resolved. null if [issuerTrustEstablished] is false (no key →
+     * nothing to check) or if this binding method doesn't produce the field.
+     */
+    val issuerCryptoVerified: Boolean? = null,
 )
 
 /**
@@ -259,6 +314,19 @@ data class BuildAuthorizationRequestUriArgs(
     val scheme: Oid4vpUriScheme = Oid4vpUriScheme.OPENID4VP,
     val useRequestUri: Boolean = false,
     val requestUri: String? = null,
+    /**
+     * Full URI prefix to use instead of `<scheme>://`. Set when the wallet is reached via an
+     * HTTPS endpoint rather than a custom mobile URI scheme. Covers:
+     *
+     *  - **Web wallets** running as a service (e.g. the OIDF conformance suite's
+     *    `https://demo.certification.openid.net/test/a/Verifier-sdjwt/authorize`).
+     *  - **Universal links / App Links** — HTTPS URLs claimed by a mobile-app handler.
+     *  - Any other wallet endpoint published as a full URL rather than a scheme name.
+     *
+     * When non-null, [scheme] is ignored. The outer authorization-request URI is constructed
+     * as `<deeplinkPrefix>?param=…` (or `&param=…` if the prefix already contains a `?`).
+     */
+    val deeplinkPrefix: String? = null,
 )
 
 /**
@@ -282,6 +350,14 @@ enum class Oid4vpUriScheme(
      */
     @SerialName("openid")
     OPENID("openid"),
+
+    /**
+     * Sphereon mobile-wallet vendor scheme (`oid4vp://`). Not spec-defined; included so
+     * deployments targeting wallets that register this scheme can drive the outer
+     * authorization-request URI without falling back to a string-only override.
+     */
+    @SerialName("oid4vp")
+    OID4VP("oid4vp"),
 
     /**
      * HAIP (High Assurance Identity Profile) scheme
@@ -357,6 +433,12 @@ data class HandleDirectPostResponseArgs(
     @kotlinx.serialization.Transient
     val jarmSignerIdentifier: ManagedIdentifierOptsOrResult? = null,
     val responseCodeTtlSeconds: Long = 300,
+    /**
+     * mDoc-only: raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's encryption-
+     * key JWK, threaded into the §B.2.6 OpenID4VPHandover during DeviceAuth verification.
+     * Required for `direct_post.jwt`; null for plain `direct_post`.
+     */
+    val verifierEncryptionJwkThumbprint: ByteArray? = null,
 )
 
 /**

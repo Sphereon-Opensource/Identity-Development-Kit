@@ -22,40 +22,73 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.common.config.isEnabled
+import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.runBlocking
 
-private const val DEFAULT_SIGNING_KEY_ALIAS = "oauth2-server-signing"
+/**
+ * Tenant identifier the AS uses when no per-request tenant has been threaded into the session.
+ * Single-tenant deployments stay on this default; multi-tenant deployments override the
+ * binding with a tenant-aware variant that resolves via the session's tenant context.
+ */
+private const val DEFAULT_SIGNING_KEY_TENANT = "default"
 
 /**
  * OAuth2 server identifier provider.
  *
- * Provides a [ManagedOptsAlias] pointing to the configured signing key alias.
- * The key is resolved lazily by the consuming commands (CreateAccessTokenCommandImpl,
- * CreateIdTokenCommandImpl, GetJwksCommandImpl) when they actually need to sign —
- * not eagerly at DI construction time.
+ * Resolves the current sign-time identifier by consulting the [SigningKeyStore] for the
+ * highest-priority `ACTIVE` key on the default tenant. The returned [ManagedOptsAlias] is a
+ * pointer to the KMS-resolved key bytes; consuming commands (CreateAccessTokenCommandImpl,
+ * CreateIdTokenCommandImpl, JWS-emitting commands) lazily resolve through the KMS at
+ * signing time. Multi-key JWKS publication is handled separately by [GetJwksCommandImpl]
+ * which reads the store directly.
  *
- * When JWT tokens and OIDC are both disabled, returns null (opaque tokens).
+ * Bound `@SingleIn(SessionScope::class)`: the lookup happens once per AS session, so a
+ * rotation that lands mid-session does not affect tokens minted within that session — new
+ * sessions pick up the new active key. This matches mature IdPs' realm-key-cache semantics
+ * (Keycloak's `DefaultKeyManager` caches per-realm with explicit eviction on rotation).
+ *
+ * When JWT tokens and OIDC are both disabled (opaque-token deployments), returns null so
+ * the sign paths short-circuit cleanly.
  */
 @ContributesTo(SessionScope::class)
 interface DefaultOAuth2ConfigModule {
     @Provides
     @SingleIn(SessionScope::class)
     @Named("oauth2.serverIdentifier")
-    fun provideDefaultServerIdentifier(configProvider: OAuth2ServersConfigProvider): ManagedIdentifierOptsOrResult? {
+    fun provideDefaultServerIdentifier(
+        configProvider: OAuth2ServersConfigProvider,
+        signingKeyStore: SigningKeyStore,
+    ): ManagedIdentifierOptsOrResult? {
         val config = configProvider.serverConfig
 
-        // Only provide signing key reference if JWT tokens or OIDC are needed
+        // Opaque-token / no-OIDC deployments do not need a signing key. Return null so any
+        // accidental sign path call surfaces a clear "no signing identifier configured"
+        // error rather than wandering into the KMS with a default alias that does not exist.
         if (config.tokenFormat != TokenFormat.JWT && !config.oidc.isEnabled) {
             return null
         }
 
-        // Return alias reference — the KMS resolves the actual key lazily at signing time.
-        // If the key doesn't exist yet, the KMS command will fail with a clear error
-        // at token creation time, not silently at DI construction time.
-        val alias = config.signingKeyAlias ?: DEFAULT_SIGNING_KEY_ALIAS
-        return ManagedOptsAlias(identifier = alias)
+        // Read the active key for the default tenant. The DI provider runs synchronously, so
+        // we bridge to the suspending `getActive` via runBlocking; the store implementation
+        // is synchronous in practice (in-memory or quick Postgres lookup) so the bridge does
+        // not block any meaningful work.
+        val activeResult = runBlocking { signingKeyStore.getActive(DEFAULT_SIGNING_KEY_TENANT) }
+        if (!activeResult.isOk) {
+            // Surfacing as null lets the AS boot cleanly with no signer; the actual sign path
+            // will then return its own typed error when invoked, with diagnostic context.
+            return null
+        }
+        val active = activeResult.value ?: return null
+
+        // The KMS provider resolves the actual private bytes lazily at signing time using the
+        // KeyInfo's `alias` (or `kid` as fallback). The wire-visible kid on issued tokens
+        // comes from the same KeyInfo, which the JWKS endpoint also publishes — guaranteeing
+        // RP-side verification can pick the right entry.
+        val identifier = active.keyInfo.alias ?: active.keyInfo.kid ?: active.kid
+        return ManagedOptsAlias(identifier = identifier)
     }
 }

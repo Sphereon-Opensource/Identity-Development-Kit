@@ -18,9 +18,12 @@ package com.sphereon.core.api.http.dispatch
 
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.RoutedHttpAdapter
+import com.sphereon.core.api.http.describe.HttpAdapterDescription
+import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.httpRoutes
 import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -49,4 +52,24 @@ class NoOpHttpAdapter : RoutedHttpAdapter() {
     companion object {
         const val ID = "__noop__"
     }
+}
+
+/**
+ * AppScope companion descriptor for [NoOpHttpAdapter]. Carries an empty endpoint list, so it
+ * advertises nothing through the catalog while keeping the IDK invariant that every contributed
+ * [HttpAdapter] has a matching [HttpAdapterDescriptorProvider]. The parity is enforced by the
+ * OIDF harness `OAuth2HttpAdapterParityTest`.
+ */
+@Inject
+@SingleIn(AppScope::class)
+@ContributesIntoSet(AppScope::class, binding = binding<HttpAdapterDescriptorProvider>())
+class NoOpHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
+    override val id: String = NoOpHttpAdapter.ID
+
+    override fun describe(): HttpAdapterDescription =
+        HttpAdapterDescription(
+            id = id,
+            mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = ""),
+            endpoints = emptyList(),
+        )
 }

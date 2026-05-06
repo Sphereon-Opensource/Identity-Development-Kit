@@ -49,7 +49,7 @@ class CreateJwsJsonGeneralCommandImpl(
     execution: SessionExecution,
     private val prepareJwsCommand: PrepareJwsCommand,
     private val signatureService: SignatureService,
-) : TypedServiceCommandAdapter<CreateJwsJsonArgs, JwsJsonGeneral>(
+) : TypedServiceCommandAdapter<CreateJwsJsonArgs, JwsJsonGeneral, IdkError>(
         commandId = CreateJwsJsonGeneralCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJwsJsonArgs>(),

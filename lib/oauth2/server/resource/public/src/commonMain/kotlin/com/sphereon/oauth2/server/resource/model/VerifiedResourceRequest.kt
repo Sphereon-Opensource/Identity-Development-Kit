@@ -104,6 +104,13 @@ sealed interface TokenPayload {
     val dpopJkt: String?
 
     /**
+     * RFC 8705 §3.1 certificate-bound access token: SHA-256 thumbprint (base64url) of the TLS
+     * client certificate the bearer must present at the resource server. `null` for tokens
+     * that are not certificate-bound.
+     */
+    val certificateThumbprintS256: String?
+
+    /**
      * JWT payload from RFC 9068 access token
      */
     @Serializable
@@ -119,6 +126,7 @@ sealed interface TokenPayload {
         override val scope: String?,
         override val clientId: String?,
         override val dpopJkt: String?,
+        override val certificateThumbprintS256: String? = null,
         val jti: String?,
         val additionalClaims: Map<String, String> = emptyMap(),
     ) : TokenPayload
@@ -140,6 +148,7 @@ sealed interface TokenPayload {
         override val scope: String? get() = response.scope
         override val clientId: String? get() = response.clientId
         override val dpopJkt: String? get() = response.cnf?.jkt
+        override val certificateThumbprintS256: String? get() = response.cnf?.certificateThumbprintS256
     }
 }
 

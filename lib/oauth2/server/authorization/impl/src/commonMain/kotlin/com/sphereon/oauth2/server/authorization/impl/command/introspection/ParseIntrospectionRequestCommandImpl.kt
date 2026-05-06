@@ -82,7 +82,7 @@ import kotlin.native.ObjCName
 @ObjCName("ParseIntrospectionRequestCommandImpl", exact = true)
 class ParseIntrospectionRequestCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParseIntrospectionRequestArgs, IntrospectionRequestData>(
+) : TypedServiceCommandAdapter<ParseIntrospectionRequestArgs, IntrospectionRequestData, IdkError>(
         commandId = ParseIntrospectionRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseIntrospectionRequestArgs>(),

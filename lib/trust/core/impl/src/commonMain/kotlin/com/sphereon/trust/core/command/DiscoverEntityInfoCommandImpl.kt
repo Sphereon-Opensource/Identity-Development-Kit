@@ -29,7 +29,7 @@ import dev.zacsweers.metro.SingleIn
 class DiscoverEntityInfoCommandImpl(
     execution: SessionExecution,
     private val extractors: Set<EntityInfoExtractor>,
-) : TypedServiceCommandAdapter<DiscoverEntityInfoArgs, DiscoverEntityInfoResult>(
+) : TypedServiceCommandAdapter<DiscoverEntityInfoArgs, DiscoverEntityInfoResult, IdkError>(
         commandId = DiscoverEntityInfoCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DiscoverEntityInfoArgs>(),

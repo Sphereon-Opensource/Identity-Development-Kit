@@ -81,6 +81,7 @@ class FederationProviderConfigBinder(
                             StateMode.JWT
                         }
                     } ?: StateMode.JWT,
+                discoveryEnabled = configService.getPropertyAsString("$providerPrefix.discovery.enabled", "true")?.toBoolean() != false,
             )
         }
     }

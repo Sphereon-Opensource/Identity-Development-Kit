@@ -19,10 +19,15 @@ package com.sphereon.oauth2.server.authorization.impl.storage.memory
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.config.OAuth2ClientsConfigBinder
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -43,10 +48,57 @@ import dev.zacsweers.metro.binding
 class ConfigAwareClientRegistry(
     private val backingStorage: InMemoryOAuth2BackingStorage,
     private val configBinder: OAuth2ClientsConfigBinder,
+    private val serversConfigProvider: OAuth2ServersConfigProvider,
 ) : ClientRegistry {
     private val partitionKey = OAuth2StoragePartitionKey.appLevel()
     private val partition get() = backingStorage.getPartition(partitionKey)
-    private val configuredClients by lazy { configBinder.loadClientRegistrations() }
+
+    /**
+     * Configured clients merged from two sources:
+     *
+     *  - `oauth2.clients.<id>.*` — the public client registry consumed by the authorization
+     *    code / device / pre-authorized-code flows.
+     *  - `oauth2.servers.<asId>.internal-clients.<role>.*` — server-to-server resource-server
+     *    clients (e.g. the OID4VCI / OID4VP / introspection callers). They authenticate via
+     *    `client_secret_basic` and are recognized as resource servers by the introspection
+     *    command, which lifts the §2.2 confused-deputy ownership check for them.
+     *
+     * Keeping both lists in the same registry means client authentication code paths don't have
+     * to special-case internal callers — they look up the clientId here just like any other
+     * client. Internal IDs colliding with regular `oauth2.clients` IDs are rejected loudly to
+     * surface operator misconfiguration.
+     */
+    private val configuredClients: IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> by lazy {
+        val regular = configBinder.loadClientRegistrations()
+        if (regular.isErr) return@lazy regular
+        val merged = LinkedHashMap(regular.value)
+        for ((clientId, registration) in loadInternalClientRegistrations()) {
+            require(!merged.containsKey(clientId)) {
+                "Internal client id '$clientId' collides with an `oauth2.clients` registration"
+            }
+            merged[clientId] = registration
+        }
+        Ok(merged)
+    }
+
+    private fun loadInternalClientRegistrations(): Map<String, ClientRegistration> {
+        val result = linkedMapOf<String, ClientRegistration>()
+        for ((_, server) in serversConfigProvider.getConfig().servers) {
+            for ((_, credentials) in server.internalClients) {
+                val (clientId, clientSecret) = credentials
+                if (clientId.isBlank()) continue
+                result[clientId] =
+                    ClientRegistration(
+                        clientId = clientId,
+                        clientSecret = clientSecret,
+                        clientType = ClientType.CONFIDENTIAL,
+                        grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                        tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                    )
+            }
+        }
+        return result
+    }
 
     override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> = withMergedClients { clients -> Ok(clients[clientId]) }
 
@@ -148,7 +200,7 @@ class ConfigAwareClientRegistry(
     ): IdkResult<Boolean, AuthorizationServerError.StorageError> =
         withMergedClients { clients ->
             val expectedSecret = clients[clientId]?.clientSecret
-            Ok(expectedSecret != null && constantTimeEquals(expectedSecret, clientSecret))
+            Ok(expectedSecret != null && ConstantTime.equalsCT(expectedSecret, clientSecret))
         }
 
     private inline fun <T> withConfiguredClients(action: (Map<String, ClientRegistration>) -> IdkResult<T, AuthorizationServerError>): IdkResult<T, AuthorizationServerError> {
@@ -167,30 +219,6 @@ class ConfigAwareClientRegistry(
         } else {
             Err(configured.error)
         }
-    }
-
-    private fun constantTimeEquals(
-        expected: String,
-        actual: String,
-    ): Boolean {
-        var diff = expected.length xor actual.length
-        val maxLength = maxOf(expected.length, actual.length)
-        for (index in 0 until maxLength) {
-            val expectedChar =
-                if (index < expected.length) {
-                    expected[index].code
-                } else {
-                    0
-                }
-            val actualChar =
-                if (index < actual.length) {
-                    actual[index].code
-                } else {
-                    0
-                }
-            diff = diff or (expectedChar xor actualChar)
-        }
-        return diff == 0
     }
 
     @ContributesTo(SessionScope::class)

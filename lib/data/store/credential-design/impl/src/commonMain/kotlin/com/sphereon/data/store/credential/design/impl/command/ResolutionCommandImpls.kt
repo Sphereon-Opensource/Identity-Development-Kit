@@ -49,7 +49,7 @@ import kotlin.uuid.ExperimentalUuidApi
 class ResolveCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ResolveCredentialDesignArgs, ResolvedCredentialDesign>(
+) : TypedServiceCommandAdapter<ResolveCredentialDesignArgs, ResolvedCredentialDesign, IdkError>(
         commandId = ResolveCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveCredentialDesignArgs>(),
@@ -81,7 +81,7 @@ class ResolveCredentialDesignServiceCommandImpl(
 class ResolveIssuerDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ResolveIssuerDesignArgs, ResolvedIssuerDesign>(
+) : TypedServiceCommandAdapter<ResolveIssuerDesignArgs, ResolvedIssuerDesign, IdkError>(
         commandId = ResolveIssuerDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveIssuerDesignArgs>(),
@@ -105,7 +105,7 @@ class ResolveIssuerDesignServiceCommandImpl(
 class ResolveVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ResolveVerifierDesignArgs, ResolvedVerifierDesign>(
+) : TypedServiceCommandAdapter<ResolveVerifierDesignArgs, ResolvedVerifierDesign, IdkError>(
         commandId = ResolveVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveVerifierDesignArgs>(),

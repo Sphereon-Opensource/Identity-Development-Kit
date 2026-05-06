@@ -27,6 +27,7 @@ import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.ResolvedKeyInfo
@@ -45,13 +46,21 @@ import com.sphereon.crypto.core.generic.computeHmac
 import com.sphereon.crypto.core.generic.generateHmacKey
 import com.sphereon.crypto.core.interop.DerKmpKeyInfoContext
 import com.sphereon.crypto.core.interop.checkSupportedEcdsaCurve
+import com.sphereon.crypto.core.interop.expectedOkpKeyByteLength
+import com.sphereon.crypto.core.interop.isOkpCurve
 import com.sphereon.crypto.core.interop.keyInfoToEcdsaDerKmpContext
 import com.sphereon.crypto.core.interop.keyInfoToRSADerKmpContext
+import com.sphereon.crypto.core.interop.okpRawToJwk
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
+import com.sphereon.crypto.core.interop.resolveEdDsaKmpCurve
 import com.sphereon.crypto.core.interop.resolvePSSSaltSize
 import com.sphereon.crypto.core.interop.resolveRSAKmpDigest
+import com.sphereon.crypto.core.interop.resolveXdhKmpCurve
 import com.sphereon.crypto.core.interop.toEcdsaPrivateKey
 import com.sphereon.crypto.core.interop.toEcdsaPublicKey
+import com.sphereon.crypto.core.interop.toEdDsaPrivateKey
+import com.sphereon.crypto.core.interop.toEdDsaPublicKey
+import com.sphereon.crypto.core.interop.toKeyInfoJwk
 import com.sphereon.crypto.core.interop.toRsaPkcs1PrivateKey
 import com.sphereon.crypto.core.interop.toRsaPkcs1PublicKey
 import com.sphereon.crypto.core.interop.toRsaPssPrivateKey
@@ -92,10 +101,12 @@ import dev.whyoleg.cryptography.CryptographyProviderApi
 import dev.whyoleg.cryptography.CryptographySystem
 import dev.whyoleg.cryptography.algorithms.EC
 import dev.whyoleg.cryptography.algorithms.ECDSA
+import dev.whyoleg.cryptography.algorithms.EdDSA
 import dev.whyoleg.cryptography.algorithms.RSA
 import dev.whyoleg.cryptography.algorithms.SHA256
 import dev.whyoleg.cryptography.algorithms.SHA384
 import dev.whyoleg.cryptography.algorithms.SHA512
+import dev.whyoleg.cryptography.algorithms.XDH
 import dev.whyoleg.cryptography.operations.KeyGenerator
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedInject
@@ -167,6 +178,8 @@ class SoftwareKmsProviderImpl(
     private val ecdsa = lazy { cryptoProvider.get(ECDSA) }
     private val rsaPss = lazy { cryptoProvider.get(RSA.PSS) }
     private val rsaPkcs1 = lazy { cryptoProvider.get(RSA.PKCS1) }
+    private val eddsa = lazy { cryptoProvider.get(EdDSA) }
+    private val xdh = lazy { cryptoProvider.get(XDH) }
     override val settings: KeyProviderSettings? = null
 
     /**
@@ -329,10 +342,20 @@ class SoftwareKmsProviderImpl(
                     ),
                 ),
             // Key type support
-            supportedKeyTypes = arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA, KeyTypeMapping.Symmetric),
-            supportedCurves = arrayOf(Curve.P_256, Curve.P_384, Curve.P_521),
+            supportedKeyTypes = arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA, KeyTypeMapping.Symmetric, KeyTypeMapping.OKP),
+            supportedCurves =
+                arrayOf(
+                    Curve.P_256,
+                    Curve.P_384,
+                    Curve.P_521,
+                    Curve.Ed25519,
+                    Curve.Ed448,
+                    Curve.X25519,
+                    Curve.X448,
+                ),
             // Algorithm support - using generic crypto types
-            supportedCryptoAlgorithms = arrayOf(CryptoAlg.ECDSA, CryptoAlg.RSA, CryptoAlg.HMAC),
+            supportedCryptoAlgorithms =
+                arrayOf(CryptoAlg.ECDSA, CryptoAlg.RSA, CryptoAlg.HMAC, CryptoAlg.ED25519, CryptoAlg.ED448),
             supportedDigestAlgorithms = arrayOf(DigestAlg.SHA256, DigestAlg.SHA384, DigestAlg.SHA512),
             signatureAlgorithms =
                 arrayOf(
@@ -349,6 +372,8 @@ class SoftwareKmsProviderImpl(
                     SignatureAlgorithm.HMAC_SHA256,
                     SignatureAlgorithm.HMAC_SHA384,
                     SignatureAlgorithm.HMAC_SHA512,
+                    SignatureAlgorithm.ED25519,
+                    SignatureAlgorithm.ED448,
                 ),
             contentEncryptionAlgorithms =
                 arrayOf(
@@ -411,6 +436,7 @@ class SoftwareKmsProviderImpl(
             when (algMapping.cryptoAlgorithm) {
                 CryptoAlg.RSA -> KeyTypeMapping.RSA
                 CryptoAlg.HMAC -> KeyTypeMapping.Symmetric
+                CryptoAlg.ED25519, CryptoAlg.ED448 -> KeyTypeMapping.OKP
                 else -> KeyTypeMapping.EC
             }
 
@@ -523,6 +549,28 @@ class SoftwareKmsProviderImpl(
                 keyPair.publicKey
                     .toSphereonJwk()
                     .copy(use = keyUse.value, key_ops = null, alg = algMapping.jose)
+        } else if (keyType === KeyTypeMapping.OKP) {
+            require(curve !== null) { "Curve must be provided for OKP key type" }
+            require(isOkpCurve(curve)) { "Curve $curve is not an OKP curve (expected Ed25519, Ed448, X25519, or X448)" }
+            val expectedLen = expectedOkpKeyByteLength(curve)
+            val isSigning = curve is Curve.Ed25519 || curve is Curve.Ed448
+            val rawPublic: ByteArray
+            val rawPrivate: ByteArray
+            if (isSigning) {
+                val keyPair = eddsa.value.keyPairGenerator(resolveEdDsaKmpCurve(curve)).generateKey()
+                rawPublic = keyPair.publicKey.encodeToByteArray(EdDSA.PublicKey.Format.RAW)
+                rawPrivate = keyPair.privateKey.encodeToByteArray(EdDSA.PrivateKey.Format.RAW)
+            } else {
+                val keyPair = xdh.value.keyPairGenerator(resolveXdhKmpCurve(curve)).generateKey()
+                rawPublic = keyPair.publicKey.encodeToByteArray(XDH.PublicKey.Format.RAW)
+                rawPrivate = keyPair.privateKey.encodeToByteArray(XDH.PrivateKey.Format.RAW)
+            }
+            check(rawPublic.size == expectedLen) { "Generated OKP public key length ${rawPublic.size} != expected $expectedLen for $curve" }
+            check(rawPrivate.size == expectedLen) { "Generated OKP private key length ${rawPrivate.size} != expected $expectedLen for $curve" }
+            privateJwk =
+                okpRawToJwk(rawPublic = rawPublic, rawPrivate = rawPrivate, curve = curve)
+                    .copy(use = keyUse.value, key_ops = null, alg = algMapping.jose)
+            publicJwk = privateJwk.copy(d = null)
         } else {
             val (size, digest) =
                 when (algMapping) {
@@ -667,7 +715,24 @@ class SoftwareKmsProviderImpl(
             }
         val resolvedKeyInfo =
             if (!mangedKeyRequired) {
-                val resolved = keyInfo as? ResolvedKeyInfoType<*> ?: privateKeyStore?.getKey(keyInfo)
+                // Short-circuit when the caller already supplied a JWK on `keyInfo` — the
+                // keystore lookup is unnecessary (and impossible without an alias) for the
+                // verification path, where the verifier passes the JWK directly.
+                val resolved =
+                    keyInfo as? ResolvedKeyInfoType<*>
+                        ?: if (keyInfo.key != null) {
+                            ResolvedKeyInfo(
+                                key = keyInfo.key as JwkType,
+                                keyVisibility = keyInfo.keyVisibility ?: KeyVisibility.PUBLIC,
+                                keyType = (keyInfo.key as? Jwk)?.let { jwk -> KeyTypeMapping.fromJose(jwk.kty) } ?: KeyTypeMapping.EC,
+                                alias = keyInfo.alias ?: keyInfo.kid ?: "<inline-key>",
+                                providerId = keyInfo.providerId ?: id,
+                                kid = keyInfo.kid,
+                                signatureAlgorithm = keyInfo.signatureAlgorithm,
+                            )
+                        } else {
+                            privateKeyStore?.getKey(keyInfo)
+                        }
                 log.debug("[KEYSTORE-LOOKUP] Retrieved key: alias=${resolved?.alias}, signatureAlgorithm=${resolved?.signatureAlgorithm}")
                 resolved
             } else {
@@ -694,6 +759,25 @@ class SoftwareKmsProviderImpl(
 
             KeyTypeMapping.RSA -> {
                 keyInfoToRSADerKmpContext(keyInfo, resolver = { resolvedKeyInfo })
+            }
+
+            KeyTypeMapping.OKP -> {
+                // OKP keys (Ed25519 / Ed448 / X25519 / X448) bypass the DER pipeline —
+                // cryptography-kotlin's EdDSA / XDH algorithms decode raw key bytes from
+                // the JWK directly. We populate `DerKmpKeyInfoContext` with the JWK and
+                // empty/null bytes; the EdDSA/XDH branches in createRawSignature/
+                // isValidRawSignature ignore the byte fields and `curveImpl`.
+                val jwkInfo = toKeyInfoJwk(if (resolvedKeyInfo.key != null) resolvedKeyInfo else keyInfo)
+                val key =
+                    jwkInfo.key
+                        ?: throw IllegalArgumentException("OKP key info is missing the JWK key material")
+                DerKmpKeyInfoContext(
+                    key = key,
+                    publicKeyBytes = ByteArray(0),
+                    privateKeyBytes = if (key.d != null) ByteArray(0) else null,
+                    curveImpl = null,
+                    algImpl = SHA256,
+                )
             }
 
             else -> {
@@ -729,6 +813,17 @@ class SoftwareKmsProviderImpl(
                 // Load private key from JWK directly (no DER/signum roundtrip)
                 val privateKey = key.toEcdsaPrivateKey(provider = cryptoProvider, curve = curveImpl)
                 return privateKey.signatureGenerator(digest = algImpl, format = ECDSA.SignatureFormat.RAW).generateSignature(input)
+            }
+
+            key.kty == JwaKeyType.OKP && key.d != null -> {
+                // EdDSA (Ed25519 / Ed448): no digest or signature-format parameter — RFC 8032 fixes those.
+                val jwaCurve = key.crv ?: throw IllegalArgumentException("OKP signing key is missing 'crv'")
+                val sphCurve = Curve.fromJose(jwaCurve)
+                require(sphCurve is Curve.Ed25519 || sphCurve is Curve.Ed448) {
+                    "OKP signing curve must be Ed25519 or Ed448, was $sphCurve"
+                }
+                val privateKey = key.toEdDsaPrivateKey(provider = cryptoProvider, curve = sphCurve)
+                return privateKey.signatureGenerator().generateSignature(input)
             }
 
             key.kty == JwaKeyType.RSA && key.n != null && key.d != null -> {
@@ -773,6 +868,17 @@ class SoftwareKmsProviderImpl(
     ): Boolean {
         val (key, _, _, curveImpl, algImpl) = keyInfoToBytesWithKeystoreLookup(keyInfo)
         return when {
+            key.kty == JwaKeyType.OKP && key.x != null -> {
+                // EdDSA (Ed25519 / Ed448): no digest parameter; signature length fixed.
+                val jwaCurve = key.crv ?: throw IllegalArgumentException("OKP verification key is missing 'crv'")
+                val sphCurve = Curve.fromJose(jwaCurve)
+                require(sphCurve is Curve.Ed25519 || sphCurve is Curve.Ed448) {
+                    "OKP verification curve must be Ed25519 or Ed448, was $sphCurve"
+                }
+                val publicKey = key.toEdDsaPublicKey(provider = cryptoProvider, curve = sphCurve)
+                publicKey.signatureVerifier().tryVerifySignature(input, signature)
+            }
+
             key.x != null && curveImpl != null -> {
                 // Load public key from JWK directly (no DER/signum roundtrip)
                 val publicKey = key.toEcdsaPublicKey(provider = cryptoProvider, curve = curveImpl)
@@ -948,7 +1054,32 @@ class SoftwareKmsProviderImpl(
 
     override suspend fun listKeys(): Array<ManagedKeyReference> = keyStore.listKeys()
 
-    override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> = keyStore.getKey(keyInfo)
+    override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> {
+        // The underlying KeyStoreService stamps the returned ManagedKeyInfo's
+        // `providerId` with the *keystore's* id (`config.id` inside the KeyStore
+        // service) — which is fine for the keystore's internal scope, but the
+        // keystore id is allowed to differ from the KMS provider id. Downstream
+        // callers (e.g. SignatureCommandImpl) treat the resolved keyInfo's
+        // `providerId` as a KMS provider id and look it up in the
+        // KmsProviderRegistry; if those values differ, the lookup fails with
+        // "Invalid KMS id <keystoreId> provider".
+        //
+        // We own the keystore here and we are the parent KMS provider, so swap
+        // in our own id before returning. If the inner result is already tagged
+        // for a different KMS provider (e.g. caller pre-set it on resolution),
+        // preserve that tag.
+        val managed = keyStore.getKey(keyInfo)
+        if (managed.providerId == id) return managed
+        // Wrap the resolved key with our provider id. ManagedKeyInfoType extends
+        // ResolvedKeyInfoType, so the returned `managed` is itself a usable
+        // resolvedKeyInfo for the new wrapper — alias/key/cert chain etc. are
+        // delegated through it.
+        return ManagedKeyInfo(
+            alias = managed.alias,
+            providerId = id,
+            resolvedKeyInfo = managed,
+        )
+    }
 
     override suspend fun storeKey(
         keyInfo: ResolvedKeyInfoType<*>,

@@ -106,39 +106,38 @@ class RequestCredentialTest {
     }
 
     // ============================================================================
-    // CredentialResponse deserialization — OID4VCI 1.0 (single credential)
+    // CredentialResponse deserialization — OID4VCI 1.0 §8.3 single-credential issuance
     // ============================================================================
 
     @Test
-    fun deserializeImmediateResponseOid4vci10() {
-        // OID4VCI 1.0 format: credential is a single value
+    fun deserializeImmediateResponseSingleCredential() {
+        // OID4VCI 1.0 §8.3: a synchronous single-credential issuance is an array of size 1.
         val raw =
             """
             {
-              "credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6InZjK3NkLWp3dCJ9.payload.sig",
-              "c_nonce": "fGFF7UkhLa",
-              "c_nonce_expires_in": 86400,
+              "credentials": [
+                {
+                  "credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6InZjK3NkLWp3dCJ9.payload.sig"
+                }
+              ],
               "notification_id": "3fwe98js"
             }
             """.trimIndent()
 
         val response = json.decodeFromString(CredentialResponse.serializer(), raw)
 
-        assertNotNull(response.credential)
-        assertNull(response.credentials)
+        assertNotNull(response.credentials)
+        assertEquals(1, response.credentials!!.size)
         assertNull(response.transactionId)
-        assertEquals("fGFF7UkhLa", response.cNonce)
-        assertEquals(86400, response.cNonceExpiresIn)
         assertEquals("3fwe98js", response.notificationId)
     }
 
     // ============================================================================
-    // CredentialResponse deserialization — OID4VCI 1.1 (credentials array)
+    // CredentialResponse deserialization — multi-credential batch
     // ============================================================================
 
     @Test
-    fun deserializeImmediateResponseOid4vci11() {
-        // OID4VCI 1.1 format: credentials is an array of objects with a "credential" field
+    fun deserializeImmediateResponseSingleCredentialItem() {
         val raw =
             """
             {
@@ -147,18 +146,16 @@ class RequestCredentialTest {
                   "credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6InZjK3NkLWp3dCJ9.payload1.sig1"
                 }
               ],
-              "c_nonce": "tZignsnFbp",
               "notification_id": "xyz789"
             }
             """.trimIndent()
 
         val response = json.decodeFromString(CredentialResponse.serializer(), raw)
 
-        assertNull(response.credential)
         assertNotNull(response.credentials)
         assertEquals(1, response.credentials!!.size)
         assertNotNull(response.credentials!![0].credential)
-        assertEquals("tZignsnFbp", response.cNonce)
+        assertEquals("xyz789", response.notificationId)
     }
 
     @Test
@@ -185,7 +182,7 @@ class RequestCredentialTest {
 
     @Test
     fun deserializeDeferredResponse() {
-        // Deferred: transaction_id present, no credential(s)
+        // Deferred: transaction_id present, no credentials
         val raw =
             """
             {
@@ -196,7 +193,6 @@ class RequestCredentialTest {
 
         val response = json.decodeFromString(CredentialResponse.serializer(), raw)
 
-        assertNull(response.credential)
         assertNull(response.credentials)
         assertEquals("8xLOxBtZp8", response.transactionId)
         assertEquals(5, response.interval)
@@ -219,7 +215,6 @@ class RequestCredentialTest {
 
         assertEquals(original.transactionId, restored.transactionId)
         assertEquals(original.interval, restored.interval)
-        assertNull(restored.credential)
         assertNull(restored.credentials)
     }
 }

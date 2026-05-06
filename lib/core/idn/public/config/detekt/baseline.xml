@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:Idna.kt$Idna$fun toAscii( domain: String, options: IdnaOptions = IdnaOptions() ): IdkResult&lt;String, IdkError></ID>
+    <ID>ReturnCount:Idna.kt$Idna$private fun isValidAsciiLabel(label: String): Boolean</ID>
+    <ID>ReturnCount:Idna.kt$Idna$private fun labelToAscii( label: String, options: IdnaOptions ): IdkResult&lt;String, IdkError></ID>
+    <ID>ReturnCount:Punycode.kt$Punycode$fun decode(input: String): IdkResult&lt;String, IdkError></ID>
+    <ID>ReturnCount:Punycode.kt$Punycode$private fun readDelta( input: String, startPos: Int, bias: Int ): DeltaRead?</ID>
+  </CurrentIssues>
+</SmellBaseline>

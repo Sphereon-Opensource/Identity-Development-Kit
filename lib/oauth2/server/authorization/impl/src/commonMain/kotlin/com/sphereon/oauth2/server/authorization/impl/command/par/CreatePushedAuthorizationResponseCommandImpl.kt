@@ -67,7 +67,7 @@ import kotlin.native.ObjCName
 @ObjCName("CreatePushedAuthorizationResponseCommandImpl", exact = true)
 class CreatePushedAuthorizationResponseCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<CreatePushedAuthorizationResponseArgs, PushedAuthorizationResponse>(
+) : TypedServiceCommandAdapter<CreatePushedAuthorizationResponseArgs, PushedAuthorizationResponse, IdkError>(
         commandId = CreatePushedAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreatePushedAuthorizationResponseArgs>(),

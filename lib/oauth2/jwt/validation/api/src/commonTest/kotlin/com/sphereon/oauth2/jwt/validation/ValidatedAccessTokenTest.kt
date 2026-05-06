@@ -38,7 +38,6 @@ class ValidatedAccessTokenTest {
             issuedAt = 1735686000L,
             notBefore = null,
             scopes = scopes,
-            tenantId = "tenant-a",
             clientId = "client-123",
             jwtId = "jwt-id-456",
             rawToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -98,7 +97,6 @@ class ValidatedAccessTokenTest {
         assertEquals(listOf("my-api"), token.audiences)
         assertEquals(1735689600L, token.expiresAt)
         assertEquals(1735686000L, token.issuedAt)
-        assertEquals("tenant-a", token.tenantId)
         assertEquals("client-123", token.clientId)
         assertEquals("jwt-id-456", token.jwtId)
         assertEquals("keycloak-prod", token.idpId)
@@ -131,7 +129,6 @@ class ValidatedAccessTokenTest {
                 issuedAt = 1735686000L,
                 notBefore = null,
                 scopes = emptySet(),
-                tenantId = null,
                 clientId = null,
                 jwtId = null,
                 rawToken = "token",

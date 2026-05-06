@@ -47,7 +47,7 @@ class VerifySdJwtVcCommandImpl(
     execution: SessionExecution,
     private val verifySdJwtCommand: VerifySdJwtCommand,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<VerifySdJwtVcArgs, SdJwtVcVerificationResult>(
+) : TypedServiceCommandAdapter<VerifySdJwtVcArgs, SdJwtVcVerificationResult, IdkError>(
         commandId = VerifySdJwtVcCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifySdJwtVcArgs>(),
@@ -93,7 +93,7 @@ class VerifySdJwtVcPresentationCommandImpl(
     execution: SessionExecution,
     private val verifySdJwtCommand: VerifySdJwtCommand,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<VerifySdJwtVcPresentationArgs, SdJwtVcPresentationVerificationResult>(
+) : TypedServiceCommandAdapter<VerifySdJwtVcPresentationArgs, SdJwtVcPresentationVerificationResult, IdkError>(
         commandId = VerifySdJwtVcPresentationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifySdJwtVcPresentationArgs>(),

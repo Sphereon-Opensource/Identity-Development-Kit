@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.client
 
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -84,7 +85,7 @@ class DpopCommandTest {
                 )
 
             val jwtService = (session.graph as JwtServiceImpl.Graph).jwtService
-            val createCommand = CreateDpopProofCommandImpl(execution, jwtService)
+            val createCommand = CreateDpopProofCommandImpl(execution, jwtService, defaultSecureRandom())
 
             // Create DPoP proof
             val result =
@@ -129,7 +130,7 @@ class DpopCommandTest {
             val jwtService = (session.graph as JwtServiceImpl.Graph).jwtService
 
             // Create DPoP proof
-            val createCommand = CreateDpopProofCommandImpl(execution, jwtService)
+            val createCommand = CreateDpopProofCommandImpl(execution, jwtService, defaultSecureRandom())
             val createResult =
                 createCommand.execute(
                     CreateDpopProofArgs(
@@ -149,7 +150,12 @@ class DpopCommandTest {
             val expectedThumbprint = createResult.value.jwkThumbprint
 
             // Verify DPoP proof
-            val verifyCommand = ClientVerifyDpopProofCommandImpl(execution, jwtService)
+            val verifyCommand =
+                ClientVerifyDpopProofCommandImpl(
+                    execution,
+                    jwtService,
+                    (app as com.sphereon.core.api.conf.AppConfigService.Graph).appConfigService,
+                )
             val verifyResult =
                 verifyCommand.execute(
                     VerifyDpopProofOptions(
@@ -189,7 +195,7 @@ class DpopCommandTest {
             val jwtService = (session.graph as JwtServiceImpl.Graph).jwtService
 
             // Create DPoP proof for POST
-            val createCommand = CreateDpopProofCommandImpl(execution, jwtService)
+            val createCommand = CreateDpopProofCommandImpl(execution, jwtService, defaultSecureRandom())
             val createResult =
                 createCommand.execute(
                     CreateDpopProofArgs(
@@ -208,7 +214,12 @@ class DpopCommandTest {
             val dpopProof = createResult.value.dpopProof
 
             // Try to verify with GET (should fail)
-            val verifyCommand = ClientVerifyDpopProofCommandImpl(execution, jwtService)
+            val verifyCommand =
+                ClientVerifyDpopProofCommandImpl(
+                    execution,
+                    jwtService,
+                    (app as com.sphereon.core.api.conf.AppConfigService.Graph).appConfigService,
+                )
             val verifyResult =
                 verifyCommand.execute(
                     VerifyDpopProofOptions(
@@ -239,7 +250,7 @@ class DpopCommandTest {
             val accessToken = "test-access-token-12345"
 
             // Create DPoP proof with access token
-            val createCommand = CreateDpopProofCommandImpl(execution, jwtService)
+            val createCommand = CreateDpopProofCommandImpl(execution, jwtService, defaultSecureRandom())
             val createResult =
                 createCommand.execute(
                     CreateDpopProofArgs(
@@ -259,7 +270,12 @@ class DpopCommandTest {
             val dpopProof = createResult.value.dpopProof
 
             // Verify with access token
-            val verifyCommand = ClientVerifyDpopProofCommandImpl(execution, jwtService)
+            val verifyCommand =
+                ClientVerifyDpopProofCommandImpl(
+                    execution,
+                    jwtService,
+                    (app as com.sphereon.core.api.conf.AppConfigService.Graph).appConfigService,
+                )
             val verifyResult =
                 verifyCommand.execute(
                     VerifyDpopProofOptions(

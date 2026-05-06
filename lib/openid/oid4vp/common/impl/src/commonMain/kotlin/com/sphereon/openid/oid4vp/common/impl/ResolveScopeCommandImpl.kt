@@ -65,7 +65,7 @@ import dev.zacsweers.metro.SingleIn
 class ResolveScopeCommandImpl(
     execution: SessionExecution,
     private val scopeRegistry: ScopeRegistry? = null,
-) : TypedServiceCommandAdapter<ResolveScopeArgs, ScopeResolutionResult>(
+) : TypedServiceCommandAdapter<ResolveScopeArgs, ScopeResolutionResult, IdkError>(
         commandId = ResolveScopeCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveScopeArgs>(),

@@ -30,10 +30,14 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.auth.bridge.Oid4vpAuthBridge
 import com.sphereon.openid.oid4vp.auth.http.CompleteOid4vpAuthCommand
 import com.sphereon.openid.oid4vp.auth.http.model.CompleteOid4vpAuthResponse
+import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthErrorCode
+import com.sphereon.openid.oid4vp.auth.store.Oid4vpAuthSessionStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 
 /**
  * Implementation of [CompleteOid4vpAuthCommand].
@@ -55,6 +59,7 @@ import dev.zacsweers.metro.binding
 class CompleteOid4vpAuthCommandImpl(
     execution: SessionExecution,
     private val authBridge: Oid4vpAuthBridge,
+    private val sessionStore: Oid4vpAuthSessionStore,
 ) : HttpEndpointCommandAdapter(
         id = CompleteOid4vpAuthCommand.COMMAND_ID,
         execution = execution,
@@ -73,6 +78,14 @@ class CompleteOid4vpAuthCommandImpl(
         // Complete authentication via bridge
         val authResult =
             authBridge.completeAuthentication(sessionId).getOrElse { error ->
+                // IDV_REQUIRED is a flow-control signal, not a server-side failure: the
+                // session needs identity verification before we can hand back claims.
+                // Surface it as HTTP 202 with the IDV context the frontend needs to
+                // route into the IDV flow, instead of letting the default IdkError
+                // mapping turn it into a 5xx (which masks the actual flow state).
+                if (error.code == Oid4vpAuthErrorCode.IDV_REQUIRED.name) {
+                    return Ok(idvRequiredResponse(sessionId, error))
+                }
                 return Err(error)
             }
 
@@ -92,6 +105,37 @@ class CompleteOid4vpAuthCommandImpl(
                         response,
                     ),
             ),
+        )
+    }
+
+    /**
+     * Build a 202 response with the IDV context. The session was just transitioned to
+     * `IDV_REQUIRED` by the auth bridge, so the relevant message/reason live on the
+     * persisted session — pull them out as best-effort (the response stays usable
+     * with just `status` + `sessionId` + `message` if the lookup fails).
+     */
+    private suspend fun idvRequiredResponse(
+        sessionId: String,
+        error: IdkError,
+    ): GenericHttpResponse {
+        val session = sessionStore.get(sessionId).getOrNull()
+        val message = session?.idvMessage ?: error.message.defaultMessage
+        val reason = session?.idvRequirementReason?.name
+        val body =
+            buildJsonObject {
+                put("status", JsonPrimitive("IDV_REQUIRED"))
+                put("sessionId", JsonPrimitive(sessionId))
+                put("message", JsonPrimitive(message))
+                if (reason != null) put("reason", JsonPrimitive(reason))
+            }
+        return GenericHttpResponse(
+            statusCode = 202,
+            headers =
+                mapOf(
+                    "Content-Type" to "application/json",
+                    "Cache-Control" to "no-store",
+                ),
+            body = body.toString(),
         )
     }
 }

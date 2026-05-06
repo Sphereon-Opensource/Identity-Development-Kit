@@ -37,6 +37,10 @@ data class RetentionHint(
  *
  * Tier 1 (storage-native): contentType, contentEncoding, contentDisposition — stored by the backend.
  * Tier 2 (application): custom map, contentHash, retentionHint — indexed in BlobMetadataIndex.
+ * Tier 3 (classification hints): consumer-supplied classification metadata carried as strings
+ * so IDK stays independent of EDK classification enums. Authoritative values live on the
+ * consumer domain row (for example, vault_document); these fields are hints surfaced to
+ * audit, retention, and tenant-isolation policy at the storage layer.
  */
 @Serializable
 @JsExportCompat
@@ -48,6 +52,16 @@ data class BlobMetadata(
     val custom: Map<String, String> = emptyMap(),
     val contentHash: String? = null,
     val retentionHint: RetentionHint? = null,
+    /** Consumer-supplied sensitivity classification hint (e.g., "CONFIDENTIAL"). */
+    val classification: String? = null,
+    /** Consumer-supplied legal basis hint (e.g., "gdpr.art6.1a.consent"). */
+    val legalBasis: String? = null,
+    /** Consumer-supplied retention-days hint; authoritative value lives on the consumer row. */
+    val retentionDays: Int? = null,
+    /** Consumer-supplied processing-purpose hint (GDPR Art. 5(1)(b)). */
+    val processingPurpose: String? = null,
+    /** Consumer-supplied jurisdiction hint (e.g., "EU-NL"). */
+    val jurisdiction: String? = null,
 ) {
     companion object {
         val EMPTY = BlobMetadata()

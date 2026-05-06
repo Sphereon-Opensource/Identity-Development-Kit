@@ -23,7 +23,7 @@ import dev.zacsweers.metro.SingleIn
 class CheckRevocationCommandImpl(
     execution: SessionExecution,
     private val revocationChecker: RevocationChecker,
-) : TypedServiceCommandAdapter<CheckRevocationArgs, RevocationCheckCommandResult>(
+) : TypedServiceCommandAdapter<CheckRevocationArgs, RevocationCheckCommandResult, IdkError>(
         commandId = CheckRevocationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CheckRevocationArgs>(),

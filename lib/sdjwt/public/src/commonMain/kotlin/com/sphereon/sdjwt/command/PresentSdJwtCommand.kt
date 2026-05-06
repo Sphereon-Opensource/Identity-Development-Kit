@@ -15,6 +15,7 @@
  */
 package com.sphereon.sdjwt.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.sdjwt.PresentSdJwtArgs
@@ -24,7 +25,7 @@ import com.sphereon.sdjwt.PresentSdJwtResult
  * Command interface for presenting SD-JWTs.
  */
 @JsExportCompat
-interface PresentSdJwtCommand : ServiceCommand<PresentSdJwtArgs, PresentSdJwtResult> {
+interface PresentSdJwtCommand : ServiceCommand<PresentSdJwtArgs, PresentSdJwtResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

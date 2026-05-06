@@ -30,6 +30,8 @@ import com.sphereon.cbor.CborString
 import com.sphereon.cbor.CborUInt
 import com.sphereon.cbor.NumberLabel
 import com.sphereon.cbor.StringLabel
+import com.sphereon.cbor.dsl.cborArray
+import com.sphereon.cbor.dsl.encode
 import com.sphereon.cbor.toCborItem
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
@@ -38,6 +40,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.cose.CoseKey
 import com.sphereon.crypto.core.cose.CoseKeyCborCodec
 import com.sphereon.crypto.core.cose.CoseKeyCborCodecImpl
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.mdoc.data.device.decodeDeviceItemsRequest
 import com.sphereon.mdoc.engagement.DeviceEngagementCborCodec
 import com.sphereon.mdoc.engagement.DeviceEngagementCborCodecImpl
@@ -453,11 +457,22 @@ private fun encodeHandoverItem(value: Handover<*, CborItem<*>>): CborItem<*> =
         }
 
         is OID4VPHandover -> {
+            // OID4VP 1.0 final §B.2.6:
+            //   OpenID4VPHandover = ["OpenID4VPHandover", sha256(OpenID4VPHandoverInfoBytes)]
+            //   OpenID4VPHandoverInfo = [client_id, nonce, JwkThumbprint OR null, response_uri]
+            // Build the inner info array, encode it, hash, and wrap with the magic string.
+            val handoverInfoBytes =
+                cborArray {
+                    add(value.clientId)
+                    add(value.nonce)
+                    if (value.jwkThumbprint != null) add(value.jwkThumbprint) else addNull()
+                    add(value.responseUri)
+                }.encode()
+            val handoverInfoHash = hash(handoverInfoBytes, DigestAlg.SHA256)
             CborArray(
                 mutableListOf(
-                    CborByteString(value.clientIdHash),
-                    CborByteString(value.responseUriHash),
-                    CborString(value.nonce),
+                    CborString("OpenID4VPHandover"),
+                    CborByteString(handoverInfoHash),
                 ),
             )
         }
@@ -493,31 +508,37 @@ private fun decodeHandoverItem(item: CborItem<*>): Handover<*, CborItem<*>> =
     }
 
 @Suppress("UNCHECKED_CAST")
-private fun decodeArrayHandover(item: CborArray<CborItem<*>>): Handover<*, CborItem<*>> =
-    when (item.value.size) {
-        2 -> {
-            NfcHandover(
-                handoverSelectMessage = requireByteString(item.value[0], "NfcHandover handoverSelectMessage").value,
-                handoverRequestMessage =
-                    when (val requestMessage = item.value[1]) {
-                        is CborNil -> null
-                        else -> requireByteString(requestMessage, "NfcHandover handoverRequestMessage").value
-                    },
-            ) as Handover<*, CborItem<*>>
-        }
-
-        3 -> {
-            OID4VPHandover(
-                clientIdHash = requireByteString(item.value[0], "OID4VPHandover clientIdHash").value,
-                responseUriHash = requireByteString(item.value[1], "OID4VPHandover responseUriHash").value,
-                nonce = requireString(item.value[2], "OID4VPHandover nonce").value,
-            ) as Handover<*, CborItem<*>>
-        }
-
-        else -> {
-            throw IllegalArgumentException("Handover array must contain 2 items (NFC) or 3 items (OID4VP)")
-        }
+private fun decodeArrayHandover(item: CborArray<CborItem<*>>): Handover<*, CborItem<*>> {
+    require(item.value.size == 2) {
+        "Handover array must contain exactly 2 items (NFC: [select, request]; OID4VP: [\"OpenID4VPHandover\", hash])"
     }
+    // OID4VP §B.2.6 wraps the handover hash with a literal type tag in the first slot.
+    // NFC encodes byte strings (or nil) in both slots, so the type tag of element 0 is the
+    // unambiguous discriminator: text string => OID4VP, byte string => NFC.
+    val first = item.value[0]
+    if (first is CborString && first.value == "OpenID4VPHandover") {
+        // Decoding a §B.2.6 handover from CBOR alone cannot recover the original
+        // handoverInfo inputs (`client_id`, `nonce`, `jwkThumbprint`, `response_uri`) —
+        // they were SHA-256-hashed and discarded by the encoder per spec. This codec
+        // therefore refuses to materialise an OID4VPHandover from its serialized form.
+        // Both holder and verifier independently reconstruct the handover from the
+        // authorization request inputs (and re-encode), which is the spec-intended
+        // model — there's no wire format that carries the handover.
+        throw IllegalArgumentException(
+            "Cannot decode an OID4VP §B.2.6 OpenID4VPHandover from CBOR — the original " +
+                "inputs were hashed and are not recoverable. Reconstruct it from the " +
+                "authorization request via OID4VPHandover.fromOid4vpInputs(...).",
+        )
+    }
+    return NfcHandover(
+        handoverSelectMessage = requireByteString(first, "NfcHandover handoverSelectMessage").value,
+        handoverRequestMessage =
+            when (val requestMessage = item.value[1]) {
+                is CborNil -> null
+                else -> requireByteString(requestMessage, "NfcHandover handoverRequestMessage").value
+            },
+    ) as Handover<*, CborItem<*>>
+}
 
 @Suppress("UNCHECKED_CAST")
 private fun requireStringLabelMap(

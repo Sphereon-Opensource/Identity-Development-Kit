@@ -92,7 +92,7 @@ class ResourceServerIntrospectTokenCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     @Named("resourceServer.clientAuthentication") private val clientAuthentication: ClientAuthenticationConfig?,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenPayload.Introspection>(
+) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenPayload.Introspection, IdkError>(
         commandId = IntrospectTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<IntrospectTokenArgs>(),

@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
@@ -31,6 +32,7 @@ import com.sphereon.oauth2.client.command.ExchangeTokenCommand
 import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.client.validation.validateTokenRequest
 import com.sphereon.oauth2.common.error.Oauth2Error
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.TokenErrorResponse
 import com.sphereon.oauth2.common.model.TokenRequest
 import com.sphereon.oauth2.common.model.TokenResponse
@@ -75,7 +77,7 @@ import kotlin.native.ObjCName
 class ExchangeTokenCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<ExchangeTokenArgs, TokenResponse>(
+) : TypedServiceCommandAdapter<ExchangeTokenArgs, TokenResponse, IdkError>(
         commandId = ExchangeTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ExchangeTokenArgs>(),
@@ -141,12 +143,18 @@ class ExchangeTokenCommandImpl(
             }
         }
 
-        // Build form-encoded request body
-        val formParameters = buildFormParameters(request)
+        // Resolve client authentication method. Null defaults to client_secret_post,
+        // preserving legacy body-only credential placement for callers that did not opt in.
+        val authMethod = request.tokenEndpointAuthMethod ?: ClientAuthenticationMethod.CLIENT_SECRET_POST
+
+        // Build form-encoded request body, omitting body credentials when Basic auth is in use.
+        val formParameters = buildFormParameters(request, authMethod)
         val formBody =
             formParameters.joinToString("&") { (key, value) ->
                 "$key=${urlEncode(value)}"
             }
+
+        val basicAuthHeader = buildBasicAuthHeader(authMethod, request)
 
         // Make HTTP POST request to token endpoint
         return try {
@@ -163,6 +171,8 @@ class ExchangeTokenCommandImpl(
                     contentType(ContentType.Application.FormUrlEncoded)
                     headers {
                         append("Accept", "application/json")
+
+                        basicAuthHeader?.let { append("Authorization", it) }
 
                         // Add DPoP header if DPoP proof is provided
                         request.dpop?.let { dpopProof ->
@@ -254,12 +264,20 @@ class ExchangeTokenCommandImpl(
     }
 
     /**
-     * Builds form parameters from token request
+     * Builds form parameters from token request.
      *
      * Returns List<Pair> instead of Map to support repeated parameter names
      * (e.g., resource=A&resource=B per RFC 8693/RFC 8707).
+     *
+     * When [authMethod] is [ClientAuthenticationMethod.CLIENT_SECRET_BASIC], the client_id and
+     * client_secret are intentionally omitted from the body: they ride in the Authorization
+     * header instead, per RFC 6749 Section 2.3.1 and OIDF
+     * `OIDCCValidateClientAuthenticationWithClientSecretBasic`.
      */
-    private fun buildFormParameters(request: TokenRequest): List<Pair<String, String>> {
+    private fun buildFormParameters(
+        request: TokenRequest,
+        authMethod: ClientAuthenticationMethod,
+    ): List<Pair<String, String>> {
         val parameters = mutableListOf<Pair<String, String>>()
 
         // Always required
@@ -273,9 +291,23 @@ class ExchangeTokenCommandImpl(
         request.preAuthorizedCode?.let { parameters.add("pre-authorized_code" to it) }
         request.txCode?.let { parameters.add("tx_code" to it) }
 
-        // Client authentication
-        request.clientId?.let { parameters.add("client_id" to it) }
-        request.clientSecret?.let { parameters.add("client_secret" to it) }
+        // Client authentication. With CLIENT_SECRET_BASIC the credentials live in the
+        // Authorization header (RFC 6749 Section 2.3.1), omit them from the body. With NONE
+        // only the client_id is sent. The JWT-based methods carry client_assertion in the body.
+        when (authMethod) {
+            ClientAuthenticationMethod.CLIENT_SECRET_BASIC -> {
+                // Body credentials intentionally omitted.
+            }
+
+            ClientAuthenticationMethod.NONE -> {
+                request.clientId?.let { parameters.add("client_id" to it) }
+            }
+
+            else -> {
+                request.clientId?.let { parameters.add("client_id" to it) }
+                request.clientSecret?.let { parameters.add("client_secret" to it) }
+            }
+        }
         request.clientAssertionType?.let { parameters.add("client_assertion_type" to it) }
         request.clientAssertion?.let { parameters.add("client_assertion" to it) }
 
@@ -316,6 +348,29 @@ class ExchangeTokenCommandImpl(
                 else -> "%${byte.toUByte().toString(HEX_RADIX).uppercase().padStart(HEX_PAD_LENGTH, '0')}"
             }
         }
+
+    /**
+     * Builds the `Authorization: Basic` header value for the token endpoint when the request
+     * is configured for [ClientAuthenticationMethod.CLIENT_SECRET_BASIC].
+     *
+     * Per RFC 6749 Section 2.3.1 the client_id and client_secret are first form-urlencoded
+     * (`application/x-www-form-urlencoded`) and joined with a single colon, then base64-encoded
+     * (standard alphabet, with padding). Returns null for any other auth method, or when the
+     * request lacks the credentials needed to build the header.
+     */
+    private fun buildBasicAuthHeader(
+        authMethod: ClientAuthenticationMethod,
+        request: TokenRequest,
+    ): String? {
+        if (authMethod != ClientAuthenticationMethod.CLIENT_SECRET_BASIC) {
+            return null
+        }
+        val clientId = request.clientId ?: return null
+        val clientSecret = request.clientSecret ?: return null
+        val credentials = "${urlEncode(clientId)}:${urlEncode(clientSecret)}"
+        val encoded = credentials.encodeToByteArray().encodeToBase64(urlSafe = false)
+        return "Basic $encoded"
+    }
 
     companion object {
         private const val HEX_RADIX = 16

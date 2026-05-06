@@ -63,7 +63,7 @@ class PollDeferredCredentialCommandImpl(
     private val requestDeferredCredentialCommand: RequestDeferredCredentialCommand,
     private val deferredPollingStore: DeferredPollingStore,
     private val config: Oid4vciHolderConfig,
-) : TypedServiceCommandAdapter<PollDeferredCredentialArgs, PollDeferredCredentialResult>(
+) : TypedServiceCommandAdapter<PollDeferredCredentialArgs, PollDeferredCredentialResult, IdkError>(
         commandId = PollDeferredCredentialCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<PollDeferredCredentialArgs>(),
@@ -151,8 +151,8 @@ class PollDeferredCredentialCommandImpl(
                 interval = serverInterval
             }
 
-            // Credential is ready when at least one of credential or credentials is present
-            val hasCredential = response.credential != null || response.credentials?.isNotEmpty() == true
+            // OID4VCI 1.0 §8.3 / §10.2: credentials are delivered in the `credentials` array.
+            val hasCredential = response.credentials?.isNotEmpty() == true
             if (hasCredential) {
                 log.debug("Deferred credential ready after $attempt attempt(s)")
                 deferredPollingStore.markCompleted(transactionId)

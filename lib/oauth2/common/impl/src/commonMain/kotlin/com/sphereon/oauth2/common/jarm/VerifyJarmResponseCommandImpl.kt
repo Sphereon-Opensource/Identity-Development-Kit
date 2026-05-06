@@ -47,7 +47,7 @@ import kotlin.time.Clock
  *
  * Verifies and decodes JARM (JWT Secured Authorization Response) for OAuth 2.0.
  *
- * Reference: RFC 9101 - JWT Secured Authorization Response Mode for OAuth 2.0
+ * Reference: OpenID Foundation JARM spec, JWT Secured Authorization Response Mode for OAuth 2.0 (https://openid.net/specs/oauth-v2-jarm.html)
  *
  * Detection logic:
  * 1. Check if input is a JWE (5 parts separated by '.') - decrypt first
@@ -60,7 +60,7 @@ class VerifyJarmResponseCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<VerifyJarmResponseArgs, JarmVerificationResult>(
+) : TypedServiceCommandAdapter<VerifyJarmResponseArgs, JarmVerificationResult, IdkError>(
         commandId = VerifyJarmResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyJarmResponseArgs>(),
@@ -193,8 +193,11 @@ class VerifyJarmResponseCommandImpl(
             signatureVerified = true
         }
 
-        // Parse and validate JARM payload
-        val payload = parseJarmPayload(payloadJson).getOrElse { error -> return Err(error) }
+        // Parse and validate JARM payload. The mode determines whether iss/aud/exp are required:
+        // they live in the JWS payload (JARM RFC §4.1), so SIGNED and SIGNED_ENCRYPTED modes have
+        // them. ENCRYPTED-only mode (OID4VP 1.0 §8.3) wraps plain response parameters in the JWE
+        // without an inner JWS, so those claims are absent by design.
+        val payload = parseJarmPayload(payloadJson, mode).getOrElse { error -> return Err(error) }
 
         // Validate claims
         val validationResult = validateJarmClaims(payload, processedArgs)
@@ -276,32 +279,31 @@ class VerifyJarmResponseCommandImpl(
     /**
      * Parses the JARM payload from JsonObject.
      *
-     * Extracts standard JWT claims and separates authorization response parameters.
+     * Extracts standard JWT claims and separates authorization response parameters. iss/aud/exp
+     * are JWS-payload claims (JARM RFC §4.1) and are only required when [mode] is [JarmMode.SIGNED]
+     * or [JarmMode.SIGNED_ENCRYPTED]. In [JarmMode.ENCRYPTED] (OID4VP 1.0 §8.3 encrypted-only),
+     * the JWE wraps plain response parameters without a JWT envelope.
      */
-    private fun parseJarmPayload(jsonObject: JsonObject): IdkResult<JarmResponsePayload, IdkError> {
-        val iss =
-            jsonObject["iss"]?.jsonPrimitive?.contentOrNull
-                ?: return Err(
-                    IdkError.ILLEGAL_ARGUMENT_ERROR(
-                        message = "JARM payload missing required 'iss' claim",
-                    ),
-                )
+    private fun parseJarmPayload(
+        jsonObject: JsonObject,
+        mode: JarmMode,
+    ): IdkResult<JarmResponsePayload, IdkError> {
+        val claimsRequired = mode == JarmMode.SIGNED || mode == JarmMode.SIGNED_ENCRYPTED
 
-        val aud =
-            jsonObject["aud"]?.jsonPrimitive?.contentOrNull
-                ?: return Err(
-                    IdkError.ILLEGAL_ARGUMENT_ERROR(
-                        message = "JARM payload missing required 'aud' claim",
-                    ),
-                )
+        val iss = jsonObject["iss"]?.jsonPrimitive?.contentOrNull
+        if (claimsRequired && iss == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JARM payload missing required 'iss' claim"))
+        }
 
-        val exp =
-            jsonObject["exp"]?.jsonPrimitive?.longOrNull
-                ?: return Err(
-                    IdkError.ILLEGAL_ARGUMENT_ERROR(
-                        message = "JARM payload missing required 'exp' claim",
-                    ),
-                )
+        val aud = jsonObject["aud"]?.jsonPrimitive?.contentOrNull
+        if (claimsRequired && aud == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JARM payload missing required 'aud' claim"))
+        }
+
+        val exp = jsonObject["exp"]?.jsonPrimitive?.longOrNull
+        if (claimsRequired && exp == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JARM payload missing required 'exp' claim"))
+        }
 
         val iat = jsonObject["iat"]?.jsonPrimitive?.longOrNull
         val state = jsonObject["state"]?.jsonPrimitive?.contentOrNull
@@ -329,30 +331,33 @@ class VerifyJarmResponseCommandImpl(
     }
 
     /**
-     * Validates JARM claims against expected values.
+     * Validates JARM claims against expected values. iss/aud/exp are signed-mode-only (per
+     * JARM RFC §4.1); when absent (OID4VP §8.3 encrypted-only) the corresponding checks are
+     * skipped. The state check still runs because state is an authorization response parameter,
+     * not a JWT claim, and is present in both modes.
      */
     private fun validateJarmClaims(
         payload: JarmResponsePayload,
         args: VerifyJarmResponseArgs,
     ): IdkError? {
-        // Validate expiration
-        val now = Clock.System.now().epochSeconds
-        if (payload.exp <= now) {
-            return IdkError.fromString(
-                message = "JARM response has expired (exp: ${payload.exp}, now: $now)",
-                code = "JARM_EXPIRED",
-            )
+        val exp = payload.exp
+        if (exp != null) {
+            val now = Clock.System.now().epochSeconds
+            if (exp <= now) {
+                return IdkError.fromString(
+                    message = "JARM response has expired (exp: $exp, now: $now)",
+                    code = "JARM_EXPIRED",
+                )
+            }
         }
 
-        // Validate audience if expected
-        if (args.expectedAudience != null && payload.aud != args.expectedAudience) {
+        if (args.expectedAudience != null && payload.aud != null && payload.aud != args.expectedAudience) {
             return IdkError.fromString(
                 message = "JARM audience mismatch: expected '${args.expectedAudience}', got '${payload.aud}'",
                 code = "JARM_AUDIENCE_MISMATCH",
             )
         }
 
-        // Validate state if expected
         if (args.expectedState != null && payload.state != args.expectedState) {
             return IdkError.fromString(
                 message = "JARM state mismatch: expected '${args.expectedState}', got '${payload.state}'",

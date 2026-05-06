@@ -56,8 +56,8 @@ import kotlin.time.Clock
 class VerifyPreAuthorizedCodeGrantCommandImpl(
     execution: SessionExecution,
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
-    private val clock: Clock = Clock.System,
-) : TypedServiceCommandAdapter<VerifyPreAuthCodeArgs, VerifiedPreAuthCodeGrant>(
+    private val clock: Clock,
+) : TypedServiceCommandAdapter<VerifyPreAuthCodeArgs, VerifiedPreAuthCodeGrant, IdkError>(
         commandId = VerifyPreAuthorizedCodeGrantCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyPreAuthCodeArgs>(),

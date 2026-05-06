@@ -6,6 +6,7 @@ import com.sphereon.di.app.AppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -49,6 +50,7 @@ fun main() {
 fun Application.configureOid4vpVerifier(appGraph: AppGraph) {
     install(KotlinInjectPlugin) {
         this.appGraph = appGraph
+        tenantResolver = FixedTenantResolver("default")
     }
     log.info("KotlinInject plugin installed - full DI enabled")
 

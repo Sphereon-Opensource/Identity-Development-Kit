@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.matching.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.matching.command.CreateIdentityMatchCommand
@@ -31,17 +32,17 @@ import dev.zacsweers.metro.StringKey
 interface IdentityMatchingCommandDescriptors {
     @Provides @IntoMap
     @StringKey(LookupIdentityMatchCommand.COMMAND_ID)
-    fun lookupIdentityMatch(impl: LookupIdentityMatchCommandImpl): ServiceCommand<*, *> = impl
+    fun lookupIdentityMatch(impl: LookupIdentityMatchCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateIdentityMatchCommand.COMMAND_ID)
-    fun createIdentityMatch(impl: CreateIdentityMatchCommandImpl): ServiceCommand<*, *> = impl
+    fun createIdentityMatch(impl: CreateIdentityMatchCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DeleteIdentityMatchCommand.COMMAND_ID)
-    fun deleteIdentityMatch(impl: DeleteIdentityMatchCommandImpl): ServiceCommand<*, *> = impl
+    fun deleteIdentityMatch(impl: DeleteIdentityMatchCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ListIdentityMatchesCommand.COMMAND_ID)
-    fun listIdentityMatches(impl: ListIdentityMatchesCommandImpl): ServiceCommand<*, *> = impl
+    fun listIdentityMatches(impl: ListIdentityMatchesCommandImpl): ServiceCommand<*, *, *> = impl
 }

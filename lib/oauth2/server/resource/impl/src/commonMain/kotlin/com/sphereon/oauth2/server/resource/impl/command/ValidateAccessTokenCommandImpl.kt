@@ -21,8 +21,12 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.model.AuthenticationScheme
@@ -72,7 +76,7 @@ class ValidateAccessTokenCommandImpl(
     private val verifyJwtCommand: VerifyJwtCommand,
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
     private val tokenCache: TokenCache,
-) : TypedServiceCommandAdapter<ValidateAccessTokenArgs, VerifiedResourceRequest>(
+) : TypedServiceCommandAdapter<ValidateAccessTokenArgs, VerifiedResourceRequest, IdkError>(
         commandId = ValidateAccessTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateAccessTokenArgs>(),
@@ -226,6 +230,34 @@ class ValidateAccessTokenCommandImpl(
             }
         }
 
+        // RFC 8705 §3.2: when the access token carries `cnf.x5t#S256`, the bearer MUST present
+        // the same TLS client certificate at the resource server's mTLS handshake. Verify the
+        // SHA-256 thumbprint of the request's leaf cert matches the binding before any other
+        // scheme-specific checks run.
+        val expectedCertThumbprint = tokenPayload.certificateThumbprintS256
+        if (expectedCertThumbprint != null) {
+            val presentedCertDer = request.clientCertificateDer
+            if (presentedCertDer == null) {
+                return Err(
+                    ResourceServerError.InvalidToken(
+                        reason = "Certificate-bound access token presented without a TLS client certificate",
+                    ),
+                )
+            }
+            val actualThumbprint = hash(presentedCertDer, DigestAlg.SHA256).encodeToBase64Url()
+            // Constant-time compare on the cert-bound thumbprint (RFC 8705). The
+            // thumbprint is a SHA-256 of the client cert; a non-CT compare lets an attacker
+            // submitting different certs probe the binding byte-by-byte and confirm guesses
+            // about the token's cnf.x5t#S256 claim.
+            if (!ConstantTime.equalsCT(actualThumbprint, expectedCertThumbprint)) {
+                return Err(
+                    ResourceServerError.InvalidToken(
+                        reason = "TLS client certificate does not match the access token cnf.x5t#S256 binding",
+                    ),
+                )
+            }
+        }
+
         // Validate DPoP if scheme is DPoP
         val dpopVerification =
             if (scheme == AuthenticationScheme.DPOP) {
@@ -236,7 +268,8 @@ class ValidateAccessTokenCommandImpl(
                         ?.value
                         ?: return Err(ResourceServerError.InvalidDpopProof("Missing DPoP header for DPoP-authenticated request"))
 
-                // Verify DPoP proof
+                // Verify DPoP proof. RFC 9449 §4.3 requires `ath` binding when the proof
+                // accompanies an access token, so forward the token through the verifier.
                 val dpopResult =
                     verifyDpopProofCommand.execute(
                         VerifyDpopProofArgs(
@@ -244,6 +277,7 @@ class ValidateAccessTokenCommandImpl(
                             httpMethod = request.method,
                             httpUrl = normalizeUrl(request.url),
                             expectedJkt = tokenPayload.dpopJkt,
+                            accessToken = token,
                         ),
                     )
 

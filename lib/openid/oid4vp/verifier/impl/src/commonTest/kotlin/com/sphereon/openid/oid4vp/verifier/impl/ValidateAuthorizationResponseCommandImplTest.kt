@@ -16,7 +16,11 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl
 
+import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.binary.TypeToken
+import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.vpTokenOf
@@ -25,8 +29,11 @@ import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
+import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
+import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -444,5 +451,31 @@ class ValidateAuthorizationResponseCommandImplTest {
         ValidateAuthorizationResponseCommandImpl(
             execution = testContext.execution,
             authorizationSessionStore = TestAuthorizationSessionStore(),
+            verifyHolderBindingCommand = AlwaysValidHolderBindingCommand,
+        )
+}
+
+/**
+ * Test stub that always returns a verified holder binding. The unit tests in this file
+ * exercise the validation/matching pipeline with synthesized vp_token strings; cryptographic
+ * holder-binding checks are covered by [VerifyHolderBindingCommandImplTest].
+ */
+private object AlwaysValidHolderBindingCommand : VerifyHolderBindingCommand {
+    override val commandId: String = VerifyHolderBindingCommand.COMMAND_ID
+    override val inputTypeToken: TypeToken<VerifyHolderBindingArgs> = typeToken<VerifyHolderBindingArgs>()
+    override val outputTypeToken: TypeToken<HolderBindingResult> = typeToken<HolderBindingResult>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is VerifyHolderBindingArgs
+
+    override suspend fun execute(args: VerifyHolderBindingArgs): IdkResult<HolderBindingResult, IdkError> =
+        Ok(
+            HolderBindingResult(
+                verified = true,
+                bindingMethod = "stub",
+                signatureValid = true,
+                nonceValid = true,
+                audienceValid = true,
+            ),
         )
 }

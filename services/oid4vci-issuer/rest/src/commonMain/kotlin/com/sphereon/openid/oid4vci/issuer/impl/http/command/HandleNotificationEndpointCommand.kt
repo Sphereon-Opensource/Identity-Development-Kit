@@ -24,6 +24,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.headerValuesIgnoreCase
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -64,6 +65,7 @@ interface HandleNotificationEndpointCommand : HttpEndpointCommand {
 class HandleNotificationEndpointCommandImpl(
     execution: SessionExecution,
     private val handleNotificationCommand: HandleNotificationCommand,
+    private val configProvider: com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider,
 ) : HttpEndpointCommandAdapter(
         id = HandleNotificationEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -77,7 +79,7 @@ class HandleNotificationEndpointCommandImpl(
         val request = applyDuring(args)
 
         val accessToken =
-            extractBearerToken(request)
+            extractAccessToken(request)
                 ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "Missing or invalid Authorization header"))
 
         val notification =
@@ -87,11 +89,27 @@ class HandleNotificationEndpointCommandImpl(
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Malformed notification request: ${expected.message}"))
             }
 
+        // RFC 9449 §4.1: exactly one `DPoP` header is REQUIRED.
+        val dpopValues = request.headerValuesIgnoreCase("DPoP")
+        if (dpopValues.size > 1) {
+            return Err(
+                IdkError.UNAUTHORIZED_ERROR(
+                    message = "Multiple DPoP HTTP headers presented (${dpopValues.size}); RFC 9449 §4.1 requires exactly one",
+                ),
+            )
+        }
+        val dpopProof = dpopValues.singleOrNull()
+
         return handleNotificationCommand
             .execute(
                 HandleNotificationArgs(
                     accessToken = accessToken,
                     notification = notification,
+                    dpopProof = dpopProof,
+                    // RFC 9449 §7.1: use the metadata-advertised public URL (matches the
+                    // `notification_endpoint` field built from the issuer identifier).
+                    httpUrl = "${configProvider.issuerIdentifier}/notification",
+                    httpMethod = request.method,
                 ),
             ).map { GenericHttpResponse(statusCode = 204, headers = emptyMap(), body = null) }
     }

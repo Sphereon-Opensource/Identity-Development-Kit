@@ -34,11 +34,28 @@ export function useCredentialMetadata() {
           name: d.name,
           description: d.description,
         }))
-        const syntheticClaims = config.claims ? Object.entries(config.claims).map(([name, meta]) => ({
-          path: [name],
-          display: meta.display?.map(d => ({ locale: d.locale ?? 'en-US', label: d.name })),
-          mandatory: meta.mandatory,
-        })) : undefined
+        // Per OID4VCI 1.0 final the claims metadata's location is format-dependent:
+        //   - dc+sd-jwt / jwt_vc_json → top-level `claims` array.
+        //   - mso_mdoc → `credential_metadata.claims` (the §A.3 schema branch doesn't
+        //     allow top-level `claims`; the normative mso_mdoc example places them inside
+        //     credential_metadata).
+        // Read whichever side actually has them; both shapes use `path` claim pointers.
+        const mdocClaims = config.credential_metadata?.claims
+        const sourceClaims =
+          mdocClaims && mdocClaims.length > 0
+            ? mdocClaims.map(c => ({
+                // credential_metadata path elements may be string or integer (§A.5);
+                // for mdoc they're always strings ([namespace, elementId]).
+                path: c.path.map(p => String(p)),
+                display: c.display,
+                mandatory: c.mandatory,
+              }))
+            : config.claims
+        const syntheticClaims = sourceClaims?.map(c => ({
+          path: c.path,
+          display: c.display?.map(d => ({ locale: d.locale ?? 'en-US', label: d.name })),
+          mandatory: c.mandatory,
+        }))
         setVctCache(prev => ({ ...prev, [id]: { vct: id, display: syntheticDisplay, claims: syntheticClaims } }))
       }
     }

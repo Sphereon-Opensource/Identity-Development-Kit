@@ -62,7 +62,7 @@ class ParseJarCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<ParseJarArgs, ParsedJarResult>(
+) : TypedServiceCommandAdapter<ParseJarArgs, ParsedJarResult, IdkError>(
         commandId = ParseJarCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseJarArgs>(),

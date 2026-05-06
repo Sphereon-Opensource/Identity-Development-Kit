@@ -123,11 +123,29 @@ class DefaultTrustConfigProvider(
             allowedMethods = readStringList("$prefix.allowed-methods"),
         )
 
+    /**
+     * Read an indexed list-of-strings entry from configuration. Two notations exist in
+     * this codebase and both must work:
+     *
+     *  - **Dot-indexed** (`<prefix>.0`, `<prefix>.1`): produced by hand-authored properties
+     *    files and the way unit tests author keys directly.
+     *  - **Bracket-indexed** (`<prefix>[0]`, `<prefix>[1]`): produced by the YAML loader
+     *    when flattening a YAML list (`YamlPropertySourceImpl.flattenYaml`). The
+     *    `PropertyKeyNormalizer` preserves bracket-quoted segments verbatim, so the two
+     *    forms hash to distinct keys after normalisation — without this method handling
+     *    both, YAML-authored lists silently appear empty (e.g. trust anchors never load).
+     *
+     * Bracket form is checked first because that's what every YAML config in this repo
+     * actually emits; dot form is the fallback for property-file authors.
+     */
     private fun readStringList(prefix: String): List<String> {
         val result = mutableListOf<String>()
         var i = 0
         while (true) {
-            val value = configService.getPropertyAsString("$prefix.$i", null) ?: break
+            val value =
+                configService.getPropertyAsString("$prefix[$i]", null)
+                    ?: configService.getPropertyAsString("$prefix.$i", null)
+                    ?: break
             result.add(value)
             i++
         }

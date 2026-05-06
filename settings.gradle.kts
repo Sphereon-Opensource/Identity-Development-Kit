@@ -289,6 +289,9 @@ includeProject("lib-core-loggers-mobile-logger", "lib/core/loggers/mobile-logger
 includeProject("lib-core-events-public", "lib/core/events/public")
 includeProject("lib-core-events-impl", "lib/core/events/impl")
 
+// Core IDN (RFC 3492 Punycode + IDNA2008)
+includeProject("lib-core-idn-public", "lib/core/idn/public")
+
 // Crypto libraries
 includeProject("lib-crypto-core-public", "lib/crypto/core/public")
 includeProject("lib-crypto-core-impl", "lib/crypto/core/impl")
@@ -305,6 +308,11 @@ includeProject("lib-crypto-kms-provider-rest", "lib/crypto/kms/provider/rest")
 includeProject("lib-crypto-key-persistence-api", "lib/crypto/key/persistence/api")
 includeProject("lib-crypto-key-persistence-impl", "lib/crypto/key/persistence/impl")
 includeProject("lib-crypto-key-persistence-sqlite", "lib/crypto/key/persistence/sqlite")
+
+// W3C Verifiable Credentials Data Integrity 1.0
+includeProject("lib-crypto-data-integrity-proof-public", "lib/crypto/data-integrity-proof/public")
+includeProject("lib-crypto-data-integrity-proof-impl", "lib/crypto/data-integrity-proof/impl")
+includeProject("lib-crypto-data-integrity-proof-eddsa-jcs-2022", "lib/crypto/data-integrity-proof/eddsa-jcs-2022")
 
 // SD-JWT libraries
 includeProject("lib-sdjwt-public", "lib/sdjwt/public")
@@ -367,6 +375,14 @@ includeProject("lib-data-store-kv-impl-kottage", "lib/data/store/kv/impl-kottage
 // Data Store - Blob (cross-cutting blob/object storage abstraction)
 includeProject("lib-data-store-blob-public", "lib/data/store/blob/public")
 includeProject("lib-data-store-blob-impl", "lib/data/store/blob/impl")
+
+// Attribute Flow (flow-agnostic attribute wiring primitives: AttributeBag, AttributePath,
+// AttributeSource/Target/Binding. Consumed by IDV graphs, issuance pipelines, tabular sources, etc.)
+includeProject("lib-attribute-flow-public", "lib/attribute/flow/public")
+
+// Invitation service — RELOCATED to VDX as vdx-service-invitation-* per
+// feedback_edk_vs_vdx_placement (invitation orchestration is a product feature,
+// not an open-source primitive).
 includeProject("lib-data-store-blob-impl-memory", "lib/data/store/blob/impl-memory")
 includeProject("lib-data-store-blob-impl-fs", "lib/data/store/blob/impl-fs")
 includeProject("lib-data-store-blob-impl-kv", "lib/data/store/blob/impl-kv")
@@ -397,6 +413,10 @@ includeProject("lib-did-manager-impl", "lib/did/manager/impl")
 includeProject("lib-did-methods-key", "lib/did/methods/key")
 includeProject("lib-did-methods-jwk", "lib/did/methods/jwk")
 includeProject("lib-did-methods-web", "lib/did/methods/web")
+includeProject("lib-did-methods-webvh-public", "lib/did/methods/webvh/public")
+includeProject("lib-did-methods-webvh-resolver", "lib/did/methods/webvh/resolver")
+includeProject("lib-did-methods-webvh-provider", "lib/did/methods/webvh/provider")
+includeProject("lib-did-methods-webvh-rest-server", "lib/did/methods/webvh/rest/server")
 includeProject("lib-did-persistence-api", "lib/did/persistence/api")
 includeProject("lib-did-persistence-memory", "lib/did/persistence/memory")
 includeProject("lib-did-persistence-sqlite", "lib/did/persistence/sqlite")
@@ -461,6 +481,7 @@ includeProject("lib-idv-wallet", "lib/identity/idv/wallet")
 
 // Services (REST API deployment modules)
 includeProject("ktor-server-kotlin-inject", "services/ktor/server/plugins/ktor-server-kotlin-inject")
+includeProject("ktor-server-jwt-auth", "services/ktor/server/plugins/ktor-server-jwt-auth")
 includeProject("services-kms-rest", "services/kms/rest")
 includeProject("services-oid4vp-verifier-rest", "services/oid4vp-verifier/rest")
 includeProject("services-oauth2-as-rest", "services/oauth2-as/rest")
@@ -469,9 +490,12 @@ includeProject("services-oid4vci-issuer-rest", "services/oid4vci-issuer/rest")
 
 // Examples
 includeProject("examples-oid4vc-webapp-server", "examples/oid4vc/webapp/server")
+includeProject("examples-service-byo-oidc", "examples/service-byo-oidc")
 
 // Integration tests
 includeProject("tests-oid4vc-integration", "tests/oid4vc-integration")
+includeProject("tests-oauth2-integration", "tests/oauth2-integration")
+includeProject("tests-oidf-conformance-oidc-op", "tests/oidf/conformance/oidc/op")
 
 
 // ===========================================

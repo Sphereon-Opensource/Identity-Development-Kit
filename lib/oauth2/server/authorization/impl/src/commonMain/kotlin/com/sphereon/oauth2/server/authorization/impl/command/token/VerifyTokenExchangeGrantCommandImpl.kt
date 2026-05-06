@@ -71,7 +71,7 @@ class VerifyTokenExchangeGrantCommandImpl(
     private val clientRegistry: ClientRegistry,
     private val tokenExchangePolicy: TokenExchangePolicy,
     private val jwtService: JwtService,
-) : TypedServiceCommandAdapter<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant>(
+) : TypedServiceCommandAdapter<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant, IdkError>(
         commandId = VerifyTokenExchangeGrantCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyTokenExchangeGrantArgs>(),
@@ -197,6 +197,10 @@ class VerifyTokenExchangeGrantCommandImpl(
                 null
             }
 
+        // RFC 9449 §10.1: surface the subject token's `cnf.jkt` (when bound) so the orchestrator
+        // can enforce that the exchanged-token DPoP proof comes from the same key.
+        val subjectCnfJkt = extractCnfJkt(subjectResult.claims)
+
         return Ok(
             VerifiedTokenExchangeGrant(
                 subject = subject,
@@ -209,8 +213,21 @@ class VerifyTokenExchangeGrantCommandImpl(
                 actorSubject = actorSubject,
                 actorClaim = actorClaim,
                 additionalClaims = policyDecision.additionalClaims,
+                subjectCnfJkt = subjectCnfJkt,
             ),
         )
+    }
+
+    /**
+     * Read `cnf.jkt` from a parsed JWT claim map. The `cnf` claim is decoded by
+     * [jsonElementToAny] as `Map<String, Any>`, so the lookup is a nested map read. Returns
+     * `null` when the subject token is not DPoP-bound (no `cnf.jkt` present) or when the value
+     * is not a string.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun extractCnfJkt(claims: Map<String, Any>): String? {
+        val cnf = claims["cnf"] as? Map<String, Any> ?: return null
+        return cnf["jkt"] as? String
     }
 
     /**

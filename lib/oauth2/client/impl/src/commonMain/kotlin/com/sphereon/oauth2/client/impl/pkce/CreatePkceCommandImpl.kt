@@ -22,7 +22,9 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
@@ -32,10 +34,8 @@ import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.client.validation.validatePkceData
 import com.sphereon.oauth2.common.error.PkceError
 import com.sphereon.oauth2.common.model.PkceMethod
-import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
-import kotlin.random.Random
 
 /**
  * Implementation of CreatePkceCommand for generating PKCE challenge/verifier pairs
@@ -44,7 +44,8 @@ import kotlin.random.Random
 @SingleIn(SessionScope::class)
 class CreatePkceCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<CreatePkceArgs, PkceData>(
+    private val secureRandom: SecureRandom,
+) : TypedServiceCommandAdapter<CreatePkceArgs, PkceData, IdkError>(
         commandId = CreatePkceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreatePkceArgs>(),
@@ -104,19 +105,15 @@ class CreatePkceCommandImpl(
     }
 
     /**
-     * Generates a cryptographically secure random code verifier
+     * Generates a cryptographically secure random code verifier.
      *
      * RFC 7636 requires:
      * - Length: 43-128 characters
-     * - Character set: [A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~" (unreserved)
+     * - Character set: `[A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~"` (unreserved)
      *
-     * We generate 64 random bytes (512 bits) and encode as base64url,
-     * which produces 86 characters (well within the 43-128 range).
+     * 64 random bytes (512 bits) encoded as unpadded base64url → 86 characters.
      */
-    private fun generateCodeVerifier(): String {
-        val randomBytes = Random.Default.nextBytes(CODE_VERIFIER_RANDOM_BYTES)
-        return randomBytes.encodeToBase64Url()
-    }
+    private suspend fun generateCodeVerifier(): String = secureRandom.newToken(lengthBytes = CODE_VERIFIER_RANDOM_BYTES)
 
     /**
      * Calculates the code challenge from the code verifier

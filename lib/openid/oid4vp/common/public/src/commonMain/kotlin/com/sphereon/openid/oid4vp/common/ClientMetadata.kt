@@ -19,184 +19,67 @@ package com.sphereon.openid.oid4vp.common
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.JwkSet
-import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
-import com.sphereon.oauth2.common.model.ClientRegistration
-import com.sphereon.oauth2.common.model.ClientType
-import com.sphereon.oauth2.common.model.GrantType
-import com.sphereon.oauth2.common.model.ResponseType
-import com.sphereon.oauth2.common.model.validateClientRegistration
 import io.konform.validation.Validation
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonEncoder
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
 
 /**
- * Custom serializer for ClientMetadata that properly handles composition with ClientRegistration
+ * Client Metadata for OpenID4VP, per OpenID4VP 1.0 Final.
+ *
+ * Verified against the spec source at github.com/openid/OpenID4VP/blob/main/1.0/openid-4-verifiable-presentations-1_0.md.
+ * The shape here is **deliberately narrow**: only the parameters OID4VP 1.0 final and
+ * HAIP 1.0 explicitly define for the verifier's `client_metadata` request parameter.
+ *
+ * Authoritative parameter list:
+ *  - **OID4VP §5.1** (`client_metadata` parameter description): `jwks`,
+ *    `encrypted_response_enc_values_supported`.
+ *  - **OID4VP §8.3** (Encrypted Responses): the JWE `alg` is read from the chosen
+ *    `jwks` key's `alg` field — there is NO top-level `encrypted_response_alg_values_supported`
+ *    in the spec. The JWE `enc` is selected from `encrypted_response_enc_values_supported`,
+ *    defaulting to `A128GCM`.
+ *  - **OID4VP §11.1** (Additional Verifier Metadata Parameters): adds `vp_formats_supported`
+ *    (REQUIRED when not available out-of-band).
+ *  - **HAIP §5** (Cryptographic Algorithms): "Verifiers MUST list both `A128GCM` and
+ *    `A256GCM` in `encrypted_response_enc_values_supported`."
+ *
+ * What's NOT here (and why):
+ *  - `authorization_encrypted_response_alg/enc` — JARM RFC terms, NOT defined by
+ *    OID4VP 1.0 final. `alg` lives on the JWK; OIDF conformance flags these as unknown.
+ *  - `encrypted_response_alg_values_supported` (the plural alg list) — also not spec; the
+ *    wallet derives the alg from the JWK.
+ *  - `client_purpose` — not defined by OID4VP 1.0 final §11.1 (was a draft-era field).
+ *  - OAuth2 RFC 7591 client-registration fields (`client_id`, `grant_types`, `redirect_uris`,
+ *    `client_type`, `token_endpoint_auth_method`, …) — OID4VP §11.1 says additional fields
+ *    "MAY be defined per RFC 7591" but the wallet "MUST ignore any unrecognized parameters",
+ *    so emitting OAuth2 reg fields is non-canonical noise. Model OAuth2 registration
+ *    separately if needed.
  */
-internal object ClientMetadataSerializer : KSerializer<ClientMetadata> {
-    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ClientMetadata")
-
-    private val oid4vpSpecificKeys =
-        setOf(
-            "vp_formats",
-            "client_purpose",
-            "authorization_signed_response_alg",
-            "authorization_encrypted_response_alg",
-            "authorization_encrypted_response_enc",
-        )
-
-    override fun serialize(
-        encoder: Encoder,
-        value: ClientMetadata,
-    ) {
-        require(encoder is JsonEncoder) { "ClientMetadataSerializer only works with JSON format" }
-
-        // First encode the OAuth2/RFC 7591 base
-        val oauth2Json = encoder.json.encodeToJsonElement(value.baseMetadata).jsonObject
-
-        // Then add OID4VP-specific fields
-        val jsonObject =
-            buildJsonObject {
-                // Copy all OAuth2/RFC 7591 fields
-                oauth2Json.forEach { (key, jsonValue) ->
-                    put(key, jsonValue)
-                }
-
-                // Add OID4VP extensions
-                value.vpFormats?.let { put("vp_formats", encoder.json.encodeToJsonElement(it)) }
-                value.clientPurpose?.let { put("client_purpose", JsonPrimitive(it)) }
-                value.authorizationSignedResponseAlg?.let { put("authorization_signed_response_alg", JsonPrimitive(it)) }
-                value.authorizationEncryptedResponseAlg?.let { put("authorization_encrypted_response_alg", JsonPrimitive(it)) }
-                value.authorizationEncryptedResponseEnc?.let { put("authorization_encrypted_response_enc", JsonPrimitive(it)) }
-            }
-
-        encoder.encodeJsonElement(jsonObject)
-    }
-
-    override fun deserialize(decoder: Decoder): ClientMetadata {
-        require(decoder is JsonDecoder) { "ClientMetadataSerializer only works with JSON format" }
-
-        val jsonObject = decoder.decodeJsonElement().jsonObject
-
-        // Separate OID4VP-specific fields from RFC 7591 base fields
-        val oid4vpFields = jsonObject.filterKeys { it in oid4vpSpecificKeys }
-        val oauth2Fields = jsonObject.filterKeys { it !in oid4vpSpecificKeys }
-
-        // Decode RFC 7591 base
-        val baseMetadata = decoder.json.decodeFromJsonElement<ClientRegistration>(JsonObject(oauth2Fields))
-
-        // Decode OID4VP extensions
-        val vpFormats =
-            oid4vpFields["vp_formats"]?.let {
-                decoder.json.decodeFromJsonElement<Map<String, VpFormatInfo>>(it)
-            }
-
-        return ClientMetadata(
-            baseMetadata = baseMetadata,
-            vpFormats = vpFormats,
-            clientPurpose = oid4vpFields["client_purpose"]?.let { decoder.json.decodeFromJsonElement(it) },
-            authorizationSignedResponseAlg =
-                oid4vpFields["authorization_signed_response_alg"]?.let {
-                    decoder.json.decodeFromJsonElement(it)
-                },
-            authorizationEncryptedResponseAlg =
-                oid4vpFields["authorization_encrypted_response_alg"]?.let {
-                    decoder.json.decodeFromJsonElement(it)
-                },
-            authorizationEncryptedResponseEnc =
-                oid4vpFields["authorization_encrypted_response_enc"]?.let {
-                    decoder.json.decodeFromJsonElement(it)
-                },
-        )
-    }
-}
-
-/**
- * Client Metadata for OpenID4VP
- *
- * Based on:
- * - RFC 7591: OAuth 2.0 Dynamic Client Registration Protocol (Section 2)
- * - OpenID4VP 1.0 Section 5.5: Client Metadata
- *
- * This class extends OAuth 2.0 client metadata (RFC 7591) with OpenID4VP-specific
- * extensions for verifiable presentation flows.
- *
- * ## RFC 7591 Base Fields (via baseMetadata)
- * All standard OAuth 2.0 client metadata fields from RFC 7591 Section 2:
- * - redirect_uris, token_endpoint_auth_method, grant_types, response_types
- * - client_name, client_uri, logo_uri, scope, contacts
- * - tos_uri, policy_uri, jwks_uri, jwks
- * - software_id, software_version, software_statement
- * - additionalParameters (for unknown extension fields)
- *
- * ## OpenID4VP 1.0 Extensions (Section 5.5)
- * - vp_formats: VP formats supported by the verifier
- * - client_purpose: Purpose for requesting credentials
- * - authorization_signed_response_alg: JWS alg for signing authorization response (JARM)
- * - authorization_encrypted_response_alg: JWE alg for encrypting authorization response (JARM)
- * - authorization_encrypted_response_enc: JWE enc for encrypting authorization response (JARM)
- *
- * @property baseMetadata OAuth 2.0/RFC 7591 base client metadata
- * @property vpFormats VP formats supported by the verifier (OpenID4VP extension)
- * @property clientPurpose Purpose for requesting credentials (OpenID4VP extension)
- * @property authorizationSignedResponseAlg JWS alg for signed responses (JARM - OpenID4VP Section 8.4)
- * @property authorizationEncryptedResponseAlg JWE alg for encrypted responses (JARM - OpenID4VP Section 8.4)
- * @property authorizationEncryptedResponseEnc JWE enc for encrypted responses (JARM - OpenID4VP Section 8.4)
- */
-@Serializable(with = ClientMetadataSerializer::class)
+@Serializable
 @JsExportCompat
 data class ClientMetadata(
-    val baseMetadata: ClientRegistration,
+    /**
+     * Verifier's JSON Web Key Set (RFC 7517). For `direct_post.jwt` (encrypted responses)
+     * MUST contain the encryption public key per OID4VP §8.3 — wallet picks one and the
+     * JWE `alg` equals the chosen JWK's `alg`. Per HAIP §5 the JWK MUST be ECDH-ES P-256.
+     */
+    val jwks: JwkSet? = null,
+    @SerialName("jwks_uri")
+    val jwksUri: String? = null,
+    /**
+     * Credential formats + per-format algorithm lists the verifier supports.
+     * REQUIRED when not available to the Wallet via another mechanism (OID4VP §11.1).
+     */
     @JsExportIgnoreCompat
-    @SerialName("vp_formats")
-    val vpFormats: Map<String, VpFormatInfo>? = null,
-    @SerialName("client_purpose")
-    val clientPurpose: String? = null,
-    @SerialName("authorization_signed_response_alg")
-    val authorizationSignedResponseAlg: String? = null,
-    @SerialName("authorization_encrypted_response_alg")
-    val authorizationEncryptedResponseAlg: String? = null,
-    @SerialName("authorization_encrypted_response_enc")
-    val authorizationEncryptedResponseEnc: String? = null,
-) {
-    // Delegate common OAuth2/RFC 7591 properties for convenience
-    val clientId: String get() = baseMetadata.clientId
-    val clientSecret: String? get() = baseMetadata.clientSecret
-    val clientName: String? get() = baseMetadata.clientName
-    val clientUri: String? get() = baseMetadata.clientUri
-    val logoUri: String? get() = baseMetadata.logoUri
-    val clientType: ClientType get() = baseMetadata.clientType
-    val grantTypes: List<GrantType> get() = baseMetadata.grantTypes
-    val responseTypes: List<ResponseType> get() = baseMetadata.responseTypes
-    val redirectUris: List<String> get() = baseMetadata.redirectUris
-    val allowedScopes: List<String>? get() = baseMetadata.allowedScopes
-    val scope: String? get() = baseMetadata.scope
-    val tokenEndpointAuthMethod: ClientAuthenticationMethod get() = baseMetadata.tokenEndpointAuthMethod
-    val jwks: JwkSet? get() = baseMetadata.jwks
-    val jwksUri: String? get() = baseMetadata.jwksUri
-    val contacts: List<String>? get() = baseMetadata.contacts
-    val tosUri: String? get() = baseMetadata.tosUri
-    val policyUri: String? get() = baseMetadata.policyUri
-    val softwareId: String? get() = baseMetadata.softwareId
-    val softwareVersion: String? get() = baseMetadata.softwareVersion
-    val softwareStatement: String? get() = baseMetadata.softwareStatement
-
-    @JsExportIgnoreCompat
-    val additionalParameters: Map<String, JsonElement> get() = baseMetadata.additionalParameters
-}
+    @SerialName("vp_formats_supported")
+    val vpFormatsSupported: Map<String, VpFormatInfo>? = null,
+    /**
+     * JWE `enc` values the verifier accepts for the encrypted authorization response
+     * (OID4VP §5.1 / §8.3). HAIP §5 mandates `A128GCM` and `A256GCM` minimum. Default
+     * when omitted is `A128GCM`.
+     */
+    @SerialName("encrypted_response_enc_values_supported")
+    val encryptedResponseEncValuesSupported: List<String>? = null,
+)
 
 /**
  * VP Format Information (vp_formats_supported)
@@ -325,34 +208,33 @@ val validateVpFormatInfo =
     }
 
 /**
- * Konform validator for ClientMetadata
- *
- * Validates both RFC 7591 base fields and OpenID4VP extensions.
+ * Konform validator for [ClientMetadata] — checks the OID4VP §11.1 / HAIP §5 invariants.
  */
 val validateClientMetadata =
     Validation<ClientMetadata> {
-        // Validate OAuth2/RFC 7591 base metadata
-        ClientMetadata::baseMetadata {
-            run(validateClientRegistration)
-        }
-
-        // OpenID4VP: client_purpose cannot be empty
-        ClientMetadata::clientPurpose ifPresent {
-            constrain("client_purpose cannot be empty") { it.isNotEmpty() }
-        }
-
-        // OpenID4VP: vp_formats must have at least one format if present
-        ClientMetadata::vpFormats ifPresent {
+        // OID4VP §11.1: vp_formats_supported, when present, must hold at least one
+        // valid format entry. (REQUIRED when no out-of-band mechanism — that gating
+        // is a per-deployment concern, not enforced here.)
+        ClientMetadata::vpFormatsSupported ifPresent {
             run {
-                constrain("vp_formats must contain at least one format") {
+                constrain("vp_formats_supported must contain at least one format") {
                     it.isNotEmpty()
                 }
-                // Validate each format entry
                 constrain("All VP format entries must be valid") { formats ->
                     formats.values.all { formatInfo ->
                         validateVpFormatInfo(formatInfo).isValid
                     }
                 }
+            }
+        }
+
+        // HAIP §5: when emitted, encrypted_response_enc_values_supported MUST list both
+        // A128GCM and A256GCM. We only enforce non-empty here since pure OID4VP (non-HAIP)
+        // deployments may legitimately advertise a different set; HAIP-specific validation
+        // belongs in a HAIP-profile validator if/when one is introduced.
+        ClientMetadata::encryptedResponseEncValuesSupported ifPresent {
+            constrain("encrypted_response_enc_values_supported must not be empty when present") {
+                it.isNotEmpty()
             }
         }
     }

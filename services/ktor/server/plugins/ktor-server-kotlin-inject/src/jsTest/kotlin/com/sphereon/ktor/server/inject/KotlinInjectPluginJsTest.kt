@@ -20,6 +20,7 @@ package com.sphereon.ktor.server.inject
 import com.sphereon.core.api.conf.AppConfigEnvironment
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.UserContextLogManager
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
@@ -71,6 +72,7 @@ class KotlinInjectPluginJsTest {
                             )
                         install(KotlinInjectPlugin) {
                             this.appGraph = appGraph
+                            tenantResolver = FixedTenantResolver("init")
                         }
                     }
                     initialized = true
@@ -105,6 +107,7 @@ class KotlinInjectPluginJsTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             // Verify the plugin is installed by making a request
@@ -133,6 +136,7 @@ class KotlinInjectPluginJsTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -175,6 +179,7 @@ class KotlinInjectPluginJsTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -204,6 +209,7 @@ class KotlinInjectPluginJsTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -235,6 +241,7 @@ class KotlinInjectPluginJsTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -272,6 +279,7 @@ class KotlinInjectPluginJsTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {

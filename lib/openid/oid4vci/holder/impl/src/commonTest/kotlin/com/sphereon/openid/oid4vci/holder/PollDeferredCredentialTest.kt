@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.holder
 
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
+import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -99,7 +100,7 @@ class PollDeferredCredentialTest {
     fun readyResultContainsCredentialAndPollAttempts() {
         val credential =
             CredentialResponse(
-                credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.payload.sig"),
+                credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.payload.sig"))),
                 notificationId = "notif-001",
             )
 
@@ -118,7 +119,7 @@ class PollDeferredCredentialTest {
     fun readyResultPollAttemptsReflectsActualCount() {
         val credential =
             CredentialResponse(
-                credential = JsonPrimitive("eyJ.cred.sig"),
+                credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJ.cred.sig"))),
             )
 
         val result = PollDeferredCredentialResult.Ready(credential = credential, pollAttempts = 1)
@@ -180,7 +181,7 @@ class PollDeferredCredentialTest {
 
     @Test
     fun commandIdIsCorrect() {
-        assertEquals("oid4vci.holder.flow.polldeferred", PollDeferredCredentialCommand.COMMAND_ID)
+        assertEquals("oid4vci.holder.poll-deferred", PollDeferredCredentialCommand.COMMAND_ID)
     }
 
     // ============================================================================
@@ -189,7 +190,7 @@ class PollDeferredCredentialTest {
 
     @Test
     fun sealedSubtypesAreDistinct() {
-        val credential = CredentialResponse(credential = JsonPrimitive("eyJ.x.y"))
+        val credential = CredentialResponse(credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJ.x.y"))))
         val ready: PollDeferredCredentialResult = PollDeferredCredentialResult.Ready(credential, 2)
         val exhausted: PollDeferredCredentialResult = PollDeferredCredentialResult.Exhausted("txn", 2, 5)
 
@@ -199,7 +200,7 @@ class PollDeferredCredentialTest {
 
     @Test
     fun whenExpressionCoversAllSubtypes() {
-        val credential = CredentialResponse(credential = JsonPrimitive("eyJ.x.y"))
+        val credential = CredentialResponse(credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJ.x.y"))))
         val results: List<PollDeferredCredentialResult> =
             listOf(
                 PollDeferredCredentialResult.Ready(credential, 1),

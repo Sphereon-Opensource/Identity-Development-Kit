@@ -114,6 +114,18 @@ kotlin {
                 // SD-JWT (runtime impl for verification bindings)
                 implementation(projects.libSdjwtImpl)
 
+                // mDoc verification bindings used by VerifyHolderBindingCommandImpl
+                // (MdocValidations, DeviceAuthValidation, DeviceResponseCborCodec).
+                // libMdocCoreImpl pulls libCborImpl + COSE bindings transitively.
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libCborImpl)
+
+                // Trust framework: X509TrustAnchorLoaderImpl feeds the mdoc IACA path
+                // (and X509TrustValidationService); DefaultTrustConfigProvider binds
+                // `trust.*` config keys.
+                implementation(projects.libTrustX509)
+                implementation(projects.libTrustCoreImpl)
+
                 // Events
                 implementation(projects.libCoreEventsImpl)
             }

@@ -2,7 +2,7 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ClassOrdering:PaletteScale.kt$PaletteScale.Companion$fun fromTonalPalette(palette: TonalPalette): PaletteScale</ID>
+    <ID>ClassOrdering:PaletteScale.kt$PaletteScale.Companion$@JvmStatic fun fromTonalPalette(palette: TonalPalette): PaletteScale</ID>
     <ID>ClassOrdering:SystemDefaults.kt$SystemDefaults$private fun TokenBuilder.addVariantIndependentExtensions()</ID>
     <ID>ComplexInterface:ThemeStore.kt$ThemeStore</ID>
     <ID>LargeClass:SystemDefaults.kt$SystemDefaults</ID>

@@ -23,7 +23,7 @@ import dev.zacsweers.metro.SingleIn
 class GetTrustAnchorsCommandImpl(
     execution: SessionExecution,
     private val validators: Set<TrustValidationService>,
-) : TypedServiceCommandAdapter<GetTrustAnchorsArgs, TrustAnchorListResult>(
+) : TypedServiceCommandAdapter<GetTrustAnchorsArgs, TrustAnchorListResult, IdkError>(
         commandId = GetTrustAnchorsCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetTrustAnchorsArgs>(),

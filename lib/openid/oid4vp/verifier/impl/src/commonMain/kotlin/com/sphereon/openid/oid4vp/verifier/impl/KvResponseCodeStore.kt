@@ -73,7 +73,7 @@ class KvResponseCodeStore(
     private val kvStoreManager: KvStoreManager,
     private val kvStoreService: KvStoreService,
     private val execution: SessionExecution,
-    private val clock: Clock = Clock.System,
+    private val clock: Clock,
 ) : ResponseCodeStore {
     private val json = Json
     private val mutex = Mutex()

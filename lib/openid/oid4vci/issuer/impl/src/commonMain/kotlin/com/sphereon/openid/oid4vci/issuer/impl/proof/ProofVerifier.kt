@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.proof
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import kotlinx.serialization.json.JsonElement
 
@@ -35,14 +36,26 @@ interface ProofVerifier {
      * @param proofValue The proof as a [JsonElement]. For JWT/CWT/attestation this is a
      *   [JsonPrimitive] string; for di_vp this is a [JsonObject].
      * @param expectedAudience The expected audience (Credential Issuer Identifier).
-     * @param supportedAlgorithms If non-null, the JOSE `alg` of the proof MUST be one of
-     *   the listed values (OID4VCI §F.1: must match `proof_signing_alg_values_supported`
-     *   from the credential configuration). When null no alg-allowlist check is performed.
+     * @param expectedClientId The client_id the access token was issued to. When the proof
+     *   carries an `iss` claim it MUST equal this value (OID4VCI 1.0 §7.2.1.2: "The value of
+     *   this claim MUST be the client_id of the Client making the Credential Request"). Pass
+     *   `null` for flows where no client_id is bound to the access token (e.g. Pre-Authorized
+     *   Code Flow without a public client identifier).
+     * @param credentialConfigId The credential configuration ID for which this proof is
+     *   being verified. Verifiers use it to resolve per-credential trust (e.g. pinned
+     *   key-attester JWKs) without re-deriving it from the request.
+     * @param proofTypeSupported The full `proof_types_supported.<type>` metadata block for
+     *   this proof carrier (when the credential configuration declares one). Carries
+     *   `proof_signing_alg_values_supported` (§F.1 alg-allowlist) and
+     *   `key_attestations_required` (§11.2.3 attestation policy). When null, no allowlist
+     *   check is performed and no attestation is required.
      * @return Verified proof with holder binding key info.
      */
     suspend fun verify(
         proofValue: JsonElement,
         expectedAudience: String,
-        supportedAlgorithms: List<String>? = null,
+        expectedClientId: String?,
+        credentialConfigId: String,
+        proofTypeSupported: ProofTypeSupported? = null,
     ): IdkResult<VerifiedProof, IdkError>
 }

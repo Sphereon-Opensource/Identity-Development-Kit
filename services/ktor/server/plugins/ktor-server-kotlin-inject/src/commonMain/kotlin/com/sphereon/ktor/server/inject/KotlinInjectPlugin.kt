@@ -125,7 +125,12 @@ class KotlinInjectPlugin(
                 )
 
             pipeline.intercept(ApplicationCallPipeline.Plugins) {
-                interceptor.intercept(call)
+                val requestContext = interceptor.intercept(call)
+                try {
+                    proceed()
+                } finally {
+                    requestContext.sessionInstance.destroy()
+                }
             }
 
             plugin.logger.info("KotlinInject plugin installed successfully")

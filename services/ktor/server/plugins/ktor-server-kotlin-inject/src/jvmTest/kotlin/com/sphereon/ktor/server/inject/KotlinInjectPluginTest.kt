@@ -28,15 +28,22 @@ import com.sphereon.core.api.http.describe.httpRoutes
 import com.sphereon.core.api.http.jsonResponse
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.UserContextLogManager
+import com.sphereon.core.defaults.context.DefaultPrincipalInputString
+import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.ktor.server.inject.resolver.DefaultPrincipalResolver
-import com.sphereon.ktor.server.inject.resolver.DefaultTenantResolver
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.header
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -44,6 +51,7 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -66,6 +74,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             // Verify the plugin is installed by making a request
@@ -93,6 +102,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -135,7 +145,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
-                tenantResolver = DefaultTenantResolver("X-Custom-Tenant")
+                tenantResolver = FixedTenantResolver("custom-tenant")
                 principalResolver = DefaultPrincipalResolver("X-Custom-User")
             }
 
@@ -178,6 +188,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -207,6 +218,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -237,6 +249,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -274,6 +287,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("test-tenant")
             }
 
             routing {
@@ -302,6 +316,51 @@ class KotlinInjectPluginTest {
         }
 
     @Test
+    fun `test request sessions are destroyed after response`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver = HeaderTenantResolver()
+            }
+
+            routing {
+                get("/session-lifecycle") {
+                    val sessionsDuringRequest = call.userInstance.sessionContextManager.listIds()
+                    call.respondText(
+                        "SessionId: ${call.sessionInstance.sessionId}, Count: ${sessionsDuringRequest.size}",
+                        ContentType.Text.Plain,
+                    )
+                }
+            }
+
+            fun requestUserContext() =
+                appGraph.userContextManager.createOrGetFromInputs(
+                    tenantInput = DefaultTenantInputString("test-tenant"),
+                    principalInput = DefaultPrincipalInputString("test-user"),
+                    makeActive = false,
+                )
+
+            repeat(3) {
+                val response =
+                    client.get("/session-lifecycle") {
+                        header("X-User-ID", "test-user")
+                    }
+
+                assertEquals(HttpStatusCode.OK, response.status)
+                assertTrue(response.bodyAsText().contains("Count: 1"))
+                assertEquals(emptySet(), requestUserContext().sessionContextManager.listIds())
+            }
+        }
+
+    @Test
     fun `test multiple scoped services in single request`() =
         testApplication {
             // Create a test app graph
@@ -315,6 +374,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = HeaderTenantResolver()
             }
 
             routing {
@@ -371,6 +431,7 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
+                tenantResolver = HeaderTenantResolver()
             }
 
             routing {
@@ -572,6 +633,41 @@ class KotlinInjectPluginTest {
         assertEquals(com.sphereon.core.api.http.describe.HttpMethod.POST, postEndpoint.method)
         assertTrue(postEndpoint.consumes.contains(MediaType.ApplicationJson))
     }
+
+    /**
+     * `respondWithGenericResponse` must route binary [GenericHttpResponse] payloads through
+     * Ktor's `respondBytes` so non-UTF-8 byte sequences (PNG, PDF, etc.) round-trip
+     * byte-identical. Synthetic JPEG SOI marker bytes (0xFF 0xD8 0xFF 0xE0) are not valid
+     * UTF-8, so a `decodeToString()` round-trip would corrupt them.
+     */
+    @Test
+    fun respondWithGenericResponse_withBinaryBody_roundTripsBytesIdentically() =
+        testApplication {
+            val jpegSoi = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+
+            routing {
+                get("/binary-asset") {
+                    val response =
+                        GenericHttpResponse.withBinaryBody(
+                            statusCode = 200,
+                            body = jpegSoi,
+                            headers = mapOf("Content-Type" to "image/jpeg"),
+                        )
+                    call.respondWithGenericResponse(response)
+                }
+            }
+
+            val response = client.get("/binary-asset")
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(ContentType.Image.JPEG, response.contentType())
+            val received = response.readRawBytes()
+            assertContentEquals(
+                jpegSoi,
+                received,
+                "binary body MUST round-trip byte-identical through the Ktor adapter; " +
+                    "corruption indicates a `decodeToString()` round-trip on the response path",
+            )
+        }
 }
 
 /**
@@ -634,4 +730,11 @@ private class TestHttpAdapter : RoutedHttpAdapter() {
         val body = request.body ?: "{}"
         return jsonResponse(201, """{"created": true, "body": $body}""")
     }
+}
+
+private class HeaderTenantResolver(
+    private val headerName: String = "X-Tenant-ID",
+    private val defaultTenant: String = "test-tenant",
+) : TenantResolver {
+    override fun resolve(call: ApplicationCall) = DefaultTenantInputString(call.request.header(headerName) ?: defaultTenant)
 }

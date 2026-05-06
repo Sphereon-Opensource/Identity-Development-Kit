@@ -43,7 +43,7 @@ import kotlin.uuid.ExperimentalUuidApi
 class UploadDesignAssetServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<UploadDesignAssetArgs, AssetReference>(
+) : TypedServiceCommandAdapter<UploadDesignAssetArgs, AssetReference, IdkError>(
         commandId = UploadDesignAssetServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<UploadDesignAssetArgs>(),
@@ -67,7 +67,7 @@ class UploadDesignAssetServiceCommandImpl(
 class GetDesignAssetServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<GetDesignAssetArgs, ResolvedDesignAsset>(
+) : TypedServiceCommandAdapter<GetDesignAssetArgs, ResolvedDesignAsset, IdkError>(
         commandId = GetDesignAssetServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetDesignAssetArgs>(),

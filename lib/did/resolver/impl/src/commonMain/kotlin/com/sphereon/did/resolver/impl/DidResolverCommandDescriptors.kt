@@ -16,6 +16,7 @@
 
 package com.sphereon.did.resolver.impl
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.resolver.DereferenceDidCommand
@@ -31,17 +32,17 @@ import dev.zacsweers.metro.StringKey
 interface DidResolverCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ResolveDidCommand.COMMAND_ID)
-    fun resolveDid(impl: ResolveDidCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveDid(impl: ResolveDidCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DereferenceDidCommand.COMMAND_ID)
-    fun dereferenceDid(impl: DereferenceDidCommandImpl): ServiceCommand<*, *> = impl
+    fun dereferenceDid(impl: DereferenceDidCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveVerificationMethodCommand.COMMAND_ID)
-    fun resolveVerificationMethod(impl: ResolveVerificationMethodCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveVerificationMethod(impl: ResolveVerificationMethodCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveVerificationMethodsByPurposeCommand.COMMAND_ID)
-    fun resolveVerificationMethodsByPurpose(impl: ResolveVerificationMethodsByPurposeCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveVerificationMethodsByPurpose(impl: ResolveVerificationMethodsByPurposeCommandImpl): ServiceCommand<*, *, *> = impl
 }

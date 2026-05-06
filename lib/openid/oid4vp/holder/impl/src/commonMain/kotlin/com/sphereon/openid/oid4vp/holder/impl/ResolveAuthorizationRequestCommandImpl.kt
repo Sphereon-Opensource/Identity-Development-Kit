@@ -67,7 +67,7 @@ class ResolveAuthorizationRequestCommandImpl(
     private val parseTransactionDataCommand: ParseTransactionDataCommand,
     private val resolveScopeCommand: ResolveScopeCommand? = null,
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<AuthorizationRequest, ResolvedOid4vpRequest>(
+) : TypedServiceCommandAdapter<AuthorizationRequest, ResolvedOid4vpRequest, IdkError>(
         commandId = ResolveAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<AuthorizationRequest>(),
@@ -261,15 +261,22 @@ class ResolveAuthorizationRequestCommandImpl(
                 .execute(validationArgs)
                 .getOrElse { return it.asErrorResult() }
 
-        // 7. Build verifier info with validation results
+        // 7. Build verifier info with validation results.
+        //
+        // displayName / logoUri: OID4VP 1.0 final §11.1 does NOT define these in
+        // client_metadata — they're OAuth2 RFC 7591 fields (`client_name`, `logo_uri`)
+        // which the spec deliberately doesn't reuse for the verifier metadata surface.
+        // Wallets that want a display name/logo should pull them from the trust source
+        // (e.g. the verifier's x5c subject DN, an OID Federation entity statement, or
+        // a Verifier Attestation JWT). Leaving null here until that source is wired in.
         val verifierInfoResult =
             VerifierInfo(
                 clientId = processedArgs.clientId,
                 clientIdScheme = parsedClientId.clientIdScheme,
                 clientIdValid = validationResult.valid,
                 clientIdValidationErrors = validationResult.errors,
-                displayName = resolvedMetadata.metadata?.clientName,
-                logoUri = resolvedMetadata.metadata?.logoUri,
+                displayName = null,
+                logoUri = null,
                 trustRoot = null, // TODO: Will come from identifier resolution trust establishment
             )
 

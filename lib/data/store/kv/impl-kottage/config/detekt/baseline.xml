@@ -4,6 +4,5 @@
   <CurrentIssues>
     <ID>MagicNumber:KottageKvStoreFactory.kt$KottageKvStoreFactory$120</ID>
     <ID>MagicNumber:KottageKvStoreFactory.kt$KottageKvStoreFactory$16</ID>
-    <ID>MaxLineLength:KottageKvStore.kt$KottageKvStore$Err(IdkError.fromString(message = "Failed to check existence of KV entry '${namespace.name}:$key' in Kottage: ${expected.message}", exception = expected, code = "KV_KOTTAGE_EXISTS_FAILED"))</ID>
   </CurrentIssues>
 </SmellBaseline>

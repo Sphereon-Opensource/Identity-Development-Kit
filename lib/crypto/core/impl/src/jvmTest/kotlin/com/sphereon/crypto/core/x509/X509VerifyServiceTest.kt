@@ -568,4 +568,115 @@ TOZ7uJOSWHiO7W3EOEVm4gaclmR0YYkTSFmGyifr0+WLzLr/k3pOX2uGAVlx88VE
         // Will fail because our test cert isn't valid
         assertTrue(result.error, "Verification should fail for invalid test certificate")
     }
+
+    // =========================================================================
+    // Regression: trust anchor source selection
+    // =========================================================================
+    //
+    // Earlier the JVM adapter built `TrustAnchor`s from `request.chainPEM` (the chain to
+    // validate) instead of `request.trustedCerts`. That meant any chain whose root happened
+    // to also be in the chain itself was accepted as trusted, while every legitimate use
+    // (separate trust anchor configured out-of-band) failed with "Path does not chain with any
+    // of the trust anchors". The HAIP wallet-attestation x5c flow tripped on this in
+    // production. These tests pin down the correct selection so a future regression breaks the
+    // build, not a live deployment.
+
+    /** Demo CA used in the regression cases below — issuer CN=`IDK E2E CA`, valid 2026-04-29 → 2036-04-26. */
+    private val regressionCaPem =
+        """
+        -----BEGIN CERTIFICATE-----
+        MIIBtTCCAVygAwIBAgIUYHPHPaIhLbZjEG+87CQGaZRT1r0wCgYIKoZIzj0EAwIw
+        JzElMCMGA1UEAwwcSURLIEUyRSBDQSwgTz1TcGhlcmVvbiwgQz1OTDAeFw0yNjA0
+        MjkxNjI0NDRaFw0zNjA0MjYxNjI0NDRaMCcxJTAjBgNVBAMMHElESyBFMkUgQ0Es
+        IE89U3BoZXJlb24sIEM9TkwwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQ/QuTk
+        dimVLElzTHWWRizMyXFP5cxzM+yh4cev69MUXxgdbKxKOrj+MiyibEY2KofqAN3K
+        hD9MtijUxE80AZeho2YwZDAdBgNVHQ4EFgQU4yGaoD/fqNjRbtD+oLYLU25xeq4w
+        HwYDVR0jBBgwFoAU4yGaoD/fqNjRbtD+oLYLU25xeq4wEgYDVR0TAQH/BAgwBgEB
+        /wIBADAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwIDRwAwRAIgRnEcATheGu7k
+        S9202u8Pw72876+HollpN2soD/kvd9ACICUz0HMgd7/K1/reEK0D4wxQdLvG2pBM
+        QbJEgC/RKNkP
+        -----END CERTIFICATE-----
+        """.trimIndent()
+
+    /** Leaf issued by `regressionCaPem` — subject CN=`IDK E2E Wallet Attester`, valid through 2036-04-26. */
+    private val regressionLeafPem =
+        """
+        -----BEGIN CERTIFICATE-----
+        MIIBvDCCAWOgAwIBAgIUBLQhxPwu6uo4EloFsWwkv19KwewwCgYIKoZIzj0EAwIw
+        JzElMCMGA1UEAwwcSURLIEUyRSBDQSwgTz1TcGhlcmVvbiwgQz1OTDAeFw0yNjA0
+        MjkyMTM5NTNaFw0zNjA0MjYyMTM5NTNaMDQxMjAwBgNVBAMMKUlESyBFMkUgV2Fs
+        bGV0IEF0dGVzdGVyLCBPPVNwaGVyZW9uLCBDPU5MMFkwEwYHKoZIzj0CAQYIKoZI
+        zj0DAQcDQgAEr8lJWAbfbePddc4RkXpCG0+bcCwegwW7e+TnqobDnk1FeznMAu4f
+        5TGhTUKZ7SPkvECSP+wOEEIHcbCsE71d/KNgMF4wDAYDVR0TAQH/BAIwADAOBgNV
+        HQ8BAf8EBAMCB4AwHQYDVR0OBBYEFPpcMwPNsui3rXwQO6p3mFTty0q5MB8GA1Ud
+        IwQYMBaAFOMhmqA/36jY0W7Q/qC2C1NucXquMAoGCCqGSM49BAMCA0cAMEQCIDGE
+        b0g2Qzl9pK7f6B8p+sLQYBc7EIH45zcdoBLG6pTwAiAsD5Y+IzGw+EniC+YrnjQG
+        vRwjDQ11qU+rgJ9kCz2Fng==
+        -----END CERTIFICATE-----
+        """.trimIndent()
+
+    /** Unrelated CA that the leaf above does NOT chain to — used for the negative test. */
+    private val unrelatedCaPem =
+        """
+        -----BEGIN CERTIFICATE-----
+        MIIBtTCCAVygAwIBAgIUYHPHPaIhLbZjEG+87CQGaZRT1r1wCgYIKoZIzj0EAwIw
+        JzElMCMGA1UEAwwcWFlaIE90aGVyIENBLCBPPU90aGVyLCBDPVVTMB4XDTI2MDQy
+        OTE2MjQ0NFoXDTM2MDQyNjE2MjQ0NFowJzElMCMGA1UEAwwcWFlaIE90aGVyIENB
+        LCBPPU90aGVyLCBDPVVTMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/zP/D////
+        nl0ssrjeg+E1FxA1J6m5nSU2+xLZ+G4ZeGI8oxSSPhVB1jR3lcq0/oIGrdBDt2Z3
+        a3aFPS6QxXXa56NmMGQwHQYDVR0OBBYEFP////////////////////////////8w
+        HwYDVR0jBBgwFoAU/////////////////////////////zASBgNVHRMBAf8ECDAG
+        AQH/AgEAMA4GA1UdDwEB/wQEAwIBBjAKBggqhkjOPQQDAgNHADBEAiAA////////
+        ////////////////////////////////////AiAA////////////////////
+        -----END CERTIFICATE-----
+        """.trimIndent()
+
+    @Test
+    fun verifyCertificateChainShouldAcceptChainAnchoredAtConfiguredTrustedCert() =
+        runTest {
+            val service = X509VerifyServiceImpl()
+            val request =
+                X509VerificationRequest(
+                    enabled = true,
+                    chainPEM = arrayOf(regressionLeafPem),
+                    trustedCerts = arrayOf(regressionCaPem),
+                    verificationProfile = X509VerificationProfile.RFC_5280,
+                    verificationTime = LocalDateTimeKMP(year = 2026, month = 12, day = 1, hour = 0, minute = 0),
+                )
+
+            val result = service.verifyCertificateChain(request)
+
+            assertNotNull(result)
+            assertFalse(
+                result.error,
+                "Leaf signed by trustedCerts[0] must validate; got error=${result.error} message=${result.message}",
+            )
+        }
+
+    @Test
+    fun verifyCertificateChainShouldRejectWhenTrustedCertsContainsUnrelatedAnchor() =
+        runTest {
+            // Regression: the previous JVM impl read trust anchors from `chainPEM` instead of
+            // `trustedCerts`. With chainPEM=[leaf] and trustedCerts=[unrelatedCA], the buggy
+            // code would have used [leaf] as the anchor and "validated" the chain against
+            // itself. A correct impl reads trustedCerts and rejects the chain because the
+            // leaf's issuer is not the unrelated CA.
+            val service = X509VerifyServiceImpl()
+            val request =
+                X509VerificationRequest(
+                    enabled = true,
+                    chainPEM = arrayOf(regressionLeafPem),
+                    trustedCerts = arrayOf(unrelatedCaPem),
+                    verificationProfile = X509VerificationProfile.RFC_5280,
+                    verificationTime = LocalDateTimeKMP(year = 2026, month = 12, day = 1, hour = 0, minute = 0),
+                )
+
+            val result = service.verifyCertificateChain(request)
+
+            assertNotNull(result)
+            assertTrue(
+                result.error,
+                "Leaf NOT signed by any trustedCerts entry must be rejected; instead got error=${result.error}",
+            )
+        }
 }

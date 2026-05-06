@@ -39,13 +39,9 @@ import kotlin.test.assertTrue
 /**
  * Tests for EdDSA (Edwards-curve Digital Signature Algorithm) structures and mappings.
  *
- * Note: Actual cryptographic signing with EdDSA requires platform-specific support.
- * Currently, the SoftwareKmsProvider does not support EdDSA key generation.
- * These tests verify the structural components work correctly.
- *
- * When EdDSA signing support is added:
- * - Add integration tests similar to CoseSigningIntegrationTest for EdDSA
- * - Add JWS integration tests with EdDSA algorithm
+ * Real Ed25519 / Ed448 sign + verify is exercised in
+ * `SoftwareEdDsaTest` against RFC 8032 §7.1 and §7.4 vectors;
+ * this suite focuses on the JOSE / COSE type-system mappings.
  */
 class EdDsaStructureTest {
     @Test

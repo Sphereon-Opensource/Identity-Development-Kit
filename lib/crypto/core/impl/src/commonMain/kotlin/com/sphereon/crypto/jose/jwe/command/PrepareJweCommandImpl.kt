@@ -59,7 +59,7 @@ import kotlin.random.Random
 class PrepareJweCommandImpl(
     execution: SessionExecution,
     private val identifierService: MultiManagedIdentifierService,
-) : TypedServiceCommandAdapter<PrepareJweArgs, PreparedJwe>(
+) : TypedServiceCommandAdapter<PrepareJweArgs, PreparedJwe, IdkError>(
         commandId = PrepareJweCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<PrepareJweArgs>(),
@@ -102,10 +102,17 @@ class PrepareJweCommandImpl(
         header.alg = appliedArgs.keyEncryptionAlg
         header.enc = appliedArgs.contentEncryptionAlg
 
-        // Add compression if requested
-        if (appliedArgs.opts.compress) {
-            header.zip = "DEF"
-        }
+        // RFC 7516 §4.1.3: when `zip=DEF` is set, the plaintext MUST be DEFLATE-compressed
+        // (raw, RFC 1951 — no zlib wrapper) BEFORE encryption. Without actually compressing
+        // here, the header advertises compression while the ciphertext encrypts raw bytes —
+        // which is exactly what `VCICheckCredentialResponseCompression` flags.
+        val finalPlaintext =
+            if (appliedArgs.opts.compress) {
+                header.zip = "DEF"
+                deflate(plaintext)
+            } else {
+                plaintext
+            }
 
         // Apply any header overrides from opts
         appliedArgs.opts.protectedHeaderOverrides?.let { overrides ->
@@ -124,7 +131,7 @@ class PrepareJweCommandImpl(
         val preparedJwe =
             PreparedJwe(
                 header = header,
-                plaintext = plaintext,
+                plaintext = finalPlaintext,
                 cek = cek,
                 recipient = resolvedRecipient,
             )

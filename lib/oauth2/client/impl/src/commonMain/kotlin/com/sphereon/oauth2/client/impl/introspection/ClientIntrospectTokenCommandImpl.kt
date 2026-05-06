@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
@@ -37,7 +38,6 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.TokenIntrospectionRequest
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
-import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
@@ -71,7 +71,7 @@ class ClientIntrospectTokenCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     private val applyClientAuthenticationCommand: ApplyClientAuthenticationCommand,
     private val json: Json = Json { ignoreUnknownKeys = true },
-) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenIntrospectionResponse>(
+) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenIntrospectionResponse, IdkError>(
         commandId = IntrospectTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<IntrospectTokenArgs>(),

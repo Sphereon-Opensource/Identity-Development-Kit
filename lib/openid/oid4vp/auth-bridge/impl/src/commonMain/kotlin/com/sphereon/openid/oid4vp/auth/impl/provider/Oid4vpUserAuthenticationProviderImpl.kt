@@ -258,7 +258,7 @@ class Oid4vpUserAuthenticationProviderImpl(
         val authResult =
             completeAuthentication(oid4vpSessionId).getOrElse { error ->
                 log.error("Failed to complete authentication: ${error.message.defaultMessage}")
-                return Err(AuthenticationError.Generic(message = error.message.defaultMessage))
+                return Err(AuthenticationError.Generic(description = error.message.defaultMessage))
             }
 
         // 5. Cache user info
@@ -294,7 +294,7 @@ class Oid4vpUserAuthenticationProviderImpl(
                 ),
             ).getOrElse { error ->
                 log.error("Failed to create OID4VP session: ${error.message.defaultMessage}")
-                return Err(AuthenticationError.Generic(message = error.message.defaultMessage))
+                return Err(AuthenticationError.Generic(description = error.message.defaultMessage))
             }
 
         // 2. Map OAuth session to OID4VP session
@@ -312,7 +312,7 @@ class Oid4vpUserAuthenticationProviderImpl(
         return Err(
             AuthenticationError.MethodUnavailable(
                 method = AuthenticationMethod.CUSTOM,
-                message = "OID4VP authentication requires wallet presentation, direct credentials not supported",
+                description = "OID4VP authentication requires wallet presentation, direct credentials not supported",
             ),
         )
     }

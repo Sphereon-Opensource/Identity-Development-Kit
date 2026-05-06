@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.jarm
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
@@ -31,7 +32,7 @@ import kotlin.native.ObjCName
 /**
  * Arguments for creating a JARM (JWT Secured Authorization Response) response.
  *
- * Per RFC 9101, the authorization response is encoded as a JWT containing
+ * Per the JARM spec, the authorization response is encoded as a JWT containing
  * the standard JWT claims (iss, aud, exp) plus the authorization response parameters.
  *
  * @property responseParameters The authorization response parameters as JSON claims (e.g., code, vp_token, etc.)
@@ -78,7 +79,7 @@ data class CreateJarmResponseResult(
 /**
  * Command for creating a JARM (JWT Secured Authorization Response) response.
  *
- * Reference: RFC 9101 - JWT Secured Authorization Response Mode for OAuth 2.0
+ * Reference: OpenID Foundation JARM spec, JWT Secured Authorization Response Mode for OAuth 2.0 (https://openid.net/specs/oauth-v2-jarm.html)
  *
  * This command creates a JWT-encoded authorization response for JARM response modes
  * (query.jwt, fragment.jwt, form_post.jwt, direct_post.jwt).
@@ -87,7 +88,7 @@ data class CreateJarmResponseResult(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJarmResponseCommand", exact = true)
 @JsExportCompat
-interface CreateJarmResponseCommand : ServiceCommand<CreateJarmResponseArgs, CreateJarmResponseResult> {
+interface CreateJarmResponseCommand : ServiceCommand<CreateJarmResponseArgs, CreateJarmResponseResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -125,7 +126,7 @@ data class VerifyJarmResponseArgs(
 /**
  * Command for verifying a JARM response.
  *
- * Reference: RFC 9101 - JWT Secured Authorization Response Mode for OAuth 2.0
+ * Reference: OpenID Foundation JARM spec, JWT Secured Authorization Response Mode for OAuth 2.0 (https://openid.net/specs/oauth-v2-jarm.html)
  *
  * This command verifies and decodes a JARM-encoded authorization response.
  * It handles:
@@ -136,7 +137,7 @@ data class VerifyJarmResponseArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyJarmResponseCommand", exact = true)
 @JsExportCompat
-interface VerifyJarmResponseCommand : ServiceCommand<VerifyJarmResponseArgs, JarmVerificationResult> {
+interface VerifyJarmResponseCommand : ServiceCommand<VerifyJarmResponseArgs, JarmVerificationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

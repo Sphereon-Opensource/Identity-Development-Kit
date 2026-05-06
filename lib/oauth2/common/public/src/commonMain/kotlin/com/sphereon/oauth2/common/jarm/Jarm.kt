@@ -26,7 +26,7 @@ import kotlinx.serialization.json.JsonObject
 /*
  * JARM (JWT Secured Authorization Response Mode) for OAuth 2.0
  *
- * Reference: RFC 9101 - JWT Secured Authorization Response Mode for OAuth 2.0
+ * Reference: OpenID Foundation JARM spec, JWT Secured Authorization Response Mode for OAuth 2.0 (https://openid.net/specs/oauth-v2-jarm.html)
  *
  * JARM provides confidentiality and integrity protection for authorization responses
  * by encoding them as JWTs (signed, encrypted, or signed-then-encrypted).
@@ -35,7 +35,7 @@ import kotlinx.serialization.json.JsonObject
 /**
  * JARM encoding mode determines how the authorization response is protected.
  *
- * Per RFC 9101:
+ * Per the JARM spec:
  * - Signed: Response is a signed JWT (JWS)
  * - Encrypted: Response is an encrypted JWT (JWE) - plaintext payload
  * - SignedEncrypted: Response is signed first, then encrypted (nested JWT)
@@ -71,7 +71,7 @@ enum class JarmMode {
 /**
  * JARM Authorization Response payload structure.
  *
- * Per RFC 9101, when using JARM response modes (query.jwt, fragment.jwt, form_post.jwt, etc.),
+ * Per the JARM spec, when using JARM response modes (query.jwt, fragment.jwt, form_post.jwt, etc.),
  * the authorization response is encoded as a JWT with these standard claims plus
  * the authorization response parameters as additional claims.
  *
@@ -88,20 +88,24 @@ enum class JarmMode {
 @Serializable
 data class JarmResponsePayload(
     /**
-     * Issuer of the JWT (authorization server identifier or wallet identifier)
+     * Issuer of the JWT — REQUIRED for signed responses (JARM RFC §4.1), absent in OID4VP 1.0
+     * §8.3 encrypted-only mode where the JWE wraps plain authorization response parameters
+     * without an inner JWS envelope.
      */
     @SerialName("iss")
-    val iss: String,
+    val iss: String? = null,
     /**
-     * Audience (client_id of the recipient)
+     * Audience — REQUIRED for signed responses (JARM RFC §4.1), absent in OID4VP 1.0 §8.3
+     * encrypted-only mode (no JWT claims set, just response parameters).
      */
     @SerialName("aud")
-    val aud: String,
+    val aud: String? = null,
     /**
-     * Expiration time (Unix timestamp in seconds)
+     * Expiration time — REQUIRED for signed responses (JARM RFC §4.1), absent in OID4VP 1.0
+     * §8.3 encrypted-only mode.
      */
     @SerialName("exp")
-    val exp: Long,
+    val exp: Long? = null,
     /**
      * Issued at time (Unix timestamp in seconds)
      */
@@ -126,7 +130,7 @@ data class JarmResponsePayload(
 /**
  * Configuration for creating JARM authorization responses.
  *
- * Per RFC 9101, the client can configure how the authorization response should be protected:
+ * Per the JARM spec, the client can configure how the authorization response should be protected:
  * - authorization_signed_response_alg: JWS algorithm for signing
  * - authorization_encrypted_response_alg: JWE key encryption algorithm
  * - authorization_encrypted_response_enc: JWE content encryption algorithm
@@ -206,7 +210,7 @@ data class JarmConfig(
         /**
          * Derive JARM configuration from client metadata parameters.
          *
-         * Per RFC 9101:
+         * Per the JARM spec:
          * - authorization_signed_response_alg only: Signed (JWS)
          * - authorization_encrypted_response_alg only: Encrypted (JWE)
          * - Both present: Signed then encrypted (nested JWT)
@@ -313,19 +317,20 @@ val validateJarmConfig =
     }
 
 /**
- * Konform validator for JarmResponsePayload
+ * Konform validator for [JarmResponsePayload]. iss/aud/exp are nullable on the type because
+ * OID4VP 1.0 §8.3 encrypted-only responses omit them; when present they must still be valid.
  */
 val validateJarmResponsePayload =
     Validation<JarmResponsePayload> {
-        JarmResponsePayload::iss {
+        JarmResponsePayload::iss ifPresent {
             constrain("iss cannot be empty") { it.isNotBlank() }
         }
 
-        JarmResponsePayload::aud {
+        JarmResponsePayload::aud ifPresent {
             constrain("aud cannot be empty") { it.isNotBlank() }
         }
 
-        JarmResponsePayload::exp {
+        JarmResponsePayload::exp ifPresent {
             constrain("exp must be positive") { it > 0 }
         }
     }

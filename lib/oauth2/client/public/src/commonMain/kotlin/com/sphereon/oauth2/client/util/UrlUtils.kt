@@ -84,11 +84,14 @@ fun decodeQueryParameters(queryString: String): Map<String, String> {
         .split("&")
         .mapNotNull { pair ->
             val parts = pair.split("=", limit = 2)
+            // plusIsSpace matches application/x-www-form-urlencoded semantics — HTML forms
+            // encode spaces as `+` and the OIDF conformance suite POST bodies do too.
             if (parts.size == 2) {
-                parts[0].decodeURLQueryComponent() to parts[1].decodeURLQueryComponent()
+                parts[0].decodeURLQueryComponent(plusIsSpace = true) to
+                    parts[1].decodeURLQueryComponent(plusIsSpace = true)
             } else if (parts.size == 1 && parts[0].isNotEmpty()) {
-                // Handle parameter without value (e.g., "?foo&bar=baz")
-                parts[0].decodeURLQueryComponent() to ""
+                // Parameter without value (e.g., "?foo&bar=baz").
+                parts[0].decodeURLQueryComponent(plusIsSpace = true) to ""
             } else {
                 null
             }

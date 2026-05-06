@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriCommand
@@ -43,33 +44,33 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vpVerifierCommandDescriptors {
     @Provides @IntoMap
     @StringKey(CreateSignedAuthorizationRequestCommand.COMMAND_ID)
-    fun createSignedAuthorizationRequest(impl: CreateSignedAuthorizationRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun createSignedAuthorizationRequest(impl: CreateSignedAuthorizationRequestCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(BuildAuthorizationRequestUriCommand.COMMAND_ID)
-    fun buildAuthorizationRequestUri(impl: BuildAuthorizationRequestUriCommandImpl): ServiceCommand<*, *> = impl
+    fun buildAuthorizationRequestUri(impl: BuildAuthorizationRequestUriCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RetrieveAuthorizationResponseCommand.COMMAND_ID)
-    fun retrieveAuthorizationResponse(impl: RetrieveAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun retrieveAuthorizationResponse(impl: RetrieveAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleDirectPostResponseCommand.COMMAND_ID)
-    fun handleDirectPostResponse(impl: HandleDirectPostResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun handleDirectPostResponse(impl: HandleDirectPostResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyHolderBindingCommand.COMMAND_ID)
-    fun verifyHolderBinding(impl: VerifyHolderBindingCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyHolderBinding(impl: VerifyHolderBindingCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ValidateAuthorizationResponseCommand.COMMAND_ID)
-    fun validateAuthorizationResponse(impl: ValidateAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun validateAuthorizationResponse(impl: ValidateAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ParseAuthorizationResponseCommand.COMMAND_ID)
-    fun oid4vpParseAuthorizationResponse(impl: ParseAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun oid4vpParseAuthorizationResponse(impl: ParseAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateAuthorizationRequestCommand.COMMAND_ID)
-    fun createAuthorizationRequest(impl: CreateAuthorizationRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun createAuthorizationRequest(impl: CreateAuthorizationRequestCommandImpl): ServiceCommand<*, *, *> = impl
 }

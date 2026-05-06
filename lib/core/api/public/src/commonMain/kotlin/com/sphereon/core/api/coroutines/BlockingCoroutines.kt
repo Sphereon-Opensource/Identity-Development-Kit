@@ -31,7 +31,7 @@ import kotlin.coroutines.EmptyCoroutineContext
  * This function should only be used for bridging synchronous APIs with suspend functions
  * where the suspend function is expected to complete without actual suspension on JS/wasmJs.
  */
-internal expect fun <T> runBlockingCompat(
+expect fun <T> runBlockingCompat(
     context: CoroutineContext = EmptyCoroutineContext,
     block: suspend () -> T,
 ): T

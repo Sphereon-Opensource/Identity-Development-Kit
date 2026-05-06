@@ -17,7 +17,7 @@
 package com.sphereon.core.api.service
 
 import com.sphereon.core.api.IdkResult
-import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.Flow
 
@@ -43,14 +43,14 @@ enum class StreamingMode {
  * @param TOutput The type of each streamed output item
  */
 @JsExportCompat
-interface ServerStreamingServiceCommand<TInput : Any, TOutput : Any> : ServiceCommand<TInput, TOutput> {
+interface ServerStreamingServiceCommand<TInput : Any, TOutput : Any, TError : IdkErrorType> : ServiceCommand<TInput, TOutput, TError> {
     /**
      * Executes the command and returns a stream of results.
      *
      * @param args The command input
      * @return A Flow of output items wrapped in IdkResult, or an error if the stream cannot be started
      */
-    suspend fun executeStream(args: TInput): IdkResult<Flow<TOutput>, IdkError>
+    suspend fun executeStream(args: TInput): IdkResult<Flow<TOutput>, TError>
 }
 
 /**
@@ -64,12 +64,12 @@ interface ServerStreamingServiceCommand<TInput : Any, TOutput : Any> : ServiceCo
  * @param TOutput The type of each output message in the stream
  */
 @JsExportCompat
-interface BidiStreamingServiceCommand<TInput : Any, TOutput : Any> : ServiceCommand<TInput, TOutput> {
+interface BidiStreamingServiceCommand<TInput : Any, TOutput : Any, TError : IdkErrorType> : ServiceCommand<TInput, TOutput, TError> {
     /**
      * Executes the command with a bidirectional stream.
      *
      * @param inputFlow The stream of input messages from the client
      * @return A Flow of output items wrapped in IdkResult, or an error if the stream cannot be started
      */
-    suspend fun executeBidiStream(inputFlow: Flow<TInput>): IdkResult<Flow<TOutput>, IdkError>
+    suspend fun executeBidiStream(inputFlow: Flow<TInput>): IdkResult<Flow<TOutput>, TError>
 }

@@ -3,15 +3,24 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>BracesOnIfStatements:CreateCredentialOfferEndpointCommandImpl.kt$CreateCredentialOfferEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:GetIssuerMetadataEndpointCommand.kt$GetIssuerMetadataEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:GetJwtVcIssuerMetadataEndpointCommand.kt$if</ID>
     <ID>BracesOnIfStatements:HttpAsBridge.kt$HttpAsBridge$else</ID>
     <ID>BracesOnIfStatements:HttpAsBridge.kt$HttpAsBridge$if</ID>
     <ID>BracesOnIfStatements:Oid4vciProtocolUtils.kt$if</ID>
+    <ID>ClassOrdering:JwtVcIssuerMetadataHttpAdapter.kt$JwtVcIssuerMetadataHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf(rootCommand, scopedCommand)</ID>
     <ID>ClassOrdering:Oid4vciIssuerMetadataHttpAdapter.kt$Oid4vciIssuerMetadataHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( getMetadataCommand, )</ID>
     <ID>ClassOrdering:Oid4vciIssuerProtocolHttpAdapter.kt$Oid4vciIssuerProtocolHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( credentialOfferCommand, nonceCommand, credentialCommand, deferredCredentialCommand, notificationCommand, )</ID>
     <ID>ClassOrdering:Oid4vciRestHttpAdapter.kt$Oid4vciRestHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( createCommand, getStatusCommand, deleteCommand, )</ID>
+    <ID>CyclomaticComplexMethod:HttpAsBridge.kt$HttpAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
     <ID>CyclomaticComplexMethod:Oid4vciProtocolUtils.kt$internal fun mapOid4vciError(error: IdkError): GenericHttpResponse</ID>
+    <ID>LongMethod:HandleCredentialEndpointCommand.kt$HandleCredentialEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:HandleDeferredCredentialEndpointCommand.kt$HandleDeferredCredentialEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:HttpAsBridge.kt$HttpAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
     <ID>MagicNumber:GetCredentialOfferEndpointCommand.kt$GetCredentialOfferEndpointCommandImpl$200</ID>
     <ID>MagicNumber:GetIssuerMetadataEndpointCommand.kt$GetIssuerMetadataEndpointCommandImpl$200</ID>
+    <ID>MagicNumber:GetJwtVcIssuerMetadataEndpointCommand.kt$200</ID>
+    <ID>MagicNumber:GetJwtVcIssuerMetadataEndpointCommand.kt$3</ID>
     <ID>MagicNumber:HandleCredentialEndpointCommand.kt$HandleCredentialEndpointCommandImpl$200</ID>
     <ID>MagicNumber:HandleDeferredCredentialEndpointCommand.kt$HandleDeferredCredentialEndpointCommandImpl$200</ID>
     <ID>MagicNumber:HttpAsBridge.kt$HttpAsBridge$0xFF</ID>
@@ -22,14 +31,16 @@
     <ID>MagicNumber:HttpAsBridge.kt$HttpAsBridge$6</ID>
     <ID>MagicNumber:Oid4vciProtocolUtils.kt$400</ID>
     <ID>MagicNumber:Oid4vciProtocolUtils.kt$401</ID>
-    <ID>MagicNumber:Oid4vciProtocolUtils.kt$404</ID>
     <ID>ReturnCount:GetCredentialOfferEndpointCommand.kt$GetCredentialOfferEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
     <ID>ReturnCount:GetCredentialOfferEndpointCommand.kt$GetCredentialOfferEndpointCommandImpl$private suspend fun updateSessionToOfferReceived(offerId: String)</ID>
     <ID>ReturnCount:GetIssuerMetadataEndpointCommand.kt$GetIssuerMetadataEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:GetIssuerMetadataEndpointCommand.kt$GetIssuerMetadataEndpointCommandImpl$private suspend fun resolveCredentialRequestEncryption( template: MetadataCredentialRequestEncryption?, ): IdkResult&lt;MetadataCredentialRequestEncryption?, IdkError></ID>
     <ID>ReturnCount:HandleCredentialEndpointCommand.kt$HandleCredentialEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
     <ID>ReturnCount:HandleDeferredCredentialEndpointCommand.kt$HandleDeferredCredentialEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:HandleNotificationEndpointCommand.kt$HandleNotificationEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
     <ID>ReturnCount:HttpAsBridge.kt$HttpAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
-    <ID>ReturnCount:Oid4vciProtocolUtils.kt$internal suspend fun decryptRequestIfNeeded( req: GenericHttpRequest, decryptJweCommand: DecryptJweCommand, ): String?</ID>
+    <ID>ReturnCount:Oid4vciProtocolUtils.kt$internal fun extractAccessToken(req: GenericHttpRequest): String?</ID>
+    <ID>ReturnCount:Oid4vciProtocolUtils.kt$internal suspend fun decryptRequestIfNeeded( req: GenericHttpRequest, decryptJweCommand: DecryptJweCommand, decryptor: com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult? = null, ): String?</ID>
     <ID>StringLiteralDuplication:Oid4vciProtocolUtils.kt$"Content-Type"</ID>
     <ID>StringLiteralDuplication:Oid4vciProtocolUtils.kt$"application/jwt"</ID>
   </CurrentIssues>

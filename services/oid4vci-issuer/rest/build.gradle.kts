@@ -100,6 +100,7 @@ kotlin {
 
                 // OAuth2 (for AS bridge)
                 implementation(projects.libOauth2CommonPublic)
+                implementation(projects.libOauth2CommonImpl)
                 implementation(projects.libOauth2ServerAuthorizationPublic)
                 implementation(projects.libOauth2ServerAuthorizationImpl)
             }

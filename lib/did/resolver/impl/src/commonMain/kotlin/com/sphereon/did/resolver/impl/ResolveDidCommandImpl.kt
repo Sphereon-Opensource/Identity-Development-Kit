@@ -53,7 +53,7 @@ class ResolveDidCommandImpl(
     execution: SessionExecution,
     private val registry: DidResolverRegistry,
     private val cache: DidResolutionCache,
-) : TypedServiceCommandAdapter<ResolveDidArgs, DidResolutionResult>(
+) : TypedServiceCommandAdapter<ResolveDidArgs, DidResolutionResult, IdkError>(
         commandId = ResolveDidCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveDidArgs>(),

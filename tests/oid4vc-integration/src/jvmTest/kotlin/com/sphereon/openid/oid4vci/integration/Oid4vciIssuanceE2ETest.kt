@@ -77,7 +77,7 @@ class Oid4vciIssuanceE2ETest {
             format = "jwt_vc_json",
             scope = "degree",
             cryptographicBindingMethodsSupported = listOf("did:key", "did:jwk"),
-            credentialSigningAlgValuesSupported = listOf("ES256"),
+            credentialSigningAlgValuesSupported = listOf(kotlinx.serialization.json.JsonPrimitive("ES256")),
             credentialDefinition =
                 CredentialDefinition(
                     type = listOf("VerifiableCredential", "UniversityDegreeCredential"),
@@ -340,14 +340,10 @@ class Oid4vciIssuanceE2ETest {
             assertTrue(consumeResult.isOk, "Pre-auth code consumption should succeed")
             val consumed = consumeResult.value
 
-            // Step 3a: Generate the AS signing key (required for JWT access tokens)
-            val asKeyResult =
-                kms.generateKeyResult(
-                    alias = "oauth2-server-signing",
-                    use = JwkUse.sig,
-                    alg = SignatureAlgorithm.ECDSA_SHA256,
-                )
-            assertTrue(asKeyResult.isOk, "AS signing key generation should succeed")
+            // Step 3a: Generate and register the AS signing key (required for JWT access tokens).
+            // The AS sign paths read from the SigningKeyStore SPI; ensureAsSigningKey both creates
+            // the key in KMS and registers it under the test's default tenant.
+            ctx.ensureAsSigningKey()
 
             // Step 3b: Create access token via the real AS service
             val tokenResult =

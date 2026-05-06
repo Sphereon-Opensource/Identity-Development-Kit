@@ -57,7 +57,7 @@ class CreateVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
     private val configProvider: CredentialDesignConfigProvider,
-) : TypedServiceCommandAdapter<CreateVerifierDesignArgs, VerifierDesignRecord>(
+) : TypedServiceCommandAdapter<CreateVerifierDesignArgs, VerifierDesignRecord, IdkError>(
         commandId = CreateVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateVerifierDesignArgs>(),
@@ -90,7 +90,7 @@ class CreateVerifierDesignServiceCommandImpl(
 class GetVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<GetDesignArgs, VerifierDesignRecord>(
+) : TypedServiceCommandAdapter<GetDesignArgs, VerifierDesignRecord, IdkError>(
         commandId = GetVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetDesignArgs>(),
@@ -114,7 +114,7 @@ class GetVerifierDesignServiceCommandImpl(
 class FindVerifierDesignByBindingServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<FindByBindingArgs, List<VerifierDesignRecord>>(
+) : TypedServiceCommandAdapter<FindByBindingArgs, List<VerifierDesignRecord>, IdkError>(
         commandId = FindVerifierDesignByBindingServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FindByBindingArgs>(),
@@ -138,7 +138,7 @@ class FindVerifierDesignByBindingServiceCommandImpl(
 class FindVerifierDesignByBindingKeyServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<FindByBindingKeyArgs, List<VerifierDesignRecord>>(
+) : TypedServiceCommandAdapter<FindByBindingKeyArgs, List<VerifierDesignRecord>, IdkError>(
         commandId = FindVerifierDesignByBindingKeyServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FindByBindingKeyArgs>(),
@@ -162,7 +162,7 @@ class FindVerifierDesignByBindingKeyServiceCommandImpl(
 class ListVerifierDesignsServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ListDesignsArgs, List<VerifierDesignRecord>>(
+) : TypedServiceCommandAdapter<ListDesignsArgs, List<VerifierDesignRecord>, IdkError>(
         commandId = ListVerifierDesignsServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListDesignsArgs>(),
@@ -186,7 +186,7 @@ class ListVerifierDesignsServiceCommandImpl(
 class UpdateVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<UpdateVerifierDesignArgs, VerifierDesignRecord>(
+) : TypedServiceCommandAdapter<UpdateVerifierDesignArgs, VerifierDesignRecord, IdkError>(
         commandId = UpdateVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<UpdateVerifierDesignArgs>(),
@@ -210,7 +210,7 @@ class UpdateVerifierDesignServiceCommandImpl(
 class DeleteVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<DeleteDesignArgs, Boolean>(
+) : TypedServiceCommandAdapter<DeleteDesignArgs, Boolean, IdkError>(
         commandId = DeleteVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteDesignArgs>(),

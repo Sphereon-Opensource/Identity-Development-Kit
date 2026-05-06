@@ -69,7 +69,7 @@ class ValidateClientIdCommandImpl(
     private val identifierService: IdentifierService,
     private val didResolverRegistry: DidResolverRegistry? = null,
     private val verifyVerifierAttestationCommand: VerifyVerifierAttestationCommand? = null,
-) : TypedServiceCommandAdapter<ValidateClientIdArgs, ValidateClientIdResult>(
+) : TypedServiceCommandAdapter<ValidateClientIdArgs, ValidateClientIdResult, IdkError>(
         commandId = ValidateClientIdCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateClientIdArgs>(),

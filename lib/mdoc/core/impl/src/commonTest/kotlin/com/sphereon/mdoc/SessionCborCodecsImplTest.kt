@@ -38,7 +38,6 @@ import com.sphereon.mdoc.data.device.IntentToRetain
 import com.sphereon.mdoc.data.device.NameSpace
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.NfcHandover
-import com.sphereon.mdoc.transfer.reader.OID4VPHandover
 import com.sphereon.mdoc.transfer.reader.QrHandover
 import com.sphereon.mdoc.transfer.reader.ReaderAuthentication
 import com.sphereon.mdoc.transfer.reader.RestApiHandover
@@ -222,22 +221,6 @@ class SessionCborCodecsImplTest {
         assertIs<RestApiHandover>(decoded.value.handover)
         assertEquals(transcript.handover, decoded.value.handover)
         assertContentEquals(encoded, decoded.value.original)
-    }
-
-    @Test
-    fun handover_codec_round_trips_oid4vp() {
-        @Suppress("UNCHECKED_CAST")
-        val handover =
-            OID4VPHandover(
-                clientIdHash = byteArrayOf(0x01, 0x02),
-                responseUriHash = byteArrayOf(0x03, 0x04),
-                nonce = "nonce-123",
-            ) as Handover<*, CborItem<*>>
-
-        val encoded = handoverCodec.encode(handover).getOrThrow()
-        val decoded = handoverCodec.decode(encoded).getOrThrow()
-
-        assertEquals(handover, decoded)
     }
 
     @Test

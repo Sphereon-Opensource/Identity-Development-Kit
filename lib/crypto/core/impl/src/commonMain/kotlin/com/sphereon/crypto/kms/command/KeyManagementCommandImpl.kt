@@ -61,7 +61,7 @@ class GenerateKeyCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
     private val keyReferenceStore: KeyReferenceStore,
-) : TypedServiceCommandAdapter<GenerateKeyArgs, GenerateKeyResult>(
+) : TypedServiceCommandAdapter<GenerateKeyArgs, GenerateKeyResult, IdkError>(
         commandId = GenerateKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GenerateKeyArgs>(),
@@ -126,7 +126,7 @@ class GenerateKeyCommandImpl(
 class ListKeysCommandImpl(
     execution: SessionExecution,
     private val keyStore: ManagedKeyStoreService,
-) : TypedServiceCommandAdapter<ListKeysArgs, ListKeysResult>(
+) : TypedServiceCommandAdapter<ListKeysArgs, ListKeysResult, IdkError>(
         commandId = ListKeysCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListKeysArgs>(),
@@ -171,7 +171,7 @@ class ListKeysCommandImpl(
 class GetKeyCommandImpl(
     execution: SessionExecution,
     private val keyStore: ManagedKeyStoreService,
-) : TypedServiceCommandAdapter<GetKeyArgs, GetKeyResult>(
+) : TypedServiceCommandAdapter<GetKeyArgs, GetKeyResult, IdkError>(
         commandId = GetKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetKeyArgs>(),
@@ -217,7 +217,7 @@ class GetKeyCommandImpl(
 class StoreKeyCommandImpl(
     execution: SessionExecution,
     private val keyStore: ManagedKeyStoreService,
-) : TypedServiceCommandAdapter<StoreKeyArgs, StoreKeyResult>(
+) : TypedServiceCommandAdapter<StoreKeyArgs, StoreKeyResult, IdkError>(
         commandId = StoreKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<StoreKeyArgs>(),
@@ -272,7 +272,7 @@ class StoreKeyCommandImpl(
 class DeleteKeyCommandImpl(
     execution: SessionExecution,
     private val keyStore: ManagedKeyStoreService,
-) : TypedServiceCommandAdapter<DeleteKeyArgs, DeleteKeyResult>(
+) : TypedServiceCommandAdapter<DeleteKeyArgs, DeleteKeyResult, IdkError>(
         commandId = DeleteKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteKeyArgs>(),

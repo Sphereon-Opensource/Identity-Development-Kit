@@ -12,6 +12,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import com.sphereon.ktor.server.inject.getAppService
 import com.sphereon.ktor.server.inject.getUserService
 import com.sphereon.ktor.server.inject.getSessionService
@@ -46,6 +47,7 @@ fun Application.configureKotlinInject() {
     // Install KotlinInject plugin
     install(KotlinInjectPlugin) {
         this.appGraph = appGraph
+        tenantResolver = FixedTenantResolver("default")
     }
 
     log.info("KotlinInject plugin installed with native image support: ${isNativeImage()}")

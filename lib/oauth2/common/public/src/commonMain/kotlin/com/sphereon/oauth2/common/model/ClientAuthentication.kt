@@ -29,6 +29,8 @@ import kotlinx.serialization.Serializable
  * - private_key_jwt: JWT signed with private key (RFC 7523)
  * - none: Public client (no authentication)
  * - attest_jwt_client_auth: Client attestation JWT (draft-ietf-oauth-attestation-based-client-auth)
+ * - tls_client_auth: PKI mutual-TLS (RFC 8705 §2.1)
+ * - self_signed_tls_client_auth: Self-signed mutual-TLS bound to a registered JWK (RFC 8705 §2.2)
  */
 @JsExportCompat
 @Serializable
@@ -41,6 +43,8 @@ enum class ClientAuthenticationMethod(
     PRIVATE_KEY_JWT("private_key_jwt"),
     NONE("none"),
     ATTEST_JWT_CLIENT_AUTH("attest_jwt_client_auth"),
+    TLS_CLIENT_AUTH("tls_client_auth"),
+    SELF_SIGNED_TLS_CLIENT_AUTH("self_signed_tls_client_auth"),
     ;
 
     companion object {
@@ -151,6 +155,33 @@ sealed interface ClientAuthenticationConfig {
      * Used for pre-authorized code grant with anonymous access
      */
     data object Anonymous : ClientAuthenticationConfig
+
+    /**
+     * Mutual-TLS client authentication (RFC 8705 §2).
+     *
+     * The TLS handshake at the AS edge presented [clientCertificateDer] (DER-encoded leaf
+     * certificate). The actual verification mode (PKI subject/SAN match versus self-signed
+     * JWK match) is selected per-client by the registered `token_endpoint_auth_method`. The
+     * request body (or Basic header) carries the `client_id`; no shared secret or JWT
+     * assertion is involved.
+     */
+    data class MutualTls(
+        val clientId: String,
+        val clientCertificateDer: ByteArray,
+    ) : ClientAuthenticationConfig {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is MutualTls) return false
+            return clientId == other.clientId &&
+                clientCertificateDer.contentEquals(other.clientCertificateDer)
+        }
+
+        override fun hashCode(): Int {
+            var result = clientId.hashCode()
+            result = 31 * result + clientCertificateDer.contentHashCode()
+            return result
+        }
+    }
 }
 
 /**

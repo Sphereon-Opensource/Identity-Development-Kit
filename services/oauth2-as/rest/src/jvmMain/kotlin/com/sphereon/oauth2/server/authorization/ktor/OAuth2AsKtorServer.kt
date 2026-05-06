@@ -6,12 +6,12 @@ import com.sphereon.di.app.AppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.createGraphFactory
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -21,11 +21,8 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
-import io.ktor.server.request.receiveParameters
-import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 
 fun main() {
@@ -47,12 +44,13 @@ fun main() {
 /**
  * Configure the Ktor application with OAuth2 Authorization Server routes.
  *
- * Uses [installUniversalHttpAdapters] to auto-discover the OAuth2HttpAdapter
+ * Uses [installUniversalHttpAdapters] to auto-discover the OAuth2 AS HttpAdapter set
  * contributed via DI.
  */
 fun Application.configureOAuth2As(appGraph: AppGraph) {
     install(KotlinInjectPlugin) {
         this.appGraph = appGraph
+        tenantResolver = FixedTenantResolver("default")
     }
     log.info("KotlinInject plugin installed - full DI enabled")
 
@@ -73,63 +71,22 @@ fun Application.configureOAuth2As(appGraph: AppGraph) {
         get("/health") {
             call.respondText("OK")
         }
-        get("/login") {
-            val sessionId = call.request.queryParameters["session_id"] ?: ""
-            val returnUrl = call.request.queryParameters["return_url"] ?: "/"
-            call.respondText(
-                contentType = ContentType.Text.Html,
-                text =
-                    """
-                    <!DOCTYPE html>
-                    <html>
-                    <head><title>IDK Test Login</title>
-                    <style>body{font-family:sans-serif;max-width:400px;margin:80px auto;padding:20px}
-                    input{display:block;width:100%;padding:8px;margin:8px 0;box-sizing:border-box}
-                    button{padding:10px 20px;background:#0066cc;color:#fff;border:none;cursor:pointer;width:100%}</style>
-                    </head>
-                    <body>
-                    <h2>IDK Test Login</h2>
-                    <p>Test credentials: <code>testuser</code> / <code>testpass</code></p>
-                    <form method="POST" action="login">
-                    <input type="hidden" name="session_id" value="$sessionId"/>
-                    <input type="hidden" name="return_url" value="$returnUrl"/>
-                    <input type="text" name="username" placeholder="Username" autofocus/>
-                    <input type="password" name="password" placeholder="Password"/>
-                    <button type="submit">Login</button>
-                    </form>
-                    </body></html>
-                    """.trimIndent(),
-            )
-        }
-        post("/login") {
-            val params = call.receiveParameters()
-            val username = params["username"] ?: ""
-            val password = params["password"] ?: ""
-            val sessionId = params["session_id"] ?: ""
-            val returnUrl = params["return_url"] ?: "/"
-
-            if (username == "testuser" && password == "testpass" && sessionId.isNotBlank()) {
-                // Register the authenticated session so TestUserAuthenticationProvider.getAuthenticatedUser() returns it
-                com.sphereon.oauth2.server.authorization.ktor.test.TestUserAuthenticationProvider.testAuthenticatedSessions[sessionId] = username
-                call.respondRedirect(returnUrl)
-            } else {
-                call.respondText(
-                    contentType = ContentType.Text.Html,
-                    text =
-                        """
-                        <!DOCTYPE html>
-                        <html><head><title>Login Failed</title></head>
-                        <body style="font-family:sans-serif;max-width:400px;margin:80px auto">
-                        <h2>Invalid credentials</h2>
-                        <p><a href="login?session_id=$sessionId&return_url=$returnUrl">Try again</a></p>
-                        </body></html>
-                        """.trimIndent(),
-                )
-            }
-        }
+        // GET /login and POST /login are intentionally NOT registered here. The production
+        // routes come from `installUniversalHttpAdapters()` below, which auto-discovers:
+        //   - LoginPageHttpEndpointCommandImpl  (GET /login)  → LoginPageRenderer (default
+        //     binding: SphereonBrandedLoginPageRenderer)
+        //   - LoginSubmitHttpEndpointCommandImpl (POST /login) → UserAuthenticationProvider
+        //     resolved by config (oauth2.user-provider.mode: federated|local-config|noop),
+        //     sets the `oidc_login_sid` cookie and redirects to return_url.
+        // A previous hand-written test login pair lived here, hardcoding `testuser/testpass`
+        // and a `TestUserAuthenticationProvider` static map. It bypassed both the Sphereon
+        // brand template and the OidcLoginSessionStore + cookie flow, leaving the callback
+        // unable to resolve the user (the cookie was never set). Removed entirely so the
+        // proper flow runs unconditionally.
     }
 
-    // Auto-discover and expose OAuth2 HttpAdapter
+    // Auto-discover and expose OAuth2 HttpAdapter (login page + submit, authorize, token,
+    // PAR, introspection, revocation, userinfo, etc.)
     installUniversalHttpAdapters()
 }
 

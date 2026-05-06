@@ -4,22 +4,50 @@
 	}
 }
 
-:8080 {
+# Reusable CORS handler for endpoints that browser-based wallets may call from a different origin.
+# Echoes the Origin header (rather than wildcarding) so browsers permit credentialed / custom-header
+# requests (DPoP, OAuth-Client-Attestation*) without weakening security to "any origin can read".
+# Developer-demo policy: any origin permitted.
+(cors) {
+	@cors_origin header_regexp Origin .+
+	@cors_preflight {
+		method OPTIONS
+		header_regexp Origin .+
+	}
+
+	header @cors_origin {
+		Access-Control-Allow-Origin "{http.request.header.Origin}"
+		Vary "Origin"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type, Authorization, Accept, DPoP, OAuth-Client-Attestation, OAuth-Client-Attestation-PoP"
+		Access-Control-Expose-Headers "WWW-Authenticate, DPoP-Nonce"
+		Access-Control-Max-Age "600"
+	}
+
+	respond @cors_preflight 204
+}
+
+# All routing rules live in this snippet so the plain-HTTP (:8080) site here and the
+# TLS (:8443) site in Caddyfile.conformance share one source of truth. Caddyfile.conformance
+# imports this file and references this snippet — touching a route in one place updates both
+# surfaces.
+(routes) {
 	# VCT type metadata (static JSON served by Caddy)
 	handle_path /oid4vci/vct/* {
+		import cors
 		root * /srv/vct
 		rewrite * /{path}.json
 		file_server
 		header Content-Type application/json
 	}
 
-	# Static assets (logos, background images)
+	# Static assets (logos, background images) — same-origin only.
 	handle /assets/* {
 		root * /srv
 		file_server
 	}
 
-	# Web application (handle_path strips the /webapp prefix)
+	# Web application (handle_path strips the /webapp prefix) — same-origin SPA, no CORS.
 	handle_path /webapp/* {
 		# Redirect bare /webapp/ (stripped to /) to /webapp/issuer
 		@spa_root path /
@@ -47,6 +75,7 @@
 	# Spec-correct location (OID4VCI 1.0 final, per RFC 8615):
 	# /.well-known is inserted between the host and the issuer path component.
 	handle /.well-known/openid-credential-issuer/oid4vci {
+		import cors
 		rewrite * /.well-known/openid-credential-issuer
 		reverse_proxy oid4vci-issuer:8080
 	}
@@ -56,12 +85,14 @@
 	# RFC 8615 (insert), but many deployed wallets still resolve via the old append
 	# rule, so we serve it here for compatibility.
 	handle /oid4vci/.well-known/openid-credential-issuer {
+		import cors
 		rewrite * /.well-known/openid-credential-issuer
 		reverse_proxy oid4vci-issuer:8080
 	}
 
 	# OID4VCI protocol + backend routes
 	handle /oid4vci/* {
+		import cors
 		reverse_proxy oid4vci-issuer:8080
 	}
 
@@ -69,9 +100,11 @@
 	# Served dynamically from the issuer service (KMS-backed JWKS), using the
 	# RFC 8615 insert form: /.well-known/jwt-vc-issuer/<issuer-path>.
 	handle /.well-known/jwt-vc-issuer {
+		import cors
 		reverse_proxy oid4vci-issuer:8080
 	}
 	handle /.well-known/jwt-vc-issuer/oid4vci {
+		import cors
 		reverse_proxy oid4vci-issuer:8080
 	}
 
@@ -80,6 +113,7 @@
 	# =========================================================================
 
 	handle /oid4vp/* {
+		import cors
 		reverse_proxy oid4vp-verifier:8080
 	}
 
@@ -97,29 +131,48 @@
 
 	# OAuth2 AS well-known: spec-correct location per RFC 8414 (path inserted)
 	handle /.well-known/oauth-authorization-server/auth {
+		import cors
 		rewrite * /.well-known/oauth-authorization-server
 		reverse_proxy oauth2-as:8080
 	}
 	handle /.well-known/openid-configuration/auth {
+		import cors
 		rewrite * /.well-known/openid-configuration
 		reverse_proxy oauth2-as:8080
 	}
 
 	# OAuth2 AS well-known: root fallback
 	handle /.well-known/oauth-authorization-server {
+		import cors
 		reverse_proxy oauth2-as:8080
 	}
 	handle /.well-known/openid-configuration {
+		import cors
 		reverse_proxy oauth2-as:8080
 	}
 
 	# JWKS (used for JWT access token verification, not path-scoped)
 	handle /.well-known/jwks.json {
+		import cors
 		reverse_proxy oauth2-as:8080
 	}
 
 	# OAuth2 AS routes (handle_path strips /auth prefix before proxying)
 	handle_path /auth/* {
+		import cors
+		reverse_proxy oauth2-as:8080
+	}
+
+	# Login page + static assets. The bundled `SphereonBrandedLoginPageRenderer` emits
+	# host-absolute paths — `<link href="/login/assets/css/login.css">`, `<form action="/login">` —
+	# without the deployment's `/auth` prefix (the renderer is not deployment-path-aware). Mirror
+	# both at the Caddy edge so the form submits and the assets load. `handle` (no path strip)
+	# preserves `/login` and `/login/assets/*` verbatim for the AS, matching the routes registered
+	# by `LoginPageHttpEndpointCommandImpl` / `LoginSubmitHttpEndpointCommandImpl` /
+	# `LoginAssetHttpEndpointCommandImpl`.
+	@login_routes path /login /login/*
+	handle @login_routes {
+		import cors
 		reverse_proxy oauth2-as:8080
 	}
 
@@ -133,4 +186,11 @@
 		}
 		redir @root_redirect /webapp/issuer permanent
 	}
+}
+
+# Plain HTTP listener used by the regular dev demo. The conformance setup
+# (start-conformance-dev.{sh,bat}) layers a separate TLS listener on top via
+# Caddyfile.conformance — see that file when running the OIDF FAPI2 suite.
+:8080 {
+	import routes
 }

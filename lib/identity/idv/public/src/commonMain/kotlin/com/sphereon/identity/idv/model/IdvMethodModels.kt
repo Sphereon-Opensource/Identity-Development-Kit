@@ -16,6 +16,10 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.attribute.flow.AttributeBag
+import com.sphereon.attribute.flow.AttributeBinding
+import com.sphereon.attribute.flow.AttributePath
+import com.sphereon.attribute.flow.InputFieldId
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
@@ -24,9 +28,23 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
+/**
+ * Marker contract for an IDV method node config. Open (non-sealed) so EDK method
+ * modules (`vdx/edk/lib/identity/idv/method-*`) can ship their own definition data
+ * classes next to the corresponding [IdvMethodDriver]. The IDK ships only the
+ * built-in definitions whose drivers live in IDK ([OidcMethodDefinition],
+ * [WalletMethodDefinition], [AttributeMatchMethodDefinition]); EDK email,
+ * magic-link, password-reset, document, biometric, etc. ship theirs in EDK.
+ *
+ * Serialization: the engine reads/writes definitions through SqlDelight or in-memory
+ * stores via [com.sphereon.identity.idv.store.IdvMethodDefinitionStore]; the
+ * `kotlinx.serialization` polymorphic registry must be configured per deployment to
+ * include every method module on the classpath. There is no automatic discovery —
+ * method-module DI bindings register the driver, the deployment wires the
+ * serialization module separately (see each method's KDoc).
+ */
 @JsExportCompat
-@Serializable
-sealed interface IdvMethodDefinition {
+interface IdvMethodDefinition {
     val id: IdvMethodId
     val type: IdvMethodType
     val enabled: Boolean

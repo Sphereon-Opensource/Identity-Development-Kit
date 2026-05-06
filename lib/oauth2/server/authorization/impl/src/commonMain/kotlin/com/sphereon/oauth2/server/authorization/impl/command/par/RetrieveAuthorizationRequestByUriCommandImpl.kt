@@ -18,6 +18,7 @@ package com.sphereon.oauth2.server.authorization.impl.command.par
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
@@ -27,6 +28,7 @@ import com.sphereon.oauth2.server.authorization.command.RetrieveAuthorizationReq
 import com.sphereon.oauth2.server.authorization.command.RetrieveByRequestUriArgs
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.storage.PushedAuthorizationRequestStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
@@ -63,7 +65,8 @@ import kotlin.native.ObjCName
 @ObjCName("RetrieveAuthorizationRequestByUriCommandImpl", exact = true)
 class RetrieveAuthorizationRequestByUriCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<RetrieveByRequestUriArgs, VerifiedAuthorizationRequest>(
+    private val pushedAuthorizationRequestStorage: PushedAuthorizationRequestStorage,
+) : TypedServiceCommandAdapter<RetrieveByRequestUriArgs, VerifiedAuthorizationRequest, IdkError>(
         commandId = RetrieveAuthorizationRequestByUriCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RetrieveByRequestUriArgs>(),
@@ -93,20 +96,26 @@ class RetrieveAuthorizationRequestByUriCommandImpl(
             )
         }
 
-        // TODO: Implement actual storage retrieval
-        // For now, return NOT_FOUND to indicate the request_uri was not found
-        // In a full implementation, this would:
-        // 1. Retrieve stored request from RequestUriStorage
-        // 2. Verify expiration
-        // 3. Verify not already used
-        // 4. Mark as used
-        // 5. Return verified authorization request
-
-        return Err(
-            AuthorizationServerError.InvalidRequest(
-                details = "Request URI not found: $requestUri",
-                exception = null,
-            ),
-        )
+        // FAPI 2.0 SP §5.3.2.2 Note 3: single-use is enforced at the *authorization* step
+        // (auth-code issuance), NOT at every `/authorize` visit. We only peek here so the
+        // user can hit the endpoint twice in a row, navigate back, refresh, etc. The actual
+        // consume happens in `CreateAuthorizationCodeCommandImpl` once a code is being minted.
+        val lookupResult = pushedAuthorizationRequestStorage.lookupRequest(requestUri)
+        if (lookupResult.isErr) {
+            return Err(
+                AuthorizationServerError.ServerError(
+                    details = "Failed to look up pushed authorization request: ${lookupResult.error.details}",
+                    exception = lookupResult.error.exception,
+                ),
+            )
+        }
+        val stored =
+            lookupResult.value
+                ?: return Err(
+                    AuthorizationServerError.InvalidRequest(
+                        details = "Pushed authorization request_uri not found, expired, or already consumed: $requestUri",
+                    ),
+                )
+        return Ok(stored)
     }
 }

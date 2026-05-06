@@ -4,8 +4,8 @@
   <CurrentIssues>
     <ID>ClassOrdering:AuthorizationSessionStore.kt$AuthorizationSessionStore$Companion</ID>
     <ID>ClassOrdering:ConfigurationStore.kt$ConfigurationStore$Companion</ID>
-    <ID>ClassOrdering:RequestUriHandler.kt$DisabledRequestUriSigningConfig$override val audience: String get() = throw UnsupportedOperationException("JAR signing is disabled")</ID>
-    <ID>ClassOrdering:RequestUriHandler.kt$RequestUriSigningConfig$suspend fun resolveSigningKey(): KeyInfoType&lt;*></ID>
+    <ID>ClassOrdering:RequestUriHandler.kt$DisabledRequestObjectSigningConfig$override val audience: String get() = throw UnsupportedOperationException("JAR signing is disabled")</ID>
+    <ID>ClassOrdering:RequestUriHandler.kt$RequestObjectSigningConfig$suspend fun resolveSigningKey(): KeyInfoType&lt;*></ID>
     <ID>ClassOrdering:ResponseCodeStore.kt$ResponseCodeStore$Companion</ID>
   </CurrentIssues>
 </SmellBaseline>

@@ -74,7 +74,7 @@ import kotlin.native.ObjCName
 class CreateJweJsonFlattenedCommandImpl(
     execution: SessionExecution,
     private val keyManagerService: KeyManagerService,
-) : TypedServiceCommandAdapter<CreateJweJsonArgs, JweJsonFlattened>(
+) : TypedServiceCommandAdapter<CreateJweJsonArgs, JweJsonFlattened, IdkError>(
         commandId = CreateJweJsonFlattenedCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJweJsonArgs>(),

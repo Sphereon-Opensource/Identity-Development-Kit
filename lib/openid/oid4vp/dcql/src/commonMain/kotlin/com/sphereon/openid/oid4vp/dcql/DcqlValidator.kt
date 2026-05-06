@@ -296,4 +296,3 @@ val validateDcqlTrustedAuthority =
             }
         }
     }
-

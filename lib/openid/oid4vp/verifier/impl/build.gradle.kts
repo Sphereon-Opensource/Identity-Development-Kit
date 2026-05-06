@@ -78,6 +78,14 @@ kotlin {
                 // SD-JWT verification
                 api(projects.libSdjwtPublic)
 
+                // mDoc verification (Fix V-P0-11): MdocValidations + DeviceAuthValidation +
+                // SessionTranscriptCborCodec + DeviceResponseCborCodec for OID4VP iso_mdl path.
+                api(projects.libMdocCorePublic)
+
+                // mDoc IACA trust anchors flow through the shared X.509 trust loader
+                // (`trust.anchors.x509.*` config keys). Same loader X509TrustValidationService uses.
+                implementation(projects.libTrustX509)
+
                 // Serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
 
@@ -114,6 +122,13 @@ kotlin {
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
                 implementation(projects.libSdjwtImpl)
+                // mdoc impl bindings (MdocValidations, DeviceAuthValidation, *CborCodec impls)
+                // are required for the test app graph to satisfy VerifyHolderBindingCommandImpl's
+                // mdoc dependencies. Pulls in the CBOR + COSE impls transitively.
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libCborImpl)
+                // DefaultTrustConfigProvider binding for X509TrustAnchorLoaderImpl.
+                implementation(projects.libTrustCoreImpl)
                 implementation(sphereonlib.io.ktor.client.mock)
             }
         }
@@ -134,6 +149,9 @@ kotlin {
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
                 implementation(projects.libSdjwtImpl)
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libCborImpl)
+                implementation(projects.libTrustCoreImpl)
                 implementation(sphereonlib.io.ktor.client.mock)
                 implementation(sphereonlib.org.jetbrains.kotlin.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)

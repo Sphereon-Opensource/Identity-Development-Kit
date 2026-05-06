@@ -23,7 +23,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /**
- * OID4VCI 1.1 Section 9.3 Credential Response Item.
+ * OID4VCI 1.0 §8.3 Credential Response Item.
  *
  * Each item in the `credentials` array wraps a single credential.
  */
@@ -34,20 +34,22 @@ data class CredentialResponseItem(
 )
 
 /**
- * OID4VCI Credential Response (1.0 Section 8.3 / 1.1 Section 9.3).
+ * OID4VCI 1.0 §8.3 Credential Response.
  *
- * 1.0: [credential] is a single credential.
- * 1.1: [credentials] is an array of [CredentialResponseItem], each containing a `credential` field.
- * [interval] is REQUIRED when [transactionId] is present (1.1 Section 9.3).
+ * - [credentials]: REQUIRED for synchronous issuance — array of [CredentialResponseItem], each
+ *   containing a `credential` field.
+ * - [transactionId]: REQUIRED for deferred issuance.
+ * - [interval]: OPTIONAL polling hint when [transactionId] is present.
+ * - [notificationId]: OPTIONAL pointer for the holder to call the notification endpoint.
+ *
+ * Nonces are obtained from the dedicated `/nonce` endpoint (§7.2) — they are no longer
+ * carried inline on this response.
  */
 @JsExportCompat
 @Serializable(with = CredentialResponseSerializer::class)
 data class CredentialResponse(
-    val credential: JsonElement? = null,
     val credentials: List<CredentialResponseItem>? = null,
     @SerialName("transaction_id") val transactionId: String? = null,
-    @SerialName("c_nonce") val cNonce: String? = null,
-    @SerialName("c_nonce_expires_in") val cNonceExpiresIn: Int? = null,
     @SerialName("notification_id") val notificationId: String? = null,
     val interval: Int? = null,
     val additionalParameters: Map<String, JsonElement> = emptyMap(),

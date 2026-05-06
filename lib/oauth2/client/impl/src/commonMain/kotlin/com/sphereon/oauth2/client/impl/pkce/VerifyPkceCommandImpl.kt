@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.service.EmptyResult
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.DigestAlg
@@ -42,7 +43,7 @@ import dev.zacsweers.metro.SingleIn
 @SingleIn(SessionScope::class)
 class VerifyPkceCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<VerifyPkceArgs, EmptyResult>(
+) : TypedServiceCommandAdapter<VerifyPkceArgs, EmptyResult, IdkError>(
         commandId = VerifyPkceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyPkceArgs>(),
@@ -69,12 +70,16 @@ class VerifyPkceCommandImpl(
         try {
             val calculatedChallenge = calculateCodeChallenge(codeVerifier, method)
 
-            if (calculatedChallenge == codeChallenge) {
+            // Constant-time compare: leaking per-byte timing on PKCE verification lets an
+            // attacker who controls the verifier guess the stored challenge. The error
+            // message also redacts both values — echoing the expected challenge would tell
+            // a probing client what they were aiming at.
+            if (ConstantTime.equalsCT(calculatedChallenge, codeChallenge)) {
                 Ok(Unit).asResult()
             } else {
                 Err(
                     PkceError.VerificationFailed(
-                        reason = "Code challenge mismatch: expected=$codeChallenge, calculated=$calculatedChallenge",
+                        reason = "Code challenge mismatch",
                     ),
                 ).asResult()
             }

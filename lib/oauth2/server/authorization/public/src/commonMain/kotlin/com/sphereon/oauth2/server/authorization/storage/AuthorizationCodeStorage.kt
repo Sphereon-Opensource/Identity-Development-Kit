@@ -53,29 +53,68 @@ interface AuthorizationCodeStorage {
     ): IdkResult<Unit, AuthorizationServerError.StorageError>
 
     /**
-     * Retrieve and consume (delete) an authorization code
+     * Retrieve and consume an authorization code (mark as used)
      *
      * CRITICAL: This operation MUST be atomic to prevent replay attacks.
      *
      * The implementation must:
      * 1. Check if the code exists
-     * 2. Verify it hasn't been used
-     * 3. Mark it as used OR delete it
+     * 2. Verify it hasn't been used (`AuthorizationCodeData.used == false`)
+     * 3. Mark the entry as used (NOT delete it — see RFC 6749 §10.5 below)
      * 4. Return the code data
      * 5. All in a single atomic operation
      *
      * If the code has already been used, this indicates a potential security breach
-     * and should be logged/alerted.
+     * and should be logged/alerted. Replay detection happens via [findAuthorizationCode]:
+     * the entry is retained with `used = true` so a follow-up replay attempt can fetch it,
+     * read [AuthorizationCodeData.issuedAccessToken] / [AuthorizationCodeData.issuedRefreshToken]
+     * (recorded by [recordIssuedTokensForCode] right after the first successful redemption),
+     * and revoke them via [TokenStorage].
      *
-     * RFC 6749 Section 10.5:
+     * RFC 6749 §10.5:
      * "If an authorization code is used more than once, the authorization server
      * MUST deny the request and SHOULD revoke (when possible) all tokens previously
      * issued based on that authorization code."
      *
      * @param code The authorization code string
-     * @return Code data if valid and not used, null if not found or already used, or storage error
+     * @return Code data on first successful consume, null if not found or already used (the
+     *   caller can then disambiguate via [findAuthorizationCode]), or storage error
      */
     suspend fun consumeAuthorizationCode(code: String): IdkResult<AuthorizationCodeData?, AuthorizationServerError.StorageError>
+
+    /**
+     * Retrieve a stored authorization-code entry without mutating its state.
+     *
+     * Returns the entry whether or not it has been consumed — used by the auth-code grant
+     * handler for RFC 6749 §10.5 replay handling: when [consumeAuthorizationCode] returns
+     * null, the handler calls this to distinguish "not found / expired" from "already
+     * consumed", and on the latter reads [AuthorizationCodeData.issuedAccessToken] /
+     * [AuthorizationCodeData.issuedRefreshToken] to revoke previously-issued tokens.
+     *
+     * @param code The authorization code string
+     * @return Code data if a matching entry exists (consumed or not), null when no entry
+     *   is stored under this code, or storage error
+     */
+    suspend fun findAuthorizationCode(code: String): IdkResult<AuthorizationCodeData?, AuthorizationServerError.StorageError>
+
+    /**
+     * Record the access / refresh tokens minted from a successfully-redeemed authorization
+     * code so a future replay attempt can retrieve them and revoke them per RFC 6749 §10.5.
+     *
+     * Best-effort: a storage failure here does not invalidate the token issuance the caller
+     * has already done. Callers should treat any error as a SHOULD-level audit miss rather
+     * than a hard failure of the /token request.
+     *
+     * @param code The authorization code that was just redeemed
+     * @param accessToken The access token minted from this code, or null if none was issued
+     * @param refreshToken The refresh token minted from this code, or null if none was issued
+     * @return Success or storage error (storage error includes "code not found")
+     */
+    suspend fun recordIssuedTokensForCode(
+        code: String,
+        accessToken: String?,
+        refreshToken: String?,
+    ): IdkResult<Unit, AuthorizationServerError.StorageError>
 
     /**
      * Check if an authorization code has been used (without consuming it)

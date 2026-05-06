@@ -22,6 +22,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.newBuildServerMetadataCommand
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,14 +50,14 @@ class MetadataCapabilityTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     iae = FeaturePolicy.DISABLED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -72,14 +73,14 @@ class MetadataCapabilityTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     iae = FeaturePolicy.SUPPORTED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -101,14 +102,14 @@ class MetadataCapabilityTest {
             // Config WITHOUT the pre-authorized_code grant type
             val configWithout =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     grantTypesEnabled = setOf("authorization_code", "client_credentials"),
                 )
             val providerWithout =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to configWithout)),
                 )
-            val cmdWithout = BuildServerMetadataCommandImpl(ctx.execution, providerWithout)
+            val cmdWithout = ctx.newBuildServerMetadataCommand(providerWithout)
             val resultWithout = cmdWithout.execute(BuildServerMetadataArgs())
 
             assertTrue(resultWithout.isOk)
@@ -120,7 +121,7 @@ class MetadataCapabilityTest {
             // Config WITH the pre-authorized_code grant type
             val configWith =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     grantTypesEnabled =
                         setOf(
                             "authorization_code",
@@ -131,7 +132,7 @@ class MetadataCapabilityTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to configWith)),
                 )
-            val cmdWith = BuildServerMetadataCommandImpl(ctx.execution, providerWith)
+            val cmdWith = ctx.newBuildServerMetadataCommand(providerWith)
             val resultWith = cmdWith.execute(BuildServerMetadataArgs())
 
             assertTrue(resultWith.isOk)
@@ -151,7 +152,7 @@ class MetadataCapabilityTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     introspection = FeaturePolicy.DISABLED,
                     revocation = FeaturePolicy.DISABLED,
                     par = FeaturePolicy.DISABLED,
@@ -167,7 +168,7 @@ class MetadataCapabilityTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -204,7 +205,7 @@ class MetadataCapabilityTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     introspection = FeaturePolicy.SUPPORTED,
                     revocation = FeaturePolicy.SUPPORTED,
                     par = FeaturePolicy.SUPPORTED,
@@ -229,7 +230,7 @@ class MetadataCapabilityTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 

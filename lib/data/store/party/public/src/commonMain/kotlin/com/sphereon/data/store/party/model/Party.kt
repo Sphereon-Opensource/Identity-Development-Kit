@@ -51,7 +51,14 @@ data class Party
         val partyType: PartyType,
         /** Origin of the party (external/managed) */
         val origin: PartyOrigin,
-        /** User-friendly display name (editable by user) */
+        /**
+         * User-friendly display name (editable by user). Non-null: abstract
+         * identity-backed parties get filled with the identity's own UUID at
+         * create-time so the schema invariant holds without a semantically-
+         * empty sentinel; concrete Party roles (NaturalPerson / Organization /
+         * Contact / OID4VCI-issuer / OID4VP-verifier / credential-template)
+         * populate this with a meaningful human-readable name.
+         */
         @SerialName("displayName")
         val displayName: String,
         /** Optional URI for the party (DID, URL, etc.) */

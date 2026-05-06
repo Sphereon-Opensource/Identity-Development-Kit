@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.idv.oidc
 
+import com.sphereon.attribute.flow.AttributePath
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -26,7 +27,6 @@ import com.sphereon.crypto.resolution.IdentifierService
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.idv.model.AttributeMapping
-import com.sphereon.identity.idv.model.AttributePath
 import com.sphereon.identity.idv.model.AuthMethodReference
 import com.sphereon.identity.idv.model.CallbackComplete
 import com.sphereon.identity.idv.model.CallbackFailed

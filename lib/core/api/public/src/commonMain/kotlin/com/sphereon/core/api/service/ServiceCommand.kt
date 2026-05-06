@@ -21,6 +21,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.Command
 import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
 import com.sphereon.core.api.session.ICommandExecutionExtension
@@ -75,7 +76,7 @@ enum class ActionType {
  * **Usage:**
  * ```kotlin
  * // Define a service command interface
- * interface GetKeyServiceCommand : ServiceCommand<GetKeyInput, KeyInfo> {
+ * interface GetKeyServiceCommand : ServiceCommand<GetKeyInput, KeyInfo, IdkError> {
  *     override val commandId: String get() = "kms.keys.get"
  *     override val actionType: ActionType get() = ActionType.READ
  * }
@@ -102,8 +103,8 @@ enum class ActionType {
 private const val COMMAND_ID_SEGMENT_COUNT = 3
 
 @JsExportCompat
-interface ServiceCommand<TInput : Any, TOutput : Any> :
-    Command<TInput, TOutput, IdkError>,
+interface ServiceCommand<TInput : Any, TOutput : Any, TError : IdkErrorType> :
+    Command<TInput, TOutput, TError>,
     RegistrableServiceCommand {
     /**
      * Unique identifier for registry lookup.
@@ -172,7 +173,7 @@ interface ServiceCommand<TInput : Any, TOutput : Any> :
      * Runs after structural validation ([ValidatableInput.validate]) and before doExecute().
      * Default: no validation (Ok(Unit)).
      */
-    suspend fun validateInput(args: TInput): IdkResult<Unit, IdkError> = Ok(Unit)
+    suspend fun validateInput(args: TInput): IdkResult<Unit, TError> = Ok(Unit)
 }
 
 /**
@@ -231,7 +232,7 @@ interface ServiceFacade {
  * class GetKeyServiceCommandImpl(
  *     execution: SessionExecution,
  *     private val keyStore: KeyStore
- * ) : TypedServiceCommandAdapter<GetKeyInput, KeyInfo>(
+ * ) : TypedServiceCommandAdapter<GetKeyInput, KeyInfo, IdkError>(
  *     commandId = "kms.keys.get",
  *     execution = execution,
  *     inputTypeToken = typeToken<GetKeyInput>(),
@@ -258,25 +259,25 @@ interface ServiceFacade {
  * @param outputTypeToken Type token for serializing output
  */
 @JsExportCompat
-abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any>(
+abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any, TError : IdkErrorType>(
     override val commandId: String,
     execution: SessionExecution,
     override val inputTypeToken: TypeToken<TInput>,
     override val outputTypeToken: TypeToken<TOutput>,
     isEnabled: Boolean = true,
-    initExtensions: Array<ICommandInitExtension<TInput, TOutput, IdkError>> = emptyArray(),
-    executionExtensions: Array<ICommandExecutionExtension<TInput, TOutput, IdkError>> = emptyArray(),
-) : ExecutionScopedCommandAdapter<TInput, TOutput, IdkError>(
+    initExtensions: Array<ICommandInitExtension<TInput, TOutput, TError>> = emptyArray(),
+    executionExtensions: Array<ICommandExecutionExtension<TInput, TOutput, TError>> = emptyArray(),
+) : ExecutionScopedCommandAdapter<TInput, TOutput, TError>(
         id = commandId,
         isEnabled = isEnabled,
         initExtensions = initExtensions,
         executionExtensions = executionExtensions,
         execution = execution,
     ),
-    ServiceCommand<TInput, TOutput> {
+    ServiceCommand<TInput, TOutput, TError> {
     override val id: String get() = commandId
 
-    override suspend fun execute(args: TInput): IdkResult<TOutput, IdkError> = super.execute(args)
+    override suspend fun execute(args: TInput): IdkResult<TOutput, TError> = super.execute(args)
 
     /**
      * Implement this to provide the command's business logic.
@@ -288,7 +289,7 @@ abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any>(
     abstract override suspend fun doExecute(
         args: TInput,
         applyDuring: (TInput) -> TInput,
-    ): IdkResult<TOutput, IdkError>
+    ): IdkResult<TOutput, TError>
 }
 
 /**
@@ -314,14 +315,14 @@ abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any>(
  * ```
  */
 @JsExportCompat
-abstract class UnitInputServiceCommandAdapter<TOutput : Any>(
+abstract class UnitInputServiceCommandAdapter<TOutput : Any, TError : IdkErrorType>(
     commandId: String,
     execution: SessionExecution,
     outputTypeToken: TypeToken<TOutput>,
     isEnabled: Boolean = true,
-    initExtensions: Array<ICommandInitExtension<Unit, TOutput, IdkError>> = emptyArray(),
-    executionExtensions: Array<ICommandExecutionExtension<Unit, TOutput, IdkError>> = emptyArray(),
-) : TypedServiceCommandAdapter<Unit, TOutput>(
+    initExtensions: Array<ICommandInitExtension<Unit, TOutput, TError>> = emptyArray(),
+    executionExtensions: Array<ICommandExecutionExtension<Unit, TOutput, TError>> = emptyArray(),
+) : TypedServiceCommandAdapter<Unit, TOutput, TError>(
         commandId = commandId,
         execution = execution,
         inputTypeToken = TypeToken.UNIT,

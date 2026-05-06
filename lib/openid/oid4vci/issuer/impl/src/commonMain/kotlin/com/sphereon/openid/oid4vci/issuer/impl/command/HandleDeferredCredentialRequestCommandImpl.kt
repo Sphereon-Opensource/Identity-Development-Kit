@@ -66,7 +66,7 @@ class HandleDeferredCredentialRequestCommandImpl(
     private val encryptor: CredentialResponseEncryptor,
     private val nonceManager: NonceManager,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<HandleDeferredCredentialRequestArgs, CredentialResponse>(
+) : TypedServiceCommandAdapter<HandleDeferredCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleDeferredCredentialRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<HandleDeferredCredentialRequestArgs>(),
@@ -125,7 +125,12 @@ class HandleDeferredCredentialRequestCommandImpl(
         // 1. Validate access token
         asBridge
             .validateAccessToken(
-                ValidateAccessTokenArgs(accessToken = applied.accessToken, dpopProof = applied.dpopProof),
+                ValidateAccessTokenArgs(
+                    accessToken = applied.accessToken,
+                    dpopProof = applied.dpopProof,
+                    httpUrl = applied.httpUrl,
+                    httpMethod = applied.httpMethod,
+                ),
             ).getOrElse { return Err(it) }
 
         // 2. Look up deferred entry
@@ -142,36 +147,24 @@ class HandleDeferredCredentialRequestCommandImpl(
                     .update(entry.copy(status = DeferredCredentialStatus.DELIVERED))
                     .getOrElse { return Err(it) }
 
-                // Build credential response: batch (credentials array) or single
+                // Build credential response. OID4VCI 1.0 §8.3 always uses the `credentials`
+                // array form, whether the deferred result holds a single credential or a batch.
                 val batchCredentials = entry.credentialResponses
-                val response =
+                val items =
                     if (!batchCredentials.isNullOrEmpty()) {
-                        CredentialResponse(
-                            credentials = batchCredentials.map { CredentialResponseItem(credential = it) },
-                            notificationId = entry.notificationId,
-                        )
+                        batchCredentials.map { CredentialResponseItem(credential = it) }
                     } else {
                         val credentialJson =
                             entry.credentialResponse
                                 ?: return Err(IdkError.UNKNOWN_ERROR(message = "Deferred entry READY but no credential stored"))
-                        CredentialResponse(
-                            credential = credentialJson,
-                            notificationId = entry.notificationId,
-                        )
+                        listOf(CredentialResponseItem(credential = credentialJson))
                     }
-
-                // Issue a fresh nonce for the response
-                val nonceResult = nonceManager.issue()
-                val responseWithNonce =
-                    if (nonceResult.isOk) {
-                        val nonce = nonceResult.value!!
-                        response.copy(cNonce = nonce.cNonce, cNonceExpiresIn = nonce.cNonceExpiresIn)
-                    } else {
-                        response
-                    }
-
-                // Apply encryption if requested
-                encryptor.encryptIfRequested(responseWithNonce, deferredRequest.credentialResponseEncryption)
+                Ok(
+                    CredentialResponse(
+                        credentials = items,
+                        notificationId = entry.notificationId,
+                    ),
+                )
             }
 
             DeferredCredentialStatus.PENDING -> {

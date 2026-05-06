@@ -57,7 +57,7 @@ class CreateReconciliationSessionCommandImpl(
     private val oidcConnectionResolver: OidcConnectionResolver,
     private val createPkceCommand: CreatePkceCommand,
     private val oidcDiscoveryService: OidcDiscoveryService,
-) : TypedServiceCommandAdapter<CreateReconciliationSessionArgs, CreateReconciliationSessionResult>(
+) : TypedServiceCommandAdapter<CreateReconciliationSessionArgs, CreateReconciliationSessionResult, IdkError>(
         commandId = CreateReconciliationSessionCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateReconciliationSessionArgs>(),

@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
@@ -48,7 +49,7 @@ data class VerifiedClientAuthentication(
  * - AttestationJwt: full attestation-based client auth verification (draft-ietf-oauth-attestation-based-client-auth)
  * - None/Anonymous: pass through
  */
-interface VerifyClientAuthenticationCommand : ServiceCommand<VerifyClientAuthenticationArgs, VerifiedClientAuthentication> {
+interface VerifyClientAuthenticationCommand : ServiceCommand<VerifyClientAuthenticationArgs, VerifiedClientAuthentication, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

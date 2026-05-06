@@ -38,6 +38,7 @@ import com.sphereon.core.api.session.ICommandExecutionExtension
 import com.sphereon.core.api.session.ICommandInitExtension
 import com.sphereon.core.api.session.IEnhancedCommandExecutionExtension
 import com.sphereon.core.api.session.MultiService
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 
 /**
  * Base class for HTTP adapters backed by the IDK command infrastructure.
@@ -104,6 +105,14 @@ abstract class CommandBackedHttpAdapter(
     executionExtensions: Array<ICommandExecutionExtension<GenericHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
     enhancedExecutionExtensions: Array<IEnhancedCommandExecutionExtension<GenericHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
     protected open val errorRenderer: HttpErrorRenderer = DefaultRestErrorRenderer(),
+    /**
+     * Per-adapter routable-slug peel policy. Defaults to [TenantPathPolicy.None] —
+     * the path is matched as-is and no peel is attempted. Adapters that want
+     * spec-correct OAuth2/OIDC URL routing override this:
+     * - Discovery adapters: [TenantPathPolicy.WellKnownSuffix]
+     * - Authorization / token / par / callback adapters: [TenantPathPolicy.LeadingSlug]
+     */
+    open val tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None,
 ) : ExecutionScopedCommandAdapter<GenericHttpRequest, GenericHttpResponse, IdkError>(
         id = id,
         isEnabled = isEnabled,
@@ -122,6 +131,27 @@ abstract class CommandBackedHttpAdapter(
      * to ensure commands are constructed after the adapter is fully initialized.
      */
     protected abstract val endpointCommands: List<HttpEndpointCommand>
+
+    /**
+     * Slug lookup used by [TenantPathPolicy.LeadingSlug] / [TenantPathPolicy.WellKnownSuffix]
+     * peeling. Defaults to a no-op implementation that returns null for every
+     * lookup so legacy adapters compile and run unchanged. Adapters with a
+     * non-`None` [tenantPathPolicy] MUST override this with the AppScope-injected
+     * [RoutableSlugLookup] binding (the EDK `lib-tenant-resolution-impl` module
+     * contributes a postgres-backed implementation; without it, peels never
+     * succeed and as-is matching applies).
+     */
+    protected open val routableSlugLookup: RoutableSlugLookup = NoOpRoutableSlugLookupSingleton
+
+    /**
+     * Mutable session-scoped tenant override. The dispatcher writes the descended
+     * tenant id here on a successful peel and clears it after the matched
+     * endpoint returns. Defaults to a no-op so legacy adapters compile; adapters
+     * with a non-`None` [tenantPathPolicy] should override this with the
+     * SessionScope-injected [MutableResolvedTenantIdProvider] binding so
+     * `SessionExecution.tenantId` reflects the descended value during dispatch.
+     */
+    protected open val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = NoopMutableResolvedTenantIdProvider
 
     /**
      * Optional OpenAPI hints for this adapter.
@@ -226,7 +256,68 @@ abstract class CommandBackedHttpAdapter(
             return false
         }
         val relativeRequest = stripAdapterBasePath(args)
-        return enabledEndpoints.any { endpoint -> endpoint.supports(relativeRequest) }
+        if (enabledEndpoints.any { endpoint -> endpoint.supports(relativeRequest) }) {
+            return true
+        }
+        // No as-is match. If the policy permits peeling, see whether ANY peel
+        // could plausibly match an endpoint pattern. We only check the raw
+        // pattern shape here (length / segment count) to avoid hitting
+        // [routableSlugLookup] from supports — that's an I/O call we save for
+        // doExecute. The conservative check is: under LeadingSlug(maxDepth=N),
+        // pattern can match if path has at most N more leading segments than
+        // the longest endpoint pattern. Symmetrically for WellKnownSuffix.
+        return when (val policy = tenantPathPolicy) {
+            TenantPathPolicy.None -> false
+            is TenantPathPolicy.LeadingSlug -> couldPeelLeading(relativeRequest, policy.maxDepth)
+            is TenantPathPolicy.WellKnownSuffix -> couldPeelTrailing(relativeRequest, policy.maxDepth)
+        }
+    }
+
+    private fun couldPeelLeading(
+        request: GenericHttpRequest,
+        maxDepth: Int
+    ): Boolean {
+        val reqSegments = request.path.split('/').filter { it.isNotEmpty() }
+        return enabledEndpoints.any { endpoint ->
+            if (!endpoint.endpoint.method.name
+                    .equals(request.method, ignoreCase = true)
+            ) {
+                return@any false
+            }
+            val patternSegments =
+                endpoint.endpoint.pathPattern
+                    .split('/')
+                    .filter { it.isNotEmpty() }
+            // Peel up to `maxDepth` from the front: synthesize candidate paths and
+            // try to match.
+            (1..minOf(maxDepth, reqSegments.size)).any { peel ->
+                val remaining = "/" + reqSegments.drop(peel).joinToString("/")
+                request.copy(path = remaining).let { peeled ->
+                    peeled.matches(endpoint.endpoint.method.name, endpoint.endpoint.pathPattern)
+                }
+            }
+        }
+    }
+
+    private fun couldPeelTrailing(
+        request: GenericHttpRequest,
+        maxDepth: Int
+    ): Boolean {
+        val reqSegments = request.path.split('/').filter { it.isNotEmpty() }
+        return enabledEndpoints.any { endpoint ->
+            if (!endpoint.endpoint.method.name
+                    .equals(request.method, ignoreCase = true)
+            ) {
+                return@any false
+            }
+            (1..minOf(maxDepth, reqSegments.size)).any { peel ->
+                val remaining =
+                    if (reqSegments.size - peel <= 0) "/" else "/" + reqSegments.dropLast(peel).joinToString("/")
+                request.copy(path = remaining).let { peeled ->
+                    peeled.matches(endpoint.endpoint.method.name, endpoint.endpoint.pathPattern)
+                }
+            }
+        }
     }
 
     override suspend fun doExecute(
@@ -234,43 +325,266 @@ abstract class CommandBackedHttpAdapter(
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
+        // Defense-in-depth: refuse paths that contain traversal or encoded-slash
+        // tokens BEFORE peel evaluation. Endpoint pattern matchers below also
+        // reject these (no real route uses `..` or `%2F`), but failing early keeps
+        // the routableSlugLookup from being asked to resolve attack-shaped tokens.
+        if (pathHasUnsafeTokens(request.path)) {
+            log.debug("[$id] Refusing unsafe path: ${request.method} ${request.path}")
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "request path contains forbidden tokens (path traversal or encoded slash)",
+                ),
+            )
+        }
         log.debug("[$id] Processing request: ${request.method} ${request.path}")
 
         // Strip adapter base path before routing to endpoint commands
         val relativeRequest = stripAdapterBasePath(request)
 
-        // Find matching enabled endpoint commands
-        val matchingEndpoints =
-            enabledEndpoints.filter { endpoint ->
-                endpoint.supports(relativeRequest)
-            }
+        // Build the candidate set: 0-peel match + any successful peels under the
+        // declared tenantPathPolicy. The longest peel that produces a matching
+        // endpoint wins (ties broken by endpoint pattern specificity).
+        val candidates = collectPeelCandidates(relativeRequest)
 
-        return when (matchingEndpoints.size) {
-            0 -> {
-                log.debug("[$id] No matching endpoint for: ${request.method} ${request.path}")
-                Err(IdkError.NOT_FOUND_ERROR(message = "Not found: ${request.method} ${request.path}"))
-            }
-
-            1 -> {
-                try {
-                    matchingEndpoints.single().execute(relativeRequest)
-                } catch (expected: Exception) {
-                    log.error("[$id] Error executing endpoint: ${expected.message}", expected)
-                    Err(IdkError.UNKNOWN_ERROR(message = expected.message ?: "Internal error", exception = expected))
+        if (candidates.isEmpty()) {
+            // RequiredSlug failed-to-peel and as-is also misses → distinct error
+            // so the resolver layer above can tell "no tenant" from "no route".
+            return when (val policy = tenantPathPolicy) {
+                is TenantPathPolicy.LeadingSlug, is TenantPathPolicy.WellKnownSuffix -> {
+                    if (policy.required) {
+                        log.debug("[$id] tenant_unresolved: required peel failed for ${request.method} ${request.path}")
+                        Err(
+                            IdkError.NOT_FOUND_ERROR(
+                                message = "tenant_unresolved: ${request.method} ${request.path}",
+                            ),
+                        )
+                    } else {
+                        log.debug("[$id] No matching endpoint for: ${request.method} ${request.path}")
+                        Err(IdkError.NOT_FOUND_ERROR(message = "Not found: ${request.method} ${request.path}"))
+                    }
                 }
-            }
 
-            else -> {
-                // Multiple matches: pick the most specific (most literal path segments)
-                val best = matchingEndpoints.maxByOrNull { CompiledPathPattern.compile(it.endpoint.pathPattern).specificity }!!
-                try {
-                    best.execute(relativeRequest)
-                } catch (expected: Exception) {
-                    log.error("[$id] Error executing endpoint: ${expected.message}", expected)
-                    Err(IdkError.UNKNOWN_ERROR(message = expected.message ?: "Internal error", exception = expected))
+                TenantPathPolicy.None -> {
+                    log.debug("[$id] No matching endpoint for: ${request.method} ${request.path}")
+                    Err(IdkError.NOT_FOUND_ERROR(message = "Not found: ${request.method} ${request.path}"))
                 }
             }
         }
+
+        // Pick longest peel; tie-break by endpoint pattern specificity (most literal segments wins).
+        val winner =
+            candidates.maxWithOrNull(
+                compareBy<PeelCandidate> { it.peelDepth }
+                    .thenBy { CompiledPathPattern.compile(it.endpoint.endpoint.pathPattern).specificity },
+            )!!
+
+        // Advance the session-scope tenant for the duration of this dispatch when a
+        // peel changed it. Cleared in finally so the override doesn't leak.
+        val previousOverride = resolvedTenantIdProvider.currentTenantId()
+        val needsOverride = winner.descendedTenantId != null
+        if (needsOverride) {
+            resolvedTenantIdProvider.setCurrentTenantId(winner.descendedTenantId!!)
+        }
+
+        return try {
+            winner.endpoint.execute(winner.strippedRequest)
+        } catch (expected: Exception) {
+            log.error("[$id] Error executing endpoint: ${expected.message}", expected)
+            Err(IdkError.UNKNOWN_ERROR(message = expected.message ?: "Internal error", exception = expected))
+        } finally {
+            if (needsOverride) {
+                if (previousOverride != null) {
+                    resolvedTenantIdProvider.setCurrentTenantId(previousOverride)
+                } else {
+                    resolvedTenantIdProvider.clearCurrentTenantId()
+                }
+            }
+        }
+    }
+
+    /**
+     * Internal record describing one peel candidate considered by the dispatcher.
+     */
+    private data class PeelCandidate(
+        val peelDepth: Int,
+        val endpoint: HttpEndpointCommand,
+        val strippedRequest: GenericHttpRequest,
+        /** Null when this candidate didn't change the session tenant. */
+        val descendedTenantId: String?,
+    )
+
+    /**
+     * Collect every (peel, endpoint) pair that produces a successful match. Always
+     * considers the 0-peel as-is match first; then, if the policy allows, walks
+     * up to `maxDepth` segments off the front (LeadingSlug) or off the tail
+     * (WellKnownSuffix), validating each via [routableSlugLookup].
+     *
+     * Path peeling is short-circuit: as soon as a slug fails to resolve, we stop
+     * descending in that direction (a slug is a prefix of further descent — if
+     * the closer one isn't valid, the further one can't be either).
+     */
+    private suspend fun collectPeelCandidates(relativeRequest: GenericHttpRequest): List<PeelCandidate> {
+        val candidates = mutableListOf<PeelCandidate>()
+
+        // 0-peel: try as-is.
+        enabledEndpoints
+            .filter { endpoint -> endpoint.supports(relativeRequest) }
+            .forEach { endpoint ->
+                candidates +=
+                    PeelCandidate(
+                        peelDepth = 0,
+                        endpoint = endpoint,
+                        strippedRequest = relativeRequest,
+                        descendedTenantId = null,
+                    )
+            }
+
+        when (val policy = tenantPathPolicy) {
+            TenantPathPolicy.None -> Unit
+            is TenantPathPolicy.LeadingSlug -> peelLeading(relativeRequest, policy.maxDepth, candidates)
+            is TenantPathPolicy.WellKnownSuffix -> peelTrailing(relativeRequest, policy.maxDepth, candidates)
+        }
+
+        return candidates
+    }
+
+    private suspend fun peelLeading(
+        relativeRequest: GenericHttpRequest,
+        maxDepth: Int,
+        out: MutableList<PeelCandidate>,
+    ) {
+        val segments = relativeRequest.path.split('/').filter { it.isNotEmpty() }
+        var currentTenantId: String? = null
+        val baseTenantId = relativeRequest.headers[INTERNAL_BASE_TENANT_HEADER]
+        var parent: String? = baseTenantId
+        for (i in 1..minOf(maxDepth, segments.size)) {
+            val seg = segments[i - 1]
+            // Slug-shape gate before the DB hit. Stops peel at the first
+            // non-slug segment — the remaining segments stay as-is for the
+            // endpoint matcher.
+            if (!isSafeSlugSegment(seg)) break
+            val resolved =
+                if (parent == null) {
+                    routableSlugLookup.findRootBySlug(seg)
+                } else {
+                    routableSlugLookup.findChildBySlug(parent, seg)
+                } ?: break
+            currentTenantId = resolved.tenantId
+            parent = resolved.tenantId
+
+            val remainingPath = "/" + segments.drop(i).joinToString("/")
+            val stripped = relativeRequest.copy(path = if (remainingPath == "/") "/" else remainingPath)
+            enabledEndpoints
+                .filter { endpoint -> endpoint.supports(stripped) }
+                .forEach { endpoint ->
+                    out +=
+                        PeelCandidate(
+                            peelDepth = i,
+                            endpoint = endpoint,
+                            strippedRequest = stripped,
+                            descendedTenantId = currentTenantId,
+                        )
+                }
+        }
+    }
+
+    private suspend fun peelTrailing(
+        relativeRequest: GenericHttpRequest,
+        maxDepth: Int,
+        out: MutableList<PeelCandidate>,
+    ) {
+        val segments = relativeRequest.path.split('/').filter { it.isNotEmpty() }
+        // For trailing peel, the URL semantic order is parent-first, child-last:
+        //   /.well-known/X/<parent>/<child>
+        // The peel walks the tail right-to-left (child first), but the validation
+        // chain is parent → child. We collect peeled candidates as we walk, then
+        // descend the chain in URL order to validate.
+        var currentTenantId: String? = null
+        val baseTenantId = relativeRequest.headers[INTERNAL_BASE_TENANT_HEADER]
+        for (peelCount in 1..minOf(maxDepth, segments.size)) {
+            val peeled = segments.takeLast(peelCount)
+            val remaining = segments.dropLast(peelCount)
+
+            // Validate the peeled chain in URL order: outermost (left) first.
+            // Each segment must be slug-shaped before we hit the DB; if any peeled
+            // segment isn't a valid slug, this peelCount cannot resolve.
+            if (peeled.any { !isSafeSlugSegment(it) }) continue
+            var parent: String? = baseTenantId
+            var lastResolved: String? = null
+            var allResolved = true
+            for (seg in peeled) {
+                val resolved =
+                    if (parent == null) {
+                        routableSlugLookup.findRootBySlug(seg)
+                    } else {
+                        routableSlugLookup.findChildBySlug(parent, seg)
+                    }
+                if (resolved == null) {
+                    allResolved = false
+                    break
+                }
+                parent = resolved.tenantId
+                lastResolved = resolved.tenantId
+            }
+            if (!allResolved) {
+                // This peel depth doesn't produce a valid chain — but a deeper
+                // peel might (when the outer parent appears at peelCount+1). We
+                // do NOT short-circuit here; peelTrailing keeps walking up to
+                // maxDepth.
+                continue
+            }
+            currentTenantId = lastResolved
+
+            val remainingPath = if (remaining.isEmpty()) "/" else "/" + remaining.joinToString("/")
+            val stripped = relativeRequest.copy(path = remainingPath)
+            enabledEndpoints
+                .filter { endpoint -> endpoint.supports(stripped) }
+                .forEach { endpoint ->
+                    out +=
+                        PeelCandidate(
+                            peelDepth = peelCount,
+                            endpoint = endpoint,
+                            strippedRequest = stripped,
+                            descendedTenantId = currentTenantId,
+                        )
+                }
+        }
+    }
+
+    /**
+     * DNS-label-shaped (RFC 1123) plus the same `--`/trailing-`-`/`xn--` checks
+     * applied at registration. Inlined here because the IDK dispatcher cannot
+     * depend on the EDK `TenantSlug` validator; the rule must stay in lockstep
+     * with the registration-side regex.
+     */
+    private fun isSafeSlugSegment(seg: String): Boolean =
+        SAFE_SLUG_RE.matches(seg) &&
+            !seg.contains("--") &&
+            !seg.endsWith("-") &&
+            !seg.startsWith("xn--")
+
+    /**
+     * Cheap pre-filter for path traversal / encoded-slash tokens. Returns true
+     * for any path that would be unsafe to feed into the peel/route layer.
+     */
+    private fun pathHasUnsafeTokens(path: String): Boolean = FORBIDDEN_PATH_TOKENS.any { token -> path.contains(token, ignoreCase = true) }
+
+    companion object {
+        /**
+         * Internal request header set by the Ktor tenant-resolution plugin to pass
+         * the Layer 1 (host/JWT) base tenant id into the dispatcher. The header
+         * name is intentionally a name no client could send through a normal HTTP
+         * request — it lives only in the in-process [GenericHttpRequest] copy and
+         * is stripped by the plugin if it appears on inbound traffic. Used so the
+         * dispatcher can validate path peels relative to the host-resolved parent
+         * tenant without needing to read SessionExecution mid-flight.
+         */
+        const val INTERNAL_BASE_TENANT_HEADER: String = "__sphereon_internal_base_tenant__"
+
+        private val SAFE_SLUG_RE = Regex("^[a-z][a-z0-9-]{0,62}$")
+
+        private val FORBIDDEN_PATH_TOKENS = listOf("..", "//", "%2f", "%5c", "\\")
     }
 
     /**
@@ -313,4 +627,33 @@ abstract class CommandBackedHttpAdapter(
     @Suppress("UNCHECKED_CAST")
     override fun removeCommand(filter: com.sphereon.core.api.session.BaseCommand<*, *, *>): com.sphereon.core.api.session.BasePipelineCommand<GenericHttpRequest, GenericHttpResponse, IdkError> =
         throw UnsupportedOperationException("CommandBackedHttpAdapter uses declarative endpoint commands; use endpointCommands property")
+}
+
+/**
+ * No-op [RoutableSlugLookup] used as the dispatcher's default when a subclass
+ * with `tenantPathPolicy = None` declines to inject a real implementation.
+ * Always returns null so adapters compile and dispatch without slug routing —
+ * the safe default for legacy adapters that never peel.
+ */
+private object NoOpRoutableSlugLookupSingleton : RoutableSlugLookup {
+    override suspend fun findRootBySlug(slug: String): RoutableSlugLookup.Resolved? = null
+
+    override suspend fun findChildBySlug(
+        parentTenantId: String,
+        slug: String
+    ): RoutableSlugLookup.Resolved? = null
+}
+
+/**
+ * No-op [MutableResolvedTenantIdProvider] used by the dispatcher when a subclass
+ * with `tenantPathPolicy = None` declines to inject a real provider. Set/clear
+ * are silently dropped; a peel that would otherwise advance the session tenant
+ * never fires for None-policy adapters anyway.
+ */
+private object NoopMutableResolvedTenantIdProvider : MutableResolvedTenantIdProvider {
+    override fun currentTenantId(): String? = null
+
+    override fun setCurrentTenantId(tenantId: String) { /* no-op */ }
+
+    override fun clearCurrentTenantId() { /* no-op */ }
 }

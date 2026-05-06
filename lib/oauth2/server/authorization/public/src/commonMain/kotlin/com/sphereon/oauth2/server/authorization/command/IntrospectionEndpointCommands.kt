@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 
@@ -37,7 +38,7 @@ data class ParseIntrospectionRequestArgs(
  *
  * Parses the token introspection request from the client.
  */
-interface ParseIntrospectionRequestCommand : ServiceCommand<ParseIntrospectionRequestArgs, IntrospectionRequestData> {
+interface ParseIntrospectionRequestCommand : ServiceCommand<ParseIntrospectionRequestArgs, IntrospectionRequestData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -70,7 +71,7 @@ data class IntrospectTokenArgs(
  * - Checks if token is active (not expired, not revoked)
  * - Returns token metadata
  */
-interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenIntrospectionResponse> {
+interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenIntrospectionResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

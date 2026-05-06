@@ -59,7 +59,7 @@ import kotlinx.serialization.json.contentOrNull
 class ResolveClientMetadataCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<AuthorizationRequest, ResolvedClientMetadata>(
+) : TypedServiceCommandAdapter<AuthorizationRequest, ResolvedClientMetadata, IdkError>(
         commandId = ResolveClientMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<AuthorizationRequest>(),

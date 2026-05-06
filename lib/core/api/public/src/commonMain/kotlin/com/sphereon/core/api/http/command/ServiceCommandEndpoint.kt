@@ -46,7 +46,7 @@ private const val HTTP_NOT_IMPLEMENTED = 501
  */
 @JsExportCompat
 class ServiceCommandEndpoint(
-    private val serviceCommand: ServiceCommand<*, *>,
+    private val serviceCommand: ServiceCommand<*, *, *>,
     override val endpoint: HttpEndpointDescriptor,
     execution: SessionExecution,
 ) : HttpEndpointCommandAdapter(

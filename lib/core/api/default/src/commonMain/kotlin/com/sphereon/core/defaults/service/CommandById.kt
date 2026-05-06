@@ -16,6 +16,7 @@
 
 package com.sphereon.core.defaults.service
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.di.session.SessionScope
@@ -44,14 +45,14 @@ import dev.zacsweers.metro.SingleIn
 class CommandById(
     private val registry: SessionScopedCommandRegistry,
 ) {
-    operator fun get(commandId: String): ServiceCommand<*, *> =
+    operator fun get(commandId: String): ServiceCommand<*, *, *> =
         registry.get(commandId)
             ?: throw IllegalArgumentException("Unknown command: $commandId")
 
     @Suppress("UNCHECKED_CAST")
-    fun <I : Any, O : Any> typed(commandId: String): ServiceCommand<I, O> = get(commandId) as ServiceCommand<I, O>
+    fun <I : Any, O : Any> typed(commandId: String): ServiceCommand<I, O, IdkError> = get(commandId) as ServiceCommand<I, O, IdkError>
 
-    fun getOrNull(commandId: String): ServiceCommand<*, *>? = registry.get(commandId)
+    fun getOrNull(commandId: String): ServiceCommand<*, *, *>? = registry.get(commandId)
 
     fun has(commandId: String): Boolean = registry.has(commandId)
 

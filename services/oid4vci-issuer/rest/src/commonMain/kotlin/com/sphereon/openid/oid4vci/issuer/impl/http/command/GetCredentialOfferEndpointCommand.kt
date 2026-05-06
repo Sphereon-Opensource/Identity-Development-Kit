@@ -31,6 +31,8 @@ import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.jsonResponse
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrorResponse
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionStatus
@@ -85,7 +87,22 @@ class GetCredentialOfferEndpointCommandImpl(
 
         val offer =
             offerStore.get(offerId).getOrElse { error -> return Err(error) }
-                ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Credential offer not found or expired"))
+                ?: return Ok(
+                    // Offer-fetch is implementation-specific in OID4VCI 1.0; follow standard HTTP
+                    // semantics (404 for not-found) rather than the §8.3.1 credential-request
+                    // error envelope, which only applies to POST /credential.
+                    jsonResponse(
+                        statusCode = 404,
+                        body =
+                            protocolJson.encodeToString(
+                                Oid4vciErrorResponse.serializer(),
+                                Oid4vciErrorResponse(
+                                    error = Oid4vciErrors.UNKNOWN_CREDENTIAL_CONFIGURATION,
+                                    errorDescription = "Credential offer not found or expired",
+                                ),
+                            ),
+                    ),
+                )
 
         updateSessionToOfferReceived(offerId)
         return Ok(jsonResponse(200, protocolJson.encodeToString(offer)))

@@ -264,7 +264,25 @@ enum class JwsIdentifierMode {
 }
 
 /**
- * Validation result for JWS verification
+ * Validation result for JWS verification.
+ *
+ * The legacy aggregate [isValid] is preserved for callers that just want a boolean. Two
+ * additional fields disambiguate the *reason* for a failure — separating "we never
+ * established trust in a key for this JWS" from "we did establish a key but the
+ * cryptographic check failed". Conflating those (the historical behaviour) makes a
+ * resolver gap or trust-anchor miss read like a forged signature, which obscures
+ * spec-evolution issues like SD-JWT VC's relative-kid qualification.
+ *
+ * Semantics:
+ *  - [trustEstablished]: a verification key was resolved through the configured
+ *    identifier-resolution / trust chain (KMS, x5c, did, jwks-uri, …). Set to
+ *    `false` when *no* signature in the JWS could be tied to a key the verifier
+ *    is willing to use; in that state [cryptoVerified] is `null` because there
+ *    was nothing to check against.
+ *  - [cryptoVerified]: result of the actual signature primitive (ECDSA / EdDSA /
+ *    RSA-PSS / …) once a key was found. `null` iff [trustEstablished] is false.
+ *  - [isValid]: `trustEstablished && cryptoVerified == true && errorMessages.isEmpty()`.
+ *    Exact same semantics as before for legacy callers.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("JwsValidationResult", exact = true)
@@ -278,6 +296,11 @@ JwsValidationResult
         val errorMessages: List<String> = emptyList(),
         val verificationTime: Long = Clock.System.now().toEpochMilliseconds(),
         val parsedPayload: JsonObject,
+        /** See class-level docs. Defaults to [isValid] for backward-compat with constructors
+         *  that don't pass this field — older code paths only set [isValid]. */
+        val trustEstablished: Boolean = isValid,
+        /** See class-level docs. */
+        val cryptoVerified: Boolean? = if (isValid) true else null,
     ) {
         val isCritical: Boolean
             get() = !isValid

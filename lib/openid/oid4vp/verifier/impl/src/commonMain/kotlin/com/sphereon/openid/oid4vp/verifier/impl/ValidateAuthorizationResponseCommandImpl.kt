@@ -28,11 +28,14 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.CredentialFormat
+import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommandService
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
+import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
+import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.sdjwt.SdJwtCodec
 import dev.zacsweers.metro.Inject
@@ -65,8 +68,9 @@ import kotlinx.serialization.json.put
 class ValidateAuthorizationResponseCommandImpl(
     execution: SessionExecution,
     private val authorizationSessionStore: AuthorizationSessionStore,
+    private val verifyHolderBindingCommand: VerifyHolderBindingCommand,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult>(
+) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateAuthorizationResponseArgs>(),
@@ -158,6 +162,84 @@ class ValidateAuthorizationResponseCommandImpl(
 
                 if (!formatMatches) {
                     errors.add("Presentation format '${detectedFormat.value}' for query '$queryId' does not match required format '$queryFormat'")
+                    continue
+                }
+
+                // OID4VP §10 (VP Token Validation): the verifier MUST validate the integrity
+                // and authenticity of the Presentation and Credential, and MUST validate the
+                // Holder Binding (KB-JWT signature for SD-JWT, DeviceAuth COSE_Sign1 for
+                // mdoc, JWS proof for jwt-vp). Any failure means the Presentation MUST be
+                // discarded; if every required Presentation is discarded, the VP Token MUST
+                // be rejected and the §8.2 Response endpoint returns 4xx.
+                val bindingArgs =
+                    VerifyHolderBindingArgs(
+                        presentation = presentation,
+                        format = detectedFormat.value,
+                        expectedNonce = expectedNonce,
+                        expectedAudience = originalRequest.clientId,
+                        clientId = originalRequest.clientId,
+                        responseUri = originalRequest.responseUri,
+                        verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
+                    )
+                val bindingResult =
+                    verifyHolderBindingCommand
+                        .execute(bindingArgs)
+                        .getOrElse { error ->
+                            errors.add(
+                                "Holder binding verification command failed for query '$queryId' " +
+                                    "at index $presentationIndex: ${error.message.defaultMessage}",
+                            )
+                            continue
+                        }
+                if (!bindingResult.verified) {
+                    val detail = bindingResult.errors.takeIf { it.isNotEmpty() }?.joinToString("; ") ?: "no detail"
+                    // Distinguish trust-establishment failure from cryptographic mismatch.
+                    // For SD-JWT issuer JWTs the verifier sets `issuerTrustEstablished=false`
+                    // when no key could be resolved through the trust chain (e.g. relative
+                    // `kid: "#0"` not qualified by `iss`, did:web fetch failed, no trust
+                    // anchor for an x5c chain). In that state `signatureValid=false` is
+                    // misleading on its own, so the message calls it out explicitly.
+                    val rootCause =
+                        when {
+                            bindingResult.issuerTrustEstablished == false -> {
+                                "issuer trust establishment failed (no verification key resolved for the issuer JWT — " +
+                                    "check kid/iss qualification, did:web reachability, or trust anchors)"
+                            }
+
+                            bindingResult.issuerCryptoVerified == false -> {
+                                "issuer JWT signature did not verify against the resolved key"
+                            }
+
+                            !bindingResult.signatureValid -> {
+                                "signature/binding check failed"
+                            }
+
+                            !bindingResult.nonceValid -> {
+                                "nonce mismatch"
+                            }
+
+                            !bindingResult.audienceValid -> {
+                                "audience mismatch"
+                            }
+
+                            bindingResult.sdHashValid == false -> {
+                                "sd_hash mismatch"
+                            }
+
+                            else -> {
+                                "verification not satisfied"
+                            }
+                        }
+                    errors.add(
+                        "Holder binding verification failed for query '$queryId' at index " +
+                            "$presentationIndex (method=${bindingResult.bindingMethod}, " +
+                            "issuerTrustEstablished=${bindingResult.issuerTrustEstablished}, " +
+                            "issuerCryptoVerified=${bindingResult.issuerCryptoVerified}, " +
+                            "signatureValid=${bindingResult.signatureValid}, " +
+                            "nonceValid=${bindingResult.nonceValid}, " +
+                            "audienceValid=${bindingResult.audienceValid}): " +
+                            "$rootCause — $detail",
+                    )
                     continue
                 }
 

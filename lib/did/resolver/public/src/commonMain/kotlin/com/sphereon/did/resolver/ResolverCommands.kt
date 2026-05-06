@@ -42,7 +42,7 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveDidCommand", exact = true)
 @JsExportCompat
-interface ResolveDidCommand : ServiceCommand<ResolveDidArgs, DidResolutionResult> {
+interface ResolveDidCommand : ServiceCommand<ResolveDidArgs, DidResolutionResult, IdkError> {
     companion object {
         const val COMMAND_ID = "did.resolver.resolve"
     }
@@ -74,7 +74,7 @@ interface ResolveDidCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DereferenceDidCommand", exact = true)
 @JsExportCompat
-interface DereferenceDidCommand : ServiceCommand<DereferenceDidArgs, DidDereferenceResult> {
+interface DereferenceDidCommand : ServiceCommand<DereferenceDidArgs, DidDereferenceResult, IdkError> {
     companion object {
         const val COMMAND_ID = "did.resolver.dereference"
     }
@@ -103,7 +103,7 @@ interface DereferenceDidCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveVerificationMethodCommand", exact = true)
 @JsExportCompat
-interface ResolveVerificationMethodCommand : ServiceCommand<ResolveVerificationMethodArgs, VerificationMethod> {
+interface ResolveVerificationMethodCommand : ServiceCommand<ResolveVerificationMethodArgs, VerificationMethod, IdkError> {
     companion object {
         const val COMMAND_ID = "did.resolver.verifymethod"
     }
@@ -129,7 +129,7 @@ interface ResolveVerificationMethodCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveVerificationMethodsByPurposeCommand", exact = true)
 @JsExportCompat
-interface ResolveVerificationMethodsByPurposeCommand : ServiceCommand<ResolveVerificationMethodsByPurposeArgs, List<VerificationMethod>> {
+interface ResolveVerificationMethodsByPurposeCommand : ServiceCommand<ResolveVerificationMethodsByPurposeArgs, List<VerificationMethod>, IdkError> {
     companion object {
         const val COMMAND_ID = "did.resolver.verifypurpose"
     }

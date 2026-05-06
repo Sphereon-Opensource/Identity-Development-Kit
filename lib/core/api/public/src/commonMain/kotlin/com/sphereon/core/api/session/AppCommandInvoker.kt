@@ -18,7 +18,7 @@ package com.sphereon.core.api.session
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.asCoreApiContextGraph
-import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.context.PrincipalInput
 import com.sphereon.di.context.TenantInput
@@ -46,12 +46,12 @@ interface AppCommandInvoker : CommandInvoker {
      * Creates or gets the user context for the given tenant/principal,
      * then delegates to the session-scoped executor within that context.
      */
-    suspend fun <TInput : Any, TOutput : Any> execute(
+    suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
         tenantInput: TenantInput,
         principalInput: PrincipalInput,
-        command: ServiceCommand<TInput, TOutput>,
+        command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
-    ): IdkResult<TOutput, IdkError>
+    ): IdkResult<TOutput, TError>
 }
 
 @Inject
@@ -64,23 +64,23 @@ class AppCommandInvokerImpl(
 ) : AppCommandInvoker {
     private fun backgroundExecutor(): CommandInvoker = userContextManager.getBackgroundService().asCoreApiContextGraph().commandInvoker
 
-    override fun resolve(commandId: String): ServiceCommand<*, *>? = backgroundExecutor().resolve(commandId)
+    override fun resolve(commandId: String): ServiceCommand<*, *, *>? = backgroundExecutor().resolve(commandId)
 
-    override suspend fun <TInput : Any, TOutput : Any> execute(
-        command: ServiceCommand<TInput, TOutput>,
+    override suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
+        command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
-    ): IdkResult<TOutput, IdkError> = backgroundExecutor().execute(command, input)
+    ): IdkResult<TOutput, TError> = backgroundExecutor().execute(command, input)
 
     override fun has(commandId: String): Boolean = backgroundExecutor().has(commandId)
 
     override fun listCommandIds(): List<String> = backgroundExecutor().listCommandIds()
 
-    override suspend fun <TInput : Any, TOutput : Any> execute(
+    override suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
         tenantInput: TenantInput,
         principalInput: PrincipalInput,
-        command: ServiceCommand<TInput, TOutput>,
+        command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
-    ): IdkResult<TOutput, IdkError> {
+    ): IdkResult<TOutput, TError> {
         val activeContext = userContextManager.createOrGetFromInputs(tenantInput, principalInput)
         val executor = activeContext.asCoreApiContextGraph().commandInvoker
         return executor.execute(command, input)

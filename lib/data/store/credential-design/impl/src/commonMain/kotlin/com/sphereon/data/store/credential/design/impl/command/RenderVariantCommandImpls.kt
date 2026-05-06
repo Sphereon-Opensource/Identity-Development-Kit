@@ -52,7 +52,7 @@ import kotlin.uuid.ExperimentalUuidApi
 class CreateRenderVariantServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<CreateRenderVariantArgs, RenderVariantRecord>(
+) : TypedServiceCommandAdapter<CreateRenderVariantArgs, RenderVariantRecord, IdkError>(
         commandId = CreateRenderVariantServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateRenderVariantArgs>(),
@@ -84,7 +84,7 @@ class CreateRenderVariantServiceCommandImpl(
 class GetRenderVariantServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<GetRenderVariantArgs, RenderVariantRecord>(
+) : TypedServiceCommandAdapter<GetRenderVariantArgs, RenderVariantRecord, IdkError>(
         commandId = GetRenderVariantServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetRenderVariantArgs>(),
@@ -108,7 +108,7 @@ class GetRenderVariantServiceCommandImpl(
 class UpdateRenderVariantServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<UpdateRenderVariantArgs, RenderVariantRecord>(
+) : TypedServiceCommandAdapter<UpdateRenderVariantArgs, RenderVariantRecord, IdkError>(
         commandId = UpdateRenderVariantServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<UpdateRenderVariantArgs>(),
@@ -132,7 +132,7 @@ class UpdateRenderVariantServiceCommandImpl(
 class DeleteRenderVariantServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<DeleteRenderVariantArgs, Boolean>(
+) : TypedServiceCommandAdapter<DeleteRenderVariantArgs, Boolean, IdkError>(
         commandId = DeleteRenderVariantServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteRenderVariantArgs>(),
@@ -156,7 +156,7 @@ class DeleteRenderVariantServiceCommandImpl(
 class ListRenderVariantsServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ListRenderVariantsArgs, List<RenderVariantRecord>>(
+) : TypedServiceCommandAdapter<ListRenderVariantsArgs, List<RenderVariantRecord>, IdkError>(
         commandId = ListRenderVariantsServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListRenderVariantsArgs>(),

@@ -50,7 +50,7 @@ data class ResolvedClientMetadata(
  * @see ResolvedClientMetadata
  */
 @JsExportCompat
-interface ResolveClientMetadataCommand : ServiceCommand<AuthorizationRequest, ResolvedClientMetadata> {
+interface ResolveClientMetadataCommand : ServiceCommand<AuthorizationRequest, ResolvedClientMetadata, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -1,5 +1,6 @@
 package com.sphereon.crypto.kms.rest.server.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
@@ -17,25 +18,25 @@ import dev.zacsweers.metro.StringKey
 interface KmsCommandDescriptors {
     @Provides @IntoMap
     @StringKey(GetKeyServiceCommand.COMMAND_ID)
-    fun getKeyService(impl: GetKeyServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun getKeyService(impl: GetKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ListKeysServiceCommand.COMMAND_ID)
-    fun listKeysService(impl: ListKeysServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun listKeysService(impl: ListKeysServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(StoreKeyServiceCommand.COMMAND_ID)
-    fun storeKeyService(impl: StoreKeyServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun storeKeyService(impl: StoreKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(GenerateKeyServiceCommand.COMMAND_ID)
-    fun generateKeyService(impl: GenerateKeyServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun generateKeyService(impl: GenerateKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DeleteKeyServiceCommand.COMMAND_ID)
-    fun deleteKeyService(impl: DeleteKeyServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun deleteKeyService(impl: DeleteKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RegisterKeyReferenceServiceCommand.COMMAND_ID)
-    fun registerKeyReferenceService(impl: RegisterKeyReferenceServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun registerKeyReferenceService(impl: RegisterKeyReferenceServiceCommandImpl): ServiceCommand<*, *, *> = impl
 }

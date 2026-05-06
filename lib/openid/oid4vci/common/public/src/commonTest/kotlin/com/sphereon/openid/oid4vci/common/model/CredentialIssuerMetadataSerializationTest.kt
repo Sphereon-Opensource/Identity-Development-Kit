@@ -88,7 +88,7 @@ class CredentialIssuerMetadataSerializationTest {
                                 scope = "UniversityDegree",
                                 vct = "https://credentials.example.com/university_degree",
                                 cryptographicBindingMethodsSupported = listOf("did:example", "did:key"),
-                                credentialSigningAlgValuesSupported = listOf("ES256"),
+                                credentialSigningAlgValuesSupported = listOf(JsonPrimitive("ES256")),
                                 proofTypesSupported =
                                     mapOf(
                                         "jwt" to ProofTypeSupported(proofSigningAlgValuesSupported = listOf("ES256")),
@@ -222,7 +222,7 @@ class CredentialIssuerMetadataSerializationTest {
         assertEquals("UniversityDegree", config.scope)
         assertEquals("https://credentials.example.com/identity_credential", config.vct)
         assertEquals(listOf("did:example"), config.cryptographicBindingMethodsSupported)
-        assertEquals(listOf("ES256"), config.credentialSigningAlgValuesSupported)
+        assertEquals(listOf("ES256"), config.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.content })
 
         val jwtProof = config.proofTypesSupported?.get("jwt")
         assertNotNull(jwtProof)

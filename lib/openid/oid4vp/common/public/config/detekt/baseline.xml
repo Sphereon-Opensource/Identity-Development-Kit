@@ -14,11 +14,6 @@
     <ID>StringLiteralDuplication:ClientMetadata.kt$"JsonWebSignature2020"</ID>
     <ID>StringLiteralDuplication:ClientMetadata.kt$"RS256"</ID>
     <ID>StringLiteralDuplication:ClientMetadata.kt$"[A-Z][A-Z0-9-]*"</ID>
-    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"authorization_encrypted_response_alg"</ID>
-    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"authorization_encrypted_response_enc"</ID>
-    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"authorization_signed_response_alg"</ID>
-    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"client_purpose"</ID>
-    <ID>StringLiteralDuplication:ClientMetadata.kt$ClientMetadataSerializer$"vp_formats"</ID>
     <ID>StringLiteralDuplication:Oid4vpAuthorizationRequest.kt$"vp_token"</ID>
     <ID>StringLiteralDuplication:WalletMetadata.kt$"[A-Z0-9-]+"</ID>
     <ID>StringLiteralDuplication:WalletMetadata.kt$WalletMetadataBuilder$"ES256"</ID>

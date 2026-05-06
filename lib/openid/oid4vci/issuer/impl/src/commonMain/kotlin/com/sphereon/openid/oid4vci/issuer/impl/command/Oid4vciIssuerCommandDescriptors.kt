@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
@@ -34,29 +35,29 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vciIssuerCommandDescriptors {
     @Provides @IntoMap
     @StringKey(CreateCredentialOfferCommand.COMMAND_ID)
-    fun createCredentialOffer(impl: CreateCredentialOfferCommandImpl): ServiceCommand<*, *> = impl
+    fun createCredentialOffer(impl: CreateCredentialOfferCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(BuildIssuerMetadataCommand.COMMAND_ID)
-    fun buildIssuerMetadata(impl: BuildIssuerMetadataCommandImpl): ServiceCommand<*, *> = impl
+    fun buildIssuerMetadata(impl: BuildIssuerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(IssueNonceCommand.COMMAND_ID)
-    fun issueNonce(impl: IssueNonceCommandImpl): ServiceCommand<*, *> = impl
+    fun issueNonce(impl: IssueNonceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleCredentialRequestCommand.COMMAND_ID)
-    fun handleCredentialRequest(impl: HandleCredentialRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun handleCredentialRequest(impl: HandleCredentialRequestCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleDeferredCredentialRequestCommand.COMMAND_ID)
-    fun handleDeferredCredentialRequest(impl: HandleDeferredCredentialRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun handleDeferredCredentialRequest(impl: HandleDeferredCredentialRequestCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleNotificationCommand.COMMAND_ID)
-    fun handleNotification(impl: HandleNotificationCommandImpl): ServiceCommand<*, *> = impl
+    fun handleNotification(impl: HandleNotificationCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(BuildSignedIssuerMetadataCommand.COMMAND_ID)
-    fun buildSignedIssuerMetadata(impl: BuildSignedIssuerMetadataCommandImpl): ServiceCommand<*, *> = impl
+    fun buildSignedIssuerMetadata(impl: BuildSignedIssuerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 }

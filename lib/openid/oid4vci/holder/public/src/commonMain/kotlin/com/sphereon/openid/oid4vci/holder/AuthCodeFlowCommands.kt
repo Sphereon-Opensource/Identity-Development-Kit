@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.holder
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import kotlinx.serialization.Serializable
 
@@ -80,7 +81,7 @@ data class AuthorizationRequestResult(
  *
  * Reference: OID4VCI 1.0 Section 5 — Authorization Code Flow
  */
-interface BuildAuthorizationRequestCommand : ServiceCommand<BuildAuthorizationRequestArgs, AuthorizationRequestResult> {
+interface BuildAuthorizationRequestCommand : ServiceCommand<BuildAuthorizationRequestArgs, AuthorizationRequestResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -119,7 +120,7 @@ data class ExchangeAuthorizationCodeArgs(
  *
  * Reference: OID4VCI 1.0 Section 8 — Token Request (Authorization Code Flow)
  */
-interface ExchangeAuthorizationCodeCommand : ServiceCommand<ExchangeAuthorizationCodeArgs, TokenResponseWithContext> {
+interface ExchangeAuthorizationCodeCommand : ServiceCommand<ExchangeAuthorizationCodeArgs, TokenResponseWithContext, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -61,7 +61,6 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             "introspection_endpoint_auth_signing_alg_values_supported",
             "authorization_challenge_endpoint",
             "pre-authorized_grant_anonymous_access_supported",
-            "client_attestation_pop_nonce_required",
             "challenge_endpoint",
             "client_attestation_signing_alg_values_supported",
             "client_attestation_pop_signing_alg_values_supported",
@@ -82,9 +81,31 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             "claims_parameter_supported",
             "request_parameter_supported",
             "request_uri_parameter_supported",
+            // RFC 9101 (JAR) discovery metadata
+            "require_request_uri_registration",
+            "request_object_signing_alg_values_supported",
             // OID4VCI 1.1 Section 13.3 — IAE
             "interactive_authorization_endpoint",
             "require_interactive_authorization_request",
+            // OIDC RP-Initiated Logout 1.0 + Front-Channel Logout 1.0 + Back-Channel Logout 1.0
+            "end_session_endpoint",
+            "frontchannel_logout_supported",
+            "frontchannel_logout_session_supported",
+            "backchannel_logout_supported",
+            "backchannel_logout_session_supported",
+            // OIDF JARM
+            "authorization_signing_alg_values_supported",
+            "authorization_encryption_alg_values_supported",
+            "authorization_encryption_enc_values_supported",
+            // RFC 8705 mTLS
+            "tls_client_certificate_bound_access_tokens",
+            "mtls_endpoint_aliases",
+            // RFC 9207 OAuth 2.0 Authorization Server Issuer Identification
+            "authorization_response_iss_parameter_supported",
+            // RFC 8628 §4 Device Authorization Grant
+            "device_authorization_endpoint",
+            // RFC 8414 §2 `signed_metadata` field
+            "signed_metadata",
         )
 
     override fun serialize(
@@ -110,7 +131,6 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
                 value.introspectionEndpointAuthSigningAlgValuesSupported?.let { put("introspection_endpoint_auth_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.authorizationChallengeEndpoint?.let { put("authorization_challenge_endpoint", JsonPrimitive(it)) }
                 value.preAuthorizedGrantAnonymousAccessSupported?.let { put("pre-authorized_grant_anonymous_access_supported", JsonPrimitive(it)) }
-                value.clientAttestationPopNonceRequired?.let { put("client_attestation_pop_nonce_required", JsonPrimitive(it)) }
                 value.challengeEndpoint?.let { put("challenge_endpoint", JsonPrimitive(it)) }
                 value.clientAttestationSigningAlgValuesSupported?.let { put("client_attestation_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.clientAttestationPopSigningAlgValuesSupported?.let { put("client_attestation_pop_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
@@ -132,10 +152,44 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
                 value.claimsParameterSupported?.let { put("claims_parameter_supported", JsonPrimitive(it)) }
                 value.requestParameterSupported?.let { put("request_parameter_supported", JsonPrimitive(it)) }
                 value.requestUriParameterSupported?.let { put("request_uri_parameter_supported", JsonPrimitive(it)) }
+                value.requireRequestUriRegistration?.let { put("require_request_uri_registration", JsonPrimitive(it)) }
+                value.requestObjectSigningAlgValuesSupported?.let { put("request_object_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
 
                 // OID4VCI 1.1 Section 13.3 — IAE
                 value.interactiveAuthorizationEndpoint?.let { put("interactive_authorization_endpoint", JsonPrimitive(it)) }
                 value.requireInteractiveAuthorizationRequest?.let { put("require_interactive_authorization_request", JsonPrimitive(it)) }
+
+                // OIDC RP-Initiated Logout 1.0 + Front-Channel Logout 1.0 + Back-Channel Logout 1.0
+                value.endSessionEndpoint?.let { put("end_session_endpoint", JsonPrimitive(it)) }
+                value.frontchannelLogoutSupported?.let { put("frontchannel_logout_supported", JsonPrimitive(it)) }
+                value.frontchannelLogoutSessionSupported?.let { put("frontchannel_logout_session_supported", JsonPrimitive(it)) }
+                value.backchannelLogoutSupported?.let { put("backchannel_logout_supported", JsonPrimitive(it)) }
+                value.backchannelLogoutSessionSupported?.let { put("backchannel_logout_session_supported", JsonPrimitive(it)) }
+
+                // OIDF JARM
+                value.authorizationSigningAlgValuesSupported?.let { put("authorization_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
+                value.authorizationEncryptionAlgValuesSupported?.let { put("authorization_encryption_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
+                value.authorizationEncryptionEncValuesSupported?.let { put("authorization_encryption_enc_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
+
+                // RFC 8705 mTLS
+                value.tlsClientCertificateBoundAccessTokens?.let { put("tls_client_certificate_bound_access_tokens", JsonPrimitive(it)) }
+                value.mtlsEndpointAliases?.let { aliases ->
+                    put(
+                        "mtls_endpoint_aliases",
+                        kotlinx.serialization.json.JsonObject(aliases.mapValues { JsonPrimitive(it.value) }),
+                    )
+                }
+
+                // RFC 9207 §3 — advertise that authorization responses include the `iss` parameter.
+                value.authorizationResponseIssParameterSupported?.let { put("authorization_response_iss_parameter_supported", JsonPrimitive(it)) }
+
+                // RFC 8628 §4 Device Authorization Grant
+                value.deviceAuthorizationEndpoint?.let { put("device_authorization_endpoint", JsonPrimitive(it)) }
+
+                // RFC 8414 §2 `signed_metadata`: when the AS configures a metadata signing
+                // key, the JSON variant also carries a self-contained JWS so cautious clients
+                // can pin the document without a second round-trip.
+                value.signedMetadata?.let { put("signed_metadata", JsonPrimitive(it)) }
 
                 value.additionalMetadata.forEach { (key, jsonValue) ->
                     put(key, jsonValue)
@@ -171,7 +225,6 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             introspectionEndpointAuthSigningAlgValuesSupported = jsonObject["introspection_endpoint_auth_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             authorizationChallengeEndpoint = jsonObject["authorization_challenge_endpoint"]?.jsonPrimitive?.content,
             preAuthorizedGrantAnonymousAccessSupported = jsonObject["pre-authorized_grant_anonymous_access_supported"]?.jsonPrimitive?.content?.toBoolean(),
-            clientAttestationPopNonceRequired = jsonObject["client_attestation_pop_nonce_required"]?.jsonPrimitive?.content?.toBoolean(),
             challengeEndpoint = jsonObject["challenge_endpoint"]?.jsonPrimitive?.content,
             clientAttestationSigningAlgValuesSupported = jsonObject["client_attestation_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             clientAttestationPopSigningAlgValuesSupported = jsonObject["client_attestation_pop_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
@@ -192,9 +245,28 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             claimsParameterSupported = jsonObject["claims_parameter_supported"]?.jsonPrimitive?.content?.toBoolean(),
             requestParameterSupported = jsonObject["request_parameter_supported"]?.jsonPrimitive?.content?.toBoolean(),
             requestUriParameterSupported = jsonObject["request_uri_parameter_supported"]?.jsonPrimitive?.content?.toBoolean(),
+            requireRequestUriRegistration = jsonObject["require_request_uri_registration"]?.jsonPrimitive?.content?.toBoolean(),
+            requestObjectSigningAlgValuesSupported = jsonObject["request_object_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             // OID4VCI 1.1 Section 13.3 — IAE
             interactiveAuthorizationEndpoint = jsonObject["interactive_authorization_endpoint"]?.jsonPrimitive?.content,
             requireInteractiveAuthorizationRequest = jsonObject["require_interactive_authorization_request"]?.jsonPrimitive?.content?.toBoolean(),
+            // OIDC RP-Initiated Logout 1.0 + Front-Channel Logout 1.0 + Back-Channel Logout 1.0
+            endSessionEndpoint = jsonObject["end_session_endpoint"]?.jsonPrimitive?.content,
+            frontchannelLogoutSupported = jsonObject["frontchannel_logout_supported"]?.jsonPrimitive?.content?.toBoolean(),
+            frontchannelLogoutSessionSupported = jsonObject["frontchannel_logout_session_supported"]?.jsonPrimitive?.content?.toBoolean(),
+            backchannelLogoutSupported = jsonObject["backchannel_logout_supported"]?.jsonPrimitive?.content?.toBoolean(),
+            backchannelLogoutSessionSupported = jsonObject["backchannel_logout_session_supported"]?.jsonPrimitive?.content?.toBoolean(),
+            authorizationSigningAlgValuesSupported = jsonObject["authorization_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
+            authorizationEncryptionAlgValuesSupported = jsonObject["authorization_encryption_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
+            authorizationEncryptionEncValuesSupported = jsonObject["authorization_encryption_enc_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
+            tlsClientCertificateBoundAccessTokens = jsonObject["tls_client_certificate_bound_access_tokens"]?.jsonPrimitive?.content?.toBoolean(),
+            mtlsEndpointAliases = jsonObject["mtls_endpoint_aliases"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content },
+            // RFC 9207 OAuth 2.0 Authorization Server Issuer Identification
+            authorizationResponseIssParameterSupported = jsonObject["authorization_response_iss_parameter_supported"]?.jsonPrimitive?.content?.toBoolean(),
+            // RFC 8628 §4 Device Authorization Grant
+            deviceAuthorizationEndpoint = jsonObject["device_authorization_endpoint"]?.jsonPrimitive?.content,
+            // RFC 8414 §2 `signed_metadata` field
+            signedMetadata = jsonObject["signed_metadata"]?.jsonPrimitive?.content,
             additionalMetadata = additionalMetadata,
         )
     }
@@ -219,7 +291,6 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
  * @property introspectionEndpointAuthSigningAlgValuesSupported Introspection endpoint signing algorithms
  * @property authorizationChallengeEndpoint Authorization challenge endpoint (FiPA - experimental)
  * @property preAuthorizedGrantAnonymousAccessSupported Anonymous access for pre-authorized grants (OpenID4VCI)
- * @property clientAttestationPopNonceRequired Client attestation PoP nonce required (draft spec)
  * @property revocationEndpoint Token revocation endpoint URL (RFC 7009)
  * @property revocationEndpointAuthMethodsSupported Revocation endpoint auth methods
  * @property revocationEndpointAuthSigningAlgValuesSupported Revocation endpoint signing algorithms
@@ -270,9 +341,11 @@ data class AuthorizationServerMetadata(
     // OpenID4VCI extension
     @SerialName("pre-authorized_grant_anonymous_access_supported")
     val preAuthorizedGrantAnonymousAccessSupported: Boolean? = null,
-    // Attestation Based Client Auth (draft-ietf-oauth-attestation-based-client-auth)
-    @SerialName("client_attestation_pop_nonce_required")
-    val clientAttestationPopNonceRequired: Boolean? = null,
+    // Attestation Based Client Auth (draft-ietf-oauth-attestation-based-client-auth -07/-08).
+    // The AS signals "PoP must include a fresh challenge" by exposing `challenge_endpoint`
+    // (§13.1). There is no separate `*_nonce_required` boolean, mirroring DPoP (RFC 9449), where
+    // the nonce requirement is also signalled at runtime via the `use_dpop_nonce` error rather
+    // than as advertised metadata.
     @SerialName("challenge_endpoint")
     val challengeEndpoint: String? = null,
     @SerialName("client_attestation_signing_alg_values_supported")
@@ -314,11 +387,75 @@ data class AuthorizationServerMetadata(
     val requestParameterSupported: Boolean? = null,
     @SerialName("request_uri_parameter_supported")
     val requestUriParameterSupported: Boolean? = null,
+    // RFC 9101 (JAR) discovery
+    @SerialName("require_request_uri_registration")
+    val requireRequestUriRegistration: Boolean? = null,
+    @SerialName("request_object_signing_alg_values_supported")
+    val requestObjectSigningAlgValuesSupported: List<String>? = null,
     // OID4VCI 1.1 Section 13.3 — Interactive Authorization Endpoint
     @SerialName("interactive_authorization_endpoint")
     val interactiveAuthorizationEndpoint: String? = null,
     @SerialName("require_interactive_authorization_request")
     val requireInteractiveAuthorizationRequest: Boolean? = null,
+    // OIDC RP-Initiated Logout 1.0 §2: end_session_endpoint
+    @SerialName("end_session_endpoint")
+    val endSessionEndpoint: String? = null,
+    // OIDC Front-Channel Logout 1.0 §3 / Back-Channel Logout 1.0 §2.1
+    @SerialName("frontchannel_logout_supported")
+    val frontchannelLogoutSupported: Boolean? = null,
+    @SerialName("frontchannel_logout_session_supported")
+    val frontchannelLogoutSessionSupported: Boolean? = null,
+    @SerialName("backchannel_logout_supported")
+    val backchannelLogoutSupported: Boolean? = null,
+    @SerialName("backchannel_logout_session_supported")
+    val backchannelLogoutSessionSupported: Boolean? = null,
+    // OIDF JARM (https://openid.net/specs/oauth-v2-jarm.html)
+    @SerialName("authorization_signing_alg_values_supported")
+    val authorizationSigningAlgValuesSupported: List<String>? = null,
+    @SerialName("authorization_encryption_alg_values_supported")
+    val authorizationEncryptionAlgValuesSupported: List<String>? = null,
+    @SerialName("authorization_encryption_enc_values_supported")
+    val authorizationEncryptionEncValuesSupported: List<String>? = null,
+    /**
+     * RFC 8705 §3.3: server-wide opt-in to certificate-bound access tokens. When `true`, access
+     * tokens issued at the (mTLS) token endpoint carry `cnf.x5t#S256` bound to the presented
+     * client certificate.
+     */
+    @SerialName("tls_client_certificate_bound_access_tokens")
+    val tlsClientCertificateBoundAccessTokens: Boolean? = null,
+    /**
+     * RFC 8705 §5: per-endpoint URL overrides for the mTLS variants of token / revocation /
+     * introspection / pushed_authorization_request / userinfo / device_authorization endpoints.
+     * Operators publish a separate `mtls.example.com` host (or path prefix) so clients hit the
+     * mTLS-required endpoint when needed without forcing mTLS on every endpoint of the regular
+     * issuer host.
+     */
+    @SerialName("mtls_endpoint_aliases")
+    val mtlsEndpointAliases: Map<String, String>? = null,
+    /**
+     * RFC 9207 §3: the AS sets this to `true` to advertise that it includes the `iss`
+     * authorization-response parameter (RFC 9207 §2). FAPI2-SP §5.3.2.2-7 requires this to be
+     * `true`; the absence-default of `false` is treated as a hard non-conformance.
+     */
+    @SerialName("authorization_response_iss_parameter_supported")
+    val authorizationResponseIssParameterSupported: Boolean? = null,
+    /**
+     * RFC 8628 §4: URL of the AS's device authorization endpoint, advertised when the per-server
+     * `deviceFlow` policy is enabled. The corresponding `urn:ietf:params:oauth:grant-type:device_code`
+     * grant type is added to [grantTypesSupported] under the same condition.
+     */
+    @SerialName("device_authorization_endpoint")
+    val deviceAuthorizationEndpoint: String? = null,
+    /**
+     * RFC 8414 §2 `signed_metadata`: a JWS-secured copy of this metadata document, signed with
+     * the AS's metadata signing key. Populated by the metadata HTTP endpoint when a signing key
+     * is configured, so cautious clients can pin the JSON they received without making a second
+     * request to fetch the JWT representation. The JWT itself uses
+     * `typ = "oauth-authorization-server+jwt"`, the value standardised by OpenID Federation 1.0
+     * §6 for the JWT representation of an RFC 8414 AS metadata document.
+     */
+    @SerialName("signed_metadata")
+    val signedMetadata: String? = null,
     // Additional discovery metadata (auto-captured from unknown JSON fields)
     val additionalMetadata: Map<String, JsonElement> = emptyMap(),
 )

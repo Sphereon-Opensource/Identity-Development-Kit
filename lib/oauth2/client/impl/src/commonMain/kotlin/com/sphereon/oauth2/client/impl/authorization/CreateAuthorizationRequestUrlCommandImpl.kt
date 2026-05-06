@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
@@ -44,7 +45,6 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationResult
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.PushedAuthorizationRequest
 import com.sphereon.oauth2.common.model.PushedAuthorizationResponse
-import com.sphereon.core.api.validation.toIdkResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
@@ -77,7 +77,7 @@ class CreateAuthorizationRequestUrlCommandImpl(
     private val createPkceCommand: CreatePkceCommand,
     private val applyClientAuthenticationCommand: ApplyClientAuthenticationCommand,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<CreateAuthorizationRequestUrlOptions, AuthorizationRequestUrlResult>(
+) : TypedServiceCommandAdapter<CreateAuthorizationRequestUrlOptions, AuthorizationRequestUrlResult, IdkError>(
         commandId = CreateAuthorizationRequestUrlCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateAuthorizationRequestUrlOptions>(),

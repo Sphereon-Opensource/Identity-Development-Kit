@@ -86,7 +86,7 @@ data class ParseClientIdArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParseClientIdCommand", exact = true)
 @JsExportCompat
-interface ParseClientIdCommand : ServiceCommand<ParseClientIdArgs, ParsedClientId> {
+interface ParseClientIdCommand : ServiceCommand<ParseClientIdArgs, ParsedClientId, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

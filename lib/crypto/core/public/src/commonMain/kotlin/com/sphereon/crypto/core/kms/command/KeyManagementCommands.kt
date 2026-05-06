@@ -141,7 +141,7 @@ GenerateKeyResult
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface GenerateKeyCommand : ServiceCommand<GenerateKeyArgs, GenerateKeyResult> {
+interface GenerateKeyCommand : ServiceCommand<GenerateKeyArgs, GenerateKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -207,7 +207,7 @@ ListKeysResult
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface ListKeysCommand : ServiceCommand<ListKeysArgs, ListKeysResult> {
+interface ListKeysCommand : ServiceCommand<ListKeysArgs, ListKeysResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -259,7 +259,7 @@ GetKeyResult
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface GetKeyCommand : ServiceCommand<GetKeyArgs, GetKeyResult> {
+interface GetKeyCommand : ServiceCommand<GetKeyArgs, GetKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -359,7 +359,7 @@ StoreKeyResult
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface StoreKeyCommand : ServiceCommand<StoreKeyArgs, StoreKeyResult> {
+interface StoreKeyCommand : ServiceCommand<StoreKeyArgs, StoreKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -408,7 +408,7 @@ data class DeleteKeyResult(
  * providing uniform logging, auditing, authorization, and plugin capabilities.
  */
 @JsExportCompat
-interface DeleteKeyCommand : ServiceCommand<DeleteKeyArgs, DeleteKeyResult> {
+interface DeleteKeyCommand : ServiceCommand<DeleteKeyArgs, DeleteKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

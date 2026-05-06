@@ -101,7 +101,7 @@ class DeferredSerializationTest {
     }
 
     // ========================================================================
-    // CredentialResponse with credentials array (1.1 batch ready response)
+    // CredentialResponse with credentials array (OID4VCI 1.0 §8.3 ready response)
     // ========================================================================
 
     @Test
@@ -114,20 +114,17 @@ class DeferredSerializationTest {
                 {"credential": "eyJ.cred2.sig2"},
                 {"credential": "eyJ.cred3.sig3"}
               ],
-              "c_nonce": "fresh-nonce",
               "notification_id": "notif-batch-001"
             }
             """.trimIndent()
 
         val decoded = json.decodeFromString(CredentialResponse.serializer(), raw)
 
-        assertNull(decoded.credential, "1.1 batch must not populate singular credential")
         assertNotNull(decoded.credentials)
         assertEquals(3, decoded.credentials!!.size)
         assertEquals("eyJ.cred1.sig1", (decoded.credentials!![0].credential as? JsonPrimitive)?.content)
         assertEquals("eyJ.cred2.sig2", (decoded.credentials!![1].credential as? JsonPrimitive)?.content)
         assertEquals("eyJ.cred3.sig3", (decoded.credentials!![2].credential as? JsonPrimitive)?.content)
-        assertEquals("fresh-nonce", decoded.cNonce)
         assertEquals("notif-batch-001", decoded.notificationId)
 
         // Round-trip
@@ -137,32 +134,30 @@ class DeferredSerializationTest {
     }
 
     // ========================================================================
-    // CredentialResponse with single credential (1.0 ready response)
+    // Single-credential synchronous issuance: array of size 1 per OID4VCI 1.0 §8.3
     // ========================================================================
 
     @Test
-    fun credentialResponseWithSingleCredential() {
+    fun credentialResponseWithSingleCredentialItem() {
         val raw =
             """
             {
-              "credential": "eyJhbGciOiJFUzI1NiJ9.single-credential.sig",
-              "c_nonce": "single-nonce",
-              "c_nonce_expires_in": 3600,
+              "credentials": [
+                {"credential": "eyJhbGciOiJFUzI1NiJ9.single-credential.sig"}
+              ],
               "notification_id": "notif-single-001"
             }
             """.trimIndent()
 
         val decoded = json.decodeFromString(CredentialResponse.serializer(), raw)
 
-        assertNotNull(decoded.credential)
+        assertNotNull(decoded.credentials)
+        assertEquals(1, decoded.credentials!!.size)
         assertEquals(
             "eyJhbGciOiJFUzI1NiJ9.single-credential.sig",
-            (decoded.credential as? JsonPrimitive)?.content,
+            (decoded.credentials!![0].credential as? JsonPrimitive)?.content,
         )
-        assertNull(decoded.credentials, "1.0 single must not have credentials array")
         assertNull(decoded.transactionId)
-        assertEquals("single-nonce", decoded.cNonce)
-        assertEquals(3600, decoded.cNonceExpiresIn)
         assertEquals("notif-single-001", decoded.notificationId)
 
         // Round-trip
@@ -172,7 +167,7 @@ class DeferredSerializationTest {
     }
 
     // ========================================================================
-    // Deferred pending response: has transactionId but no credential(s)
+    // Deferred pending response: has transactionId but no credentials
     // ========================================================================
 
     @Test
@@ -187,12 +182,10 @@ class DeferredSerializationTest {
 
         val decoded = json.decodeFromString(CredentialResponse.serializer(), raw)
 
-        assertNull(decoded.credential, "deferred pending must not have credential")
         assertNull(decoded.credentials, "deferred pending must not have credentials")
         assertEquals("txn-pending-xyz", decoded.transactionId)
         assertEquals(10, decoded.interval)
         assertNull(decoded.notificationId)
-        assertNull(decoded.cNonce)
 
         // Round-trip
         val reEncoded = json.encodeToString(CredentialResponse.serializer(), decoded)
@@ -202,7 +195,6 @@ class DeferredSerializationTest {
         // Wire format verification
         val wireObj = json.parseToJsonElement(reEncoded).jsonObject
         assertTrue(wireObj.containsKey("transaction_id"), "must have 'transaction_id'")
-        assertFalse(wireObj.containsKey("credential"), "pending must not serialize 'credential'")
         assertFalse(wireObj.containsKey("credentials"), "pending must not serialize 'credentials'")
     }
 
@@ -215,9 +207,8 @@ class DeferredSerializationTest {
         val raw =
             """
             {
-              "credential": "eyJ.cred.sig",
-              "notification_id": "notif-preserved-123",
-              "c_nonce": "abc"
+              "credentials": [{"credential": "eyJ.cred.sig"}],
+              "notification_id": "notif-preserved-123"
             }
             """.trimIndent()
 

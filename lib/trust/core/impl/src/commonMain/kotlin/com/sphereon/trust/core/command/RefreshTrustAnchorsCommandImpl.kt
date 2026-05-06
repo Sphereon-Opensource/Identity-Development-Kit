@@ -22,7 +22,7 @@ import dev.zacsweers.metro.SingleIn
 class RefreshTrustAnchorsCommandImpl(
     execution: SessionExecution,
     private val validators: Set<TrustValidationService>,
-) : TypedServiceCommandAdapter<RefreshTrustArgs, RefreshTrustResult>(
+) : TypedServiceCommandAdapter<RefreshTrustArgs, RefreshTrustResult, IdkError>(
         commandId = RefreshTrustAnchorsCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RefreshTrustArgs>(),

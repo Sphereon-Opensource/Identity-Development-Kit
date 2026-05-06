@@ -92,6 +92,15 @@ data class AuthorizationContextRef(
 data class ValidateAccessTokenArgs(
     val accessToken: String,
     val dpopProof: String? = null,
+    /**
+     * RFC 9449 §7.1: the resource server MUST verify the DPoP proof binds to *this* request,
+     * which requires `htu` / `htm` matching. Pass the full request URL (with scheme + host but
+     * stripped of query/fragment) and the HTTP method here so the bridge can run that check.
+     * `null` only when the caller has already verified the proof itself; the bridge will skip
+     * DPoP verification entirely in that case.
+     */
+    val httpUrl: String? = null,
+    val httpMethod: String? = null,
 )
 
 @JsExportCompat
@@ -101,6 +110,13 @@ data class ValidatedTokenContext(
     val scope: String?,
     val credentialConfigurationIds: List<String>,
     val credentialIdentifiers: List<String>? = null,
+    /**
+     * RFC 9449 §6: when the access token carries `cnf.jkt`, it is bound to a DPoP key.
+     * Surfaced so callers know whether the token MUST be presented with a matching DPoP proof,
+     * and so layered checks (e.g. resource server pinning) can compare against the binding.
+     * `null` for plain bearer tokens.
+     */
+    val cnfJkt: String? = null,
 )
 
 @JsExportCompat

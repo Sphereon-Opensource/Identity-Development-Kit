@@ -34,7 +34,7 @@ import kotlin.time.Clock
 class ValidateEtsiTrustCommandImpl(
     execution: SessionExecution,
     private val etsiTrustValidator: ETSITrustValidator,
-) : TypedServiceCommandAdapter<ValidateEtsiTrustArgs, TrustValidationResult>(
+) : TypedServiceCommandAdapter<ValidateEtsiTrustArgs, TrustValidationResult, IdkError>(
         commandId = ValidateEtsiTrustCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateEtsiTrustArgs>(),
@@ -85,5 +85,5 @@ class ValidateEtsiTrustCommandImpl(
 interface EtsiTrustCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ValidateEtsiTrustCommand.COMMAND_ID)
-    fun validateEtsiTrust(impl: ValidateEtsiTrustCommandImpl): ServiceCommand<*, *> = impl
+    fun validateEtsiTrust(impl: ValidateEtsiTrustCommandImpl): ServiceCommand<*, *, *> = impl
 }

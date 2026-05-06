@@ -82,4 +82,9 @@ interface OAuth2ClientCommandBindings {
     fun fetchUserInfo(registry: SessionScopedCommandRegistry): FetchUserInfoCommand =
         registry.get(FetchUserInfoCommand.COMMAND_ID) as? FetchUserInfoCommand
             ?: error("No binding for ${FetchUserInfoCommand.COMMAND_ID}")
+
+    @Provides
+    fun completeOidcLogin(registry: SessionScopedCommandRegistry): CompleteOidcLoginCommand =
+        registry.get(CompleteOidcLoginCommand.COMMAND_ID) as? CompleteOidcLoginCommand
+            ?: error("No binding for ${CompleteOidcLoginCommand.COMMAND_ID}")
 }

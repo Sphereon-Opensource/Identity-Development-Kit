@@ -43,7 +43,7 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateAuthorizationRequestCommand", exact = true)
 @JsExportCompat
-interface CreateAuthorizationRequestCommand : ServiceCommand<CreateAuthorizationRequestArgs, CreatedAuthorizationRequest> {
+interface CreateAuthorizationRequestCommand : ServiceCommand<CreateAuthorizationRequestArgs, CreatedAuthorizationRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -74,7 +74,7 @@ interface CreateAuthorizationRequestCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParseAuthorizationResponseCommand", exact = true)
 @JsExportCompat
-interface ParseAuthorizationResponseCommand : ServiceCommand<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse> {
+interface ParseAuthorizationResponseCommand : ServiceCommand<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -105,7 +105,7 @@ interface ParseAuthorizationResponseCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ValidateAuthorizationResponseCommand", exact = true)
 @JsExportCompat
-interface ValidateAuthorizationResponseCommand : ServiceCommand<ValidateAuthorizationResponseArgs, ValidationResult> {
+interface ValidateAuthorizationResponseCommand : ServiceCommand<ValidateAuthorizationResponseArgs, ValidationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -136,7 +136,7 @@ interface ValidateAuthorizationResponseCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyHolderBindingCommand", exact = true)
 @JsExportCompat
-interface VerifyHolderBindingCommand : ServiceCommand<VerifyHolderBindingArgs, HolderBindingResult> {
+interface VerifyHolderBindingCommand : ServiceCommand<VerifyHolderBindingArgs, HolderBindingResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -168,7 +168,7 @@ interface VerifyHolderBindingCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BuildAuthorizationRequestUriCommand", exact = true)
 @JsExportCompat
-interface BuildAuthorizationRequestUriCommand : ServiceCommand<BuildAuthorizationRequestUriArgs, StringResult> {
+interface BuildAuthorizationRequestUriCommand : ServiceCommand<BuildAuthorizationRequestUriArgs, StringResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -208,7 +208,7 @@ interface BuildAuthorizationRequestUriCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateSignedAuthorizationRequestCommand", exact = true)
 @JsExportCompat
-interface CreateSignedAuthorizationRequestCommand : ServiceCommand<CreateSignedAuthorizationRequestArgs, SignedAuthorizationRequestResult> {
+interface CreateSignedAuthorizationRequestCommand : ServiceCommand<CreateSignedAuthorizationRequestArgs, SignedAuthorizationRequestResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -251,7 +251,7 @@ interface CreateSignedAuthorizationRequestCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HandleDirectPostResponseCommand", exact = true)
 @JsExportCompat
-interface HandleDirectPostResponseCommand : ServiceCommand<HandleDirectPostResponseArgs, DirectPostHandledResponse> {
+interface HandleDirectPostResponseCommand : ServiceCommand<HandleDirectPostResponseArgs, DirectPostHandledResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -289,7 +289,7 @@ interface HandleDirectPostResponseCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RetrieveAuthorizationResponseCommand", exact = true)
 @JsExportCompat
-interface RetrieveAuthorizationResponseCommand : ServiceCommand<RetrieveAuthorizationResponseArgs, RetrievedAuthorizationResponse> {
+interface RetrieveAuthorizationResponseCommand : ServiceCommand<RetrieveAuthorizationResponseArgs, RetrievedAuthorizationResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

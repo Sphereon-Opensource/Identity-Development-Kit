@@ -23,6 +23,11 @@ import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.crypto.core.jose.JoseKeyOperations
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.ResponseType
@@ -79,28 +84,47 @@ class OAuth2ClientsConfigBinder(
             return emptyMap()
         }
 
+        // The PropertyKeyNormalizer turns hyphens, underscores, dots, and spaces into the dot
+        // delimiter, so a hyphenated client id like `oidf-op-basic` is stored as `oidf.op.basic`
+        // in the property keyspace. Splitting on the first dot would misread that as a group
+        // named `oidf` with `op.basic.*` nested under it. Instead, anchor on each `.client.id`
+        // property: the segments before it are the group prefix, and the value of that property
+        // is the canonical client id. Then carve every other key under the same group prefix.
+        val groupPrefixes = discoverGroupPrefixes(properties.keys)
         val grouped = linkedMapOf<String, MutableMap<String, Any>>()
         properties.forEach { (key, value) ->
-            val dotIndex = key.indexOf('.')
-            val entryKey =
-                if (dotIndex >= 0) {
-                    key.substring(0, dotIndex)
-                } else {
-                    key
-                }
-            val nestedKey =
-                if (dotIndex >= 0) {
-                    key.substring(dotIndex + 1)
-                } else {
-                    ""
-                }
-            grouped.getOrPut(entryKey) { linkedMapOf() }[nestedKey] = value
+            val groupPrefix =
+                groupPrefixes.firstOrNull { prefix ->
+                    key == prefix || key.startsWith("$prefix.")
+                } ?: return@forEach
+            val nestedKey = if (key == groupPrefix) "" else key.substring(groupPrefix.length + 1)
+            grouped.getOrPut(groupPrefix) { linkedMapOf() }[nestedKey] = value
         }
 
         return grouped.mapValues { (entryKey, entryProperties) ->
             parseClient(entryKey, entryProperties)
         }
     }
+
+    /**
+     * A client config block is identified by the presence of an explicit `client-id` property at
+     * the deepest leaf. After [PropertyKeyNormalizerImpl] flattens hyphens to dots, a configured
+     * `oauth2.clients.oidf-op-basic.client-id=oidf-op-basic` ends up as the key
+     * `oidf.op.basic.client.id` (after stripping the `oauth2.clients` prefix). Walk every key,
+     * keep the ones ending in `.client.id` or the bare value `client.id`, and use everything to
+     * the left as the group prefix.
+     */
+    private fun discoverGroupPrefixes(keys: Set<String>): List<String> =
+        keys
+            .mapNotNull { key ->
+                when {
+                    key == CLIENT_ID_LEAF -> ""
+                    key.endsWith(".$CLIENT_ID_LEAF") -> key.substring(0, key.length - CLIENT_ID_LEAF.length - 1)
+                    else -> null
+                }
+            }.distinct()
+            // Longest prefix first so an outer `client-id` doesn't shadow a deeper match.
+            .sortedByDescending { it.length }
 
     private fun parseClient(
         entryKey: String,
@@ -135,6 +159,8 @@ class OAuth2ClientsConfigBinder(
             redirectUris = readStringList(properties, "redirectUris").orEmpty(),
             allowedScopes = readStringList(properties, "allowedScopes"),
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            jwks = readJwks(properties, "jwks", entryKey),
+            jwksUri = readString(properties, "jwksUri"),
             requirePkce = readBoolean(properties, "requirePkce") ?: (clientType == ClientType.PUBLIC),
             requirePushedAuthorizationRequests = readBoolean(properties, "requirePushedAuthorizationRequests") ?: false,
             dpopBoundAccessTokens = readBoolean(properties, "dpopBoundAccessTokens") ?: false,
@@ -142,8 +168,181 @@ class OAuth2ClientsConfigBinder(
             refreshTokenLifetime = readInt(properties, "refreshTokenLifetime"),
             authorizationCodeLifetime = readInt(properties, "authorizationCodeLifetime") ?: 600,
             trustedAttesterIssuers = readStringList(properties, "trustedAttesterIssuers"),
-            trustedAttesterJwksUris = readStringMap(properties, "trustedAttesterJwksUris"),
+            trustedAttesterJwks = readJwks(properties, "trustedAttesterJwks", entryKey),
+            trustedAttesterJwksUris = readStringList(properties, "trustedAttesterJwksUris"),
+            postLogoutRedirectUris = readStringList(properties, "postLogoutRedirectUris").orEmpty(),
+            frontchannelLogoutUri = readString(properties, "frontchannelLogoutUri"),
+            frontchannelLogoutSessionRequired = readBoolean(properties, "frontchannelLogoutSessionRequired") ?: false,
+            backchannelLogoutUri = readString(properties, "backchannelLogoutUri"),
+            backchannelLogoutSessionRequired = readBoolean(properties, "backchannelLogoutSessionRequired") ?: false,
+            authorizationSignedResponseAlg = readString(properties, "authorizationSignedResponseAlg"),
+            authorizationEncryptedResponseAlg = readString(properties, "authorizationEncryptedResponseAlg"),
+            authorizationEncryptedResponseEnc = readString(properties, "authorizationEncryptedResponseEnc"),
+            requestObjectSigningAlg = readString(properties, "requestObjectSigningAlg"),
+            requestUris = readStringList(properties, "requestUris").orEmpty(),
+            tlsClientAuthSubjectDn = readString(properties, "tlsClientAuthSubjectDn"),
+            tlsClientAuthSanDns = readString(properties, "tlsClientAuthSanDns"),
+            tlsClientAuthSanEmail = readString(properties, "tlsClientAuthSanEmail"),
+            tlsClientAuthSanIp = readString(properties, "tlsClientAuthSanIp"),
+            tlsClientAuthSanUri = readString(properties, "tlsClientAuthSanUri"),
+            tlsClientCertificateBoundAccessTokens = readBoolean(properties, "tlsClientCertificateBoundAccessTokens") ?: false,
         )
+    }
+
+    /**
+     * Reads inline JWKs from `oauth2.clients.<id>.<field-name>.<n>.<param>` keys. Each indexed
+     * group contributes one [Jwk] (RSA, EC, or OKP). Returns `null` when no `<field-name>.<n>.kty`
+     * keys are present so an unset list stays distinct from an explicitly empty list at the
+     * registration layer. Per-key parsing is strict: missing required parameters or unknown
+     * `kty`/`crv` values throw, matching how the rest of the binder surfaces fatal
+     * misconfiguration.
+     *
+     * Supported `kty` values:
+     *  - `RSA`: requires `n` and `e` (base64url).
+     *  - `EC`: requires `crv` plus `x` and `y` (base64url).
+     *  - `OKP`: requires `crv` plus `x` (base64url): Ed25519 / X25519.
+     */
+    private fun readJwks(
+        properties: Map<String, Any>,
+        fieldName: String,
+        entryKey: String,
+    ): List<Jwk>? {
+        val normalizedFieldName = keyNormalizer.normalize(fieldName)
+        val grouped = linkedMapOf<Int, MutableMap<String, Any>>()
+        properties.forEach { (key, value) ->
+            if (!key.startsWith("$normalizedFieldName.")) return@forEach
+            val tail = key.substring(normalizedFieldName.length + 1)
+            val dotIdx = tail.indexOf('.')
+            if (dotIdx <= 0) return@forEach
+            val index = tail.substring(0, dotIdx).toIntOrNull() ?: return@forEach
+            val sub = tail.substring(dotIdx + 1)
+            grouped.getOrPut(index) { linkedMapOf() }[sub] = value
+        }
+        if (grouped.isEmpty()) {
+            return null
+        }
+        return grouped.entries
+            .sortedBy { it.key }
+            .map { (index, jwkProperties) -> parseJwk(jwkProperties, entryKey, fieldName, index) }
+    }
+
+    private fun parseJwk(
+        properties: Map<String, Any>,
+        entryKey: String,
+        fieldName: String,
+        index: Int,
+    ): Jwk {
+        val keyPath = "$CONFIG_PREFIX.$entryKey.$fieldName.$index"
+        val keyTypeStr =
+            readString(properties, "kty")
+                ?: throw IllegalArgumentException(
+                    "Missing required property '$keyPath.kty'",
+                )
+        val kty =
+            try {
+                JwaKeyType.fromValue(keyTypeStr)
+            } catch (expected: IllegalArgumentException) {
+                throw IllegalArgumentException(
+                    "Unsupported JWK kty '$keyTypeStr' for '$keyPath'",
+                    expected,
+                )
+            }
+
+        val alg = readString(properties, "alg")?.let { JwaAlgorithm.fromValue(it) }
+        val use = readString(properties, "use")
+        val kid = readString(properties, "kid")
+        val keyOps =
+            readStringList(properties, "keyOps")?.map { JoseKeyOperations.fromValue(it) }?.toTypedArray()
+
+        return when (kty) {
+            JwaKeyType.RSA -> {
+                val n =
+                    readString(properties, "n")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.n' for RSA JWK",
+                        )
+                val e =
+                    readString(properties, "e")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.e' for RSA JWK",
+                        )
+                Jwk(
+                    kty = JwaKeyType.RSA,
+                    alg = alg,
+                    use = use,
+                    kid = kid,
+                    key_ops = keyOps,
+                    n = n,
+                    e = e,
+                )
+            }
+
+            JwaKeyType.EC -> {
+                val crvStr =
+                    readString(properties, "crv")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.crv' for EC JWK",
+                        )
+                val crv =
+                    JwaCurve.fromValue(crvStr)
+                        ?: throw IllegalArgumentException(
+                            "Unsupported JWK crv '$crvStr' for '$keyPath'",
+                        )
+                val x =
+                    readString(properties, "x")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.x' for EC JWK",
+                        )
+                val y =
+                    readString(properties, "y")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.y' for EC JWK",
+                        )
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    alg = alg,
+                    use = use,
+                    kid = kid,
+                    key_ops = keyOps,
+                    crv = crv,
+                    x = x,
+                    y = y,
+                )
+            }
+
+            JwaKeyType.OKP -> {
+                val crvStr =
+                    readString(properties, "crv")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.crv' for OKP JWK",
+                        )
+                val crv =
+                    JwaCurve.fromValue(crvStr)
+                        ?: throw IllegalArgumentException(
+                            "Unsupported JWK crv '$crvStr' for '$keyPath'",
+                        )
+                val x =
+                    readString(properties, "x")
+                        ?: throw IllegalArgumentException(
+                            "Missing required property '$keyPath.x' for OKP JWK",
+                        )
+                Jwk(
+                    kty = JwaKeyType.OKP,
+                    alg = alg,
+                    use = use,
+                    kid = kid,
+                    key_ops = keyOps,
+                    crv = crv,
+                    x = x,
+                )
+            }
+
+            JwaKeyType.oct -> {
+                throw IllegalArgumentException(
+                    "Symmetric JWK (kty=oct) is not supported in inline client JWKS for '$keyPath'",
+                )
+            }
+        }
     }
 
     private fun readString(
@@ -242,34 +441,6 @@ class OAuth2ClientsConfigBinder(
         return indexedValues.ifEmpty { null }
     }
 
-    private fun readStringMap(
-        properties: Map<String, Any>,
-        fieldName: String,
-    ): Map<String, String>? {
-        val normalizedFieldName = keyNormalizer.normalize(fieldName)
-        val directValue = properties[normalizedFieldName]
-        if (directValue is Map<*, *>) {
-            return directValue.entries.associate { (key, value) ->
-                key.toString() to value.toString()
-            }
-        }
-
-        val prefixedValues =
-            properties.entries
-                .mapNotNull { (key, value) ->
-                    if (!key.startsWith("$normalizedFieldName.")) {
-                        return@mapNotNull null
-                    }
-                    val mapKey = key.substring(normalizedFieldName.length + 1)
-                    if (mapKey.isBlank()) {
-                        return@mapNotNull null
-                    }
-                    mapKey to value.toString()
-                }.toMap()
-
-        return prefixedValues.ifEmpty { null }
-    }
-
     private fun toStringList(value: Any): List<String> =
         when (value) {
             is List<*> -> value.mapNotNull { it?.toString()?.trim() }.filter { it.isNotEmpty() }
@@ -327,5 +498,12 @@ class OAuth2ClientsConfigBinder(
 
     companion object {
         const val CONFIG_PREFIX = "oauth2.clients"
+
+        /**
+         * Normalized form of the `client-id` config leaf used as the discovery anchor for client
+         * group prefixes. `PropertyKeyNormalizerImpl` collapses hyphens to dots, so the literal
+         * source key `client-id` is stored as `client.id`.
+         */
+        private const val CLIENT_ID_LEAF: String = "client.id"
     }
 }

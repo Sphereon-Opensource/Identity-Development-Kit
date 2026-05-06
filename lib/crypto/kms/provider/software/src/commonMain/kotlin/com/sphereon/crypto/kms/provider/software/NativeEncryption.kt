@@ -24,11 +24,14 @@ import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.Curve
+import com.sphereon.crypto.core.interop.isOkpCurve
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
 import com.sphereon.crypto.core.interop.toEcdhPrivateKey
 import com.sphereon.crypto.core.interop.toEcdhPublicKey
 import com.sphereon.crypto.core.interop.toRsaOaepPrivateKey
 import com.sphereon.crypto.core.interop.toRsaOaepPublicKey
+import com.sphereon.crypto.core.interop.toXdhPrivateKey
+import com.sphereon.crypto.core.interop.toXdhPublicKey
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.kms.EncryptionResult
@@ -496,22 +499,45 @@ internal suspend fun performKeyAgreementWithNativeKey(
             else -> throw IllegalArgumentException("Public key must be a JWK for ECDH key agreement")
         }
 
-    // Validate key types
-    require(privateJwk.kty == JwaKeyType.EC) {
-        "Private key must be an EC key, got: ${privateJwk.kty}"
+    // Validate key types — accept both EC (Weierstrass: P-256/P-384/P-521) and
+    // OKP (Montgomery: X25519/X448). Mixing types is rejected; mixing curves
+    // within a type is rejected below.
+    require(privateJwk.kty == publicJwk.kty) {
+        "Private and public key types must match. Private kty: ${privateJwk.kty}, Public kty: ${publicJwk.kty}"
     }
-    require(publicJwk.kty == JwaKeyType.EC) {
-        "Public key must be an EC key, got: ${publicJwk.kty}"
+    require(privateJwk.kty == JwaKeyType.EC || privateJwk.kty == JwaKeyType.OKP) {
+        "Key agreement requires EC (P-256/P-384/P-521) or OKP (X25519/X448) keys, got: ${privateJwk.kty}"
     }
 
-    // Validate public key has x,y coordinates
+    // Get curves and validate they match
+    val privateCurve = privateJwk.crv?.let { Curve.fromJose(it) } ?: Curve.P_256
+    val publicCurve = publicJwk.crv?.let { Curve.fromJose(it) } ?: Curve.P_256
+    require(privateCurve == publicCurve) {
+        "Private and public key curves must match. Private: $privateCurve, Public: $publicCurve"
+    }
+
+    return when (privateJwk.kty) {
+        JwaKeyType.OKP -> performXdhKeyAgreement(privateJwk, publicJwk, privateCurve)
+        else -> performEcdhKeyAgreement(privateKeyInfo, privateJwk, publicJwk, privateCurve)
+    }
+}
+
+/**
+ * Diffie-Hellman key agreement on Weierstrass curves (ECDH for
+ * P-256/P-384/P-521). Falls back to the iOS keychain when the JWK lacks `d`
+ * but a private key is held by the device's secure enclave.
+ */
+@OptIn(DelicateCryptographyApi::class)
+private suspend fun performEcdhKeyAgreement(
+    privateKeyInfo: KeyInfoType<*>,
+    privateJwk: JwkType,
+    publicJwk: JwkType,
+    privateCurve: Curve,
+): ByteArray {
     require(publicJwk.x != null && publicJwk.y != null) {
-        "Public key must have 'x' and 'y' parameters for key agreement"
+        "EC public key must have 'x' and 'y' parameters for key agreement"
     }
-
-    // Check if private key has 'd' parameter
     if (privateJwk.d == null) {
-        // Try native keychain ECDH (iOS only)
         val alias = privateKeyInfo.alias
         if (alias != null) {
             val nativeResult =
@@ -522,31 +548,40 @@ internal suspend fun performKeyAgreementWithNativeKey(
             }
         }
         throw IllegalArgumentException(
-            "Private key must have 'd' parameter for key agreement, or be a native keychain key. " +
+            "EC private key must have 'd' parameter for key agreement, or be a native keychain key. " +
                 "Alias: ${alias ?: "not set"}",
         )
     }
-
-    // Get curves and validate they match
-    val privateCurve = privateJwk.crv?.let { Curve.fromJose(it) } ?: Curve.P_256
-    val publicCurve = publicJwk.crv?.let { Curve.fromJose(it) } ?: Curve.P_256
-
-    require(privateCurve == publicCurve) {
-        "Private and public key curves must match. Private: $privateCurve, Public: $publicCurve"
-    }
-
-    // Convert curve to whyoleg format
     val curve = resolveEcdsaKmpCurve(privateCurve)
-
-    // Load keys from JWK directly (no DER/signum roundtrip)
     val ecdhPrivateKey = privateJwk.toEcdhPrivateKey(curve = curve)
     val ecdhPublicKey = publicJwk.toEcdhPublicKey(curve = curve)
+    return ecdhPrivateKey.sharedSecretGenerator().generateSharedSecretToByteArray(ecdhPublicKey)
+}
 
-    // Perform key agreement - get shared secret generator from private key
-    val sharedSecretGenerator = ecdhPrivateKey.sharedSecretGenerator()
-
-    // Derive the shared secret using the peer's public key
-    return sharedSecretGenerator.generateSharedSecretToByteArray(ecdhPublicKey)
+/**
+ * Diffie-Hellman key agreement on Montgomery curves (XDH for X25519 / X448),
+ * RFC 7748 §5. The IDK [Jwk]s are decoded via the OKP codec helpers
+ * (`toXdhPrivateKey` / `toXdhPublicKey`) which wrap cryptography-kotlin's
+ * `XDH` algorithm.
+ */
+@OptIn(DelicateCryptographyApi::class)
+private suspend fun performXdhKeyAgreement(
+    privateJwk: JwkType,
+    publicJwk: JwkType,
+    privateCurve: Curve,
+): ByteArray {
+    require(publicJwk.x != null) { "OKP public key must have 'x' parameter for key agreement" }
+    require(privateJwk.d != null) { "OKP private key must have 'd' parameter for key agreement" }
+    require(isOkpCurve(privateCurve)) { "Curve $privateCurve is not an OKP curve" }
+    val privateAsJwk =
+        com.sphereon.crypto.core.jose.Jwk
+            .from(privateJwk)
+    val publicAsJwk =
+        com.sphereon.crypto.core.jose.Jwk
+            .from(publicJwk)
+    val xdhPrivateKey = privateAsJwk.toXdhPrivateKey(curve = privateCurve)
+    val xdhPublicKey = publicAsJwk.toXdhPublicKey(curve = privateCurve)
+    return xdhPrivateKey.sharedSecretGenerator().generateSharedSecretToByteArray(xdhPublicKey)
 }
 
 /**

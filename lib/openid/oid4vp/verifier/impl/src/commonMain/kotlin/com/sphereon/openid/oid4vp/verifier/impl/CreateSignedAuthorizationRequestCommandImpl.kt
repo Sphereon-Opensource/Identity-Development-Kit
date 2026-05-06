@@ -54,7 +54,7 @@ class CreateSignedAuthorizationRequestCommandImpl(
     execution: SessionExecution,
     private val createAuthorizationRequestCommand: CreateAuthorizationRequestCommand,
     private val createSignedJarCommand: CreateSignedJarCommand,
-) : TypedServiceCommandAdapter<CreateSignedAuthorizationRequestArgs, SignedAuthorizationRequestResult>(
+) : TypedServiceCommandAdapter<CreateSignedAuthorizationRequestArgs, SignedAuthorizationRequestResult, IdkError>(
         commandId = CreateSignedAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateSignedAuthorizationRequestArgs>(),

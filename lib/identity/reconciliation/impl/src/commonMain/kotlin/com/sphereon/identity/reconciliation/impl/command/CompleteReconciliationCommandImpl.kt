@@ -72,7 +72,7 @@ class CompleteReconciliationCommandImpl(
     private val identityMatchStore: IdentityMatchStore,
     private val oidcDiscoveryService: OidcDiscoveryService,
     private val tokenClaimExtractor: OidcTokenClaimExtractor,
-) : TypedServiceCommandAdapter<CompleteReconciliationArgs, CompleteReconciliationResult>(
+) : TypedServiceCommandAdapter<CompleteReconciliationArgs, CompleteReconciliationResult, IdkError>(
         commandId = CompleteReconciliationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CompleteReconciliationArgs>(),

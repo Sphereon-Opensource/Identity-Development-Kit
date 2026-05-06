@@ -20,23 +20,33 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.client.client.AuthorizationResult
 import com.sphereon.oauth2.client.client.DpopContext
 import com.sphereon.oauth2.client.client.OAuth2Client
+import com.sphereon.oauth2.client.client.OidcLoginApi
+import com.sphereon.oauth2.client.client.OidcLoginInitiation
+import com.sphereon.oauth2.client.command.AuthorizationResponseSource
+import com.sphereon.oauth2.client.command.CompleteOidcLoginArgs
+import com.sphereon.oauth2.client.command.CompleteOidcLoginCommand
 import com.sphereon.oauth2.client.command.CreateAuthorizationRequestUrlCommand
 import com.sphereon.oauth2.client.command.CreateAuthorizationRequestUrlOptions
 import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.CreatePkceCommand
+import com.sphereon.oauth2.client.command.DiscoveryMode
 import com.sphereon.oauth2.client.command.ExchangeTokenArgs
 import com.sphereon.oauth2.client.command.ExchangeTokenCommand
 import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
 import com.sphereon.oauth2.client.command.FetchServerMetadataArgs
+import com.sphereon.oauth2.client.command.OidcLoginResult
 import com.sphereon.oauth2.client.command.ParseAuthorizationResponseArgs
 import com.sphereon.oauth2.client.command.ParseAuthorizationResponseCommand
 import com.sphereon.oauth2.client.command.ParsedAuthorizationResponse
 import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.client.service.DpopService
+import com.sphereon.oauth2.client.transaction.OidcLoginTransaction
+import com.sphereon.oauth2.client.transaction.OidcLoginTransactionStore
 import com.sphereon.oauth2.common.command.IntrospectTokenArgs
 import com.sphereon.oauth2.common.command.IntrospectTokenCommand
 import com.sphereon.oauth2.common.command.ValidateIdTokenArgs
@@ -47,15 +57,19 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.CreateDpopProofOptions
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.HttpMethod
+import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.TokenRequest
 import com.sphereon.oauth2.common.model.TokenResponse
 import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Implementation of OAuth2Client facade
@@ -77,10 +91,174 @@ class OAuth2ClientImpl(
     private val dpopService: DpopService,
     private val validateIdTokenCommand: com.sphereon.oauth2.common.command.ValidateIdTokenCommand,
     private val fetchUserInfoCommand: com.sphereon.oauth2.client.command.FetchUserInfoCommand,
+    private val secureRandom: SecureRandom,
+    private val oidcLoginTransactionStore: OidcLoginTransactionStore,
+    private val completeOidcLoginCommand: CompleteOidcLoginCommand,
 ) : OAuth2Client {
+    @ContributesTo(scope = SessionScope::class)
+    interface Graph {
+        val oauth2Client: OAuth2Client
+    }
+
+    override val oidcLogin: OidcLoginApi =
+        object : OidcLoginApi {
+            override suspend fun initiate(
+                issuer: String,
+                clientId: String,
+                redirectUri: String,
+                scopes: Set<String>,
+                responseMode: OAuth2ResponseMode,
+                prompt: String?,
+                loginHint: String?,
+                tenantId: String?,
+            ): IdkResult<OidcLoginInitiation, IdkError> = initiateOidcLogin(issuer, clientId, redirectUri, scopes, responseMode, prompt, loginHint, tenantId)
+
+            override suspend fun initiate(
+                authorizationServerMetadata: AuthorizationServerMetadata,
+                clientId: String,
+                redirectUri: String,
+                scopes: Set<String>,
+                responseMode: OAuth2ResponseMode,
+                prompt: String?,
+                loginHint: String?,
+                tenantId: String?,
+            ): IdkResult<OidcLoginInitiation, IdkError> =
+                initiateOidcLogin(
+                    authorizationServerMetadata = authorizationServerMetadata,
+                    clientId = clientId,
+                    redirectUri = redirectUri,
+                    scopes = scopes,
+                    responseMode = responseMode,
+                    prompt = prompt,
+                    loginHint = loginHint,
+                    tenantId = tenantId,
+                )
+
+            override suspend fun complete(
+                clientId: String,
+                clientAuthentication: com.sphereon.oauth2.common.model.ClientAuthenticationConfig,
+                callbackUrl: String,
+                callbackFormBody: String?,
+                responseSource: AuthorizationResponseSource,
+                tenantId: String?,
+            ): IdkResult<OidcLoginResult, IdkError> =
+                completeOidcLoginCommand.execute(
+                    CompleteOidcLoginArgs(
+                        clientId = clientId,
+                        clientAuthentication = clientAuthentication,
+                        callbackUrl = callbackUrl,
+                        callbackFormBody = callbackFormBody,
+                        responseSource = responseSource,
+                        tenantId = tenantId,
+                    ),
+                )
+        }
+
     override suspend fun fetchAuthorizationServerMetadata(issuer: String): IdkResult<AuthorizationServerMetadata, IdkError> = fetchMetadataCommand.execute(FetchServerMetadataArgs(issuer))
 
     override fun isDpopSupported(authorizationServerMetadata: AuthorizationServerMetadata): Boolean = !authorizationServerMetadata.dpopSigningAlgValuesSupported.isNullOrEmpty()
+
+    override suspend fun initiateOidcLogin(
+        issuer: String,
+        clientId: String,
+        redirectUri: String,
+        scopes: Set<String>,
+        responseMode: OAuth2ResponseMode,
+        prompt: String?,
+        loginHint: String?,
+        tenantId: String?,
+    ): IdkResult<OidcLoginInitiation, IdkError> {
+        // OIDC RPs want the openid-configuration document first — it carries the richer
+        // OIDC metadata (id_token_signing_alg_values_supported, userinfo_endpoint, etc.)
+        // that RFC 8414-only metadata may omit.
+        val metadataResult =
+            fetchMetadataCommand.execute(
+                FetchServerMetadataArgs(issuer = issuer, discoveryMode = DiscoveryMode.OIDC_FIRST),
+            )
+        if (metadataResult.isErr) return Err(metadataResult.error)
+        return initiateOidcLogin(
+            authorizationServerMetadata = metadataResult.value,
+            clientId = clientId,
+            redirectUri = redirectUri,
+            scopes = scopes,
+            responseMode = responseMode,
+            prompt = prompt,
+            loginHint = loginHint,
+            tenantId = tenantId,
+        )
+    }
+
+    override suspend fun initiateOidcLogin(
+        authorizationServerMetadata: AuthorizationServerMetadata,
+        clientId: String,
+        redirectUri: String,
+        scopes: Set<String>,
+        responseMode: OAuth2ResponseMode,
+        prompt: String?,
+        loginHint: String?,
+        tenantId: String?,
+    ): IdkResult<OidcLoginInitiation, IdkError> {
+        val state = secureRandom.newToken()
+        val nonce = secureRandom.newToken()
+
+        val pkceResult =
+            createPkceCommand.execute(
+                CreatePkceArgs(
+                    codeVerifier = null,
+                    allowedMethods = listOf(PkceMethod.S256),
+                ),
+            )
+        if (pkceResult.isErr) return Err(pkceResult.error)
+        val pkce = pkceResult.value
+
+        val authRequest =
+            AuthorizationRequest(
+                clientId = clientId,
+                redirectUri = redirectUri,
+                responseType = "code",
+                scope = scopes.joinToString(" ").ifBlank { null },
+                state = state,
+                nonce = nonce,
+                responseMode = responseMode.value,
+                codeChallenge = pkce.codeChallenge,
+                codeChallengeMethod = pkce.codeChallengeMethod.value,
+                prompt = prompt,
+                loginHint = loginHint,
+            )
+
+        val urlResult =
+            createAuthorizationRequestUrlCommand.execute(
+                CreateAuthorizationRequestUrlOptions(
+                    authorizationServerMetadata = authorizationServerMetadata,
+                    authorizationRequest = authRequest,
+                    pkceCodeVerifier = pkce.codeVerifier,
+                ),
+            )
+        if (urlResult.isErr) return Err(urlResult.error)
+
+        val now = Clock.System.now()
+        val transaction =
+            OidcLoginTransaction(
+                state = state,
+                nonce = nonce,
+                pkceVerifier = pkce.codeVerifier,
+                issuer = authorizationServerMetadata.issuer,
+                redirectUri = redirectUri,
+                responseMode = responseMode,
+                createdAt = now,
+                expiresAt = now + LOGIN_TRANSACTION_TTL,
+                tenantId = tenantId,
+            )
+        val putResult = oidcLoginTransactionStore.put(transaction)
+        if (putResult.isErr) return Err(IdkError.fromDTO(putResult.error))
+
+        return Ok(
+            OidcLoginInitiation(
+                authorizationUrl = urlResult.value.authorizationRequestUrl,
+                state = state,
+            ),
+        )
+    }
 
     override suspend fun initiateAuthorization(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -475,5 +653,12 @@ class OAuth2ClientImpl(
                 userinfoEndpoint = userinfoEndpoint,
             ),
         )
+    }
+
+    private companion object {
+        // OIDC login transactions are short-lived; generous enough to tolerate federated IdP
+        // round-trips + user interaction but short enough that replays against a stored state
+        // fail by expiry if the callback never arrives.
+        val LOGIN_TRANSACTION_TTL = 10.minutes
     }
 }

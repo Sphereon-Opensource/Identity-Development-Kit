@@ -24,12 +24,16 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
 import com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestCommand
+import com.sphereon.oauth2.server.authorization.command.jar.VerifyRequestObjectArgs
+import com.sphereon.oauth2.server.authorization.command.jar.VerifyRequestObjectCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -77,7 +81,9 @@ private const val MAX_PKCE_LENGTH = 128
 @ObjCName("ParsePushedAuthorizationRequestCommandImpl", exact = true)
 class ParsePushedAuthorizationRequestCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParsePushedAuthorizationRequestArgs, AuthorizationRequestData>(
+    private val verifyRequestObjectCommand: VerifyRequestObjectCommand,
+    private val serversConfigProvider: OAuth2ServersConfigProvider,
+) : TypedServiceCommandAdapter<ParsePushedAuthorizationRequestArgs, AuthorizationRequestData, IdkError>(
         commandId = ParsePushedAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParsePushedAuthorizationRequestArgs>(),
@@ -93,10 +99,86 @@ class ParsePushedAuthorizationRequestCommandImpl(
         applyDuring: (ParsePushedAuthorizationRequestArgs) -> ParsePushedAuthorizationRequestArgs,
     ): IdkResult<AuthorizationRequestData, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.requestBody, applied.clientAuthentication).mapError { IdkError.fromDTO(it) }
+        return executeInternal(applied.requestBody, applied.clientAuthentication, applied.baseUrlOverride)
+            .mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
+        requestBody: Map<String, List<String>>,
+        clientAuthentication: ClientAuthenticationConfig,
+        baseUrlOverride: String?,
+    ): IdkResult<AuthorizationRequestData, AuthorizationServerError> {
+        // RFC 9126 §2 + RFC 9101 §6: when the PAR body carries a `request` JAR, verify and merge
+        // its signed claims onto the body before parsing the rest. The merged single-value map
+        // becomes the parser's working set and is what the eventual /authorize?request_uri=urn:...
+        // round-trip retrieves. Both `request` and `request_uri` together are forbidden per
+        // RFC 9101 §5; PAR specifically forbids `request_uri` already (RFC 9126 §3) but the
+        // both-present check still applies if a client smuggles them in.
+        val effectiveBody = mergeJarIntoBody(requestBody, baseUrlOverride).getOrElse { return Err(it) }
+
+        return parseEffective(effectiveBody, clientAuthentication)
+    }
+
+    private suspend fun mergeJarIntoBody(
+        requestBody: Map<String, List<String>>,
+        baseUrlOverride: String?,
+    ): IdkResult<Map<String, List<String>>, AuthorizationServerError> {
+        val rawJar =
+            requestBody["request"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                ?: return Ok(requestBody)
+        val rawRequestUri = requestBody["request_uri"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+        if (rawRequestUri != null) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "request and request_uri MUST NOT both be present (RFC 9101 §5)",
+                ),
+            )
+        }
+
+        val serverConfig = serversConfigProvider.serverConfig
+        if (!serverConfig.jar.isEnabled) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "JAR (RFC 9101) is disabled on this authorization server",
+                ),
+            )
+        }
+
+        val issuer =
+            serverConfig.issuer
+                ?: baseUrlOverride
+                ?: return Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Cannot verify JAR audience without an AS issuer",
+                    ),
+                )
+
+        val frontChannelParameters = requestBody.mapValues { (_, values) -> values.first() }
+        val verifyResult =
+            verifyRequestObjectCommand.execute(
+                VerifyRequestObjectArgs(
+                    requestJwt = rawJar,
+                    requestUri = null,
+                    clientIdHint = requestBody["client_id"]?.firstOrNull(),
+                    issuer = issuer,
+                    queryParameters = frontChannelParameters,
+                ),
+            )
+        if (verifyResult.isErr) {
+            return Err(
+                AuthorizationServerError.InvalidRequestObject(
+                    details = verifyResult.error.message.defaultMessage,
+                ),
+            )
+        }
+
+        val merged = verifyResult.value.mergedParameters.toMutableMap()
+        merged.remove("request")
+        merged.remove("request_uri")
+        return Ok(merged.mapValues { (_, value) -> listOf(value) })
+    }
+
+    private suspend fun parseEffective(
         requestBody: Map<String, List<String>>,
         clientAuthentication: ClientAuthenticationConfig,
     ): IdkResult<AuthorizationRequestData, AuthorizationServerError> {
@@ -173,6 +255,10 @@ class ParsePushedAuthorizationRequestCommandImpl(
                         ),
                     )
                 }
+
+                is ClientAuthenticationConfig.MutualTls -> {
+                    clientAuthentication.clientId
+                }
             }
 
         if (clientId.isBlank()) {
@@ -196,26 +282,36 @@ class ParsePushedAuthorizationRequestCommandImpl(
         val codeChallenge = requestBody["code_challenge"]?.firstOrNull()
         val codeChallengeMethodStr = requestBody["code_challenge_method"]?.firstOrNull()
 
-        // Parse code_challenge_method
+        // Parse code_challenge_method against the AS-advertised allow-list
+        // (`pkce_code_challenge_methods_supported`). FAPI2-SP-FINAL §5.2.2-18 forbids `plain`,
+        // and operators express that by configuring `pkce-methods-supported: ["S256"]` (the IDK
+        // default). Rejecting at PAR ensures the wallet sees `invalid_request` early instead of
+        // discovering the policy at /authorize.
+        val allowedMethods = serversConfigProvider.serverConfig.pkceMethodsSupported
         val codeChallengeMethod =
             if (codeChallengeMethodStr != null) {
-                when (codeChallengeMethodStr.uppercase()) {
-                    "PLAIN" -> {
-                        PkceMethod.PLAIN
-                    }
+                val canonical =
+                    when (codeChallengeMethodStr.uppercase()) {
+                        "PLAIN" -> "plain"
 
-                    "S256" -> {
-                        PkceMethod.S256
-                    }
+                        "S256" -> "S256"
 
-                    else -> {
-                        return Err(
+                        else -> return Err(
                             AuthorizationServerError.InvalidRequest(
                                 details = "Invalid code_challenge_method: $codeChallengeMethodStr. Must be 'plain' or 'S256'",
                             ),
                         )
                     }
+                if (canonical !in allowedMethods) {
+                    return Err(
+                        AuthorizationServerError.InvalidRequest(
+                            details =
+                                "code_challenge_method '$canonical' is not in this server's " +
+                                    "pkce_code_challenge_methods_supported set: $allowedMethods",
+                        ),
+                    )
                 }
+                if (canonical == "plain") PkceMethod.PLAIN else PkceMethod.S256
             } else if (codeChallenge != null) {
                 // Default to S256 if code_challenge is present but method is not specified
                 PkceMethod.S256
@@ -255,6 +351,13 @@ class ParsePushedAuthorizationRequestCommandImpl(
             )
         }
 
+        // RFC 9449 §10.1: when a `dpop_jkt` is committed at the PAR endpoint (either by the
+        // wallet sending the parameter directly, or by the PAR handler resolving it from a DPoP
+        // proof header before delegating to the parser), persist it on the parsed request so
+        // the eventual authorization code carries the binding and the token endpoint can refuse
+        // a /token request whose DPoP proof signs with a different key.
+        val dpopJkt = requestBody["dpop_jkt"]?.firstOrNull()
+
         // Extract additional parameters for extensibility (use first value of each)
         val additionalParameters = requestBody.mapValues { (_, values) -> values.first() }
 
@@ -270,6 +373,7 @@ class ParsePushedAuthorizationRequestCommandImpl(
                 state = state,
                 codeChallenge = codeChallenge,
                 codeChallengeMethod = codeChallengeMethod,
+                dpopJkt = dpopJkt,
                 requestUri = null, // Not applicable for PAR requests
                 additionalParameters = additionalParameters,
             ),

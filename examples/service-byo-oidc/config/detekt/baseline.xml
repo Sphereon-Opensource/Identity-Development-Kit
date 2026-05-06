@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:ByoOidcE2ETest.kt$ByoOidcE2ETest$if</ID>
+    <ID>LongParameterList:ByoOidcAppGraph.kt$ByoOidcAppGraph.Factory$( @Provides application: Any, @Provides @Named("appId") appId: String, @Provides @Named("profile") profile: String, @Provides @Named("version") version: String, @Provides rootScopeProvider: RootScopeProvider, // Supplied to DefaultIdpRegistry at AppScope construction time. @Provides @SingleIn(AppScope::class) jwtValidationConfig: JwtValidationConfig, )</ID>
+  </CurrentIssues>
+</SmellBaseline>

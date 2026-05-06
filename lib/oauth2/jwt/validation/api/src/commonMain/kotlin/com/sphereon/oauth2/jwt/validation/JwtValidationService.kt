@@ -143,8 +143,6 @@ data class ValidatedAccessToken(
     val notBefore: Long?,
     /** OAuth scopes from 'scope' claim */
     val scopes: Set<String>,
-    /** Extracted tenant identifier (from configured tenant claim) */
-    val tenantId: String?,
     /** Client ID (from azp or client_id claim) */
     val clientId: String?,
     /** JWT ID (jti claim) for token tracking */
@@ -203,8 +201,6 @@ data class ValidatedIdToken(
     val givenName: String?,
     /** User's family name (last name) */
     val familyName: String?,
-    /** Extracted tenant identifier */
-    val tenantId: String?,
     /** Original raw token */
     val rawToken: String,
     /** All claims from the token payload */

@@ -1018,6 +1018,7 @@ actual class SoftwareKeyStoreService actual constructor(
         val sigAlgName = getSignatureAlgorithm(entry)
         val jwaAlgorithm = JwaAlgorithm.fromValue(sigAlgName)
         val certChain = entry.certificateChain.map { cert -> certificateJwkEncode(cert.encoded) }.toTypedArray()
+        val certChainOrNull = certChain.takeIf { it.isNotEmpty() }
 
         // EC keys from PKCS#8 may lack the optional public key component.
         // Derive x/y from the certificate's public key when missing.
@@ -1031,8 +1032,18 @@ actual class SoftwareKeyStoreService actual constructor(
                     .withD(jwk.d)
                     .withX(pubJwk.x)
                     .withY(pubJwk.y)
-                    .withX5c(jwk.x5c)
+                    // Cert chain comes from the PKCS12 entry, not the private-key DER.
+                    // `derPrivateKeyToJwk(entry.privateKey.encoded)` only sees the key
+                    // material, so the original `jwk.x5c` is always null here.
+                    .withX5c(certChainOrNull)
                     .build()
+        } else if (jwk.x5c.isNullOrEmpty() && certChainOrNull != null) {
+            // Same issue for non-EC and EC-with-x-already-present paths: the JWK derived
+            // from the private-key DER carries no certificate chain. Consumers reading
+            // `jwk.x5c` directly (OID4VP x509_san_dns / x509_hash signing,
+            // CoseSign1 with `requireX5Chain=true`, etc.) need it on the JWK itself —
+            // the outer `ResolvedKeyInfo.x5c` field isn't read by every consumer.
+            jwk = jwk.copy(x5c = certChainOrNull)
         }
 
         return ResolvedKeyInfo(

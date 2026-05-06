@@ -58,6 +58,9 @@ kotlin {
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 api(sphereonlib.org.jetbrains.kotlinx.datetime)
                 api(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
+
+                // KMP-safe synchronization primitives (SynchronizedObject/synchronized) used by DefaultIdpRegistry
+                implementation(sphereonlib.org.jetbrains.kotlinx.atomicfu)
             }
         }
 

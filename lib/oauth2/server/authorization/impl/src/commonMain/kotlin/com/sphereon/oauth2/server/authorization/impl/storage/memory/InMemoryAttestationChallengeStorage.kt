@@ -16,9 +16,11 @@
 
 package com.sphereon.oauth2.server.authorization.impl.storage.memory
 
+import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.storage.AttestationChallengeStorage
 import dev.zacsweers.metro.AppScope
@@ -28,7 +30,6 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -44,7 +45,9 @@ import kotlin.time.Instant
 @ContributesBinding(AppScope::class, binding = binding<AttestationChallengeStorage>())
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemoryAttestationChallengeStorage", exact = true)
-class InMemoryAttestationChallengeStorage : AttestationChallengeStorage {
+class InMemoryAttestationChallengeStorage(
+    private val secureRandom: SecureRandom,
+) : AttestationChallengeStorage {
     private data class ChallengeData(
         val expiresAt: Instant,
         val used: Boolean = false,
@@ -55,8 +58,7 @@ class InMemoryAttestationChallengeStorage : AttestationChallengeStorage {
     override suspend fun generateChallenge(): IdkResult<String, AuthorizationServerError.StorageError> =
         try {
             cleanupExpired()
-            val bytes = Random.Default.nextBytes(CHALLENGE_BYTE_SIZE)
-            val challenge = bytes.joinToString("") { it.toUByte().toString(HEX_RADIX).padStart(HEX_PAD_LENGTH, '0') }
+            val challenge = secureRandom.newToken(lengthBytes = CHALLENGE_BYTE_SIZE, encoding = Encoding.HEX)
             val expiresAt = Clock.System.now() + CHALLENGE_EXPIRATION_SECONDS.seconds
             challenges[challenge] = ChallengeData(expiresAt = expiresAt)
             Ok(challenge)
@@ -117,8 +119,6 @@ class InMemoryAttestationChallengeStorage : AttestationChallengeStorage {
 
     companion object {
         private const val CHALLENGE_BYTE_SIZE = 16
-        private const val HEX_RADIX = 16
-        private const val HEX_PAD_LENGTH = 2
         private const val CHALLENGE_EXPIRATION_SECONDS = 120
     }
 }

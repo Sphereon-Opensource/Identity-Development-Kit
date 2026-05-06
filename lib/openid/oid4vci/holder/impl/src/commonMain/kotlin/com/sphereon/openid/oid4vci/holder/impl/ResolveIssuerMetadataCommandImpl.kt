@@ -49,7 +49,7 @@ class ResolveIssuerMetadataCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     private val signedMetadataVerifier: SignedMetadataVerifier,
     private val config: Oid4vciHolderConfig? = null,
-) : TypedServiceCommandAdapter<ResolveIssuerMetadataArgs, CredentialIssuerMetadata>(
+) : TypedServiceCommandAdapter<ResolveIssuerMetadataArgs, CredentialIssuerMetadata, IdkError>(
         commandId = ResolveIssuerMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveIssuerMetadataArgs>(),

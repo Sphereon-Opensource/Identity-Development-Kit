@@ -56,9 +56,20 @@ interface IssuerAuthValidation {
     ): VerifySignatureResultType<CoseKeyType>
 
     /**
-     * Step 3. Verify the digests of IssuerSignedItem entries against the MSO (not yet implemented).
+     * Step 3. Verify the digests of IssuerSignedItem entries against the MSO.
+     *
+     * Per ISO 18013-5 §9.1.2.5, each disclosed IssuerSignedItem in [document]'s nameSpaces is
+     * hashed (using the digest algorithm declared in `mso.digestAlgorithm`) and compared to the
+     * corresponding entry in `mso.valueDigests[namespace][digestID]`. Any mismatch, missing
+     * digest entry, or unsupported digest algorithm fails the step.
+     *
+     * When [document] is `null`, only the IssuerAuth structure was supplied (no disclosed
+     * items), so digest verification is skipped — there is nothing to hash.
      */
-    fun verifyDigests(issuerAuth: COSE_Sign1<MobileSecurityObject>): VerifyResultType
+    fun verifyDigests(
+        issuerAuth: COSE_Sign1<MobileSecurityObject>,
+        document: Document? = null,
+    ): VerifyResultType
 
     /**
      * Step 4. Check that the document type in the MSO matches the Document.

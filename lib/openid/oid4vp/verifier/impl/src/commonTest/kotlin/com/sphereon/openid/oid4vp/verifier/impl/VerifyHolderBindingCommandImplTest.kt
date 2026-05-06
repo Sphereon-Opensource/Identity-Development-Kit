@@ -22,14 +22,32 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.DateTimeUtils
+import com.sphereon.core.compat.LocalDateTimeKMP
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.cose.CoseSign1
+import com.sphereon.crypto.core.generic.VerifyResults
+import com.sphereon.crypto.core.generic.VerifyResultsType
+import com.sphereon.crypto.core.generic.VerifySignatureResult
+import com.sphereon.crypto.core.generic.VerifySignatureResultType
 import com.sphereon.crypto.jose.jws.JwsValidationResult
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
+import com.sphereon.mdoc.data.DeviceAuthValidation
+import com.sphereon.mdoc.data.MdocValidations
+import com.sphereon.mdoc.data.MdocVerificationTypes
+import com.sphereon.mdoc.data.device.DeviceResponse
+import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
+import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.mso.MobileSecurityObject
+import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
 import com.sphereon.sdjwt.SdJwtVerificationResult
 import com.sphereon.sdjwt.VerifySdJwtArgs
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
+import com.sphereon.trust.x509.X509TrustAnchorLoader
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -130,9 +148,11 @@ class VerifyHolderBindingCommandImplTest {
     // ============================================================================
 
     @Test
-    fun `test mDoc holder binding verification`() =
+    fun `mDoc holder binding rejects bogus presentation when OID4VP context is supplied`() =
         runTest {
-            // Given: Base64-encoded mDoc presentation
+            // Bogus base64 — won't decode as a real DeviceResponse. The placeholder used to return
+            // verified=true unconditionally; with real verification wired in, the stub
+            // DeviceResponseCborCodec rejects this payload and the binding is invalid.
             val mdocPresentation = "o2d2ZXJzaW9uYzEuMGlkb2N1bWVudHOBo2dkb2NUeXBleBhvcmcuaXNvLjE4MDEzLjUuMS5tRExqaXNzdWVyU2lnbmVk"
 
             val args =
@@ -141,6 +161,8 @@ class VerifyHolderBindingCommandImplTest {
                     format = "mso_mdoc",
                     expectedNonce = "nonce456",
                     expectedAudience = "https://verifier.example.com",
+                    clientId = "x509_san_dns:verifier.example.com",
+                    responseUri = "https://verifier.example.com/oid4vp/auth/response",
                 )
 
             val result = command.execute(args)
@@ -149,18 +171,18 @@ class VerifyHolderBindingCommandImplTest {
             val binding = result.value
 
             assertEquals("mdoc-device-auth", binding.bindingMethod)
-            // Note: Full DeviceAuth verification pending mdoc integration
-            assertTrue(binding.verified)
+            assertFalse(binding.verified, "Bogus mdoc presentation must NOT verify")
+            assertTrue(binding.errors.isNotEmpty(), "Errors should be reported for an invalid mdoc")
         }
 
     @Test
-    fun `test mDoc holder binding with format variant`() =
+    fun `mDoc holder binding fails fast when OID4VP context is missing`() =
         runTest {
-            val mdocPresentation = "o2d2ZXJzaW9uYzEuMGlkb2N1bWVudHOBo2dkb2NUeXBl"
-
+            // Without clientId / responseUri / mdoc_generated_nonce there is no SessionTranscript
+            // to reconstruct — the command must surface a clear error rather than silently passing.
             val args =
                 VerifyHolderBindingArgs(
-                    presentation = mdocPresentation,
+                    presentation = "ignored",
                     format = "mdoc",
                     expectedNonce = "nonce789",
                     expectedAudience = "https://verifier.example.com",
@@ -169,7 +191,10 @@ class VerifyHolderBindingCommandImplTest {
             val result = command.execute(args)
 
             assertIs<Ok<*>>(result)
-            assertEquals("mdoc-device-auth", result.value.bindingMethod)
+            val binding = result.value
+            assertEquals("mdoc-device-auth", binding.bindingMethod)
+            assertFalse(binding.verified)
+            assertTrue(binding.errors.any { it.contains("OID4VP context") })
         }
 
     // ============================================================================
@@ -338,7 +363,83 @@ class VerifyHolderBindingCommandImplTest {
             execution = testContext.execution,
             verifySdJwtCommand = mockSdJwtCommand,
             verifyJwsCommand = mockJwsCommand,
+            mdocValidations = AlwaysFailMdocValidations,
+            deviceAuthValidation = AlwaysFailDeviceAuthValidation,
+            deviceResponseCborCodec = AlwaysFailDeviceResponseCborCodec,
+            x509TrustAnchorLoader = NoTrustAnchorsLoader,
         )
+    }
+
+    private object NoTrustAnchorsLoader : X509TrustAnchorLoader {
+        override suspend fun loadTrustedCerts(): List<String> = emptyList()
+    }
+
+    /**
+     * Stub `MdocValidations` for unit tests. Returns a critical-error result so the holder-
+     * binding command treats the (bogus, non-mdoc) test presentations as invalid — which is
+     * the correct post-placeholder behaviour. End-to-end mdoc verification is exercised via
+     * an integration test against `MdocOid4vpServiceImpl`.
+     */
+    private object AlwaysFailMdocValidations : MdocValidations {
+        override suspend fun fromDocument(
+            document: Document,
+            trustedCerts: Array<String>?,
+            verificationTime: LocalDateTimeKMP?,
+            keyInfo: KeyInfoType<CoseKeyType>?,
+            allowNotYetValidDocuments: Boolean,
+            allowExpiredDocuments: Boolean,
+            dateTimeUtils: DateTimeUtils,
+            timeZoneId: String?,
+            clockSkewAllowedInSec: Int,
+        ): VerifyResultsType<CoseKeyType> = critical("stub MdocValidations.fromDocument: test never supplies a real mdoc")
+
+        override suspend fun fromIssuerAuth(
+            issuerAuth: CoseSign1<MobileSecurityObject>,
+            keyInfo: KeyInfoType<CoseKeyType>?,
+            trustedCerts: Array<String>?,
+            verificationTime: LocalDateTimeKMP?,
+            allowNotYetValidDocuments: Boolean,
+            allowExpiredDocuments: Boolean,
+            dateTimeUtils: DateTimeUtils,
+            timeZoneId: String?,
+            clockSkewAllowedInSec: Int,
+        ): VerifyResultsType<CoseKeyType> = critical("stub MdocValidations.fromIssuerAuth")
+
+        override suspend fun withParams(
+            issuerAuth: CoseSign1<MobileSecurityObject>?,
+            document: Document?,
+            mdocVerificationTypes: MdocVerificationTypes,
+            keyInfo: KeyInfoType<CoseKeyType>?,
+            trustedCerts: Array<String>?,
+            verificationTime: LocalDateTimeKMP?,
+            allowNotYetValidDocuments: Boolean?,
+            allowExpiredDocuments: Boolean?,
+            dateTimeUtils: DateTimeUtils,
+            timeZoneId: String?,
+            clockSkewAllowedInSec: Int,
+        ): VerifyResultsType<CoseKeyType> = critical("stub MdocValidations.withParams")
+
+        private fun critical(reason: String): VerifyResults<CoseKeyType> = VerifyResults(error = true, keyInfo = null, verifications = emptyArray())
+    }
+
+    private object AlwaysFailDeviceAuthValidation : DeviceAuthValidation {
+        override suspend fun verifyDeviceAuth(
+            document: Document,
+            expectedSessionTranscript: SessionTranscript,
+        ): VerifySignatureResultType<CoseKeyType> =
+            VerifySignatureResult(
+                error = true,
+                critical = true,
+                message = "stub DeviceAuthValidation: test never supplies a real mdoc",
+                name = "test-stub",
+            )
+    }
+
+    private object AlwaysFailDeviceResponseCborCodec : DeviceResponseCborCodec {
+        override fun encode(value: DeviceResponse): IdkResult<ByteArray, IdkError> = Err(IdkError.UNKNOWN_ERROR(message = "encode unsupported in test stub"))
+
+        override fun decode(bytes: ByteArray): IdkResult<com.sphereon.mdoc.DecodedMdoc<DeviceResponse>, IdkError> =
+            Err(IdkError.UNKNOWN_ERROR(message = "stub DeviceResponseCborCodec rejects every payload"))
     }
 
     /**

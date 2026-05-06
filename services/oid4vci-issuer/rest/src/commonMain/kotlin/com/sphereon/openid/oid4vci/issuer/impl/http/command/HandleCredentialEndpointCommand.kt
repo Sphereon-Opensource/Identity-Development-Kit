@@ -25,23 +25,25 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.headerValuesIgnoreCase
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.jsonResponse
 import com.sphereon.crypto.jose.jwe.DecryptJweCommand
-import com.sphereon.crypto.jose.jwe.JweCompact
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
+import com.sphereon.openid.oid4vci.issuer.impl.encryption.MaybeEncryptedCredentialResponse
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Endpoint command for handling credential requests.
@@ -76,6 +78,7 @@ class HandleCredentialEndpointCommandImpl(
     private val handleCredentialRequestCommand: HandleCredentialRequestCommand,
     private val decryptJweCommand: DecryptJweCommand,
     private val configProvider: Oid4vciIssuerConfigProvider,
+    private val credentialResponseEncryptor: CredentialResponseEncryptor,
 ) : HttpEndpointCommandAdapter(
         id = HandleCredentialEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -89,12 +92,27 @@ class HandleCredentialEndpointCommandImpl(
         val request = applyDuring(args)
 
         val accessToken =
-            extractBearerToken(request)
+            extractAccessToken(request)
                 ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "Missing or invalid Authorization header"))
-        val dpopProof = request.headers["DPoP"] ?: request.headers["dpop"]
+        // RFC 9449 §4.1: exactly one `DPoP` HTTP header is REQUIRED — the resource server
+        // MUST refuse multi-value. Inspect the multi-value view (preserved by the transport
+        // adapter) rather than the joined scalar [headers], because the join semantics across
+        // intermediaries (Caddy, Go `net/http`, browsers) are not consistent enough to detect
+        // duplicates by parsing the joined string.
+        val dpopValues = request.headerValuesIgnoreCase("DPoP")
+        if (dpopValues.size > 1) {
+            return Err(
+                IdkError.UNAUTHORIZED_ERROR(
+                    message = "Multiple DPoP HTTP headers presented (${dpopValues.size}); RFC 9449 §4.1 requires exactly one",
+                ),
+            )
+        }
+        // Caddy / Go's `net/http` canonicalizes incoming header names to MIME-canonical form
+        // (`DPoP` → `Dpop`); resolve case-insensitively per RFC 9110 §5.1.
+        val dpopProof = dpopValues.singleOrNull()
 
         val requestBody =
-            decryptRequestIfNeeded(request, decryptJweCommand)
+            decryptRequestIfNeeded(request, decryptJweCommand, configProvider.credentialRequestDecryptionKey)
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to decrypt JWE request body"))
 
         log.info("Credential request body: $requestBody")
@@ -106,6 +124,23 @@ class HandleCredentialEndpointCommandImpl(
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Malformed credential request: ${expected.message}"))
             }
 
+        // OID4VCI 1.0 §11.2.4 + HAIP §8: when the issuer advertises
+        // `credential_response_encryption.encryption_required = true` the wallet MUST send a
+        // `credential_response_encryption` object, or the issuer rejects with
+        // `invalid_encryption_parameters` (HTTP 400). Enforced here — before format-handler
+        // dispatch — because the failure is purely transport-level and the orchestrator is
+        // grant-/format-aware. The encryptor itself separately validates the alg/enc/zip
+        // values once a request *does* carry the encryption block.
+        val responseEncryptionMetadata = configProvider.credentialResponseEncryption
+        if (responseEncryptionMetadata?.encryptionRequired == true && credentialRequest.credentialResponseEncryption == null) {
+            return Err(
+                IdkError.fromString(
+                    message = "Credential response encryption is required by issuer policy but the request did not include `credential_response_encryption`",
+                    code = Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS,
+                ),
+            )
+        }
+
         val response =
             handleCredentialRequestCommand
                 .execute(
@@ -115,31 +150,47 @@ class HandleCredentialEndpointCommandImpl(
                         credentialRequest = credentialRequest,
                         issuerIdentifier = configProvider.issuerIdentifier,
                         credentialConfigurations = configProvider.credentialConfigurations,
+                        // RFC 9449 §7.1: the AS bridge needs the publicly-visible request URL
+                        // to verify DPoP `htu` against the proof. The wallet sets `htu` to the
+                        // value advertised in `credential_endpoint` metadata, which is built
+                        // from the issuer identifier (`{issuerIdentifier}/credential`). Using
+                        // the metadata-derived URL ensures we compare apples-to-apples even
+                        // when the OID4VCI HTTP adapter mounts under a sub-path
+                        // (`/oid4vci/credential`) — `request.path` arrives at this command
+                        // already stripped of the adapter's `adapterBasePath`, so a host-only
+                        // reconstruction would miss the `/oid4vci` prefix the wallet signed.
+                        httpUrl = "${configProvider.issuerIdentifier}/credential",
+                        httpMethod = request.method,
                     ),
                 ).getOrElse { error ->
                     log.info("Credential error: ${error.code} - ${error.message.defaultMessage}")
                     return Err(error)
                 }
 
-        // OID4VCI 1.1 Section 8.3: When the response is encrypted, return the raw
-        // JWE compact string with Content-Type: application/jwt
-        val credentialElement = response.credential
-        if (credentialRequest.credentialResponseEncryption != null &&
-            credentialElement is JsonPrimitive
-        ) {
-            val jweCandidate = credentialElement.content
-            if (JweCompact.isValidCompactFormat(jweCandidate)) {
-                return Ok(
+        // OID4VCI 1.0 §8.3.5: when the wallet supplied `credential_response_encryption`, the
+        // entire response body is a single JWE-compact string with `Content-Type:
+        // application/jwt`. Otherwise the body is the JSON-serialized [CredentialResponse].
+        val maybeEncrypted =
+            credentialResponseEncryptor
+                .encryptIfRequested(response, credentialRequest.credentialResponseEncryption)
+                .getOrElse { error -> return Err(error) }
+
+        return when (maybeEncrypted) {
+            is MaybeEncryptedCredentialResponse.Encrypted -> {
+                Ok(
                     GenericHttpResponse(
                         statusCode = 200,
                         headers = JWT_HEADERS,
-                        body = jweCandidate,
+                        body = maybeEncrypted.jweCompact,
                     ),
                 )
             }
+
+            is MaybeEncryptedCredentialResponse.Plain -> {
+                val responseJson = protocolJson.encodeToString(maybeEncrypted.response)
+                log.info("Credential response: $responseJson")
+                Ok(jsonResponse(200, responseJson))
+            }
         }
-        val responseJson = protocolJson.encodeToString(response)
-        log.info("Credential response: $responseJson")
-        return Ok(jsonResponse(200, responseJson))
     }
 }

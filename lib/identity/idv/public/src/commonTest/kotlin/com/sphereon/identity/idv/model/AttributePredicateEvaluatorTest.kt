@@ -16,6 +16,8 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.attribute.flow.AttributeBag
+import com.sphereon.attribute.flow.AttributePath
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertFalse

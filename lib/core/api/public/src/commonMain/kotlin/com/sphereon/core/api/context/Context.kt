@@ -39,7 +39,7 @@ import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionExecution", exact = true)
-interface SessionExecution: HasProvenance {
+interface SessionExecution : HasProvenance {
     val sessionContextManager: SessionContextManager
     val sessionContext: SessionContext
     val log: SessionLogService
@@ -58,6 +58,11 @@ interface SessionExecution: HasProvenance {
     interface Graph {
         val sessionExecution: SessionExecution
     }
+}
+
+interface HasProvenance {
+    val principalId: String
+    val tenantId: String
 }
 
 @JsExportCompat
@@ -94,11 +99,6 @@ enum class IdkScope {
     APP,
     USER,
     SESSION,
-}
-
-interface HasProvenance {
-    val principalId: String
-    val tenantId: String
 }
 
 // interface ICoreApiContextGraph: ISureContextGraph, ICoreApiContextExtensionGraph

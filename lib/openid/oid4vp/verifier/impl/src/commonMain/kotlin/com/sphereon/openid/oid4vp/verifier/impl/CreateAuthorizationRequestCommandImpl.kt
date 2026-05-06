@@ -71,7 +71,7 @@ class CreateAuthorizationRequestCommandImpl(
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val requestObjectSigningConfig: RequestObjectSigningConfig,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<CreateAuthorizationRequestArgs, CreatedAuthorizationRequest>(
+) : TypedServiceCommandAdapter<CreateAuthorizationRequestArgs, CreatedAuthorizationRequest, IdkError>(
         commandId = CreateAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateAuthorizationRequestArgs>(),
@@ -233,15 +233,25 @@ class CreateAuthorizationRequestCommandImpl(
                 // The wallet echoes state back in the direct_post response.
                 state(effectiveState)
 
-                // Client metadata (embedded or by reference)
+                // Client metadata (embedded or by reference) per OID4VP §11.1.
                 processedArgs.clientMetadata?.let { clientMetadata(it) }
                 processedArgs.clientMetadataUri?.let { clientMetadataUri(it) }
+
+                // OID4VP §5.10: GET (default per RFC 9101) vs POST for the JAR fetch. The
+                // builder lands the value in additionalParameters; BuildAuthorizationRequestUriCommandImpl
+                // then surfaces it as `&request_uri_method=…` on the outer OAuth2 URL — the
+                // wallet needs to read this before fetching the JAR, so it MUST appear there
+                // and not just inside the signed Request Object.
+                processedArgs.requestUriMethod?.let { requestUriMethod(it) }
             }
 
         log.info(
             "Created authorization request with client_id: ${processedArgs.clientId}, " +
                 "response_mode: ${processedArgs.responseMode.value}",
         )
+        // Full request payload for diagnostics (debug-gated). Includes client_id,
+        // response_mode, response_uri, nonce, state, dcql_query, client_metadata, etc.
+        log.debug("Authorization request (full): $request")
 
         // Persist an authorization session keyed by effectiveState (the wallet-echoed correlation key).
         val now = Clock.System.now().toEpochMilliseconds()
@@ -258,6 +268,8 @@ class CreateAuthorizationRequestCommandImpl(
                 parsedResponse = null,
                 validationResult = null,
                 callback = null,
+                jarmEncryptionKeyAlias = processedArgs.jarmEncryptionKeyAlias,
+                jarmEncryptionKeyProviderId = processedArgs.jarmEncryptionKeyProviderId,
                 createdAt = now,
                 updatedAt = now,
                 expiresAt = now + (ttlSeconds * 1000),
@@ -339,6 +351,19 @@ class CreateAuthorizationRequestCommandImpl(
             return IdkError.ILLEGAL_ARGUMENT_ERROR(
                 message = "client_metadata and client_metadata_uri are mutually exclusive",
             )
+        }
+
+        // OID4VP §5.10: "Two case-sensitive valid values are defined in this specification:
+        // `get` and `post`." Reject anything else loudly so a caller typo can't silently
+        // produce a wallet-rejecting request.
+        args.requestUriMethod?.let { m ->
+            if (m != "get" && m != "post") {
+                return IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message =
+                        "Invalid request_uri_method '$m'. Per OID4VP §5.10 the only " +
+                            "case-sensitive valid values are 'get' and 'post'.",
+                )
+            }
         }
 
         return null

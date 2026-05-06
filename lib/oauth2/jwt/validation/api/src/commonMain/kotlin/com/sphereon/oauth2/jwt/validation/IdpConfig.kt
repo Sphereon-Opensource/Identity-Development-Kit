@@ -173,6 +173,11 @@ data class IdpConfig(
  * @property defaultIdp Default IdP configuration used when no tenant-specific IdP is found
  * @property tenantIdps Per-tenant IdP overrides
  * @property anonymous Anonymous access configuration
+ * @property strictIssuerMatching When `true`, `IdpRegistry.getIdpByIssuer` returns
+ * `Err(UntrustedIssuer)` for issuers that are not explicitly registered. When `false`,
+ * unknown issuers fall back to [defaultIdp] if one is configured. Default is `true`
+ * (fail-closed) so production BYO deployments never silently accept unknown issuers.
+ * Operators may flip to `false` in dev profiles where a permissive fallback is useful.
  */
 @Serializable
 data class JwtValidationConfig(
@@ -180,6 +185,7 @@ data class JwtValidationConfig(
     val defaultIdp: IdpConfig? = null,
     val tenantIdps: Map<String, IdpConfig> = emptyMap(),
     val anonymous: AnonymousAccessConfig = AnonymousAccessConfig(),
+    val strictIssuerMatching: Boolean = true,
 )
 
 /**

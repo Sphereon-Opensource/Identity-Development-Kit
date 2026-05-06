@@ -2,14 +2,14 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>CyclomaticComplexMethod:DefaultJwtValidationService.kt$DefaultJwtValidationService$override suspend fun validateAccessToken( token: String, options: AccessTokenValidationOptions, ): IdkResult&lt;ValidatedAccessToken, JwtValidationError></ID>
-    <ID>LongMethod:DefaultJwtValidationService.kt$DefaultJwtValidationService$override suspend fun validateAccessToken( token: String, options: AccessTokenValidationOptions, ): IdkResult&lt;ValidatedAccessToken, JwtValidationError></ID>
+    <ID>BracesOnIfStatements:DefaultJwtValidationService.kt$DefaultJwtValidationService$else</ID>
+    <ID>BracesOnIfStatements:DefaultJwtValidationService.kt$DefaultJwtValidationService$if</ID>
     <ID>LongMethod:DefaultJwtValidationService.kt$DefaultJwtValidationService$override suspend fun validateIdToken( token: String, options: IdTokenValidationOptions, ): IdkResult&lt;ValidatedIdToken, JwtValidationError></ID>
     <ID>MagicNumber:DefaultJwtValidationService.kt$DefaultJwtValidationService$3</ID>
+    <ID>ReturnCount:DefaultJwtValidationService.kt$DefaultJwtValidationService$override suspend fun extractClaims(token: String): IdkResult&lt;TokenClaims, JwtValidationError></ID>
     <ID>ReturnCount:DefaultJwtValidationService.kt$DefaultJwtValidationService$override suspend fun validateAccessToken( token: String, options: AccessTokenValidationOptions, ): IdkResult&lt;ValidatedAccessToken, JwtValidationError></ID>
     <ID>ReturnCount:DefaultJwtValidationService.kt$DefaultJwtValidationService$override suspend fun validateIdToken( token: String, options: IdTokenValidationOptions, ): IdkResult&lt;ValidatedIdToken, JwtValidationError></ID>
     <ID>ReturnCount:DefaultJwtValidationService.kt$DefaultJwtValidationService$private suspend fun resolveIdpConfig( token: String, options: AccessTokenValidationOptions, ): IdkResult&lt;IdpConfig, JwtValidationError></ID>
     <ID>StringLiteralDuplication:DefaultJwtValidationService.kt$DefaultJwtValidationService$"JWT must have 3 parts, got ${parts.size}"</ID>
-    <ID>UnusedPrivateProperty:DefaultJwtValidationService.kt$DefaultJwtValidationService$val headerJson = decodeBase64Url(parts[0])</ID>
   </CurrentIssues>
 </SmellBaseline>

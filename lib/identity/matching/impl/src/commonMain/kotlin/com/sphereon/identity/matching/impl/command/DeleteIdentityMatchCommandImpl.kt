@@ -38,7 +38,7 @@ import kotlin.native.ObjCName
 class DeleteIdentityMatchCommandImpl(
     execution: SessionExecution,
     private val store: IdentityMatchStore,
-) : TypedServiceCommandAdapter<DeleteIdentityMatchArgs, Boolean>(
+) : TypedServiceCommandAdapter<DeleteIdentityMatchArgs, Boolean, IdkError>(
         commandId = DeleteIdentityMatchCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteIdentityMatchArgs>(),

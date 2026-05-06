@@ -571,7 +571,6 @@ class AuthContextExistingBehaviorTest {
  * must handle any casing variant.
  */
 class AuthContextFromHeadersCaseInsensitiveTest {
-
     @Test
     fun authorizationLowercase() {
         val headers = mapOf("authorization" to "Bearer my-token")
@@ -667,24 +666,27 @@ class AuthContextFromHeadersCaseInsensitiveTest {
     @Test
     fun allHeadersLowercaseRoundTrip() {
         // Simulate a proxy that lowercases every header
-        val original = AuthContext(
-            token = "jwt",
-            apiKey = "ak",
-            tenantId = "t1",
-            userId = "u1",
-            principalId = "p1",
-            serviceId = "s1",
-            traceparent = "00-aaa-bbb-01",
-            tracestate = "vendor=v",
-            requestId = "r1",
-            correlationId = "c1",
-            policyContext = mapOf("k" to "v"),
-            scopes = setOf("admin")
-        )
+        val original =
+            AuthContext(
+                token = "jwt",
+                apiKey = "ak",
+                tenantId = "t1",
+                userId = "u1",
+                principalId = "p1",
+                serviceId = "s1",
+                traceparent = "00-aaa-bbb-01",
+                tracestate = "vendor=v",
+                requestId = "r1",
+                correlationId = "c1",
+                policyContext = mapOf("k" to "v"),
+                scopes = setOf("admin")
+            )
 
-        val lowercasedHeaders = original.toHeaders()
-            .map { (k, v) -> k.lowercase() to v }
-            .toMap()
+        val lowercasedHeaders =
+            original
+                .toHeaders()
+                .map { (k, v) -> k.lowercase() to v }
+                .toMap()
 
         val restored = AuthContext.fromHeaders(lowercasedHeaders)
 
@@ -705,16 +707,19 @@ class AuthContextFromHeadersCaseInsensitiveTest {
     @Test
     fun allHeadersUppercaseRoundTrip() {
         // Simulate a proxy that uppercases every header
-        val original = AuthContext(
-            token = "jwt",
-            tenantId = "t1",
-            traceparent = "00-aaa-bbb-01",
-            requestId = "r1"
-        )
+        val original =
+            AuthContext(
+                token = "jwt",
+                tenantId = "t1",
+                traceparent = "00-aaa-bbb-01",
+                requestId = "r1"
+            )
 
-        val uppercasedHeaders = original.toHeaders()
-            .map { (k, v) -> k.uppercase() to v }
-            .toMap()
+        val uppercasedHeaders =
+            original
+                .toHeaders()
+                .map { (k, v) -> k.uppercase() to v }
+                .toMap()
 
         val restored = AuthContext.fromHeaders(uppercasedHeaders)
 

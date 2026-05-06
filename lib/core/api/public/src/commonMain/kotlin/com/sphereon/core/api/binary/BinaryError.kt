@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.binary
 
+import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.currentTimeMillis
@@ -69,6 +70,14 @@ data class BinaryError(
     val timestamp: Long = currentTimeMillis(),
     val traceId: String? = null,
     val path: String? = null,
+    /**
+     * Optional transport-neutral semantic category copied from
+     * [com.sphereon.core.api.error.ErrorCategory.value] (e.g. "unauthorized",
+     * "conflict", "not_found"). Carried alongside the typed [code] so
+     * transport layers can pick the right HTTP status without having to
+     * reverse-engineer it from a typed code like "AUTH_INVALID_CREDENTIALS".
+     */
+    val category: String? = null,
 ) {
     /**
      * Converts this BinaryError to an IdkError for internal error handling.
@@ -109,9 +118,27 @@ data class BinaryError(
             }
 
             else -> {
-                IdkError.UNKNOWN_ERROR(message = message)
+                // Typed codes outside the canonical table (e.g. `AUTH_INVALID_CREDENTIALS`,
+                // `AUTH_RATE_LIMITED`, `VAULT_CLASSIFICATION_CONFLICT`) must round-trip through
+                // the wire without collapsing to `UNKNOWN_ERROR`: that would hide the typed
+                // code from downstream telemetry, break audit correlation, and drop the
+                // category that transports need for proper status mapping.
+                //
+                // We preserve the original `code` and reconstruct a best-effort
+                // [ErrorCategory] from the serialized [category] field. Legacy payloads
+                // without a category default to INTERNAL (the pre-fix behavior).
+                IdkError(
+                    code = code,
+                    message = IdkError.Message(i18nKey = code, defaultMessage = message),
+                    category = parseCategory(category),
+                )
             }
         }
+
+    private fun parseCategory(name: String?): ErrorCategory {
+        if (name == null) return ErrorCategory.INTERNAL
+        return runCatching { ErrorCategory.valueOf(name) }.getOrElse { ErrorCategory.INTERNAL }
+    }
 
     /**
      * Creates a copy with additional details.
@@ -129,6 +156,16 @@ data class BinaryError(
     fun withPath(path: String): BinaryError = copy(path = path)
 
     companion object {
+        private const val HTTP_BAD_REQUEST = 400
+        private const val HTTP_UNAUTHORIZED = 401
+        private const val HTTP_FORBIDDEN = 403
+        private const val HTTP_NOT_FOUND = 404
+        private const val HTTP_CONFLICT = 409
+        private const val HTTP_PRECONDITION_FAILED = 412
+        private const val HTTP_TOO_MANY_REQUESTS = 429
+        private const val HTTP_INTERNAL_SERVER_ERROR = 500
+        private const val HTTP_SERVICE_UNAVAILABLE = 503
+
         /**
          * Creates a BinaryError from an IdkError.
          *
@@ -148,6 +185,7 @@ data class BinaryError(
                 details = error.meta.mapValues { it.value?.toString() ?: "" },
                 traceId = traceId,
                 path = path,
+                category = error.category.name,
             )
 
         /**
@@ -256,6 +294,29 @@ data class BinaryError(
             }
 
         /**
+         * Maps an [com.sphereon.core.api.error.ErrorCategory] (passed by name —
+         * see [BinaryError.category]) to its HTTP status. Domains that ship
+         * typed error catalogs (e.g. EDK auth's `AuthErrors`) declare their
+         * `category` once in code, and transports use this single mapping
+         * rather than each transport re-deriving status from typed codes.
+         */
+        @JvmStatic
+        fun categoryToHttpStatus(categoryName: String?): Int? =
+            when (categoryName) {
+                "VALIDATION" -> HTTP_BAD_REQUEST
+                "UNAUTHORIZED" -> HTTP_UNAUTHORIZED
+                "FORBIDDEN" -> HTTP_FORBIDDEN
+                "NOT_FOUND" -> HTTP_NOT_FOUND
+                "CONFLICT" -> HTTP_CONFLICT
+                "PRECONDITION_FAILED" -> HTTP_PRECONDITION_FAILED
+                "RATE_LIMITED" -> HTTP_TOO_MANY_REQUESTS
+                "UNAVAILABLE" -> HTTP_SERVICE_UNAVAILABLE
+                "INTERNAL" -> HTTP_INTERNAL_SERVER_ERROR
+                "PROTOCOL" -> HTTP_BAD_REQUEST
+                else -> null
+            }
+
+        /**
          * Maps an HTTP status code to a BinaryError code.
          */
         @JvmStatic
@@ -270,13 +331,5 @@ data class BinaryError(
                 HTTP_SERVICE_UNAVAILABLE -> "SERVICE_UNAVAILABLE"
                 else -> "UNKNOWN_ERROR"
             }
-
-        private const val HTTP_BAD_REQUEST = 400
-        private const val HTTP_UNAUTHORIZED = 401
-        private const val HTTP_FORBIDDEN = 403
-        private const val HTTP_NOT_FOUND = 404
-        private const val HTTP_CONFLICT = 409
-        private const val HTTP_INTERNAL_SERVER_ERROR = 500
-        private const val HTTP_SERVICE_UNAVAILABLE = 503
     }
 }

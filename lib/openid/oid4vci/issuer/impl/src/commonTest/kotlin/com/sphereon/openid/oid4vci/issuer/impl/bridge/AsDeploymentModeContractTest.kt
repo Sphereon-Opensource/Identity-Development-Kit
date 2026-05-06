@@ -18,8 +18,12 @@ package com.sphereon.openid.oid4vci.issuer.impl.bridge
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
+import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
+import com.sphereon.oauth2.common.model.VerifyDpopProofResult
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
@@ -168,8 +172,28 @@ class AsDeploymentModeContractTest {
             SphereonAsBridge(
                 preAuthorizedCodeStorage = storage,
                 authorizationServerService = asService,
+                verifyDpopProofCommand = NoopVerifyDpopProofCommand,
             )
         return bridge to asService
+    }
+
+    /**
+     * `SphereonAsBridge` only invokes the DPoP verifier when an access-token validation actually
+     * carries a DPoP proof. The contract tests in this file exercise pre-authorized-code
+     * registration / consumption and access-token validation against introspection — none reach
+     * the verifier path. A no-op stand-in keeps the constructor wiring honest while making it
+     * obvious in CI that any test which DOES hit the DPoP path needs a real fake.
+     */
+    private object NoopVerifyDpopProofCommand : VerifyDpopProofCommand {
+        override val commandId: String = VerifyDpopProofCommand.COMMAND_ID
+        override val isEnabled: Boolean = true
+        override val inputTypeToken = typeToken<VerifyDpopProofOptions>()
+        override val outputTypeToken = typeToken<VerifyDpopProofResult>()
+
+        override suspend fun supports(args: Any): Boolean = args is VerifyDpopProofOptions
+
+        override suspend fun execute(args: VerifyDpopProofOptions): IdkResult<VerifyDpopProofResult, IdkError> =
+            throw UnsupportedOperationException("DPoP verification not exercised in these contract tests")
     }
 
     @Test

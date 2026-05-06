@@ -23,41 +23,53 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.core.defaults.context.JwtClaimsParser
+import com.sphereon.crypto.core.interop.toCertificateDto
+import com.sphereon.crypto.core.interop.toJwk
+import com.sphereon.crypto.core.interop.x509CertificateFromDer
+import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
-import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.common.model.ClientCredentials
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand
+import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthArgs
+import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
-import com.sphereon.oauth2.server.authorization.storage.AttestationChallengeStorage
+import com.sphereon.oauth2.server.authorization.impl.resolver.ClientJwksResolver
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.storage.ClientAssertionJtiStore
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
- * Implementation of VerifyClientAuthenticationCommand.
+ * Implementation of [VerifyClientAuthenticationCommand].
  *
- * Dispatches by ClientAuthenticationConfig variant to verify client identity.
- * For attestation-based auth, implements the full spec flow from
- * draft-ietf-oauth-attestation-based-client-auth-07.
+ * Dispatches by [ClientAuthenticationConfig] variant to verify the client identity. Basic, Post,
+ * SecretJwt, PrivateKeyJwt, mTLS (PKI + self-signed), and the registered-method enforcement live
+ * here. Attestation-based authentication delegates to [VerifyAttestationClientAuthCommand]: that
+ * extraction keeps the 14-step draft-ietf-oauth-attestation-based-client-auth-07 path
+ * independently injectable and unit-testable without booting the HTTP stack.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -68,8 +80,10 @@ class VerifyClientAuthenticationCommandImpl(
     private val clientRegistry: ClientRegistry,
     private val jwtService: JwtService,
     private val configProvider: OAuth2ServersConfigProvider,
-    private val challengeStorage: AttestationChallengeStorage,
-) : TypedServiceCommandAdapter<VerifyClientAuthenticationArgs, VerifiedClientAuthentication>(
+    private val clientJwksResolver: ClientJwksResolver,
+    private val jtiStore: ClientAssertionJtiStore,
+    private val verifyAttestationClientAuthCommand: VerifyAttestationClientAuthCommand,
+) : TypedServiceCommandAdapter<VerifyClientAuthenticationArgs, VerifiedClientAuthentication, IdkError>(
         commandId = VerifyClientAuthenticationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyClientAuthenticationArgs>(),
@@ -85,100 +99,169 @@ class VerifyClientAuthenticationCommandImpl(
         applyDuring: (VerifyClientAuthenticationArgs) -> VerifyClientAuthenticationArgs,
     ): IdkResult<VerifiedClientAuthentication, IdkError> {
         val applied = applyDuring(args)
+
+        // Attestation-based authentication is delegated end-to-end. The delegated command already
+        // returns IdkResult<_, IdkError>, so route around the local AuthorizationServerError ->
+        // IdkError mapping rather than unwrapping and rewrapping.
+        val attestationAuth = applied.clientAuthentication as? ClientAuthenticationConfig.AttestationJwt
+        if (attestationAuth != null) {
+            return verifyAttestationClientAuthCommand.execute(
+                VerifyAttestationClientAuthArgs(
+                    clientId = applied.clientId,
+                    attestationJwt = attestationAuth.attestation.clientAttestationJwt,
+                    popJwt = attestationAuth.attestation.clientAttestationPopJwt,
+                    tokenEndpointUrl = applied.tokenEndpointUrl,
+                ),
+            )
+        }
+
         return executeInternal(applied).mapError { IdkError.fromDTO(it) }
     }
 
-    private suspend fun executeInternal(args: VerifyClientAuthenticationArgs): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> =
-        when (val auth = args.clientAuthentication) {
+    private suspend fun executeInternal(args: VerifyClientAuthenticationArgs): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
+        val auth = args.clientAuthentication
+
+        // Anonymous has no identity to enforce; every other variant must match the registered
+        // token_endpoint_auth_method up front per RFC 7591 §2 + OIDF Basic-OP conformance.
+        // AttestationJwt is short-circuited in [doExecute] above and never reaches this path.
+        val client =
+            if (auth !is ClientAuthenticationConfig.Anonymous) {
+                val resolved =
+                    clientRegistry
+                        .getClient(args.clientId)
+                        .getOrElse { return Err(it) }
+                        ?: return Err(AuthorizationServerError.InvalidClient(details = "Unknown client '${args.clientId}'"))
+
+                enforceRegisteredAuthMethod(auth, resolved)?.let { return Err(it) }
+                resolved
+            } else {
+                null
+            }
+
+        return when (auth) {
             is ClientAuthenticationConfig.Basic -> {
-                verifyBasicAuth(auth, args.clientId)
+                verifyClientSecret(auth.credentials, ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
             }
 
             is ClientAuthenticationConfig.Post -> {
-                verifyPostAuth(auth, args.clientId)
+                verifyClientSecret(auth.credentials, ClientAuthenticationMethod.CLIENT_SECRET_POST)
             }
 
             is ClientAuthenticationConfig.SecretJwt -> {
-                verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl)
+                verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl, client!!)
             }
 
             is ClientAuthenticationConfig.PrivateKeyJwt -> {
-                verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl)
+                verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl, client!!)
             }
 
             is ClientAuthenticationConfig.AttestationJwt -> {
-                verifyAttestationAuth(auth, args.clientId, args.tokenEndpointUrl)
+                error("AttestationJwt is handled in doExecute and never reaches executeInternal")
             }
 
             is ClientAuthenticationConfig.None -> {
-                Ok(
-                    VerifiedClientAuthentication(
-                        clientId = args.clientId,
-                        method = ClientAuthenticationMethod.NONE,
-                    ),
-                )
+                Ok(VerifiedClientAuthentication(clientId = args.clientId, method = ClientAuthenticationMethod.NONE))
             }
 
             ClientAuthenticationConfig.Anonymous -> {
-                Ok(
-                    VerifiedClientAuthentication(
-                        clientId = args.clientId,
-                        method = ClientAuthenticationMethod.NONE,
-                    ),
-                )
+                Ok(VerifiedClientAuthentication(clientId = args.clientId, method = ClientAuthenticationMethod.NONE))
+            }
+
+            is ClientAuthenticationConfig.MutualTls -> {
+                verifyMutualTlsAuth(auth, args.clientId, client!!)
             }
         }
-
-    private suspend fun verifyBasicAuth(
-        auth: ClientAuthenticationConfig.Basic,
-        clientId: String,
-    ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
-        val valid =
-            clientRegistry
-                .verifyClientCredentials(
-                    auth.credentials.clientId,
-                    auth.credentials.clientSecret,
-                ).getOrElse { return Err(it) }
-
-        if (!valid) {
-            return Err(AuthorizationServerError.InvalidClient(details = "Invalid client credentials"))
-        }
-
-        return Ok(
-            VerifiedClientAuthentication(
-                clientId = auth.credentials.clientId,
-                method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
-            ),
-        )
     }
 
-    private suspend fun verifyPostAuth(
-        auth: ClientAuthenticationConfig.Post,
-        clientId: String,
+    /**
+     * Enforce the client's registered `token_endpoint_auth_method` (RFC 7591 §2). The method the
+     * client actually used on this request must equal the one registered. Additionally, `none` is
+     * only permitted for public clients (OIDC Core §3.1.2.1 + OIDF Basic-OP §2).
+     *
+     * @return `null` when the presented method matches the registration; an `InvalidClient` error otherwise.
+     */
+    private fun enforceRegisteredAuthMethod(
+        auth: ClientAuthenticationConfig,
+        client: ClientRegistration,
+    ): AuthorizationServerError.InvalidClient? {
+        val presented =
+            when (auth) {
+                is ClientAuthenticationConfig.Basic -> {
+                    ClientAuthenticationMethod.CLIENT_SECRET_BASIC
+                }
+
+                is ClientAuthenticationConfig.Post -> {
+                    ClientAuthenticationMethod.CLIENT_SECRET_POST
+                }
+
+                is ClientAuthenticationConfig.SecretJwt -> {
+                    ClientAuthenticationMethod.CLIENT_SECRET_JWT
+                }
+
+                is ClientAuthenticationConfig.PrivateKeyJwt -> {
+                    ClientAuthenticationMethod.PRIVATE_KEY_JWT
+                }
+
+                is ClientAuthenticationConfig.None -> {
+                    ClientAuthenticationMethod.NONE
+                }
+
+                // Unreachable: AttestationJwt and Anonymous were filtered out by the caller.
+                is ClientAuthenticationConfig.AttestationJwt -> {
+                    ClientAuthenticationMethod.ATTEST_JWT_CLIENT_AUTH
+                }
+
+                ClientAuthenticationConfig.Anonymous -> {
+                    ClientAuthenticationMethod.NONE
+                }
+
+                // RFC 8705: presented method is the one registered on the client. The verifier
+                // dispatches the actual PKI vs self-signed branch from the registered method.
+                is ClientAuthenticationConfig.MutualTls -> {
+                    if (client.tokenEndpointAuthMethod == ClientAuthenticationMethod.SELF_SIGNED_TLS_CLIENT_AUTH) {
+                        ClientAuthenticationMethod.SELF_SIGNED_TLS_CLIENT_AUTH
+                    } else {
+                        ClientAuthenticationMethod.TLS_CLIENT_AUTH
+                    }
+                }
+            }
+
+        if (presented == ClientAuthenticationMethod.NONE && client.clientType != ClientType.PUBLIC) {
+            return AuthorizationServerError.InvalidClient(
+                details = "Client '${client.clientId}' is confidential; authentication method 'none' is only permitted for public clients",
+            )
+        }
+
+        if (presented != client.tokenEndpointAuthMethod) {
+            return AuthorizationServerError.InvalidClient(
+                details = "Client '${client.clientId}' is registered for token_endpoint_auth_method='${client.tokenEndpointAuthMethod.value}' but presented '${presented.value}'",
+            )
+        }
+
+        return null
+    }
+
+    private suspend fun verifyClientSecret(
+        credentials: ClientCredentials,
+        method: ClientAuthenticationMethod,
     ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
         val valid =
             clientRegistry
-                .verifyClientCredentials(
-                    auth.credentials.clientId,
-                    auth.credentials.clientSecret,
-                ).getOrElse { return Err(it) }
+                .verifyClientCredentials(credentials.clientId, credentials.clientSecret)
+                .getOrElse { return Err(it) }
 
         if (!valid) {
             return Err(AuthorizationServerError.InvalidClient(details = "Invalid client credentials"))
         }
 
-        return Ok(
-            VerifiedClientAuthentication(
-                clientId = auth.credentials.clientId,
-                method = ClientAuthenticationMethod.CLIENT_SECRET_POST,
-            ),
-        )
+        return Ok(VerifiedClientAuthentication(clientId = credentials.clientId, method = method))
     }
 
     private suspend fun verifyJwtAssertion(
         auth: ClientAuthenticationConfig,
         clientId: String,
         tokenEndpointUrl: String,
+        client: ClientRegistration,
     ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
         val assertion =
             when (auth) {
@@ -186,6 +269,64 @@ class VerifyClientAuthenticationCommandImpl(
                 is ClientAuthenticationConfig.PrivateKeyJwt -> auth.assertion
                 else -> return Err(AuthorizationServerError.InvalidClient(details = "Unexpected auth type"))
             }
+
+        // Decode the JWT header before handing the assertion to the JWT service so we can bind it
+        // to the client's registered JWKS / signing algs .
+        val header =
+            parseJwtHeader(assertion.assertion)
+                ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion header is not valid JSON"))
+
+        val alg =
+            header["alg"]?.jsonPrimitive?.content
+                ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion header missing 'alg'"))
+        if (alg == "none") {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion 'alg=none' is not permitted"))
+        }
+
+        // client_secret_jwt MUST use an HMAC-based algorithm; private_key_jwt MUST NOT (RFC 7518 §3.2 +
+        // OIDC Core §9 — different key material per method). Enforce that independent of the
+        // registered allow-list so a misconfigured `token_endpoint_auth_signing_alg` can't relax the
+        // binding .
+        val isHmac = alg in SUPPORTED_HS_ALGS
+        if (auth is ClientAuthenticationConfig.SecretJwt && !isHmac) {
+            return Err(
+                AuthorizationServerError.InvalidClient(
+                    details = "client_secret_jwt requires an HMAC alg (HS256/HS384/HS512); got '$alg'",
+                ),
+            )
+        }
+        if (auth is ClientAuthenticationConfig.PrivateKeyJwt && isHmac) {
+            return Err(
+                AuthorizationServerError.InvalidClient(
+                    details = "private_key_jwt must use an asymmetric signing alg; got HMAC alg '$alg'",
+                ),
+            )
+        }
+
+        val expectedAlgs = resolveExpectedSigningAlgs(auth, client)
+        if (alg !in expectedAlgs) {
+            return Err(
+                AuthorizationServerError.InvalidClient(
+                    details = "JWT assertion alg '$alg' is not permitted for client '${client.clientId}' (registered: ${expectedAlgs.joinToString()})",
+                ),
+            )
+        }
+
+        // For private_key_jwt, require the kid to resolve inside the client's registered JWKS.
+        if (auth is ClientAuthenticationConfig.PrivateKeyJwt) {
+            val kid =
+                header["kid"]?.jsonPrimitive?.content
+                    ?: return Err(AuthorizationServerError.InvalidClient(details = "private_key_jwt assertion header missing 'kid'"))
+            val jwks = clientJwksResolver.resolveFor(client).getOrElse { return Err(it) }
+            val matched = jwks.firstOrNull { it.kid == kid }
+            if (matched == null) {
+                return Err(
+                    AuthorizationServerError.InvalidClient(
+                        details = "private_key_jwt 'kid=$kid' does not match any key in client '${client.clientId}' registered JWKS",
+                    ),
+                )
+            }
+        }
 
         // Verify JWT signature
         val verifyResult =
@@ -207,20 +348,16 @@ class VerifyClientAuthenticationCommandImpl(
             )
         }
 
-        // Validate claims (already decoded during verification)
-        val claims = verifyResult.parsedPayload
-
-        val iss = claims["iss"]?.jsonPrimitive?.content
-        val sub = claims["sub"]?.jsonPrimitive?.content
-        val aud = claims["aud"]?.jsonPrimitive?.content
-
-        if (sub != clientId && iss != clientId) {
-            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion sub/iss does not match client_id"))
-        }
-
-        if (aud != tokenEndpointUrl) {
-            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion aud does not match token endpoint"))
-        }
+        // Validate claims (already decoded during verification) per OIDC Core §9 / RFC 7523 §3
+        // .
+        val claimsValidation =
+            validateAssertionClaims(
+                claims = verifyResult.parsedPayload,
+                clientId = clientId,
+                tokenEndpointUrl = tokenEndpointUrl,
+                serverConfig = configProvider.serverConfig,
+            )
+        claimsValidation.getOrElse { return Err(it) }
 
         val method =
             when (auth) {
@@ -233,258 +370,321 @@ class VerifyClientAuthenticationCommandImpl(
     }
 
     /**
-     * Verify attestation-based client authentication.
+     * Validate the OIDC Core §9 / RFC 7523 §3 required assertion claims.
      *
-     * Implements draft-ietf-oauth-attestation-based-client-auth-07 Section 4.
+     * - `iss` MUST equal `sub` AND equal `client_id` (both directions, not either-or).
+     * - `aud` MUST contain the AS issuer identifier or the token endpoint URL. Can be scalar or
+     *   array; array membership is checked entry-by-entry.
+     * - `exp` MUST be present and in the future.
+     * - `iat`, if present, MUST be within ±5 minutes of now (5 min clock-skew window).
+     * - `jti` MUST be present and MUST NOT replay within the assertion lifetime (uses [jtiStore]).
      */
-    private suspend fun verifyAttestationAuth(
-        auth: ClientAuthenticationConfig.AttestationJwt,
+    private suspend fun validateAssertionClaims(
+        claims: JsonObject,
         clientId: String,
         tokenEndpointUrl: String,
-    ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
-        val config = configProvider.serverConfig
-        if (!config.attestation.isEnabled) {
+        serverConfig: OAuth2ServerInstanceConfig,
+    ): IdkResult<Unit, AuthorizationServerError> {
+        val iss = claims["iss"]?.jsonPrimitive?.content
+        val sub = claims["sub"]?.jsonPrimitive?.content
+        if (iss == null || sub == null) {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'iss' or 'sub'"))
+        }
+        if (iss != clientId || sub != clientId) {
             return Err(
                 AuthorizationServerError.InvalidClient(
-                    details = "Attestation-based client authentication is not enabled",
+                    details = "JWT assertion iss/sub must both equal client_id; got iss='$iss' sub='$sub' client_id='$clientId'",
                 ),
             )
         }
 
-        val attestationJwt = auth.attestation.clientAttestationJwt
-        val popJwt = auth.attestation.clientAttestationPopJwt
-
-        // 1. Parse and validate attestation JWT header
-        val attestationHeader =
-            parseJwtHeader(attestationJwt)
-                ?: return Err(
-                    AuthorizationServerError.InvalidClientAttestation(
-                        details = "Cannot parse attestation JWT header",
-                    ),
-                )
-
-        val attestationTyp = attestationHeader["typ"]?.jsonPrimitive?.content
-        if (attestationTyp != "oauth-client-attestation+jwt") {
+        val audValues =
+            claims["aud"]?.let { aud ->
+                when (aud) {
+                    is JsonArray -> aud.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    else -> listOfNotNull(aud.jsonPrimitive.contentOrNull)
+                }
+            } ?: emptyList()
+        if (audValues.isEmpty()) {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'aud'"))
+        }
+        val acceptableAudiences = listOfNotNull(serverConfig.issuer, tokenEndpointUrl).distinct()
+        if (audValues.none { it in acceptableAudiences }) {
             return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "Attestation JWT typ must be 'oauth-client-attestation+jwt', got: $attestationTyp",
+                AuthorizationServerError.InvalidClient(
+                    details = "JWT assertion 'aud' does not reference the AS issuer or token endpoint (got: ${audValues.joinToString()})",
                 ),
             )
         }
 
-        // 2. Parse attestation JWT claims (lightweight decode)
-        val attestationClaims =
-            JwtClaimsParser.parseClaimsOrNull(attestationJwt)
-                ?: return Err(
-                    AuthorizationServerError.InvalidClientAttestation(
-                        details = "Cannot parse attestation JWT claims",
+        val expSeconds =
+            claims["exp"]?.jsonPrimitive?.long
+                ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'exp'"))
+        val now = Clock.System.now()
+        val exp = Instant.fromEpochSeconds(expSeconds)
+        if (exp <= now) {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion has expired"))
+        }
+
+        val iatSeconds = claims["iat"]?.jsonPrimitive?.long
+        if (iatSeconds != null) {
+            val iat = Instant.fromEpochSeconds(iatSeconds)
+            val skew = now - iat
+            val maxSkewSeconds = ASSERTION_IAT_SKEW_SECONDS
+            if (skew.inWholeSeconds > maxSkewSeconds || (-skew.inWholeSeconds) > maxSkewSeconds) {
+                return Err(
+                    AuthorizationServerError.InvalidClient(
+                        details = "JWT assertion 'iat' is outside the ±${maxSkewSeconds}s window",
                     ),
                 )
+            }
+        }
 
-        val attIss =
-            attestationClaims["iss"]?.jsonPrimitive?.content
-                ?: return Err(AuthorizationServerError.InvalidClientAttestation(details = "Missing iss in attestation JWT"))
-        val attSub =
-            attestationClaims["sub"]?.jsonPrimitive?.content
-                ?: return Err(AuthorizationServerError.InvalidClientAttestation(details = "Missing sub in attestation JWT"))
-        val attExp =
-            attestationClaims["exp"]?.jsonPrimitive?.long
-                ?: return Err(AuthorizationServerError.InvalidClientAttestation(details = "Missing exp in attestation JWT"))
+        val jti = claims["jti"]?.jsonPrimitive?.content
+        if (jti.isNullOrBlank()) {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'jti'"))
+        }
+        val isNewJti = jtiStore.recordIfNew(clientId = clientId, jti = jti, expiresAt = exp)
+        if (!isNewJti) {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion 'jti' has already been used"))
+        }
 
-        // Use sub as client_id
-        val resolvedClientId =
-            if (clientId.isNotEmpty()) {
-                clientId
-            } else {
-                attSub
+        return Ok(Unit)
+    }
+
+    /**
+     * Resolve the set of signing algorithms that are acceptable for this client's JWT-based
+     * authentication method. If the client explicitly registered `token_endpoint_auth_signing_alg`,
+     * that allow-list is authoritative. Otherwise the per-method OIDC Core §9 defaults apply
+     * (RS256 for private_key_jwt, HS256 for client_secret_jwt).
+     */
+    private fun resolveExpectedSigningAlgs(
+        auth: ClientAuthenticationConfig,
+        client: ClientRegistration,
+    ): List<String> {
+        val registered = client.tokenEndpointAuthSigningAlg
+        if (!registered.isNullOrEmpty()) {
+            return registered
+        }
+        return when (auth) {
+            is ClientAuthenticationConfig.PrivateKeyJwt -> listOf("RS256")
+            is ClientAuthenticationConfig.SecretJwt -> listOf("HS256")
+            else -> emptyList()
+        }
+    }
+
+    /**
+     * RFC 8705 §2 client authentication: dispatches by the client's registered method to either
+     * the self-signed mode (cert public key matches a registered JWK) or the PKI mode (cert
+     * subject DN / SAN match a registered fixed value). The TLS handshake itself was already
+     * completed by the AS edge; the cert in [ClientAuthenticationConfig.MutualTls.clientCertificateDer]
+     * is the verified peer cert.
+     */
+    private suspend fun verifyMutualTlsAuth(
+        auth: ClientAuthenticationConfig.MutualTls,
+        clientId: String,
+        client: ClientRegistration,
+    ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
+        if (auth.clientId != clientId) {
+            return Err(
+                AuthorizationServerError.InvalidClient(
+                    details = "client_id mismatch between TLS auth and request body",
+                ),
+            )
+        }
+
+        return when (client.tokenEndpointAuthMethod) {
+            ClientAuthenticationMethod.SELF_SIGNED_TLS_CLIENT_AUTH -> {
+                verifySelfSignedTlsAuth(auth.clientCertificateDer, clientId, client)
             }
 
-        // 3. Look up client registration
-        val client =
-            clientRegistry
-                .getClient(resolvedClientId)
-                .getOrElse { return Err(it) }
-                ?: return Err(AuthorizationServerError.ClientNotFound(clientId = resolvedClientId))
+            ClientAuthenticationMethod.TLS_CLIENT_AUTH -> {
+                verifyPkiTlsAuth(auth.clientCertificateDer, clientId, client)
+            }
 
-        if (client.tokenEndpointAuthMethod != ClientAuthenticationMethod.ATTEST_JWT_CLIENT_AUTH) {
-            return Err(
-                AuthorizationServerError.InvalidClient(
-                    details = "Client is not configured for attestation-based authentication",
-                ),
-            )
-        }
-
-        // 4. Verify attester issuer is trusted
-        val trustedIssuers = client.trustedAttesterIssuers
-        if (trustedIssuers != null && attIss !in trustedIssuers) {
-            return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "Attestation issuer '$attIss' is not trusted for client '$resolvedClientId'",
-                ),
-            )
-        }
-
-        // 5. Verify attestation JWT signature using attester's key
-        val attestationVerifyResult =
-            jwtService
-                .verifyJws(VerifyJwsArgs(jws = JwsCompact(attestationJwt)))
-                .getOrElse {
-                    return Err(
-                        AuthorizationServerError.InvalidClientAttestation(
-                            details = "Attestation JWT signature verification failed: ${it.message.defaultMessage}",
-                        ),
-                    )
-                }
-
-        if (!attestationVerifyResult.isValid) {
-            return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "Attestation JWT signature invalid: ${attestationVerifyResult.errorMessages.joinToString()}",
-                ),
-            )
-        }
-
-        // 6. Check expiration and freshness
-        val now = Clock.System.now().epochSeconds
-        if (attExp < now) {
-            return Err(
-                AuthorizationServerError.UseFreshAttestation(
-                    details = "Attestation JWT has expired",
-                ),
-            )
-        }
-
-        val attIat = attestationClaims["iat"]?.jsonPrimitive?.long
-        if (attIat != null && (now - attIat) > config.attestationMaxLifetimeSeconds) {
-            return Err(
-                AuthorizationServerError.UseFreshAttestation(
-                    details = "Attestation JWT is too old (issued ${now - attIat}s ago, max ${config.attestationMaxLifetimeSeconds}s)",
-                ),
-            )
-        }
-
-        // 7. Extract client instance public key from cnf.jwk
-        val cnf =
-            attestationClaims["cnf"]?.jsonObject
-                ?: return Err(
-                    AuthorizationServerError.InvalidClientAttestation(
-                        details = "Missing cnf claim in attestation JWT",
+            else -> {
+                Err(
+                    AuthorizationServerError.InvalidClient(
+                        details = "Client '$clientId' is not registered for mutual-TLS authentication",
                     ),
                 )
+            }
+        }
+    }
 
-        val cnfJwkJson =
-            cnf["jwk"]?.jsonObject
-                ?: return Err(
-                    AuthorizationServerError.InvalidClientAttestation(
-                        details = "Missing jwk in cnf claim",
-                    ),
-                )
-
-        val clientInstanceKey =
+    /**
+     * RFC 8705 §2.2: the cert's public key MUST match a JWK registered for this client (with
+     * `use=sig` or unspecified). The verifier rebuilds the cert's SubjectPublicKeyInfo as a JWK
+     * and compares the canonical key material against each registered key.
+     */
+    private suspend fun verifySelfSignedTlsAuth(
+        certDer: ByteArray,
+        clientId: String,
+        client: ClientRegistration,
+    ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
+        val certJwk =
             try {
-                Json.decodeFromJsonElement(Jwk.serializer(), cnfJwkJson)
+                val cert = x509CertificateFromDer(certDer)
+                cert.tbsCertificate.subjectPublicKeyInfo.toJwk()
             } catch (expected: Exception) {
                 return Err(
-                    AuthorizationServerError.InvalidClientAttestation(
-                        details = "Invalid JWK in cnf claim: ${expected.message}",
+                    AuthorizationServerError.InvalidClient(
+                        details = "TLS client certificate could not be parsed: ${expected.message}",
                     ),
                 )
             }
 
-        // 8. Parse and validate PoP JWT header
-        val popHeader =
-            parseJwtHeader(popJwt)
-                ?: return Err(
-                    AuthorizationServerError.InvalidClientAttestation(
-                        details = "Cannot parse attestation PoP JWT header",
-                    ),
-                )
+        val registeredKeys =
+            clientJwksResolver
+                .resolveFor(client)
+                .getOrElse { return Err(it) }
+                .filter { it.use == null || it.use == "sig" }
 
-        val popTyp = popHeader["typ"]?.jsonPrimitive?.content
-        if (popTyp != "oauth-client-attestation-pop+jwt") {
+        val matches = registeredKeys.any { keysShareSamePublicMaterial(it, certJwk) }
+        if (!matches) {
             return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "PoP JWT typ must be 'oauth-client-attestation-pop+jwt', got: $popTyp",
+                AuthorizationServerError.InvalidClient(
+                    details =
+                        "TLS client certificate public key does not match any JWK registered " +
+                            "for client '$clientId' (self_signed_tls_client_auth)",
                 ),
             )
         }
 
-        // 9. Verify PoP JWT signature with client instance key
-        val popVerifyResult =
-            jwtService
-                .verifyJws(VerifyJwsArgs(jws = JwsCompact(popJwt)))
-                .getOrElse {
-                    return Err(
-                        AuthorizationServerError.InvalidClientAttestation(
-                            details = "PoP JWT signature verification failed: ${it.message.defaultMessage}",
-                        ),
-                    )
-                }
-
-        if (!popVerifyResult.isValid) {
-            return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "PoP JWT signature invalid: ${popVerifyResult.errorMessages.joinToString()}",
-                ),
-            )
-        }
-
-        // 10. Validate PoP JWT claims (already decoded during verification)
-        val popClaims = popVerifyResult.parsedPayload
-
-        val popIss = popClaims["iss"]?.jsonPrimitive?.content
-        if (popIss != attSub) {
-            return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "PoP JWT iss ('$popIss') must match attestation sub ('$attSub')",
-                ),
-            )
-        }
-
-        val popAud = popClaims["aud"]?.jsonPrimitive?.content
-        val configIssuer = config.issuer ?: config.baseUrl
-        if (popAud != tokenEndpointUrl && popAud != configIssuer) {
-            return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "PoP JWT aud does not match AS issuer or token endpoint",
-                ),
-            )
-        }
-
-        val popIat = popClaims["iat"]?.jsonPrimitive?.long
-        if (popIat != null && (now - popIat) > config.attestationPopMaxAgeSeconds) {
-            return Err(
-                AuthorizationServerError.InvalidClientAttestation(
-                    details = "PoP JWT is too old (issued ${now - popIat}s ago, max ${config.attestationPopMaxAgeSeconds}s)",
-                ),
-            )
-        }
-
-        // 11. If challenge required, verify challenge claim
-        if (config.attestationChallengeRequired) {
-            val challengeClaim = popClaims["nonce"]?.jsonPrimitive?.content
-            if (challengeClaim == null) {
-                // Generate a challenge and return it
-                val newChallenge =
-                    challengeStorage
-                        .generateChallenge()
-                        .getOrElse { return Err(it) }
-                return Err(AuthorizationServerError.UseAttestationChallenge(challenge = newChallenge))
-            }
-
-            challengeStorage
-                .verifyAndConsumeChallenge(challengeClaim)
-                .getOrElse { error -> return Err(error) }
-        }
-
-        // 12. All checks passed
         return Ok(
             VerifiedClientAuthentication(
-                clientId = resolvedClientId,
-                method = ClientAuthenticationMethod.ATTEST_JWT_CLIENT_AUTH,
-                clientInstanceKey = clientInstanceKey,
+                clientId = clientId,
+                method = ClientAuthenticationMethod.SELF_SIGNED_TLS_CLIENT_AUTH,
             ),
         )
+    }
+
+    /**
+     * RFC 8705 §2.1: PKI mode. The cert chain is presumed validated by the TLS engine against
+     * the operator-configured trust anchors; this verifier only enforces the additional
+     * AS-bound subject identity match registered on the client. The registration MUST set
+     * exactly one of (subject DN, dnsName SAN, email SAN, IP SAN, URI SAN); the verifier picks
+     * the first non-null and compares it.
+     */
+    private fun verifyPkiTlsAuth(
+        certDer: ByteArray,
+        clientId: String,
+        client: ClientRegistration,
+    ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
+        val certDto =
+            try {
+                x509CertificateFromDer(certDer).toCertificateDto()
+            } catch (expected: Exception) {
+                return Err(
+                    AuthorizationServerError.InvalidClient(
+                        details = "TLS client certificate could not be parsed: ${expected.message}",
+                    ),
+                )
+            }
+
+        // Subject DN match (RFC 8705 §2.1.2.1).
+        client.tlsClientAuthSubjectDn?.let { expected ->
+            val actual = certDto.subjectDN
+            return if (canonicalDn(actual) == canonicalDn(expected)) {
+                Ok(
+                    VerifiedClientAuthentication(
+                        clientId = clientId,
+                        method = ClientAuthenticationMethod.TLS_CLIENT_AUTH,
+                    ),
+                )
+            } else {
+                Err(
+                    AuthorizationServerError.InvalidClient(
+                        details =
+                            "TLS client certificate subject DN '$actual' does not match " +
+                                "registered '$expected' for client '$clientId'",
+                    ),
+                )
+            }
+        }
+
+        val sans = certDto.subjectAlternativeNames
+        client.tlsClientAuthSanDns?.let { expected ->
+            return matchSan(clientId, "dnsName", expected, sans?.dnsNames.orEmpty())
+        }
+        client.tlsClientAuthSanEmail?.let { expected ->
+            return matchSan(clientId, "rfc822Name", expected, sans?.emails.orEmpty())
+        }
+        client.tlsClientAuthSanIp?.let { expected ->
+            return matchSan(clientId, "iPAddress", expected, sans?.ipAddresses.orEmpty())
+        }
+        client.tlsClientAuthSanUri?.let { expected ->
+            return matchSan(clientId, "uniformResourceIdentifier", expected, sans?.uris.orEmpty())
+        }
+
+        return Err(
+            AuthorizationServerError.InvalidClient(
+                details =
+                    "Client '$clientId' is registered for tls_client_auth but no subject DN " +
+                        "or SAN identifier is configured",
+            ),
+        )
+    }
+
+    private fun matchSan(
+        clientId: String,
+        sanType: String,
+        expected: String,
+        actuals: List<String>,
+    ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
+        if (actuals.any { it == expected }) {
+            return Ok(
+                VerifiedClientAuthentication(
+                    clientId = clientId,
+                    method = ClientAuthenticationMethod.TLS_CLIENT_AUTH,
+                ),
+            )
+        }
+        return Err(
+            AuthorizationServerError.InvalidClient(
+                details =
+                    "TLS client certificate SAN ($sanType) does not contain registered value '$expected' " +
+                        "for client '$clientId'",
+            ),
+        )
+    }
+
+    /**
+     * RFC 4514 canonical DN comparison: normalize whitespace around `,` and `=` and lowercase
+     * attribute types so equivalent encodings compare equal. Full RFC-compliant canonicalisation
+     * (string-prep, attribute-type OID resolution) is deferred; this covers the common cases
+     * (case differences in attribute types, spacing variation) for OIDF-style fixtures.
+     */
+    private fun canonicalDn(value: String): String =
+        value
+            .split(",")
+            .joinToString(",") { rdn ->
+                val parts = rdn.trim().split("=", limit = 2)
+                if (parts.size == 2) {
+                    "${parts[0].trim().lowercase()}=${parts[1].trim()}"
+                } else {
+                    rdn.trim()
+                }
+            }
+
+    /**
+     * Public-material comparison between two JWKs without resorting to RFC 7638 thumbprint
+     * (which would require canonical JCS). For the AS use case the registered JWK and the cert's
+     * recomputed JWK come from the same library, so direct field equality is sufficient.
+     */
+    private fun keysShareSamePublicMaterial(
+        a: Jwk,
+        b: Jwk,
+    ): Boolean {
+        if (a.kty != b.kty) {
+            return false
+        }
+        return when (a.kty) {
+            JwaKeyType.RSA -> a.n == b.n && a.e == b.e
+            JwaKeyType.EC -> a.crv == b.crv && a.x == b.x && a.y == b.y
+            JwaKeyType.OKP -> a.crv == b.crv && a.x == b.x
+            JwaKeyType.oct -> false
+        }
     }
 
     /**
@@ -500,5 +700,12 @@ class VerifyClientAuthenticationCommandImpl(
         } catch (_: Exception) {
             null
         }
+    }
+
+    companion object {
+        private val SUPPORTED_HS_ALGS = setOf("HS256", "HS384", "HS512")
+
+        /** ±5 minutes, OIDC Core §9 clock-skew window applied to the assertion `iat`. */
+        private const val ASSERTION_IAT_SKEW_SECONDS: Long = 300
     }
 }

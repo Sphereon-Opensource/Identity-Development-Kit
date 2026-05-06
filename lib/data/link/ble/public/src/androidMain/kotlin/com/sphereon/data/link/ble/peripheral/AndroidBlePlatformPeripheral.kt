@@ -16,6 +16,13 @@
  */
 
 @file:OptIn(ExperimentalUuidApi::class)
+// detekt 1.23.8 IgnoredReturnValue rule throws an NPE
+// (`containingDeclaration in DeclarationDescriptor is null`) while analysing this file's
+// Android Bluetooth-stack call sites. Tracked upstream as detekt#6175 ("Closed: not planned");
+// no fix in any 1.23.x release and 2.0 is alpha-only. The rule with `restrictToConfig: true`
+// only flags methods annotated `@CheckResult`/`@CheckReturnValue` (we have none of those
+// here) so suppression hides nothing actionable — it just lets the analyser finish.
+@file:Suppress("IgnoredReturnValue")
 
 package com.sphereon.data.link.ble.peripheral
 

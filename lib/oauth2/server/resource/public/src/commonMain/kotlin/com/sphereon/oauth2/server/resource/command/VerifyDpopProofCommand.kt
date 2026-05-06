@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.resource.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.server.resource.model.DpopVerificationResult
@@ -29,6 +30,11 @@ import kotlin.native.ObjCName
  * @property httpMethod The HTTP method (e.g., "GET", "POST")
  * @property httpUrl The HTTP URL (scheme, host, port, path - no query/fragment)
  * @property expectedJkt The expected JWK thumbprint from access token (cnf.jkt)
+ * @property accessToken The bearer access token presented alongside the DPoP proof. When non-null
+ *   the verifier MUST enforce RFC 9449 §4.3 `ath` binding (the proof's `ath` claim equals the
+ *   base64url-encoded SHA-256 of the access token). Resource servers presenting a DPoP-bound
+ *   access token are required to set this; pure proof-only paths (e.g. /token endpoints) leave
+ *   it `null`.
  */
 @JsExportCompat
 data class VerifyDpopProofArgs(
@@ -36,6 +42,7 @@ data class VerifyDpopProofArgs(
     val httpMethod: String,
     val httpUrl: String,
     val expectedJkt: String? = null,
+    val accessToken: String? = null,
 )
 
 /**
@@ -74,7 +81,7 @@ data class VerifyDpopProofArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyDpopProofCommand", exact = true)
 @JsExportCompat
-interface VerifyDpopProofCommand : ServiceCommand<VerifyDpopProofArgs, DpopVerificationResult> {
+interface VerifyDpopProofCommand : ServiceCommand<VerifyDpopProofArgs, DpopVerificationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -116,6 +116,15 @@ interface IssueSdJwtCommandService {
  * @property expectedAudience Expected audience for KB-JWT verification (if KB-JWT present)
  * @property expectedNonce Expected nonce for KB-JWT verification (if KB-JWT present)
  * @property validateDisclosures Whether to validate disclosure digests (default true)
+ * @property kbJwtMaxAgeSeconds Maximum allowed age of the Key Binding JWT in seconds, measured
+ *   from its `iat` claim against the verifier's clock. Per SD-JWT §7.3 the verifier MUST
+ *   "Check that the creation time of the Key Binding JWT, as determined by the iat claim, is
+ *   within an acceptable window." Default 300s (5 minutes) — short enough to make replay
+ *   attacks impractical for fresh presentations, long enough to absorb mobile network latency
+ *   and minor clock drift between the wallet and the verifier.
+ * @property kbJwtFutureSkewSeconds Maximum allowed clock skew, in seconds, where the KB-JWT's
+ *   `iat` is in the future relative to the verifier. Default 60s — accommodates typical NTP
+ *   drift between mobile holders and server-side verifiers without inviting forgery.
  */
 @JsExportCompat
 data class VerifySdJwtArgs(
@@ -124,6 +133,8 @@ data class VerifySdJwtArgs(
     val expectedAudience: String? = null,
     val expectedNonce: String? = null,
     val validateDisclosures: Boolean = true,
+    val kbJwtMaxAgeSeconds: Long = 300L,
+    val kbJwtFutureSkewSeconds: Long = 60L,
 )
 
 /**

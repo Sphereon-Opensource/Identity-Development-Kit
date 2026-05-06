@@ -61,7 +61,7 @@ class VerifySdJwtCommandImpl(
     execution: SessionExecution,
     private val verifyJwsCommand: JwsVerifyCommand,
     private val cnfResolver: CnfExternalIdentifierResolutionService,
-) : TypedServiceCommandAdapter<VerifySdJwtArgs, SdJwtVerificationResult>(
+) : TypedServiceCommandAdapter<VerifySdJwtArgs, SdJwtVerificationResult, IdkError>(
         commandId = VerifySdJwtCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifySdJwtArgs>(),
@@ -95,6 +95,8 @@ class VerifySdJwtCommandImpl(
                     expectedAudience = appliedArgs.expectedAudience,
                     expectedNonce = appliedArgs.expectedNonce,
                     validateDisclosures = appliedArgs.validateDisclosures,
+                    kbJwtMaxAgeSeconds = appliedArgs.kbJwtMaxAgeSeconds,
+                    kbJwtFutureSkewSeconds = appliedArgs.kbJwtFutureSkewSeconds,
                 )
 
             if (result.isOk) {

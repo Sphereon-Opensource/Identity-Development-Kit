@@ -21,8 +21,8 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
@@ -44,7 +44,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import kotlin.random.Random
 import kotlin.time.Clock
 
 /**
@@ -63,7 +62,8 @@ import kotlin.time.Clock
 class CreateSignedJarCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
-) : TypedServiceCommandAdapter<CreateSignedJarArgs, StringResult>(
+    private val secureRandom: SecureRandom,
+) : TypedServiceCommandAdapter<CreateSignedJarArgs, StringResult, IdkError>(
         commandId = CreateSignedJarCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateSignedJarArgs>(),
@@ -216,12 +216,9 @@ class CreateSignedJarCommandImpl(
     }
 
     /**
-     * Generates a unique JWT ID using random bytes
+     * Generates a unique JWT ID (16 random bytes, base64url-encoded).
      */
-    private fun generateJti(): String {
-        val bytes = Random.Default.nextBytes(JTI_RANDOM_BYTES)
-        return bytes.encodeToBase64Url()
-    }
+    private suspend fun generateJti(): String = secureRandom.newToken(lengthBytes = JTI_RANDOM_BYTES)
 
     companion object {
         private const val JTI_RANDOM_BYTES = 16

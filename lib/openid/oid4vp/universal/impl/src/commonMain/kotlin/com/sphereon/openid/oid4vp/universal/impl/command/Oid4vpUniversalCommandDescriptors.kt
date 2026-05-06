@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.universal.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.universal.CreateAuthRequestServiceCommand
@@ -30,13 +31,13 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vpUniversalCommandDescriptors {
     @Provides @IntoMap
     @StringKey(CreateAuthRequestServiceCommand.COMMAND_ID)
-    fun createAuthRequest(impl: CreateAuthRequestServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun createAuthRequest(impl: CreateAuthRequestServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(GetAuthRequestStatusServiceCommand.COMMAND_ID)
-    fun getAuthRequestStatus(impl: GetAuthRequestStatusServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun getAuthRequestStatus(impl: GetAuthRequestStatusServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(DeleteAuthRequestServiceCommand.COMMAND_ID)
-    fun deleteAuthRequest(impl: DeleteAuthRequestServiceCommandImpl): ServiceCommand<*, *> = impl
+    fun deleteAuthRequest(impl: DeleteAuthRequestServiceCommandImpl): ServiceCommand<*, *, *> = impl
 }

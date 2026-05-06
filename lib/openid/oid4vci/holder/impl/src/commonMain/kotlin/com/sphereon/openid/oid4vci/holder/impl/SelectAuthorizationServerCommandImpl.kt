@@ -54,7 +54,7 @@ import kotlinx.serialization.json.jsonObject
 class SelectAuthorizationServerCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<SelectAuthorizationServerArgs, ResolvedAuthorizationServer>(
+) : TypedServiceCommandAdapter<SelectAuthorizationServerArgs, ResolvedAuthorizationServer, IdkError>(
         commandId = SelectAuthorizationServerCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<SelectAuthorizationServerArgs>(),

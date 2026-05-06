@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.attestation
 
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAttestationChallengeStorage
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
@@ -27,7 +28,7 @@ import kotlin.test.assertTrue
 
 class CreateAttestationChallengeCommandImplTest {
     private val ctx = OAuth2ServerTestContext("attestation-challenge-test", this)
-    private val challengeStorage = InMemoryAttestationChallengeStorage()
+    private val challengeStorage = InMemoryAttestationChallengeStorage(defaultSecureRandom())
     private val command = CreateAttestationChallengeCommandImpl(ctx.execution, challengeStorage)
 
     @Test

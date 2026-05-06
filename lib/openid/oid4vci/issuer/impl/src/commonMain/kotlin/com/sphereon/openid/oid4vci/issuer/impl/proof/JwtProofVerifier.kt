@@ -20,10 +20,15 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
+import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import dev.zacsweers.metro.ContributesIntoSet
@@ -34,6 +39,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -52,14 +58,20 @@ class JwtProofVerifier(
     private val nonceManager: NonceManager,
     private val verifyJwsCommand: VerifyJwsCommand,
     private val externalIdentifierResolver: com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService,
+    private val keyAttestationVerifier: KeyAttestationVerifier,
+    private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
 ) : ProofVerifier {
     override val supportedProofType: String = "jwt"
 
+    @Suppress("LongMethod", "ReturnCount", "ComplexMethod")
     override suspend fun verify(
         proofValue: JsonElement,
         expectedAudience: String,
-        supportedAlgorithms: List<String>?,
+        expectedClientId: String?,
+        credentialConfigId: String,
+        proofTypeSupported: ProofTypeSupported?,
     ): IdkResult<VerifiedProof, IdkError> {
+        val supportedAlgorithms = proofTypeSupported?.proofSigningAlgValuesSupported
         val jwt = proofValue.jsonPrimitive.content
         // 1. Cryptographic signature verification + key resolution via lib-crypto-core.
         //    VerifyJwsCommand rejects `alg: none` and MAC algorithms as part of JWS verification;
@@ -192,6 +204,74 @@ class JwtProofVerifier(
             }
 
         val holderIdentifier = claims["iss"]?.jsonPrimitive?.content
+
+        // OID4VCI 1.0 §7.2.1.2: when the proof carries an `iss` claim, its value MUST be the
+        // client_id of the client making the credential request — i.e. the client_id bound to
+        // the access token. Catches access-token replay across clients (e.g. a wallet using
+        // client A's token to fetch a credential bound to client B's holder key).
+        if (holderIdentifier != null && expectedClientId != null && holderIdentifier != expectedClientId) {
+            return Err(
+                IdkError.fromString(
+                    code = "invalid_proof",
+                    message = "Invalid JWT proof: iss '$holderIdentifier' does not match access-token client_id '$expectedClientId'",
+                ),
+            )
+        }
+
+        // 8. OID4VCI 1.0 §7.2 + §11.2.3 — key attestation. The attestation rides as a JOSE
+        //    header parameter `key_attestation` on the proof JWT (carrier #1). When the
+        //    credential configuration declares `key_attestations_required`, the attestation
+        //    is mandatory; in either case, when present it MUST verify and the proof's
+        //    binding key MUST be one of the attested keys (RFC 7638 thumbprint match).
+        val attestationJwt = protectedHeader["key_attestation"]?.jsonPrimitive?.contentOrNull
+        val attestationPolicy = proofTypeSupported?.keyAttestationsRequired
+        if (attestationPolicy != null && attestationJwt == null) {
+            return Err(
+                IdkError.fromString(
+                    code = Oid4vciErrors.INVALID_PROOF,
+                    message = "Invalid JWT proof: credential configuration '$credentialConfigId' requires a 'key_attestation' header on the proof JWT",
+                ),
+            )
+        }
+        if (attestationJwt != null) {
+            val trustConfig = issuerConfigProvider.keyAttesterTrustFor(credentialConfigId, supportedProofType)
+            val validated =
+                keyAttestationVerifier
+                    .verify(
+                        keyAttestationJwt = attestationJwt,
+                        trustConfig = trustConfig,
+                        policy = attestationPolicy,
+                        expectedNonce = nonce,
+                    ).getOrElse { return Err(it) }
+
+            val proofKeyJwk =
+                runCatching { Jwk.fromJsonObject(holderBindingKey.jsonObject) }.getOrNull()
+                    ?: return Err(
+                        IdkError.fromString(
+                            code = Oid4vciErrors.INVALID_PROOF,
+                            message = "Invalid JWT proof: holder binding key is not a parseable JWK",
+                        ),
+                    )
+            val proofKeyThumbprint =
+                tryGenerateJwkThumbprint(proofKeyJwk).getOrElse {
+                    return Err(
+                        IdkError.fromString(
+                            code = Oid4vciErrors.INVALID_PROOF,
+                            message = "Invalid JWT proof: failed to compute holder-key JWK thumbprint",
+                        ),
+                    )
+                }
+            val attestedThumbprints =
+                validated.attestedKeys.mapNotNull { tryGenerateJwkThumbprint(it).getOrNull() }
+            if (proofKeyThumbprint !in attestedThumbprints) {
+                return Err(
+                    IdkError.fromString(
+                        code = Oid4vciErrors.INVALID_PROOF,
+                        message = "Invalid JWT proof: holder binding key is not present in key_attestation.attested_keys",
+                    ),
+                )
+            }
+        }
 
         return Ok(
             VerifiedProof(

@@ -134,7 +134,7 @@ ResolvePublicKeyResult
  * ```
  */
 @JsExportCompat
-interface ResolvePublicKeyCommand : ServiceCommand<ResolvePublicKeyArgs, ResolvePublicKeyResult> {
+interface ResolvePublicKeyCommand : ServiceCommand<ResolvePublicKeyArgs, ResolvePublicKeyResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

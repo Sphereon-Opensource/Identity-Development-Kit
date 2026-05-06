@@ -16,7 +16,13 @@
 
 package com.sphereon.oauth2.server.authorization.impl.test
 
+import com.sphereon.core.api.codec.StreamingCodec
+import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.IPropertyValueConversion
+import com.sphereon.core.api.http.codec.HttpBodyCodec
+import com.sphereon.core.api.log.Logger
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.core.events.EventService
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import dev.zacsweers.metro.AppScope
@@ -25,8 +31,21 @@ import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.createGraphFactory
 
+/**
+ * JVM-only AppScope graph used by tests that need a full IDK runtime composition (file system,
+ * KMS, etc.). Mirrors [OAuth2TestAppGraph] but stays platform-specific because some bindings only
+ * resolve on JVM. Accessors below pin the mass-contributed app-scope sets so Metro doesn't flag
+ * them as unused.
+ */
 @DependencyGraph(AppScope::class)
 abstract class JvmOAuth2ServerTestAppGraph : AbstractAppGraph() {
+    abstract val httpBodyCodecs: Set<HttpBodyCodec>
+    abstract val loggers: Set<Logger>
+    abstract val eventServices: Set<EventService>
+    abstract val streamingCodecs: Set<StreamingCodec>
+    abstract val configServices: Set<ConfigService>
+    abstract val propertyValueConversions: Set<IPropertyValueConversion<*>>
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

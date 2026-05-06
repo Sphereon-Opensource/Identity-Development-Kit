@@ -17,7 +17,6 @@
 package com.sphereon.oauth2.server.authorization.model
 
 import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.ResponseType
@@ -75,6 +74,15 @@ data class ClientRegistration(
      */
     val tokenEndpointAuthMethod: ClientAuthenticationMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
     /**
+     * Signing algorithms accepted on JWT-based client authentication methods
+     * (`private_key_jwt`, `client_secret_jwt`). RFC 7591 § 2: `token_endpoint_auth_signing_alg`.
+     *
+     * `null` = defaults per OIDC Core §9 (RS256 for `private_key_jwt`, HS256 for `client_secret_jwt`).
+     * Non-null explicit allow-list that restricts the acceptable assertion `alg` header. `"none"` is
+     * never permitted.
+     */
+    val tokenEndpointAuthSigningAlg: List<String>? = null,
+    /**
      * JWKs for client authentication or encryption
      * Used with private_key_jwt or client_secret_jwt
      */
@@ -115,20 +123,148 @@ data class ClientRegistration(
      */
     val authorizationCodeLifetime: Int = 600,
     /**
-     * Trusted attester issuers for attestation-based client auth.
-     * List of `iss` values accepted in the client attestation JWT.
+     * Allow-list of OID4VCI `credential_configuration_id` values this client is permitted to
+     * request via RFC 9396 `authorization_details`. `null` = unrestricted (pre-S2-3 behaviour).
+     * `emptySet()` = explicitly forbid any credential request. Populated set = strict allow-list.
+     */
+    val credentialConfigurationIds: Set<String>? = null,
+    /**
+     * Trusted attester issuers for attestation-based client auth
+     * (draft-ietf-oauth-attestation-based-client-auth §4). When non-null, the attestation JWT's
+     * `iss` claim MUST be a member; `null` skips the issuer allow-list check.
      */
     val trustedAttesterIssuers: List<String>? = null,
     /**
-     * JWKS URIs for trusted attesters, keyed by issuer.
-     * Used to resolve the attester's public key for signature verification.
+     * Inline JWKs the AS will accept on attestation JWT signatures for this client. Mirrors the
+     * shape of [jwks]: a flat list of public keys keyed by `kid` at verification time. The
+     * verifier pins these as the trusted JWKS for the attestation JWT, refusing embedded
+     * `jwk` / `x5c` headers and external identifier resolvers per
+     * draft-ietf-oauth-attestation-based-client-auth §4 trust model.
      */
-    val trustedAttesterJwksUris: Map<String, String>? = null,
+    val trustedAttesterJwks: List<Jwk>? = null,
     /**
-     * Inline JWKs for trusted attesters, keyed by issuer.
-     * Alternative to JWKS URIs when keys are known at registration time.
+     * URIs that publish the attester's public JWKS document. Alternative to [trustedAttesterJwks]
+     * when the attester rotates keys out-of-band. The verifier dereferences and pins each URI
+     * at verification time. May be combined with [trustedAttesterJwks]; the union forms the
+     * acceptable signer set.
      */
-    val trustedAttesterJwks: Map<String, JwkSet>? = null,
+    val trustedAttesterJwksUris: List<String>? = null,
+    /**
+     * Registered redirect URIs the RP may pass as `post_logout_redirect_uri` on the
+     * OIDC RP-Initiated Logout end-session endpoint. Validation is exact-match per
+     * RP-Initiated Logout 1.0 §2: an unregistered value causes the AS to skip the
+     * post-logout redirect and render its own logged-out confirmation page instead.
+     */
+    val postLogoutRedirectUris: List<String> = emptyList(),
+    /**
+     * RP front-channel logout URI per OIDC Front-Channel Logout 1.0 §3.1. When the
+     * AS receives an end-session request, it embeds an `<iframe>` pointing at this
+     * URI so the RP can clear its browser-side session in-band. Empty / `null`
+     * means the client does not support front-channel logout.
+     */
+    val frontchannelLogoutUri: String? = null,
+    /**
+     * When `true`, the AS appends `iss` and `sid` query parameters to the front-
+     * channel logout iframe URL so the RP can correlate the logout to a specific
+     * AS session, per OIDC Front-Channel Logout 1.0 §3 `frontchannel_logout_session_required`.
+     * Ignored when [frontchannelLogoutUri] is `null`.
+     */
+    val frontchannelLogoutSessionRequired: Boolean = false,
+    /**
+     * JARM `authorization_signed_response_alg` per OIDF JARM spec
+     * (https://openid.net/specs/oauth-v2-jarm.html). When non-null, authorization responses for
+     * this client (in any `*.jwt` response mode) are signed with the named JWS algorithm.
+     * `null` means the client does not opt into JARM signing. The AS rejects a JARM response
+     * mode request when this is unset and JARM is enabled at the server level.
+     */
+    val authorizationSignedResponseAlg: String? = null,
+    /**
+     * JARM `authorization_encrypted_response_alg` per OIDF JARM spec. JWE key-encryption
+     * algorithm. When set together with [authorizationSignedResponseAlg], JARM uses
+     * sign-then-encrypt; with [authorizationEncryptedResponseEnc], encryption-only.
+     */
+    val authorizationEncryptedResponseAlg: String? = null,
+    /**
+     * JARM `authorization_encrypted_response_enc` per OIDF JARM spec. JWE content-encryption
+     * algorithm; defaults to `A256GCM` at the JARM library when omitted.
+     */
+    val authorizationEncryptedResponseEnc: String? = null,
+    /**
+     * RP back-channel logout URI per OIDC Back-Channel Logout 1.0 §2.5. The AS
+     * POSTs a signed `logout_token` JWT to this URI when terminating a session
+     * the RP participated in. Empty / `null` means the client does not support
+     * back-channel logout.
+     */
+    val backchannelLogoutUri: String? = null,
+    /**
+     * When `true`, the `logout_token` minted for this client carries the `sid`
+     * claim per OIDC Back-Channel Logout 1.0 §2.4 `backchannel_logout_session_required`.
+     * Ignored when [backchannelLogoutUri] is `null`.
+     */
+    val backchannelLogoutSessionRequired: Boolean = false,
+    /**
+     * RFC 9101 §5.2.2 / OIDC Core §2 `request_object_signing_alg`: pinned JWS algorithm the AS
+     * accepts on signed authorization requests (JAR) for this client. When non-null, JARs whose
+     * header `alg` differs are rejected with `invalid_request_object`. When `null`, any algorithm
+     * advertised in the server's `request_object_signing_alg_values_supported` list is accepted
+     * (still subject to the `none`-is-forbidden rule).
+     */
+    val requestObjectSigningAlg: String? = null,
+    /**
+     * RFC 9101 §5.2.2 / OIDC Core §2 `request_uris`: pre-registered list of URIs the client may
+     * use as `request_uri` at the authorization endpoint. Empty list means no pre-registration.
+     * Consulted only when the server is configured with
+     * [com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.requireRequestUriRegistration]
+     * = `true`; otherwise the AS accepts any HTTPS URI the client supplies.
+     */
+    val requestUris: List<String> = emptyList(),
+    /**
+     * RFC 8705 §2.1.2.1: subject DN the AS expects on the TLS client certificate when this
+     * client uses `tls_client_auth`. Compared against the cert's RFC 4514 canonical DN.
+     * Mutually exclusive with the `tlsClientAuthSan*` family: registration MUST set exactly
+     * one of (subject DN, dnsName SAN, email SAN, IP SAN, URI SAN). Ignored when the
+     * registered method is `self_signed_tls_client_auth` or anything other than mTLS.
+     */
+    val tlsClientAuthSubjectDn: String? = null,
+    /**
+     * RFC 8705 §2.1.2.2: dNSName SAN the AS expects on the TLS client certificate.
+     */
+    val tlsClientAuthSanDns: String? = null,
+    /**
+     * RFC 8705 §2.1.2.3: rfc822Name SAN (email) the AS expects on the TLS client certificate.
+     */
+    val tlsClientAuthSanEmail: String? = null,
+    /**
+     * RFC 8705 §2.1.2.4: iPAddress SAN the AS expects on the TLS client certificate.
+     */
+    val tlsClientAuthSanIp: String? = null,
+    /**
+     * RFC 8705 §2.1.2.5: uniformResourceIdentifier SAN the AS expects on the TLS client
+     * certificate.
+     */
+    val tlsClientAuthSanUri: String? = null,
+    /**
+     * RFC 8705 §3.1: when `true`, access tokens minted for this client carry a `cnf.x5t#S256`
+     * confirmation claim bound to the TLS client certificate presented at the token endpoint.
+     * Subsequent resource-server requests MUST then be made over mTLS with a certificate
+     * whose SHA-256 thumbprint matches. Per-client opt-in overrides the server-wide default
+     * [com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.tlsClientCertificateBoundAccessTokens].
+     */
+    val tlsClientCertificateBoundAccessTokens: Boolean = false,
+    /**
+     * Identifiers of [com.sphereon.oauth2.server.authorization.policy.ClientPolicy] bundles
+     * the AS applies to requests on behalf of this client. The AS's
+     * [com.sphereon.oauth2.server.authorization.policy.ClientPolicyResolver] looks each id
+     * up in the [com.sphereon.oauth2.server.authorization.policy.ClientPolicyRegistry] at
+     * request time and runs the matched executors.
+     *
+     * Empty list (the default) means policy-driven enforcement is OFF for this client —
+     * the AS still honours the per-flag legacy fields ([requirePkce], [requirePushedAuthorizationRequests]
+     * etc.). Attaching policy ids is additive: a flag that's `false` on the client but
+     * required by an attached policy is still enforced (policies cannot weaken individual
+     * client flags, only strengthen them). See [com.sphereon.oauth2.server.authorization.policy.ClientPolicy].
+     */
+    val policyIds: List<String> = emptyList(),
     /**
      * Additional client metadata
      */

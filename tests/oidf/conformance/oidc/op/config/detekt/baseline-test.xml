@@ -1,0 +1,61 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:HarnessPropertyOverride.kt$HarnessPropertyOverride$if</ID>
+    <ID>BracesOnIfStatements:OidfOpAttestationFlowTest.kt$OidfOpAttestationFlowTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpAttestationFlowTest.kt$OidfOpAttestationFlowTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpBackChannelLogoutCaptureTest.kt$OidfOpBackChannelLogoutCaptureTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpBackChannelLogoutCaptureTest.kt$OidfOpBackChannelLogoutCaptureTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpDpopTest.kt$DpopProofKey$else</ID>
+    <ID>BracesOnIfStatements:OidfOpDpopTest.kt$DpopProofKey$if</ID>
+    <ID>BracesOnIfStatements:OidfOpDpopTest.kt$DpopProofKey.Companion$else</ID>
+    <ID>BracesOnIfStatements:OidfOpDpopTest.kt$DpopProofKey.Companion$if</ID>
+    <ID>BracesOnIfStatements:OidfOpDpopTest.kt$OidfOpDpopTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpDpopTest.kt$OidfOpDpopTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpHappyPathBasicE2ETest.kt$OidfOpHappyPathBasicE2ETest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpHappyPathBasicE2ETest.kt$OidfOpHappyPathBasicE2ETest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpJarmEncryptionTest.kt$OidfOpJarmEncryptionTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpJarmEncryptionTest.kt$OidfOpJarmEncryptionTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpJarmTest.kt$OidfOpJarmTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpJarmTest.kt$OidfOpJarmTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpLogoutTest.kt$OidfOpLogoutTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpLogoutTest.kt$OidfOpLogoutTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpMtlsTest.kt$OidfOpMtlsTest.MtlsAuthCodeFlow$else</ID>
+    <ID>BracesOnIfStatements:OidfOpMtlsTest.kt$OidfOpMtlsTest.MtlsAuthCodeFlow$if</ID>
+    <ID>BracesOnIfStatements:OidfOpPromptMaxAgeIdTokenHintTest.kt$OidfOpPromptMaxAgeIdTokenHintTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpPromptMaxAgeIdTokenHintTest.kt$OidfOpPromptMaxAgeIdTokenHintTest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpRefreshTokenE2ETest.kt$OidfOpRefreshTokenE2ETest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpRefreshTokenE2ETest.kt$OidfOpRefreshTokenE2ETest$if</ID>
+    <ID>BracesOnIfStatements:OidfOpTokenExchangeTest.kt$OidfOpTokenExchangeTest$else</ID>
+    <ID>BracesOnIfStatements:OidfOpTokenExchangeTest.kt$OidfOpTokenExchangeTest$if</ID>
+    <ID>LongMethod:OidfOpBackChannelLogoutCaptureTest.kt$OidfOpBackChannelLogoutCaptureTest$@Test fun backChannelLogoutDeliversValidSignedLogoutTokenToRp()</ID>
+    <ID>LongMethod:OidfOpBackChannelLogoutCaptureTest.kt$OidfOpBackChannelLogoutCaptureTest$private suspend fun drivePkceLogin( state: String, nonce: String, username: String = "alice", ): LoginResult</ID>
+    <ID>LongMethod:OidfOpHappyPathBasicE2ETest.kt$OidfOpHappyPathBasicE2ETest$@Test fun authorizationCodeFlowSucceedsForOidfOpBasicClient()</ID>
+    <ID>LongMethod:OidfOpJarHappyPathTest.kt$OidfOpJarHappyPathTest$@Test fun parWithJarBodySucceeds()</ID>
+    <ID>LongMethod:OidfOpJarmEncryptionTest.kt$OidfOpJarmEncryptionTest$@Test fun jarmEncryptionFallsBackToBareWhenNoEncryptionJwkRegistered()</ID>
+    <ID>LongMethod:OidfOpLogoutTest.kt$OidfOpLogoutTest$@Test fun rpInitiatedLogoutInvalidatesSessionAndRedirects()</ID>
+    <ID>LongMethod:OidfOpLogoutTest.kt$OidfOpLogoutTest$private suspend fun drivePkceLogin( state: String, nonce: String, username: String = "alice", ): LoginResult</ID>
+    <ID>LongMethod:OidfOpMtlsTest.kt$OidfOpMtlsTest$@Test fun userInfoRequiresMatchingTlsCertWhenAccessTokenIsCertBound()</ID>
+    <ID>LongMethod:OidfOpPromptMaxAgeIdTokenHintTest.kt$OidfOpPromptMaxAgeIdTokenHintTest$private suspend fun drivePkceLogin( state: String, nonce: String, username: String = "alice", httpClient: HttpClient = client, ): LoginResult</ID>
+    <ID>LongMethod:OidfOpRefreshTokenE2ETest.kt$OidfOpRefreshTokenE2ETest$@Test fun oldRefreshTokenIsInvalidatedAfterRotation()</ID>
+    <ID>LongMethod:OidfOpRefreshTokenE2ETest.kt$OidfOpRefreshTokenE2ETest$@Test fun refreshGrantIssuesNewAccessTokenAndRotatesRefreshToken()</ID>
+    <ID>LongMethod:OidfOpRefreshTokenE2ETest.kt$OidfOpRefreshTokenE2ETest$private suspend fun drivePkceLoginAndExchangeCode( state: String, nonce: String, username: String = "alice", ): TokenSet</ID>
+    <ID>RedundantSuspendModifier:OidfOpAttestationFlowTest.kt$OidfOpAttestationFlowTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpBackChannelLogoutCaptureTest.kt$OidfOpBackChannelLogoutCaptureTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpDeviceFlowTest.kt$OidfOpDeviceFlowTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpDpopTest.kt$OidfOpDpopTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpJarmEncryptionTest.kt$OidfOpJarmEncryptionTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpJarmTest.kt$OidfOpJarmTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpLogoutTest.kt$OidfOpLogoutTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpMtlsTest.kt$OidfOpMtlsTest.MtlsAuthCodeFlow$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpParTest.kt$OidfOpParTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpPromptMaxAgeIdTokenHintTest.kt$OidfOpPromptMaxAgeIdTokenHintTest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpRefreshTokenE2ETest.kt$OidfOpRefreshTokenE2ETest$suspend</ID>
+    <ID>RedundantSuspendModifier:OidfOpTokenExchangeTest.kt$OidfOpTokenExchangeTest$suspend</ID>
+    <ID>UnreachableCode:OidfOpDpopTest.kt$OidfOpDpopTest$return extractQueryParam(callback, "code")</ID>
+    <ID>UnreachableCode:OidfOpDpopTest.kt$OidfOpDpopTest$val callback = resumed.headers["Location"] ?: return null</ID>
+    <ID>UnusedPrivateMember:OidfOpDpopTest.kt$private fun base64Url(bytes: ByteArray): String</ID>
+    <ID>UnusedPrivateProperty:OidfOpMtlsTest.kt$OidfOpMtlsTest.MtlsAuthCodeFlow$private val testKlass = OidfOpMtlsTest::class.java</ID>
+  </CurrentIssues>
+</SmellBaseline>

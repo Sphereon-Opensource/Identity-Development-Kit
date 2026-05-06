@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.attribute.flow.AttributeBag
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 

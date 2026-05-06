@@ -6,6 +6,7 @@
 
 package com.sphereon.trust.core.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
@@ -24,7 +25,7 @@ import kotlin.time.Instant
 // ============================================================================
 
 @JsExportCompat
-interface DiscoverEntityInfoCommand : ServiceCommand<DiscoverEntityInfoArgs, DiscoverEntityInfoResult> {
+interface DiscoverEntityInfoCommand : ServiceCommand<DiscoverEntityInfoArgs, DiscoverEntityInfoResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
 
@@ -56,7 +57,7 @@ data class DiscoverEntityInfoResult(
 // ============================================================================
 
 @JsExportCompat
-interface ValidateTrustCommand : ServiceCommand<ValidateTrustArgs, TrustValidationResult> {
+interface ValidateTrustCommand : ServiceCommand<ValidateTrustArgs, TrustValidationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
 
@@ -83,7 +84,7 @@ data class ValidateTrustArgs(
 // ============================================================================
 
 @JsExportCompat
-interface GetTrustAnchorsCommand : ServiceCommand<GetTrustAnchorsArgs, TrustAnchorListResult> {
+interface GetTrustAnchorsCommand : ServiceCommand<GetTrustAnchorsArgs, TrustAnchorListResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.LIST
 
@@ -111,7 +112,7 @@ data class TrustAnchorListResult(
 // ============================================================================
 
 @JsExportCompat
-interface RefreshTrustAnchorsCommand : ServiceCommand<RefreshTrustArgs, RefreshTrustResult> {
+interface RefreshTrustAnchorsCommand : ServiceCommand<RefreshTrustArgs, RefreshTrustResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
 
@@ -140,7 +141,7 @@ data class RefreshTrustResult(
 // ============================================================================
 
 @JsExportCompat
-interface CheckRevocationCommand : ServiceCommand<CheckRevocationArgs, RevocationCheckCommandResult> {
+interface CheckRevocationCommand : ServiceCommand<CheckRevocationArgs, RevocationCheckCommandResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.EXECUTE
 

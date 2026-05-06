@@ -31,7 +31,7 @@ import kotlin.coroutines.startCoroutine
  * This enables property interpolation on wasmJs where the interpolate() function
  * is marked suspend but completes synchronously for non-secret references.
  */
-internal actual fun <T> runBlockingCompat(
+actual fun <T> runBlockingCompat(
     context: CoroutineContext,
     block: suspend () -> T,
 ): T {

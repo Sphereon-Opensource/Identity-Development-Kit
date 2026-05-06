@@ -20,6 +20,8 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
@@ -36,6 +38,8 @@ import com.sphereon.oauth2.server.resource.error.ResourceServerError
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -67,7 +71,7 @@ import kotlin.time.Instant
 class VerifyJwtCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
-) : TypedServiceCommandAdapter<VerifyJwtArgs, TokenPayload.Jwt>(
+) : TypedServiceCommandAdapter<VerifyJwtArgs, TokenPayload.Jwt, IdkError>(
         commandId = VerifyJwtCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyJwtArgs>(),
@@ -78,12 +82,32 @@ class VerifyJwtCommandImpl(
 
     override suspend fun supports(args: Any): Boolean = args is VerifyJwtArgs
 
+    // Cached at session scope: VerifyJwtCommandImpl is @SingleIn(SessionScope), so the config
+    // resolution runs at most once per session and subsequent resource-server requests reuse
+    // the resolved value. Per-request overrides still flow through args.clockSkewSeconds.
+    private val configuredClockSkewSeconds: Long by lazy { resolveClockSkewFromConfig() }
+
     override suspend fun doExecute(
         args: VerifyJwtArgs,
         applyDuring: (VerifyJwtArgs) -> VerifyJwtArgs,
     ): IdkResult<TokenPayload.Jwt, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.jwt, applied.authorizationServer, applied.expectedAudience, applied.jwksUri).mapError { IdkError.fromDTO(it) }
+        return executeInternal(
+            jwt = applied.jwt,
+            authorizationServer = applied.authorizationServer,
+            expectedAudience = applied.expectedAudience,
+            jwksUri = applied.jwksUri,
+            clockSkewSeconds = applied.clockSkewSeconds ?: configuredClockSkewSeconds,
+        ).mapError { IdkError.fromDTO(it) }
+    }
+
+    private fun resolveClockSkewFromConfig(): Long {
+        val configured =
+            runCatching {
+                val configService = execution.conf.conf(ConfigLevel.PRINCIPAL) as? ConfigService
+                configService?.getPropertyAsString(VerifyJwtArgs.CONFIG_KEY_CLOCK_SKEW, null)?.toLongOrNull()
+            }.getOrNull()
+        return configured ?: VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS
     }
 
     private suspend fun executeInternal(
@@ -91,27 +115,32 @@ class VerifyJwtCommandImpl(
         authorizationServer: String,
         expectedAudience: String?,
         jwksUri: String? = null,
+        clockSkewSeconds: Long = VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS,
     ): IdkResult<TokenPayload.Jwt, ResourceServerError> {
-        // 1. Verify JWT signature using JwtService
+        // Parse the header once up front — used for kid-scoped JWKS lookup below, then reused
+        // after signature verification for typ validation (avoids the second decode).
+        val parts = jwt.split(".")
+        if (parts.size != 3) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "JWT must have 3 parts"))
+        }
+        val protectedHeader =
+            try {
+                JwsUtils.decodeBase64UrlToJson(parts[0])
+            } catch (expected: Exception) {
+                return Err(
+                    ResourceServerError.InvalidToken.ParseFailure(
+                        reason = "Failed to parse JWT header: ${expected.message}",
+                    ),
+                )
+            }
+
         val identifier =
             if (jwksUri != null) {
-                val parts = jwt.split(".")
-                if (parts.size == 3) {
-                    val headerJson =
-                        try {
-                            JwsUtils.decodeBase64UrlToJson(parts[0])
-                        } catch (expected: Exception) {
-                            execution.log.debug("Failed to decode JWT header for kid extraction: ${expected.message}")
-                            null
-                        }
-                    val kid = headerJson?.get("kid")?.jsonPrimitive?.content
-                    ExternalIdentifierJwksUrlOpts(
-                        identifier = jwksUri,
-                        lookup = AdditionalIdentifierLookup(kid = kid),
-                    )
-                } else {
-                    null
-                }
+                val kid = protectedHeader["kid"]?.jsonPrimitive?.content
+                ExternalIdentifierJwksUrlOpts(
+                    identifier = jwksUri,
+                    lookup = AdditionalIdentifierLookup(kid = kid),
+                )
             } else {
                 null
             }
@@ -121,8 +150,8 @@ class VerifyJwtCommandImpl(
 
         if (verificationResult.isErr) {
             return Err(
-                ResourceServerError.InvalidToken(
-                    "JWT verification failed: ${verificationResult.error.message}",
+                ResourceServerError.InvalidToken.SignatureInvalid(
+                    details = verificationResult.error.message.defaultMessage,
                 ),
             )
         }
@@ -130,41 +159,35 @@ class VerifyJwtCommandImpl(
         val validationResult = verificationResult.value
         if (!validationResult.isValid) {
             return Err(
-                ResourceServerError.InvalidToken(
-                    "JWT signature invalid: ${validationResult.errorMessages.joinToString(", ")}",
+                ResourceServerError.InvalidToken.SignatureInvalid(
+                    details = validationResult.errorMessages.joinToString(", "),
                 ),
             )
         }
 
-        // 2. Extract header and payload using JwsUtils
         val jwsGeneral = validationResult.jws
         if (jwsGeneral.signatures.isEmpty()) {
-            return Err(ResourceServerError.InvalidToken("JWT has no signatures"))
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "JWT has no signatures"))
         }
 
-        // Parse header from first signature (JWT has only one signature)
-        val protectedHeader =
-            try {
-                JwsUtils.decodeBase64UrlToJson(jwsGeneral.signatures[0].protected)
-            } catch (expected: Exception) {
-                return Err(ResourceServerError.InvalidToken("Failed to parse JWT header: ${expected.message}"))
-            }
-
-        // Parse payload
         val payloadJson =
             try {
                 JwsUtils.decodeBase64UrlToJson(jwsGeneral.payload)
             } catch (expected: Exception) {
-                return Err(ResourceServerError.InvalidToken("Failed to parse JWT payload: ${expected.message}"))
+                return Err(
+                    ResourceServerError.InvalidToken.ParseFailure(
+                        reason = "Failed to parse JWT payload: ${expected.message}",
+                    ),
+                )
             }
 
-        // 3. Validate typ header (RFC 9068 recommends "at+jwt")
+        // Typ header validation — RFC 9068 recommends `at+jwt`. We're lenient and also accept
+        // plain `JWT` (widely-used Auth0/Keycloak default) or absent `typ`.
         val typ = protectedHeader["typ"]?.jsonPrimitive?.content
-        if (typ != null && typ != "at+jwt" && typ != "JWT") {
-            // Be lenient - accept both "at+jwt" and "JWT" or missing typ
+        if (typ != null && typ != JWT_TYPE_AT && typ != JWT_TYPE_GENERIC) {
             return Err(
-                ResourceServerError.InvalidToken(
-                    "Invalid JWT type: expected 'at+jwt' or 'JWT', got '$typ'",
+                ResourceServerError.InvalidToken.Malformed(
+                    reason = "Invalid JWT type: expected '$JWT_TYPE_AT' or '$JWT_TYPE_GENERIC', got '$typ'",
                 ),
             )
         }
@@ -173,15 +196,16 @@ class VerifyJwtCommandImpl(
         val iss = payloadJson["iss"]?.jsonPrimitive?.content
         if (iss != authorizationServer) {
             return Err(
-                ResourceServerError.InvalidToken(
-                    "Issuer mismatch: expected '$authorizationServer', got '$iss'",
+                ResourceServerError.InvalidToken.IssuerMismatch(
+                    expected = authorizationServer,
+                    actual = iss,
                 ),
             )
         }
 
         val sub =
             payloadJson["sub"]?.jsonPrimitive?.content
-                ?: return Err(ResourceServerError.InvalidToken("Missing sub claim"))
+                ?: return Err(ResourceServerError.InvalidToken.Malformed(reason = "Missing sub claim"))
 
         val exp =
             payloadJson["exp"]
@@ -189,7 +213,9 @@ class VerifyJwtCommandImpl(
                 ?.content
                 ?.toDoubleOrNull()
                 ?.toLong()
-                ?: return Err(ResourceServerError.InvalidToken("Missing or invalid exp claim"))
+                ?: return Err(
+                    ResourceServerError.InvalidToken.Malformed(reason = "Missing or invalid exp claim"),
+                )
 
         val iat =
             payloadJson["iat"]
@@ -197,45 +223,52 @@ class VerifyJwtCommandImpl(
                 ?.content
                 ?.toDoubleOrNull()
                 ?.toLong()
-                ?: return Err(ResourceServerError.InvalidToken("Missing or invalid iat claim"))
+                ?: return Err(
+                    ResourceServerError.InvalidToken.Malformed(reason = "Missing or invalid iat claim"),
+                )
 
-        // 5. Validate expiration
+        // 5. Validate expiration (with skew tolerance)
         val now = Clock.System.now()
         val expInstant = Instant.fromEpochSeconds(exp)
-        if (now >= expInstant) {
-            return Err(ResourceServerError.InvalidToken("Token expired at $expInstant"))
+        if (now.epochSeconds > exp + clockSkewSeconds) {
+            return Err(ResourceServerError.InvalidToken.Expired(expiresAt = exp))
         }
 
-        // 6. Validate audience if specified
+        // 5b. Validate `nbf` (not before) if present — skew-tolerant.
+        // Per RFC 7519 §4.1.5 a token used before `nbf` must be rejected. The RFC allows small
+        // clock-skew tolerance which we honour so honest clients don't get spurious failures.
+        val nbf =
+            payloadJson["nbf"]
+                ?.jsonPrimitive
+                ?.content
+                ?.toDoubleOrNull()
+                ?.toLong()
+        if (nbf != null && now.epochSeconds + clockSkewSeconds < nbf) {
+            return Err(
+                ResourceServerError.InvalidToken.Malformed(
+                    reason = "Token is not yet valid (nbf=$nbf, now=${now.epochSeconds})",
+                ),
+            )
+        }
+
+        // Audience — RFC 9068 requires `aud` to include the resource server when
+        // `expectedAudience` is supplied.
         val audValue = payloadJson["aud"]
         val audiences =
-            when {
-                audValue == null -> {
-                    null
-                }
-
-                audValue is JsonPrimitive -> {
-                    listOf(audValue.content)
-                }
-
-                else -> {
-                    try {
-                        audValue.jsonArray.map { it.jsonPrimitive.content }
-                    } catch (_: Exception) {
-                        return Err(ResourceServerError.InvalidToken("Invalid aud claim format"))
-                    }
-                }
-            }
-
-        if (expectedAudience != null && audiences != null) {
-            if (!audiences.contains(expectedAudience)) {
-                return Err(
-                    ResourceServerError.AudienceMismatch(
-                        expected = expectedAudience,
-                        actual = audiences,
-                    ),
+            if (audValue == null) {
+                null
+            } else {
+                parseAudClaim(audValue) ?: return Err(
+                    ResourceServerError.InvalidToken.Malformed(reason = "Invalid aud claim format"),
                 )
             }
+        if (expectedAudience != null && audiences?.contains(expectedAudience) != true) {
+            return Err(
+                ResourceServerError.AudienceMismatch(
+                    expected = expectedAudience,
+                    actual = audiences.orEmpty(),
+                ),
+            )
         }
 
         // 7. Extract optional claims
@@ -244,10 +277,17 @@ class VerifyJwtCommandImpl(
         val jti = payloadJson["jti"]?.jsonPrimitive?.content
 
         // 8. Extract DPoP binding (cnf.jkt) if present (RFC 9449)
+        val cnf = payloadJson["cnf"]?.jsonObject
         val dpopJkt =
-            payloadJson["cnf"]
-                ?.jsonObject
+            cnf
                 ?.get("jkt")
+                ?.jsonPrimitive
+                ?.content
+
+        // RFC 8705 §3.1: cnf.x5t#S256 binds the access token to a TLS client certificate.
+        val certificateThumbprintS256 =
+            cnf
+                ?.get("x5t#S256")
                 ?.jsonPrimitive
                 ?.content
 
@@ -262,8 +302,30 @@ class VerifyJwtCommandImpl(
                 scope = scope,
                 clientId = clientId,
                 dpopJkt = dpopJkt,
+                certificateThumbprintS256 = certificateThumbprintS256,
                 jti = jti,
             ),
         )
+    }
+
+    /**
+     * Decode the JWT `aud` claim into a list. Accepts both string (single-audience) and array
+     * (multi-audience) shapes per RFC 7519 §4.1.3. Returns `null` for unparseable input so the
+     * caller can map to `InvalidToken.Malformed`.
+     */
+    private fun parseAudClaim(audValue: JsonElement?): List<String>? =
+        when (audValue) {
+            null -> emptyList()
+            is JsonPrimitive -> listOf(audValue.content)
+            is JsonObject -> null
+            else -> runCatching { audValue.jsonArray.map { it.jsonPrimitive.content } }.getOrNull()
+        }
+
+    private companion object {
+        /** RFC 9068 access-token typ. */
+        const val JWT_TYPE_AT = "at+jwt"
+
+        /** Legacy generic typ accepted leniently (Auth0 / Keycloak / older AS default). */
+        const val JWT_TYPE_GENERIC = "JWT"
     }
 }

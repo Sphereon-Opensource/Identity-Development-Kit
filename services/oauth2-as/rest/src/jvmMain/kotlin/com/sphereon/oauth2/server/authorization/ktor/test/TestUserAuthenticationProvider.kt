@@ -21,7 +21,6 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
-import com.sphereon.oauth2.server.authorization.impl.provider.NoOpUserAuthenticationProviderModule
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
@@ -29,19 +28,23 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
-import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import kotlin.time.Clock
 
 /**
  * Simple test [UserAuthenticationProvider] for E2E development testing.
  *
- * Accepts hardcoded credentials: `testuser` / `testpass`
+ * Accepts hardcoded credentials: `testuser` / `testpass`.
  *
- * Replaces [NoOpUserAuthenticationProviderModule] so this is the active provider
- * when the OAuth2 AS service is running.
+ * **The DI binding that activates this as the session-scoped
+ * [UserAuthenticationProvider] lives in `jvmTest` as
+ * `TestUserAuthenticationProviderModule`.** Production assemblies that pull
+ * this module's `jvmMain` artifact see the class but get no binding
+ * contribution, so the no-op default remains in force until a real provider
+ * replaces it. The [OAuth2AsKtorServer.kt] `fun main()` dev-mode standalone
+ * runner uses the class's companion (`testAuthenticatedSessions`) directly —
+ * no DI indirection there.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -131,15 +134,4 @@ class TestUserAuthenticationProvider(
          */
         val testAuthenticatedSessions = java.util.concurrent.ConcurrentHashMap<String, String>()
     }
-}
-
-/**
- * DI module that provides [TestUserAuthenticationProvider] as the active
- * [UserAuthenticationProvider], replacing the no-op default.
- */
-@ContributesTo(SessionScope::class, replaces = [NoOpUserAuthenticationProviderModule::class])
-interface TestUserAuthenticationProviderModule {
-    @Provides
-    @SingleIn(SessionScope::class)
-    fun provideUserAuthenticationProvider(impl: TestUserAuthenticationProvider): UserAuthenticationProvider = impl
 }

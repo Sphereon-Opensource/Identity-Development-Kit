@@ -52,6 +52,17 @@ open class IdkError(
     override val causes: List<IdkErrorType> = mutableListOf(),
     override val meta: Map<String, Any?> = mutableMapOf(),
     override val exception: Throwable? = null,
+    /**
+     * The original [IdkErrorType] this IdkError was constructed from, when applicable.
+     * Set by [fromDTO] so downstream consumers can re-extract the source's typed shape
+     * (e.g. a sealed [IdkErrorType] subtype with extra fields) instead of dispatching off
+     * `code` + `meta` magic-strings.
+     *
+     * Null when the IdkError was constructed directly (via [fromString] /
+     * [fromDefinition] / a primary-constructor call); callers MUST treat that as
+     * "the source type is unavailable" and fall back to the wire-shape.
+     */
+    val source: IdkErrorType? = null,
 ) : IdkErrorType {
     fun hasException(): Boolean = exception != null
 
@@ -95,6 +106,11 @@ open class IdkError(
                 exception = error.exception,
                 causes = error.causes,
                 meta = error.meta,
+                // Preserve the original typed error so consumers downstream can downcast back
+                // (via `IdkError.sourceAs<T>()`) instead of dispatching on `code` + `meta`
+                // magic-strings. If `error` IS already an IdkError carrying its own source,
+                // unwrap one level so chained fromDTO calls don't nest forever.
+                source = (error as? IdkError)?.source ?: error,
             )
 
         @JvmStatic
@@ -438,3 +454,21 @@ interface ErrorDefinitionType {
         category: ErrorCategory = this.category,
     ) = IdkErrorResult(asError(i18nParams, exception, causes, meta, severity, category))
 }
+
+/**
+ * Re-extract the typed source [IdkErrorType] this [IdkError] was constructed from
+ * (via [IdkError.fromDTO]), if it was [T]. Returns null when the IdkError was
+ * built directly (no typed source) or when the source is not a [T].
+ *
+ * Use this at the read side of an `IdkResult<*, IdkError>` boundary to recover the
+ * typed shape of a sealed [IdkErrorType] family — instead of dispatching off
+ * `error.code` + `error.meta` magic-strings.
+ *
+ * Example:
+ * ```
+ * val pending = error.sourceAs<AuthorizationServerError.RequiredActionsPending>()
+ *     ?: return null  // not a required-actions payload, fall through
+ * pending.actionIds.forEach { … }   // typed access — no map casts
+ * ```
+ */
+inline fun <reified T : IdkErrorType> IdkError.sourceAs(): T? = source as? T

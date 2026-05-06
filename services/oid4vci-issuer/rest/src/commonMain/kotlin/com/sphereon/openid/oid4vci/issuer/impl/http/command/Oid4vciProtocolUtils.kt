@@ -40,24 +40,47 @@ internal const val ACCEPT_ISSUER_METADATA_JWT = "application/openidvci-issuer-me
 
 private const val LOG_TAG = "OID4VCI_ISSUER"
 
-internal fun extractBearerToken(req: GenericHttpRequest): String? {
+/**
+ * Extract the access token from the `Authorization` header, accepting both `Bearer` (RFC 6750)
+ * and `DPoP` (RFC 9449 §7.1) schemes. RFC 9449 mandates that DPoP-bound access tokens MUST be
+ * sent using the `DPoP` scheme — refusing it here breaks any wallet that obtained a
+ * sender-constrained token at the AS, which the OID4VCI HAIP profile requires.
+ *
+ * Header lookup is case-insensitive per RFC 9110 §5.1; the scheme keyword match is also
+ * case-insensitive.
+ */
+internal fun extractAccessToken(req: GenericHttpRequest): String? {
     val authHeader = req.headers["Authorization"] ?: req.headers["authorization"] ?: return null
-    if (!authHeader.startsWith("Bearer ", ignoreCase = true)) return null
-    return authHeader.substringAfter(' ').trim()
+    val trimmed = authHeader.trim()
+    val space = trimmed.indexOf(' ')
+    if (space < 0) return null
+    val scheme = trimmed.substring(0, space)
+    if (!scheme.equals("Bearer", ignoreCase = true) && !scheme.equals("DPoP", ignoreCase = true)) {
+        return null
+    }
+    return trimmed.substring(space + 1).trim().ifEmpty { null }
 }
 
 /**
  * Decrypts the request body if Content-Type is application/jwt (JWE compact).
  *
- * Per OID4VCI 1.1: holders may encrypt request bodies using the issuer's public key.
- * When Content-Type is application/jwt, the body is a JWE compact serialization
- * that must be decrypted before parsing as JSON.
+ * Per OID4VCI 1.0 §10: holders MAY encrypt credential-request bodies using the issuer's public
+ * key advertised in `credential_request_encryption.jwks`. When Content-Type is application/jwt,
+ * the body is a JWE compact serialization that must be decrypted before parsing as JSON.
  *
- * @return The (possibly decrypted) request body as a string, or null if decryption fails.
+ * The `decryptor` is the `Oid4vciIssuerConfigProvider.credentialRequestDecryptionKey` opts
+ * (typically a `ManagedOptsAlias` pointing at the KMS-managed ECDH-ES private key whose public
+ * half was published in metadata). The kid in the JWE protected header should match the kid
+ * the metadata builder pinned to the published JWK; `MultiManagedIdentifierService.resolve`
+ * inside `DecryptJweCommand` does the alias→private-key lookup.
+ *
+ * @return The (possibly decrypted) request body as a string, or null if decryption fails or
+ *   was needed but no `decryptor` was configured (issuer doesn't advertise request encryption).
  */
 internal suspend fun decryptRequestIfNeeded(
     req: GenericHttpRequest,
     decryptJweCommand: DecryptJweCommand,
+    decryptor: com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult? = null,
 ): String? {
     val contentType = req.headers["Content-Type"] ?: req.headers["content-type"] ?: ""
     val body = req.body ?: "{}"
@@ -80,9 +103,14 @@ internal suspend fun decryptRequestIfNeeded(
             return null
         }
 
+    if (decryptor == null) {
+        println("[$LOG_TAG] WARN: JWE request body received but no credential_request_encryption decryption key is configured")
+        return null
+    }
+
     val decryptResult =
         decryptJweCommand.execute(
-            DecryptJweArgs(jwe = jwe),
+            DecryptJweArgs(jwe = jwe, decryptor = decryptor),
         )
 
     return if (decryptResult.isOk) {
@@ -124,14 +152,12 @@ internal fun mapOid4vciError(error: IdkError): GenericHttpResponse {
             else -> Oid4vciErrors.INVALID_CREDENTIAL_REQUEST
         }
 
+    // OID4VCI 1.0 §8.3.1: credential-error responses are HTTP 400 with the error code in the
+    // body — `unknown_credential_configuration` and `unknown_credential_identifier` included.
+    // The only exceptions are auth-related: 401 for `invalid_token` (RFC 6750).
     val statusCode =
         when (oid4vciErrorCode) {
             Oid4vciErrors.INVALID_TOKEN -> 401
-
-            Oid4vciErrors.UNKNOWN_CREDENTIAL_CONFIGURATION,
-            Oid4vciErrors.UNKNOWN_CREDENTIAL_IDENTIFIER,
-            -> 404
-
             else -> 400
         }
 

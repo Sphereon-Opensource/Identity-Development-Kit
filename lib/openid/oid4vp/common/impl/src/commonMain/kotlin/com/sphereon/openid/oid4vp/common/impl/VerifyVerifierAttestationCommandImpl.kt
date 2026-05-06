@@ -67,7 +67,7 @@ import kotlin.time.Clock
 class VerifyVerifierAttestationCommandImpl(
     execution: SessionExecution,
     private val verifyJwsCommand: VerifyJwsCommand,
-) : TypedServiceCommandAdapter<VerifyVerifierAttestationArgs, VerifyVerifierAttestationResult>(
+) : TypedServiceCommandAdapter<VerifyVerifierAttestationArgs, VerifyVerifierAttestationResult, IdkError>(
         commandId = VerifyVerifierAttestationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyVerifierAttestationArgs>(),

@@ -63,17 +63,16 @@ object QueryParamUtils {
      * Extract a header value with case-insensitive lookup. (backwards compatibility link)
      * Tries direct key access first (fast path), then iterates entries for a case-insensitive match.
      */
-    fun extractHeaderValue(headers: Map<String, String>, name: String): String? {
-        return RequestUtils.extractHeaderValue(headers, name)
-    }
+    fun extractHeaderValue(
+        headers: Map<String, String>,
+        name: String
+    ): String? = RequestUtils.extractHeaderValue(headers, name)
 
     /**
      * Extract tenant ID from headers.  (backwards compatibility link)
      * Uses the canonical [AuthHeaders.X_TENANT_ID] header with case-insensitive fallback.
      */
-    fun extractTenantId(headers: Map<String, String>): String? {
-        return RequestUtils.extractTenantId(headers)
-    }
+    fun extractTenantId(headers: Map<String, String>): String? = RequestUtils.extractTenantId(headers)
 
     /**
      * Parse an enum value from string (case-insensitive).

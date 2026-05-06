@@ -43,7 +43,7 @@ import com.sphereon.core.compat.JsExportCompat
 @JsExportCompat
 interface CompleteReconciliationWithClaimsCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.auth.reconciliation.complete-with-claims"
+        const val COMMAND_ID = "oid4vp.auth.complete-reconciliation"
 
         val ENDPOINT =
             HttpEndpointDescriptor(

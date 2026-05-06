@@ -19,6 +19,7 @@ package com.sphereon.oauth2.common.validation
 import com.sphereon.oauth2.common.model.IdTokenPayload
 import io.konform.validation.Validation
 import io.konform.validation.constraints.minLength
+import io.konform.validation.jsonschema.minItems
 import kotlin.time.Clock
 
 /**
@@ -113,6 +114,34 @@ fun validateAudience(
     aud: List<String>,
     expectedAudience: String,
 ): Boolean = aud.contains(expectedAudience)
+
+/**
+ * Konform validation for OIDC Core §3.1.3.7 audience + azp rules, parameterised by the
+ * expected audience (= client_id).
+ *
+ * Rules:
+ * - aud MUST be non-empty.
+ * - aud MUST contain the expected audience.
+ * - azp is required when aud has multiple values.
+ * - if azp is present, it MUST equal the expected audience.
+ *
+ * Callers typically feed the result through `toIdkResult` (see `ValidationExtensions`).
+ */
+fun buildOidcAudienceAzpValidation(expectedAudience: String) =
+    Validation<IdTokenPayload> {
+        IdTokenPayload::aud {
+            minItems(1) hint "aud claim is required but missing or empty"
+        }
+        constrain("aud must contain expected audience '$expectedAudience'") { payload ->
+            payload.aud.contains(expectedAudience)
+        }
+        constrain("azp is required when aud has multiple values (OIDC Core §3.1.3.7)") { payload ->
+            payload.aud.size <= 1 || payload.azp != null
+        }
+        constrain("azp, if present, must equal the expected audience '$expectedAudience'") { payload ->
+            payload.azp == null || payload.azp == expectedAudience
+        }
+    }
 
 /**
  * Validates at_hash (Access Token hash)

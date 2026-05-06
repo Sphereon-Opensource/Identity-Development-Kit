@@ -67,7 +67,7 @@ data class ParseTransactionDataResult(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParseTransactionDataCommand", exact = true)
 @JsExportCompat
-interface ParseTransactionDataCommand : ServiceCommand<ParseTransactionDataArgs, ParseTransactionDataResult> {
+interface ParseTransactionDataCommand : ServiceCommand<ParseTransactionDataArgs, ParseTransactionDataResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -135,7 +135,7 @@ data class VerifyTransactionDataResult(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyTransactionDataCommand", exact = true)
 @JsExportCompat
-interface VerifyTransactionDataCommand : ServiceCommand<VerifyTransactionDataArgs, VerifyTransactionDataResult> {
+interface VerifyTransactionDataCommand : ServiceCommand<VerifyTransactionDataArgs, VerifyTransactionDataResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

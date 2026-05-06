@@ -16,6 +16,7 @@
 
 package com.sphereon.ktor.server.inject
 
+import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
@@ -30,6 +31,7 @@ import io.ktor.server.request.path
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.route
@@ -186,11 +188,20 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
     val method = request.httpMethod.value
     val path = request.path()
 
-    // Extract headers
+    // Extract headers (joined for the scalar map) plus the raw multi-value view so consumers
+    // that need single-occurrence semantics (RFC 9449 §4.1) can detect duplicates.
     val headers =
         request.headers
             .entries()
             .associate { (name, values) -> name to values.joinToString(", ") }
+    // RFC 9110 §5.3 / RFC 9449 §4.1: a header may appear multiple times. Some Ktor engines
+    // (CIO included) emit `entries()` as one entry per occurrence, which silently collapses
+    // duplicates when fed straight into `.associate { }`. Use `names()` + `getAll()` so the
+    // multi-value list reflects every wire-level occurrence.
+    val multiValueHeaders =
+        request.headers
+            .names()
+            .associateWith { name -> request.headers.getAll(name) ?: emptyList() }
 
     // Extract query parameters
     val queryParameters =
@@ -214,10 +225,19 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
             null
         }
 
+    // RFC 8705: when the engine terminated TLS with `verifyClient = true` and the peer
+    // presented a certificate, surface the chain (DER, leaf-first) so commonMain code (the
+    // OAuth2 AS client-cert extractor and the resource-server cnf.x5t#S256 validator) can act
+    // on it without depending on Ktor types. Population of the chain is handled by the
+    // platform hook [extractClientCertificateChain]; commonMain returns `null`, the JVM
+    // expect/actual reads the engine's peer cert chain.
+    val clientCertificateChain = extractClientCertificateChain()
+
     return GenericHttpRequest(
         method = method,
         path = path,
         headers = headers,
+        multiValueHeaders = multiValueHeaders,
         queryParameters = queryParameters,
         pathParameters = pathParameters,
         bodySupplier =
@@ -226,11 +246,24 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
             } else {
                 null
             },
+        clientCertificateChain = clientCertificateChain,
     )
 }
 
 /**
- * Responds to a Ktor call with a [GenericHttpResponse].
+ * Platform hook for extracting the TLS client certificate chain (DER, leaf-first) from a
+ * Ktor [ApplicationCall]. The JVM `actual` reads the engine's peer chain (e.g. Netty / CIO
+ * with `verifyClient = true`); other platforms have no mTLS surface so the actual returns
+ * `null`.
+ */
+internal expect fun ApplicationCall.extractClientCertificateChain(): List<ByteArray>?
+
+/**
+ * Responds to a Ktor call with a [GenericHttpResponse]. Routes binary payloads
+ * ([GenericHttpBody.Bytes] / [GenericHttpBody.LazyBytes]) through Ktor's `respondBytes` so
+ * non-UTF-8 content (PNG, PDF, raw protobuf, etc.) round-trips byte-identical without going
+ * through `decodeToString()`. Text payloads use `respondText` and preserve the negotiated
+ * content type from the response headers.
  */
 suspend fun ApplicationCall.respondWithGenericResponse(response: GenericHttpResponse) {
     // Set response headers
@@ -244,17 +277,37 @@ suspend fun ApplicationCall.respondWithGenericResponse(response: GenericHttpResp
             ContentType.parse(it)
         } ?: ContentType.Application.Json
 
-    // Respond with body and status
     val statusCode = HttpStatusCode.fromValue(response.statusCode)
-    val body = response.body
 
-    if (body != null) {
-        respondText(
-            text = body,
-            contentType = contentType,
-            status = statusCode,
-        )
-    } else {
-        respond(statusCode)
+    when (val bodyContent = response.bodyContent) {
+        is GenericHttpBody.Bytes -> {
+            respondBytes(bytes = bodyContent.value, contentType = contentType, status = statusCode)
+        }
+
+        is GenericHttpBody.LazyBytes -> {
+            val bytes = bodyContent.value
+            if (bytes != null) {
+                respondBytes(bytes = bytes, contentType = contentType, status = statusCode)
+            } else {
+                respond(statusCode)
+            }
+        }
+
+        is GenericHttpBody.Text -> {
+            respondText(text = bodyContent.value, contentType = contentType, status = statusCode)
+        }
+
+        is GenericHttpBody.LazyText -> {
+            val text = bodyContent.value
+            if (text != null) {
+                respondText(text = text, contentType = contentType, status = statusCode)
+            } else {
+                respond(statusCode)
+            }
+        }
+
+        is GenericHttpBody.Empty -> {
+            respond(statusCode)
+        }
     }
 }

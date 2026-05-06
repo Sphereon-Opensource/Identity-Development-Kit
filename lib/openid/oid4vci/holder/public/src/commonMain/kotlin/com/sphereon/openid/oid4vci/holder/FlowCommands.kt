@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.holder
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
@@ -84,11 +85,14 @@ sealed class PollDeferredCredentialResult {
     ) : PollDeferredCredentialResult()
 }
 
-interface PollDeferredCredentialCommand : ServiceCommand<PollDeferredCredentialArgs, PollDeferredCredentialResult> {
+interface PollDeferredCredentialCommand : ServiceCommand<PollDeferredCredentialArgs, PollDeferredCredentialResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oid4vci.holder.flow.polldeferred"
+        // 3-segment module.service.command per the convention; lowercase + hyphens
+        // per `feedback_command_ids_lowercase_hyphen`. Was 4-segment
+        // `oid4vci.holder.flow.polldeferred` which fails CommandId validation.
+        const val COMMAND_ID = "oid4vci.holder.poll-deferred"
     }
 }
 
@@ -117,11 +121,11 @@ data class SendNotificationWithRetryArgs(
     val initialBackoffMs: Long = 1000L,
 )
 
-interface SendNotificationWithRetryCommand : ServiceCommand<SendNotificationWithRetryArgs, Unit> {
+interface SendNotificationWithRetryCommand : ServiceCommand<SendNotificationWithRetryArgs, Unit, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oid4vci.holder.flow.notifyretry"
+        const val COMMAND_ID = "oid4vci.holder.notify-retry"
     }
 }
 
@@ -205,10 +209,10 @@ sealed class CredentialFlowResult {
     ) : CredentialFlowResult()
 }
 
-interface RequestCredentialWithFlowCommand : ServiceCommand<RequestCredentialWithFlowArgs, CredentialFlowResult> {
+interface RequestCredentialWithFlowCommand : ServiceCommand<RequestCredentialWithFlowArgs, CredentialFlowResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oid4vci.holder.flow.credentialflow"
+        const val COMMAND_ID = "oid4vci.holder.credential-flow"
     }
 }

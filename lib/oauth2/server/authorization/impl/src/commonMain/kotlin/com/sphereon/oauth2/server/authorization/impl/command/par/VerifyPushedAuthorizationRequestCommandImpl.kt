@@ -30,6 +30,7 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationReq
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.authorization.matchesRegisteredRedirectUri
 import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
@@ -68,7 +69,8 @@ import kotlin.native.ObjCName
 class VerifyPushedAuthorizationRequestCommandImpl(
     execution: SessionExecution,
     private val clientRegistry: ClientRegistry,
-) : TypedServiceCommandAdapter<VerifyPushedAuthorizationRequestArgs, VerifiedAuthorizationRequest>(
+    private val configProvider: com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider,
+) : TypedServiceCommandAdapter<VerifyPushedAuthorizationRequestArgs, VerifiedAuthorizationRequest, IdkError>(
         commandId = VerifyPushedAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyPushedAuthorizationRequestArgs>(),
@@ -127,6 +129,26 @@ class VerifyPushedAuthorizationRequestCommandImpl(
             )
         }
 
+        // OIDC Core §3.1.2.1 / RFC 6749 §3.1.1: every requested response-type value MUST be
+        // advertised in `response_types_supported` and registered for the client. PAR-pushed
+        // requests bypass the front-channel `verifyAuthorizationRequest` (the redeem path
+        // uses the stored verified request directly), so this check has to happen here. FAPI2
+        // configurations advertise only `code`; pushing `response_type=token` MUST be rejected
+        // with `unsupported_response_type` rather than silently rewritten downstream.
+        val serverSupported: Set<String> = configProvider.serverConfig.responseTypesSupported
+        request.responseType.forEach { rt ->
+            if (rt.value !in serverSupported) {
+                return Err(AuthorizationServerError.UnsupportedResponseType(responseType = rt.value))
+            }
+        }
+        val clientAllowed: List<com.sphereon.oauth2.common.model.ResponseType> =
+            client.responseTypes.ifEmpty { listOf(com.sphereon.oauth2.common.model.ResponseType.CODE) }
+        request.responseType.forEach { rt ->
+            if (rt !in clientAllowed) {
+                return Err(AuthorizationServerError.UnauthorizedClient(clientId = request.clientId))
+            }
+        }
+
         // Verify redirect_uri (RFC 6749 Section 3.1.2.3)
         val redirectUri = request.redirectUri
 
@@ -140,9 +162,11 @@ class VerifyPushedAuthorizationRequestCommandImpl(
                 )
             }
         } else {
-            // Verify redirect_uri matches one of the registered URIs
-            // RFC 6749 Section 3.1.2.3: The authorization server MUST require exact string matching
-            if (redirectUri !in client.redirectUris) {
+            // Verify redirect_uri matches one of the registered URIs per RFC 6749 §3.1.2.2:
+            // strict simple-string match wins; otherwise scheme + authority + path match against
+            // a registered URI with empty query is acceptable (additional query components on
+            // the request are allowed). See RedirectResolution.matchesRegisteredRedirectUri.
+            if (!matchesRegisteredRedirectUri(redirectUri, client.redirectUris)) {
                 return Err(
                     AuthorizationServerError.InvalidRequest(
                         details = "redirect_uri does not match any registered redirect URI for this client",

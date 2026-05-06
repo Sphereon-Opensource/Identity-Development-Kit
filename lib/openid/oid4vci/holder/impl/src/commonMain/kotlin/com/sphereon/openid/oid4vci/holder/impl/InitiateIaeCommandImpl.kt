@@ -55,7 +55,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class InitiateIaeCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<InitiateIaeArgs, IaeHolderResult>(
+) : TypedServiceCommandAdapter<InitiateIaeArgs, IaeHolderResult, IdkError>(
         commandId = InitiateIaeCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<InitiateIaeArgs>(),

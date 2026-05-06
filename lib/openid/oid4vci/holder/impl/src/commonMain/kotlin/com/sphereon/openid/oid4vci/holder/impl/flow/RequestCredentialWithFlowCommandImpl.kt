@@ -82,7 +82,7 @@ class RequestCredentialWithFlowCommandImpl(
     private val sendNotificationWithRetryCommand: SendNotificationWithRetryCommand,
     private val sessionStore: Oid4vciHolderSessionStore,
     private val config: Oid4vciHolderConfig,
-) : TypedServiceCommandAdapter<RequestCredentialWithFlowArgs, CredentialFlowResult>(
+) : TypedServiceCommandAdapter<RequestCredentialWithFlowArgs, CredentialFlowResult, IdkError>(
         commandId = RequestCredentialWithFlowCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RequestCredentialWithFlowArgs>(),
@@ -139,10 +139,10 @@ class RequestCredentialWithFlowCommandImpl(
 
         val response = credentialResult.value!!
 
-        // Step 6: Deferred branch
+        // Step 6: Deferred branch — OID4VCI 1.0 §10.2: a deferred response carries
+        // `transaction_id` (and optional `interval`) without `credentials`.
         val isDeferred =
             response.transactionId != null &&
-                response.credential == null &&
                 response.credentials.isNullOrEmpty()
 
         if (isDeferred) {

@@ -61,7 +61,7 @@ import dev.zacsweers.metro.SingleIn
 @SingleIn(SessionScope::class)
 class CreateAuthorizationResponseCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<CreateAuthorizationResponseArgs, AuthorizationResponse>(
+) : TypedServiceCommandAdapter<CreateAuthorizationResponseArgs, AuthorizationResponse, IdkError>(
         commandId = CreateAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateAuthorizationResponseArgs>(),

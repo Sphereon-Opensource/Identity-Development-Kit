@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.jose.Jwk
 import kotlinx.serialization.Serializable
@@ -39,7 +40,7 @@ data class JwksResult(
  * Returns the server's public signing key(s) for ID token and access token verification.
  * Always available (needed for JWT access token verification regardless of OIDC mode).
  */
-interface GetJwksCommand : ServiceCommand<GetJwksArgs, JwksResult> {
+interface GetJwksCommand : ServiceCommand<GetJwksArgs, JwksResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.holder
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -121,13 +122,13 @@ sealed class IaeHolderResult {
  * POSTs form-encoded parameters (auth_session, openid4vp_response, code_verifier) to
  * the IAE endpoint and maps the JSON response to [IaeHolderResult].
  *
- * Command ID: `oid4vci.holder.iae.followup`
+ * Command ID: `oid4vci.holder.iae-followup`
  */
-interface FollowUpIaeCommand : ServiceCommand<FollowUpIaeArgs, IaeHolderResult> {
+interface FollowUpIaeCommand : ServiceCommand<FollowUpIaeArgs, IaeHolderResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oid4vci.holder.iae.followup"
+        const val COMMAND_ID = "oid4vci.holder.iae-followup"
     }
 }
 
@@ -144,12 +145,12 @@ interface FollowUpIaeCommand : ServiceCommand<FollowUpIaeArgs, IaeHolderResult> 
  * interaction_types_supported, and optional fields) to the IAE endpoint and
  * maps the JSON response to [IaeHolderResult].
  *
- * Command ID: `oid4vci.holder.iae.initiate`
+ * Command ID: `oid4vci.holder.iae-initiate`
  */
-interface InitiateIaeCommand : ServiceCommand<InitiateIaeArgs, IaeHolderResult> {
+interface InitiateIaeCommand : ServiceCommand<InitiateIaeArgs, IaeHolderResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oid4vci.holder.iae.initiate"
+        const val COMMAND_ID = "oid4vci.holder.iae-initiate"
     }
 }

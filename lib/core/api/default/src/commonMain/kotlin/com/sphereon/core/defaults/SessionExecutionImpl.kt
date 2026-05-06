@@ -21,6 +21,7 @@ import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.core.api.session.CommandLifecycleInterceptorChain
+import com.sphereon.di.context.ResolvedTenantIdProvider
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionScope
@@ -41,7 +42,18 @@ class SessionExecutionImpl(
     override val conf: ContextConfig,
     override val sessionContextManager: SessionContextManager,
     override val interceptorChain: CommandLifecycleInterceptorChain,
+    /**
+     * Path-peel descent override. Null in the common case; populated by the
+     * adapter dispatcher when a [com.sphereon.core.api.http.command.TenantPathPolicy]
+     * peel resolves to a child or root tenant. The override is preferred over
+     * the base session tenant in [tenantId] so downstream consumers see the
+     * descended tenant transparently.
+     */
+    private val resolvedTenantIdProvider: ResolvedTenantIdProvider,
 ) : SessionExecution {
+    override val tenantId: String
+        get() = resolvedTenantIdProvider.currentTenantId() ?: sessionContext.context.tenant.tenantId
+
     override fun equals(other: Any?): Boolean {
         if (this === other) {
             return true

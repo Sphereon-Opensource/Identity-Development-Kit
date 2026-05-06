@@ -26,6 +26,7 @@ import com.sphereon.crypto.core.CryptoConst
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.cose.COSE_Sign1
 import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.VerifyResult
 import com.sphereon.crypto.core.generic.VerifyResultType
 import com.sphereon.crypto.core.generic.VerifySignatureResultType
@@ -37,6 +38,7 @@ import com.sphereon.crypto.core.x509.X509VerifyService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.MdocConst
 import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.digest
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
 import dev.zacsweers.metro.ContributesBinding
@@ -121,22 +123,92 @@ class IssuerAuthValidationImpl(
     }
 
     /**
-     *  3. Calculate the digest value for every IssuerSignedItem returned in the DeviceResponse structure
-     *  * according to 9.1.2.5 and verify that these calculated digests equal the corresponding digest values
-     *  * in the MSO.
+     * 3. Calculate the digest value for every IssuerSignedItem returned in the DeviceResponse
+     *    structure according to 9.1.2.5 and verify that these calculated digests equal the
+     *    corresponding digest values in the MSO.
      *
-     *  This is a READER method. FIXME: Implement
+     * Hashes each disclosed `IssuerSignedItem`'s tagged-CBOR encoding under
+     * `mso.digestAlgorithm` and matches it against `mso.valueDigests[namespace][digestID]`. A
+     * mismatch, missing digest entry, missing namespace, or unsupported digest algorithm is a
+     * critical failure. When `document == null`, only the IssuerAuth was supplied so there are
+     * no items to hash and the step is a non-error skip.
      */
     override fun verifyDigests(
         issuerAuth: COSE_Sign1<MobileSecurityObject>,
-//        deviceResponse: DeviceResponse
-    ): VerifyResultType =
-        VerifyResult(
-            error = false,
-            critical = true,
-            message = "Device signed verification validation not implemented yet",
+        document: Document?,
+    ): VerifyResultType {
+        if (document == null) {
+            return VerifyResult(
+                name = MdocConst.MDOC_LITERAL,
+                error = false,
+                critical = false,
+                message = "Digest verification skipped: no Document supplied (only IssuerAuth was provided).",
+            )
+        }
+        val mso = decodeMso(issuerAuth)
+        val expectedByNs = mso.valueDigests
+        val msoAlgName = mso.digestAlgorithm.toString()
+        val digestAlg =
+            DigestAlg.entries.firstOrNull { it.httpHeaderId == msoAlgName }
+                ?: return VerifyResult(
+                    name = MdocConst.MDOC_LITERAL,
+                    error = true,
+                    critical = true,
+                    message = "Unsupported MSO digestAlgorithm '$msoAlgName'. Supported: SHA-256, SHA-384, SHA-512.",
+                )
+        val nameSpaces = document.issuerSigned.nameSpaces
+        if (nameSpaces.isNullOrEmpty()) {
+            // Nothing disclosed. ISO 18013-5 §9.1.2.5 has no items to hash in this case; the MSO's
+            // valueDigests still describe what the issuer signed but no client claim depends on
+            // them, so this is not a critical failure.
+            return VerifyResult(
+                name = MdocConst.MDOC_LITERAL,
+                error = false,
+                critical = false,
+                message = "Digest verification: document discloses no IssuerSignedItems; nothing to verify.",
+            )
+        }
+        var verifiedCount = 0
+        nameSpaces.forEach { (ns, items) ->
+            val expectedForNs =
+                expectedByNs[ns]
+                    ?: return VerifyResult(
+                        name = MdocConst.MDOC_LITERAL,
+                        error = true,
+                        critical = true,
+                        message = "Document discloses items under namespace '$ns' but the MSO has no digest entries for it.",
+                    )
+            items.forEach { encoded ->
+                val item = encoded.data()
+                val expected =
+                    expectedForNs[item.digestID]
+                        ?: return VerifyResult(
+                            name = MdocConst.MDOC_LITERAL,
+                            error = true,
+                            critical = true,
+                            message = "Document discloses item digestID=${item.digestID} under namespace '$ns' but the MSO has no matching digest entry.",
+                        )
+                val actual = encoded.digest(digestAlg)
+                if (!actual.contentEquals(expected)) {
+                    return VerifyResult(
+                        name = MdocConst.MDOC_LITERAL,
+                        error = true,
+                        critical = true,
+                        message =
+                            "Disclosed item digest mismatch for namespace='$ns' digestID=${item.digestID} " +
+                                "elementId='${item.elementIdentifier}'. The disclosed value does not hash to the MSO's signed digest.",
+                    )
+                }
+                verifiedCount++
+            }
+        }
+        return VerifyResult(
             name = MdocConst.MDOC_LITERAL,
+            error = false,
+            critical = false,
+            message = "All $verifiedCount disclosed item digest(s) match the MSO under $msoAlgName.",
         )
+    }
 
     /**
      * 4. Verify that the DocTypeAlias in the MSO matches the relevant DocTypeAlias in the Documents structure.

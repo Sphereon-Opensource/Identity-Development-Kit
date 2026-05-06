@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.rest
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.PublicApiCommand
@@ -34,7 +35,7 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateCredentialOfferServiceCommand", exact = true)
 interface CreateCredentialOfferServiceCommand :
-    ServiceCommand<CreateCredentialOfferInput, CreateCredentialOfferOutput>,
+    ServiceCommand<CreateCredentialOfferInput, CreateCredentialOfferOutput, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "oid4vci.rest.create"
@@ -53,7 +54,7 @@ interface CreateCredentialOfferServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetCredentialOfferStatusServiceCommand", exact = true)
 interface GetCredentialOfferStatusServiceCommand :
-    ServiceCommand<GetCredentialOfferStatusInput, GetCredentialOfferStatusOutput>,
+    ServiceCommand<GetCredentialOfferStatusInput, GetCredentialOfferStatusOutput, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "oid4vci.rest.status"
@@ -72,7 +73,7 @@ interface GetCredentialOfferStatusServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteCredentialOfferServiceCommand", exact = true)
 interface DeleteCredentialOfferServiceCommand :
-    ServiceCommand<GetCredentialOfferStatusInput, DeleteCredentialOfferOutput>,
+    ServiceCommand<GetCredentialOfferStatusInput, DeleteCredentialOfferOutput, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "oid4vci.rest.delete"

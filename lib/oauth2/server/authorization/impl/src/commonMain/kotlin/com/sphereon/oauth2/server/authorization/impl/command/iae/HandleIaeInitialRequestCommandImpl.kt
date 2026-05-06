@@ -83,7 +83,7 @@ class HandleIaeInitialRequestCommandImpl(
     private val parseJarCommand: ParseJarCommand? = null,
     private val verifierService: Oid4vpVerifierService? = null,
     private val policyResolver: CredentialIssuancePolicyResolver? = null,
-) : TypedServiceCommandAdapter<HandleIaeInitialRequestArgs, IaeResult>(
+) : TypedServiceCommandAdapter<HandleIaeInitialRequestArgs, IaeResult, IdkError>(
         commandId = HandleIaeInitialRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<HandleIaeInitialRequestArgs>(),

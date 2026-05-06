@@ -93,6 +93,14 @@ kotlin {
                 // SD-JWT for verifier dependencies
                 implementation(projects.libSdjwtImpl)
 
+                // mdoc + trust bindings required by VerifyHolderBindingCommandImpl
+                // (transitively pulled in via verifier-impl on the test classpath through
+                // lib-openid-oid4vp-universal-impl).
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libCborImpl)
+                implementation(projects.libTrustX509)
+                implementation(projects.libTrustCoreImpl)
+
                 // Ktor mock engine for HTTP client testing
                 implementation(sphereonlib.io.ktor.client.mock)
             }

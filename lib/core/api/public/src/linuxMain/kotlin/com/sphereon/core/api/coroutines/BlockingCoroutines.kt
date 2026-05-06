@@ -23,7 +23,7 @@ import kotlin.coroutines.CoroutineContext
 /**
  * Linux/Native implementation using kotlinx.coroutines.runBlocking
  */
-internal actual fun <T> runBlockingCompat(
+actual fun <T> runBlockingCompat(
     context: CoroutineContext,
     block: suspend () -> T,
 ): T = runBlocking(context) { block() }

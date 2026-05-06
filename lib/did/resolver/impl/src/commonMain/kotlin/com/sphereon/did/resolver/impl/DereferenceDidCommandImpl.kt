@@ -46,7 +46,7 @@ import dev.zacsweers.metro.SingleIn
 class DereferenceDidCommandImpl(
     execution: SessionExecution,
     private val registry: DidResolverRegistry,
-) : TypedServiceCommandAdapter<DereferenceDidArgs, DidDereferenceResult>(
+) : TypedServiceCommandAdapter<DereferenceDidArgs, DidDereferenceResult, IdkError>(
         commandId = DereferenceDidCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DereferenceDidArgs>(),

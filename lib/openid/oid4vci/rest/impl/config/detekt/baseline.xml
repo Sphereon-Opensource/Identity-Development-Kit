@@ -3,8 +3,7 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>LongMethod:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$override suspend fun doExecute( args: CreateCredentialOfferInput, applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput, ): IdkResult&lt;CreateCredentialOfferOutput, IdkError></ID>
-    <ID>MagicNumber:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$0xFF</ID>
-    <ID>MagicNumber:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$16</ID>
+    <ID>LongParameterList:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$( execution: SessionExecution, private val createCredentialOfferCommand: CreateCredentialOfferCommand, private val credentialOfferSessionStore: CredentialOfferSessionStore, private val qrCodeService: QrCodeService, private val configProvider: Oid4vciRestConfigProvider, private val issuerConfigProvider: Oid4vciIssuerConfigProvider, private val sessionEventService: SessionEventService, )</ID>
     <ID>MagicNumber:KvCredentialOfferSessionStore.kt$KvCredentialOfferSessionStore$1000</ID>
     <ID>ReturnCount:CreateCredentialOfferServiceCommandImpl.kt$CreateCredentialOfferServiceCommandImpl$override suspend fun doExecute( args: CreateCredentialOfferInput, applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput, ): IdkResult&lt;CreateCredentialOfferOutput, IdkError></ID>
     <ID>ReturnCount:GetCredentialOfferStatusServiceCommandImpl.kt$GetCredentialOfferStatusServiceCommandImpl$private suspend fun buildIssuanceData(session: CredentialOfferSession): IssuanceData?</ID>

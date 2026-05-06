@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.resolution.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.resolution.command.ResolveIdentityCommand
@@ -29,9 +30,9 @@ import dev.zacsweers.metro.StringKey
 interface IdentityResolutionCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ResolveIdentityCommand.COMMAND_ID)
-    fun resolveIdentity(impl: ResolveIdentityCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveIdentity(impl: ResolveIdentityCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveMatchingIdentityCommand.COMMAND_ID)
-    fun resolveMatchingIdentity(impl: ResolveMatchingIdentityCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveMatchingIdentity(impl: ResolveMatchingIdentityCommandImpl): ServiceCommand<*, *, *> = impl
 }

@@ -16,10 +16,13 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl.http.command
 
+import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFrom
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
@@ -29,7 +32,12 @@ import com.sphereon.core.api.http.command.requireBody
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vp.common.clientMetadata
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseCommand
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
@@ -106,14 +114,22 @@ class DirectPostResponseEndpointCommandImpl(
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing or empty request body"))
         }
 
-        // Per OID4VP spec, the wallet echoes back the state parameter from the
-        // authorization request URL. This is used to correlate the response to the session.
-        val state = responseParams["state"]
-
-        if (state.isNullOrBlank()) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing state parameter"))
-        }
-        val correlationId = state
+        // Identify the session. Two response shapes per OID4VP §8.4:
+        //   - direct_post: form has plaintext fields including `state` (the correlationId).
+        //   - direct_post.jwt: form has only `response=<JWE>`. State lives INSIDE the
+        //     encrypted JWT payload — we can't read it without first decrypting. To find
+        //     the right decryption key without that chicken-and-egg, we use the JWE
+        //     header's `kid` parameter, which the wallet MUST copy from the JWK's `kid`
+        //     it selected (OID4VP §8.3). The universal command sets that kid equal to
+        //     the session correlationId so a single store lookup suffices.
+        val correlationId =
+            responseParams["state"]?.takeIf { it.isNotBlank() }
+                ?: responseParams["response"]?.let { jwe -> extractKidFromJweHeader(jwe) }
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Cannot identify session: form body lacks `state` and the JWE in `response` carries no `kid` header.",
+                    ),
+                )
 
         // Look up the authorization session to get the original request
         val session =
@@ -126,6 +142,51 @@ class DirectPostResponseEndpointCommandImpl(
         // Otherwise, omit it — the wallet stays on its current screen.
         val sessionRedirectUri = session.authorizationRequest.redirectUri ?: ""
 
+        // For direct_post.jwt sessions the universal command stashed the KMS reference
+        // (alias + providerId) for the ephemeral encryption keypair on the session.
+        // Resolve it back to a `KeyInfo` here so the JARM decryption command (deeper in
+        // ParseAuthorizationResponseCommandImpl → VerifyJarmResponseCommandImpl) can ask
+        // the KMS to perform the ECDH-ES key agreement. No JWK strings on the wire — the
+        // private half stays inside the `ephemeral` KMS provider for its lifetime.
+        // Explicitly request the PRIVATE half: KeyInfo defaults keyVisibility=PUBLIC, which makes
+        // the keystore strip the private scalar (`d`) on read. Without this, the JWE decrypter
+        // fails with "Decryptor key must be a private key (must have 'd' parameter)" because
+        // ECDH-ES key agreement needs our private scalar to derive the shared secret.
+        val jarmDecryptionKey =
+            session.jarmEncryptionKeyAlias?.let { alias ->
+                ManagedOptsKeyInfo(
+                    identifier =
+                        KeyInfo<Nothing>(
+                            alias = alias,
+                            providerId = session.jarmEncryptionKeyProviderId,
+                            keyVisibility = KeyVisibility.PRIVATE,
+                        ),
+                )
+            }
+
+        // OID4VP §B.2.6.2 mdoc handover: when the response is encrypted (`direct_post.jwt`),
+        // the SessionTranscript handover MUST embed the SHA-256 thumbprint (RFC 7638) of
+        // the verifier's encryption-key JWK. We published that JWK in client_metadata.jwks
+        // when creating the authorization request, so the public params are already on the
+        // session — extract the same key the wallet selected (matched by `kid`, which the
+        // universal command sets equal to the session correlationId) and hash it. Raw
+        // 32-byte digest (the spec mandates the bytes, not the base64url encoding).
+        val verifierEncryptionJwkThumbprint =
+            if (session.jarmEncryptionKeyAlias != null) {
+                val jwks =
+                    session.authorizationRequest.clientMetadata
+                        ?.jwks
+                        ?.keys
+                        ?.toList()
+                        .orEmpty()
+                val matchingJwk = jwks.firstOrNull { it.kid == correlationId } ?: jwks.firstOrNull()
+                matchingJwk?.let { jwk ->
+                    tryGenerateJwkThumbprint(jwk).getOrNull()?.decodeFrom(Encoding.BASE64URL)
+                }
+            } else {
+                null
+            }
+
         // Build args for the direct_post handler
         val directPostArgs =
             HandleDirectPostResponseArgs(
@@ -133,6 +194,8 @@ class DirectPostResponseEndpointCommandImpl(
                 originalRequest = session.authorizationRequest,
                 dcqlQuery = session.dcqlQuery,
                 redirectUri = sessionRedirectUri,
+                jarmDecryptionKey = jarmDecryptionKey,
+                verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
             )
 
         // Delegate to the service command
@@ -158,6 +221,30 @@ class DirectPostResponseEndpointCommandImpl(
                         },
                     ),
             )
+        }
+    }
+
+    /**
+     * Read the `kid` parameter from the JWE Protected Header without performing any
+     * decryption. The header is the first segment of the compact serialization
+     * (`<header>.<encryptedKey>.<iv>.<ciphertext>.<tag>`), base64url-encoded JSON.
+     *
+     * Used by `direct_post.jwt` session lookup — wallets per OID4VP §8.3 MUST copy the
+     * selected JWK's `kid` to the JWE Protected Header, and the universal command sets
+     * that kid to the session correlationId, so a single store lookup resolves the
+     * session before any decryption is attempted.
+     */
+    private fun extractKidFromJweHeader(jwe: String): String? {
+        val firstDot = jwe.indexOf('.')
+        if (firstDot <= 0) return null
+        val headerB64 = jwe.substring(0, firstDot)
+        return try {
+            val headerJson = headerB64.decodeFromBase64Url().decodeToString()
+            (json.parseToJsonElement(headerJson) as? kotlinx.serialization.json.JsonObject)
+                ?.get("kid")
+                ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        } catch (expected: Exception) {
+            null
         }
     }
 

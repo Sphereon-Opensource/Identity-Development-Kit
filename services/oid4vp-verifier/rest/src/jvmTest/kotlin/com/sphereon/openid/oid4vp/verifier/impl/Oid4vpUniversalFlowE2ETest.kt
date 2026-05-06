@@ -29,15 +29,18 @@ import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.jose.jwe.JweServiceImpl
 import com.sphereon.crypto.jose.jws.JwtServiceImpl
+import com.sphereon.crypto.resolution.IdentifierContext
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierService
 import com.sphereon.crypto.resolution.extern.JwksUrlExternalIdentifierResolutionServiceImpl
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierResolutionServiceImpl
@@ -66,15 +69,10 @@ import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.CreateSignedJarCommand
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseCommandImpl
-import com.sphereon.oauth2.common.jarm.JarmConfig
 import com.sphereon.oauth2.common.jarm.JarmVerificationResult
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseCommand
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseCommandImpl
-import com.sphereon.oauth2.common.model.ClientRegistration
-import com.sphereon.oauth2.common.model.ClientType
-import com.sphereon.oauth2.common.model.GrantType
-import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationResponse
@@ -100,6 +98,12 @@ import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.impl.http.Oid4vpVerifierHttpAdapter
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
+import com.sphereon.sdjwt.IssueSdJwtArgs
+import com.sphereon.sdjwt.PresentSdJwtArgs
+import com.sphereon.sdjwt.SdField
+import com.sphereon.sdjwt.SdJwtServiceImpl
+import com.sphereon.sdjwt.SdMap
+import com.sphereon.sdjwt.dsl.sdJwtPayload
 import dev.zacsweers.metro.ContributesTo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -180,6 +184,7 @@ class Oid4vpUniversalFlowWithMocksTest {
                     kvStoreManager = TestKvStoreManager(TestKvStore()),
                     kvStoreService = NoConfigKvStoreService(),
                     execution = execution,
+                    clock = Clock.System,
                 )
 
             // Fixed did:jwk identity for this test (any well-formed did:jwk; no KMS lookup needed
@@ -195,7 +200,7 @@ class Oid4vpUniversalFlowWithMocksTest {
                         com.sphereon.crypto.core
                             .KeyInfo<Nothing>(kid = "test-key")
 
-                    override suspend fun resolveSignerBinding() =
+                    override suspend fun resolveSignerBinding(scheme: com.sphereon.openid.oid4vp.common.ClientIdScheme?) =
                         com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding.Did(
                             did = testDid,
                             verificationMethodId = "$testDid#0",
@@ -246,6 +251,7 @@ class Oid4vpUniversalFlowWithMocksTest {
                     authorizationSessionStore = sessionStore,
                     createSignedJarCommand = jarCommand,
                     signingConfig = sharedSigningConfig,
+                    clock = Clock.System,
                 )
 
             // 1) Create authorization request + store session
@@ -306,161 +312,15 @@ class Oid4vpUniversalFlowWithMocksTest {
             assertEquals(1, retrieved.parsedResponse.vpToken.presentations.size)
         }
 
-    @Test
-    fun `end-to-end flow - direct_post_jwt verifies signed JARM and returns response_code`() =
-        runTest {
-            TestRequestObjectSigningConfig.disable()
-            val testScope = TestScope()
-            val app = createUniversalOid4vpTestAppGraph(testScope, appId = "test-verifier-app", profile = "test", version = "1.0.0")
-
-            // Configure a memory-backed software KMS provider via the standard property source mechanism.
-            // This matches the pattern used in SoftwareKmsProviderConfigTest (no manual provider construction/registration).
-            DefaultPrincipalMapPropertySource.addProperties(
-                mapOf(
-                    "kms.providers.test-software.type" to "software",
-                    "kms.providers.test-software.id" to "test-software",
-                    "kms.providers.test-software.keystore.type" to "memory",
-                    "kms.providers.test-software.keystore.id" to "test-memory-keystore",
-                    "kms.providers.test-software.keystore.keyVisibility" to "private",
-                    "kms.providers.test-software.keystore.overwriteAlias" to "true",
-                ),
-            )
-
-            // Ensure the new properties are applied when building scoped components.
-            app.userContextManager.destroyAll()
-
-            val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("test")
-            val sessionGraph = session.graph
-            val execution = session.asCoreApiServiceGraph().serviceExecution
-
-            // Crypto services
-            val jwtService = (sessionGraph as JwtServiceImpl.Graph).jwtService
-            val jweService = (sessionGraph as JweServiceImpl.Graph).jweService
-            val kms = sessionGraph.asKeyManagerServiceGraph().keyManagerService
-
-            // JARM commands
-            val createJarmCommand =
-                CreateJarmResponseCommandImpl(
-                    execution = execution,
-                    jwtService = jwtService,
-                    jweService = jweService,
-                )
-            val verifyJarmCommand =
-                VerifyJarmResponseCommandImpl(
-                    execution = execution,
-                    jwtService = jwtService,
-                    jweService = jweService,
-                )
-
-            val keyPair =
-                kms.generateKeyAsync(
-                    providerId = "test-software",
-                    alias = "wallet-signing",
-                    use = JwkUse.sig,
-                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
-                    alg = SignatureAlgorithm.ECDSA_SHA256,
-                )
-            val walletKeyInfo =
-                ManagedOptsKeyInfo(
-                    identifier =
-                        (ResolvedKeyInfo.fromKey(keyPair.jose.publicJwk) as ResolvedKeyInfo).copy(
-                            providerId = "test-software",
-                            alias = keyPair.alias,
-                            kid = keyPair.kid,
-                            signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
-                        ),
-                )
-
-            // Stores
-            val sessionStore = TestAuthorizationSessionStore()
-            val responseCodeStore: ResponseCodeStore =
-                KvResponseCodeStore(
-                    kvStoreManager = TestKvStoreManager(TestKvStore()),
-                    kvStoreService = NoConfigKvStoreService(),
-                    execution = execution,
-                )
-
-            // Commands
-            val createAuthorizationRequest =
-                CreateAuthorizationRequestCommandImpl(
-                    execution = execution,
-                    authorizationSessionStore = sessionStore,
-                    requestObjectSigningConfig =
-                        com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
-                            .disabled(),
-                )
-            val parseAuthorizationResponse =
-                ParseAuthorizationResponseCommandImpl(
-                    execution = execution,
-                    verifyJarmCommand = verifyJarmCommand,
-                )
-            val handleDirectPost =
-                HandleDirectPostResponseCommandImpl(
-                    execution = execution,
-                    parseAuthorizationResponseCommand = parseAuthorizationResponse,
-                    validateAuthorizationResponseCommand = MockValidateAuthorizationResponseCommand(),
-                    authorizationSessionStore = sessionStore,
-                    responseCodeStore = responseCodeStore,
-                )
-
-            // 1) Create authorization request with direct_post.jwt response mode
-            val created =
-                createAuthorizationRequest
-                    .createAuthorizationRequest(
-                        CreateAuthorizationRequestArgs(
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
-                            clientId = "https://verifier.example.com",
-                            responseUri = "https://verifier.example.com/response",
-                            responseMode = ResponseMode.DIRECT_POST_JWT,
-                            nonce = "nonce12345678",
-                            state = "state-1234",
-                        ),
-                    ).getOrThrow()
-
-            // 2) Wallet creates a signed JARM response containing vp_token + state
-            val vpTokenJson =
-                buildJsonObject {
-                    put("cred", JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3MDAwMDAwMDB9.sig~eyJhbGciOiJub25lIn0~"))
-                }
-            val responseParameters: JsonObject =
-                buildJsonObject {
-                    put("vp_token", vpTokenJson)
-                }
-            val jarmJwt =
-                createJarmCommand
-                    .execute(
-                        CreateJarmResponseArgs(
-                            responseParameters = responseParameters,
-                            state = "state-1234",
-                            issuer = "https://wallet.example.com",
-                            audience = "https://verifier.example.com",
-                            signingKey = walletKeyInfo,
-                            jarmConfig = JarmConfig.signed(),
-                        ),
-                    ).getOrThrow()
-                    .jarmJwt
-
-            // 3) RP backend handles direct_post.jwt (response=<JARM>)
-            val handled =
-                handleDirectPost
-                    .handleDirectPostResponse(
-                        HandleDirectPostResponseArgs(
-                            responseParams =
-                                mapOf(
-                                    "response" to jarmJwt,
-                                ),
-                            originalRequest = created.request,
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
-                            redirectUri = "https://verifier.example.com/callback",
-                            jarmExpectedAudience = "https://verifier.example.com",
-                            jarmSignerIdentifier = walletKeyInfo,
-                        ),
-                    ).getOrThrow()
-
-            assertNotNull(handled.responseCode)
-            assertTrue(handled.redirectUri.contains("response_code="))
-        }
+    // The previous `direct_post_jwt verifies signed JARM and returns response_code` test was
+    // removed. OID4VP 1.0 final §8.3 mandates that `direct_post.jwt` responses MUST be
+    // unsigned-encrypted JWTs; the spec-compliant verifier
+    // (ParseAuthorizationResponseCommandImpl) now explicitly rejects SIGNED and
+    // SIGNED_ENCRYPTED JARM responses for this response mode, so a test asserting the
+    // verifier ACCEPTS a signed JARM exercises non-conformant behavior. Generic JARM signed
+    // round-trip is still covered by the JARM lib's own command tests; the OID4VP-specific
+    // encrypted path is exercised by `direct_post_jwt (encrypted) returns response_code` in
+    // [UniversalOid4vpE2ETest].
 
     private class MockVerifyJarmResponseCommand : VerifyJarmResponseCommand {
         override val isEnabled: Boolean = true
@@ -686,19 +546,14 @@ class UniversalOid4vpE2ETest {
                 )
             val jarSigningKeyInfo = jarKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
 
-            // Build verifier client metadata with embedded JWKS so the holder can verify the signed request object.
+            // Build verifier client metadata with embedded JWKS so the holder can verify the signed
+            // request object. OID4VP 1.0 final §11.1 narrowed `client_metadata` to the wallet-facing
+            // verifier parameters (`jwks`, `jwks_uri`, `vp_formats_supported`,
+            // `encrypted_response_enc_values_supported`); OAuth2 RFC 7591 client-registration
+            // fields are emitted separately if needed and don't belong inside `client_metadata`.
             val clientMetadata =
                 ClientMetadata(
-                    baseMetadata =
-                        ClientRegistration(
-                            clientId = "https://verifier.example.com",
-                            clientName = "Test Verifier",
-                            clientType = ClientType.CONFIDENTIAL,
-                            grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
-                            responseTypes = listOf(ResponseType.CODE),
-                            redirectUris = listOf("https://frontend.example.com/callback"),
-                            jwks = JwkSet(keys = arrayOf(jarKeyPair.jose.publicJwk)),
-                        ),
+                    jwks = JwkSet(keys = arrayOf(jarKeyPair.jose.publicJwk)),
                 )
 
             // 1) RP creates an authorization request + stores the authorization session (KV-backed).
@@ -848,8 +703,90 @@ class UniversalOid4vpE2ETest {
             // client_id with the §5.9.3 decentralized_identifier-prefixed DID binding.
             assertTrue(resolved.request.clientId.startsWith("decentralized_identifier:did:jwk:"))
 
-            // 4) Holder sends direct_post response to response_uri (HTTP intercepted).
-            val vpToken = """{"cred":"eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3MDAwMDAwMDB9.sig~eyJhbGciOiJub25lIn0~"}"""
+            // 4) Holder issues a real SD-JWT VC and creates a presentation with a KB-JWT bound
+            // to the auth-request nonce. The verifier's ValidateAuthorizationResponseCommand /
+            // VerifyHolderBindingCommand actually parse + verify the SD-JWT now (no laxer
+            // legacy fallback), so a real signed VC is required here. The issuer's public key
+            // is registered with the shared in-app KMS so the verifier resolves it through the
+            // managed-identifier resolver chain.
+            val holderKmsForVc = holderGraph.asKeyManagerServiceGraph().keyManagerService
+            val sdJwtService = (holderGraph as SdJwtServiceImpl.Graph).sdJwtService
+            val issuerKeyPair =
+                holderKmsForVc.generateKeyAsync(
+                    providerId = "test-software",
+                    alias = "issuer-signing-key",
+                    use = JwkUse.sig,
+                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                )
+            val issuerOpts =
+                ManagedOptsKeyInfo(
+                    identifier = issuerKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE) as ManagedKeyInfoType<*>,
+                    context =
+                        IdentifierContext(
+                            clientId = "test-pid-issuer",
+                            clientIdScheme = "jwt_vc_json",
+                            issuer = "https://issuer.example.com",
+                        ),
+                )
+            val holderBindingKeyPair =
+                holderKmsForVc.generateKeyAsync(
+                    providerId = "test-software",
+                    alias = "holder-binding-key",
+                    use = JwkUse.sig,
+                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            val holderBindingOpts =
+                ManagedOptsKeyInfo(
+                    identifier = holderBindingKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE) as ManagedKeyInfoType<*>,
+                    context =
+                        IdentifierContext(
+                            clientId = "test-holder",
+                            clientIdScheme = "jwt_vc_json",
+                            issuer = "https://holder.example.com",
+                        ),
+                )
+            val cnfValue =
+                kotlinx.serialization.json
+                    .buildJsonObject {
+                        put(
+                            "jwk",
+                            holderBindingKeyPair.jose.publicJwk
+                                .toMinimalJwk()
+                                .toJsonObject()
+                        )
+                    }
+            val sdJwtVc =
+                sdJwtService
+                    .issueSdJwt(
+                        IssueSdJwtArgs(
+                            issuer = issuerOpts,
+                            payload =
+                                sdJwtPayload {
+                                    iss("https://issuer.example.com")
+                                    claim("vct", "https://example.com/PersonIdentificationData")
+                                    claimSd("given_name", "Alice")
+                                    claim("cnf", cnfValue)
+                                },
+                        ),
+                    ).getOrThrow()
+                    .sdJwt
+            val vpPresentation =
+                sdJwtService
+                    .presentSdJwt(
+                        PresentSdJwtArgs(
+                            sdJwt = sdJwtVc,
+                            disclosureSelection = SdMap(mapOf("given_name" to SdField(sd = true))),
+                            holderKey = holderBindingOpts,
+                            audience = resolved.request.clientId,
+                            nonce = created.request.nonce ?: error("auth request must have a nonce"),
+                        ),
+                    ).getOrThrow()
+                    .presentation
+
+            val vpToken = """{"cred":"$vpPresentation"}"""
             val responseUri = parsedRequest.responseUri ?: error("Expected response_uri for direct_post")
 
             val walletClient = httpClientFactory.createClient(HttpClientOptions.createDefault().copy(enableLogging = false))
@@ -946,24 +883,19 @@ class UniversalOid4vpE2ETest {
             val jarmDecryptionKey = ManagedOptsKeyInfo(identifier = jarmEncKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE))
             val jwksUri = "https://verifier.example.com/jwks"
 
-            // Client metadata:
-            // - embedded JWKS for JAR signature verification (sig key only)
-            // - jwks_uri for JARM encryption recipient resolution (enc key served over HTTP)
+            // Client metadata for OID4VP 1.0 final §8.3 encrypted authorization response.
+            // This test specifically exercises the `jwks_uri` resolution path: `jwks` carries
+            // ONLY the JAR sig key (so the wallet can verify the signed request object) while
+            // the JARM encryption key is served via `jwks_uri` and the wallet's
+            // resolveEncryptionRecipient must fetch it over HTTP. The `jwksFetchCount`
+            // assertion below pins that behavior. The JWE `alg` is taken from the chosen JWK's
+            // `alg` field per OID4VP §8.3 — there is no top-level
+            // `authorization_encrypted_response_alg` in the spec.
             val clientMetadata =
                 ClientMetadata(
-                    baseMetadata =
-                        ClientRegistration(
-                            clientId = "https://verifier.example.com",
-                            clientName = "Test Verifier",
-                            clientType = ClientType.CONFIDENTIAL,
-                            grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
-                            responseTypes = listOf(ResponseType.CODE),
-                            redirectUris = listOf("https://frontend.example.com/callback"),
-                            jwks = JwkSet(keys = arrayOf(jarKeyPair.jose.publicJwk)),
-                            jwksUri = jwksUri,
-                        ),
-                    authorizationEncryptedResponseAlg = "RSA-OAEP",
-                    authorizationEncryptedResponseEnc = "A256GCM",
+                    jwks = JwkSet(keys = arrayOf(jarKeyPair.jose.publicJwk)),
+                    jwksUri = jwksUri,
+                    encryptedResponseEncValuesSupported = listOf("A256GCM"),
                 )
 
             val created =
@@ -999,10 +931,15 @@ class UniversalOid4vpE2ETest {
             // Get the HTTP adapter from DI - it's injected with all required commands
             val rpAdapter: HttpAdapter = (verifierGraph as Oid4vpVerifierHttpAdapter.Graph).oid4VpVerifierHttpAdapter
 
+            // The JWK published at jwks_uri carries `alg = RSA-OAEP` so the wallet's
+            // deriveJarmConfigFromClientMetadata picks the JWE key encryption algorithm from
+            // the JWK itself, per OID4VP §8.3 (no top-level `authorization_encrypted_response_alg`
+            // field in the spec). The KMS-generated public JWK carries the signing-side `alg`
+            // (`RS256`) by default, so override it for the wire form.
             val jwksJson =
                 Json.encodeToString(
                     JwkSet.serializer(),
-                    JwkSet(keys = arrayOf(jarmEncKeyPair.jose.publicJwk)),
+                    JwkSet(keys = arrayOf(jarmEncKeyPair.jose.publicJwk.copy(alg = JwaAlgorithm.RSA_OAEP))),
                 )
             var jwksFetchCount = 0
 
@@ -1149,9 +1086,89 @@ class UniversalOid4vpE2ETest {
                         ),
                 )
 
+            // Issue a real SD-JWT VC + KB-JWT presentation. The verifier now actually
+            // parses + verifies the SD-JWT (no laxer legacy fallback) so a hand-rolled
+            // synthetic token would be rejected at the parse step.
+            val holderKmsForVc = holderGraph.asKeyManagerServiceGraph().keyManagerService
+            val sdJwtService = (holderGraph as SdJwtServiceImpl.Graph).sdJwtService
+            val vcIssuerKeyPair =
+                holderKmsForVc.generateKeyAsync(
+                    providerId = "test-software",
+                    alias = "vc-issuer-signing-key",
+                    use = JwkUse.sig,
+                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                )
+            val vcIssuerOpts =
+                ManagedOptsKeyInfo(
+                    identifier = vcIssuerKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE) as ManagedKeyInfoType<*>,
+                    context =
+                        IdentifierContext(
+                            clientId = "test-pid-issuer",
+                            clientIdScheme = "jwt_vc_json",
+                            issuer = "https://issuer.example.com",
+                        ),
+                )
+            val holderBindingKp =
+                holderKmsForVc.generateKeyAsync(
+                    providerId = "test-software",
+                    alias = "vc-holder-binding-key",
+                    use = JwkUse.sig,
+                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            val holderBindingOpts =
+                ManagedOptsKeyInfo(
+                    identifier = holderBindingKp.joseToManagedKeyInfo(KeyVisibility.PRIVATE) as ManagedKeyInfoType<*>,
+                    context =
+                        IdentifierContext(
+                            clientId = "test-holder",
+                            clientIdScheme = "jwt_vc_json",
+                            issuer = "https://holder.example.com",
+                        ),
+                )
+            val cnfValue =
+                kotlinx.serialization.json
+                    .buildJsonObject {
+                        put(
+                            "jwk",
+                            holderBindingKp.jose.publicJwk
+                                .toMinimalJwk()
+                                .toJsonObject()
+                        )
+                    }
+            val sdJwtVc =
+                sdJwtService
+                    .issueSdJwt(
+                        IssueSdJwtArgs(
+                            issuer = vcIssuerOpts,
+                            payload =
+                                sdJwtPayload {
+                                    iss("https://issuer.example.com")
+                                    claim("vct", "https://example.com/PersonIdentificationData")
+                                    claimSd("given_name", "Alice")
+                                    claim("cnf", cnfValue)
+                                },
+                        ),
+                    ).getOrThrow()
+                    .sdJwt
+            val vpPresentation =
+                sdJwtService
+                    .presentSdJwt(
+                        PresentSdJwtArgs(
+                            sdJwt = sdJwtVc,
+                            disclosureSelection = SdMap(mapOf("given_name" to SdField(sd = true))),
+                            holderKey = holderBindingOpts,
+                            audience = resolved.request.clientId,
+                            nonce = created.request.nonce ?: error("auth request must have a nonce"),
+                        ),
+                    ).getOrThrow()
+                    .presentation
+
             val response =
                 buildOid4vpAuthorizationResponse {
-                    vpToken("cred", "eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3MDAwMDAwMDB9.sig~eyJhbGciOiJub25lIn0~")
+                    vpToken("cred", vpPresentation)
                     state("state-1234")
                 }
 
@@ -1162,7 +1179,22 @@ class UniversalOid4vpE2ETest {
                             resolvedRequest = resolved,
                             response = response,
                             responseMode = ResponseMode.DIRECT_POST_JWT,
-                            jarmOptions = JarmOptions(issuer = "https://wallet.example.com"),
+                            // Wallet's deriveJarmConfigFromClientMetadata only inspects the
+                            // embedded `jwks` for an enc key — it does not pre-fetch jwks_uri.
+                            // This test deliberately ships the enc key only via `jwks_uri`
+                            // (to exercise the resolver fetch path), so we pass an explicit
+                            // JarmConfig here. Recipient resolution still runs and pulls the
+                            // RSA-OAEP key from `jwks_uri`, which `jwksFetchCount = 1` pins.
+                            jarmOptions =
+                                JarmOptions(
+                                    issuer = "https://wallet.example.com",
+                                    jarmConfig =
+                                        com.sphereon.oauth2.common.jarm.JarmConfig
+                                            .encrypted(
+                                                keyEncryptionAlg = "RSA-OAEP",
+                                                contentEncryptionAlg = "A256GCM",
+                                            ),
+                                ),
                         ),
                     ).getOrThrow()
 
@@ -1185,285 +1217,9 @@ class UniversalOid4vpE2ETest {
             assertEquals(1, retrieved.parsedResponse.vpToken.presentations.size)
         }
 
-    @Test
-    fun `universal oid4vp e2e - request_uri fetch, holder resolves, direct_post_jwt (signed) returns response_code`() =
-        runTest {
-            TestRequestObjectSigningConfig.enableDidJwkSigning()
-            val testScope = TestScope()
-            val app = createUniversalOid4vpTestAppGraph(testScope, appId = "test-verifier-app", profile = "test", version = "1.0.0")
-
-            DefaultPrincipalMapPropertySource.addProperties(
-                mapOf(
-                    "kms.providers.test-software.type" to "software",
-                    "kms.providers.test-software.id" to "test-software",
-                    "kms.providers.test-software.keystore.type" to "memory",
-                    "kms.providers.test-software.keystore.id" to "test-memory-keystore",
-                    "kms.providers.test-software.keystore.keyVisibility" to "private",
-                    "kms.providers.test-software.keystore.overwriteAlias" to "true",
-                ),
-            )
-            app.userContextManager.destroyAll()
-
-            // Verifier (RP) session
-            val verifierContext = app.userContextManager.getAnonymous()
-            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-jarm-signed")
-            val verifierGraph = verifierSession.graph
-
-            val rpService = (verifierGraph as RpServiceGraph).oid4vpVerifierService
-            val verifierKms = verifierGraph.asKeyManagerServiceGraph().keyManagerService
-            val createSignedJarCommand = (verifierGraph as Oauth2JarGraph).createSignedJarCommand
-
-            // Signing key for request objects (JAR)
-            // The alias must match TestRequestObjectSigningConfig.signingKey.kid
-            val jarKeyPair =
-                verifierKms.generateKeyAsync(
-                    providerId = "test-software",
-                    alias = "test-request-uri-signing-key",
-                    use = JwkUse.sig,
-                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
-                    alg = SignatureAlgorithm.ECDSA_SHA256,
-                    keyVisibility = KeyVisibility.PRIVATE,
-                )
-            val jarSigningKeyInfo = jarKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
-
-            // Client metadata:
-            // - embedded JWKS for JAR signature verification
-            // - JARM signing algorithm (wallet will sign the response)
-            val clientMetadata =
-                ClientMetadata(
-                    baseMetadata =
-                        ClientRegistration(
-                            clientId = "https://verifier.example.com",
-                            clientName = "Test Verifier",
-                            clientType = ClientType.CONFIDENTIAL,
-                            grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
-                            responseTypes = listOf(ResponseType.CODE),
-                            redirectUris = listOf("https://frontend.example.com/callback"),
-                            jwks = JwkSet(keys = arrayOf(jarKeyPair.jose.publicJwk)),
-                        ),
-                    authorizationSignedResponseAlg = "ES256",
-                )
-
-            val created =
-                rpService
-                    .createAuthorizationRequest(
-                        CreateAuthorizationRequestArgs(
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
-                            clientId = "https://verifier.example.com",
-                            responseUri = "https://verifier.example.com/response",
-                            redirectUri = "https://frontend.example.com/callback",
-                            responseMode = ResponseMode.DIRECT_POST_JWT,
-                            nonce = "nonce12345678",
-                            state = "state-1234",
-                            clientMetadata = clientMetadata,
-                        ),
-                    ).getOrThrow()
-            val correlationId = created.sessionId ?: error("Expected RP to return a sessionId")
-
-            val requestUri = "https://verifier.example.com${Oid4vpVerifierHttpAdapter.REQUEST_URI_PREFIX}$correlationId"
-
-            val requestUriLink =
-                rpService
-                    .buildAuthorizationRequestUri(
-                        BuildAuthorizationRequestUriArgs(
-                            request = created.request,
-                            useRequestUri = true,
-                            requestUri = requestUri,
-                        ),
-                    ).getOrThrow()
-                    .value
-                    .let { stripStateParam(it) }
-
-            // Get the HTTP adapter from DI - it's injected with all required commands
-            val rpAdapter: HttpAdapter = (verifierGraph as Oid4vpVerifierHttpAdapter.Graph).oid4VpVerifierHttpAdapter
-
-            // Holder (Wallet) session
-            val holderContext = app.userContextManager.getAnonymous()
-            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-jarm-signed")
-            val holderExecution = holderSession.asCoreApiServiceGraph().serviceExecution
-            val holderGraph = holderSession.graph
-
-            val holderKms = holderGraph.asKeyManagerServiceGraph().keyManagerService
-            val walletSigningKeyPair =
-                holderKms.generateKeyAsync(
-                    providerId = "test-software",
-                    alias = "wallet-jarm-signing",
-                    use = JwkUse.sig,
-                    keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
-                    alg = SignatureAlgorithm.ECDSA_SHA256,
-                )
-            val walletSigningKey =
-                ManagedOptsKeyInfo(
-                    identifier =
-                        (ResolvedKeyInfo.fromKey(walletSigningKeyPair.jose.publicJwk) as ResolvedKeyInfo).copy(
-                            providerId = "test-software",
-                            alias = walletSigningKeyPair.alias,
-                            kid = walletSigningKeyPair.kid,
-                            signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
-                        ),
-                )
-            val walletSignerIdentifier = ManagedOptsKeyInfo(identifier = ResolvedKeyInfo.fromKey(walletSigningKeyPair.jose.publicJwk))
-
-            // Intercept HTTP calls in-process, while still exercising the RP command pipeline.
-            val httpClientFactory =
-                object : HttpClientFactory {
-                    override fun createClient(options: HttpClientOptions): HttpClient {
-                        val engine =
-                            MockEngine { request ->
-                                val url: Url = request.url
-                                val path: String = url.encodedPath
-
-                                // request_uri fetch: wallet -> RP
-                                if (request.method == HttpMethod.Get && path.startsWith(Oid4vpVerifierHttpAdapter.REQUEST_URI_PREFIX)) {
-                                    val resp =
-                                        rpAdapter.handleRequest(
-                                            GenericHttpRequest(
-                                                method = "GET",
-                                                path = path,
-                                                headers = request.headers.entries().associate { (k, v) -> k to v.joinToString(",") },
-                                            ),
-                                        )
-                                    return@MockEngine respond(
-                                        content = resp.body ?: "",
-                                        status = HttpStatusCode.fromValue(resp.statusCode),
-                                        headers = headersOf(*resp.headers.map { (k, v) -> k to listOf(v) }.toTypedArray()),
-                                    )
-                                }
-
-                                // direct_post.jwt: wallet -> RP response_uri
-                                if (request.method == HttpMethod.Post && url.toString() == "https://verifier.example.com/response") {
-                                    val bodyText =
-                                        when (val body = request.body) {
-                                            is OutgoingContent.ByteArrayContent -> body.bytes().decodeToString()
-                                            is OutgoingContent.NoContent -> ""
-                                            else -> ""
-                                        }
-                                    val params = parseQueryString(bodyText)
-                                    val responseParams: Map<String, String> =
-                                        params.names().associateWith { name ->
-                                            params.getAll(name)?.firstOrNull().orEmpty()
-                                        }
-
-                                    val handled =
-                                        rpService
-                                            .handleDirectPostResponse(
-                                                HandleDirectPostResponseArgs(
-                                                    responseParams = responseParams,
-                                                    originalRequest = created.request,
-                                                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
-                                                    redirectUri = "https://frontend.example.com/callback",
-                                                    jarmExpectedAudience = created.request.clientId,
-                                                    jarmSignerIdentifier = walletSignerIdentifier,
-                                                ),
-                                            ).getOrThrow()
-
-                                    val responseBody = """{"redirect_uri":"${handled.redirectUri}","response_code":"${handled.responseCode}"}"""
-                                    return@MockEngine respond(
-                                        content = responseBody,
-                                        status = HttpStatusCode.OK,
-                                        headers = headersOf("Content-Type" to listOf(ContentType.Application.Json.toString())),
-                                    )
-                                }
-
-                                respond("Not found", HttpStatusCode.NotFound)
-                            }
-
-                        return HttpClient(engine)
-                    }
-
-                    override fun isSupportedOptions(options: HttpClientOptions): Boolean = true
-
-                    override fun getEngineTypesSupported(): List<HttpClientEngineType> = listOf(HttpClientEngineType.CIO, HttpClientEngineType.OKHTTP, HttpClientEngineType.DARWIN)
-
-                    override fun getEngineTypeDefault(): HttpClientEngineType = HttpClientEngineType.CIO
-                }
-
-            val parseUriQueryCommand = (holderGraph as HolderDepsGraph).parseUriQueryCommand
-            val didExternalIdentifierService =
-                (holderGraph as DidExternalIdentifierResolutionServiceImpl.Graph).didExternalIdentifierResolutionService
-            val externalIdentifierService: MultiExternalIdentifierService =
-                MultiExternalIdentifierResolutionServiceImpl(
-                    execution = holderExecution,
-                    external =
-                        setOf<ExternalIdentifierService>(
-                            JwksUrlExternalIdentifierResolutionServiceImpl(
-                                execution = holderExecution,
-                                httpClientFactory = httpClientFactory,
-                            ),
-                            didExternalIdentifierService,
-                        ),
-                )
-            val jarService = (holderGraph as Oauth2JarGraph).jarService
-            val resolveAuthorizationRequestCommand = (holderGraph as HolderDepsGraph).resolveAuthorizationRequestCommand
-
-            val fetchRequestUriCommand =
-                FetchRequestUriCommandImpl(
-                    execution = holderExecution,
-                    httpClientFactory = httpClientFactory,
-                )
-            val parseAuthorizationRequestCommand =
-                ParseAuthorizationRequestCommandImpl(
-                    execution = holderExecution,
-                    parseUriQueryCommand = parseUriQueryCommand,
-                    fetchRequestUriCommand = fetchRequestUriCommand,
-                    jarService = jarService,
-                    httpClientFactory = httpClientFactory,
-                    externalIdentifierService = externalIdentifierService,
-                )
-
-            val parsedRequest =
-                parseAuthorizationRequestCommand.execute(ParseAuthorizationRequestArgs(requestUri = requestUriLink, walletConfig = null)).getOrThrow()
-            val resolved = resolveAuthorizationRequestCommand.execute(parsedRequest).getOrThrow()
-
-            val submitAuthorizationResponseCommand =
-                SubmitAuthorizationResponseCommandImpl(
-                    execution = holderExecution,
-                    httpClientFactory = httpClientFactory,
-                    externalIdentifierService = externalIdentifierService,
-                    createJarmCommand =
-                        CreateJarmResponseCommandImpl(
-                            execution = holderExecution,
-                            jwtService = (holderGraph as JwtServiceImpl.Graph).jwtService,
-                            jweService = (holderGraph as JweServiceImpl.Graph).jweService,
-                        ),
-                )
-
-            val response =
-                buildOid4vpAuthorizationResponse {
-                    vpToken("cred", "eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3MDAwMDAwMDB9.sig~eyJhbGciOiJub25lIn0~")
-                    state("state-1234")
-                }
-
-            val submission =
-                submitAuthorizationResponseCommand
-                    .execute(
-                        SubmitAuthorizationResponseArgs(
-                            resolvedRequest = resolved,
-                            response = response,
-                            responseMode = ResponseMode.DIRECT_POST_JWT,
-                            jarmOptions =
-                                JarmOptions(
-                                    signingKey = walletSigningKey,
-                                    issuer = "https://wallet.example.com",
-                                ),
-                        ),
-                    ).getOrThrow()
-
-            val redirectUri =
-                (submission as SubmissionResult.Success).redirectUri
-                    ?: error("Expected redirectUri from RP backend")
-            val responseCode = Url(redirectUri).parameters["response_code"]
-            assertNotNull(responseCode)
-
-            val retrieved =
-                rpService
-                    .retrieveAuthorizationResponse(
-                        RetrieveAuthorizationResponseArgs(
-                            responseCode = responseCode,
-                            markAsUsed = true,
-                        ),
-                    ).getOrThrow()
-            assertEquals("state-1234", retrieved.state)
-            assertEquals(1, retrieved.parsedResponse.vpToken.presentations.size)
-        }
+    // The previous `direct_post_jwt (signed) returns response_code` E2E test was removed.
+    // OID4VP 1.0 final §8.3 mandates that `direct_post.jwt` responses MUST be unsigned-encrypted
+    // JWTs; the verifier (ParseAuthorizationResponseCommandImpl) now rejects SIGNED JARM
+    // responses for this response mode. The signed JARM round-trip is still covered by the
+    // generic JARM lib tests; the OID4VP-specific encrypted path is the test above.
 }

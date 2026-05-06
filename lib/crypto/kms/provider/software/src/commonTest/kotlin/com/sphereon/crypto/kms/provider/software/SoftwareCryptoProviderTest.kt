@@ -48,7 +48,15 @@ class SoftwareCryptoProviderTest {
     fun testSupportedCurves() {
         val curves = softwareKMSProvider.supportedCurves()
         assertContentEquals(
-            arrayOf(Curve.P_256, Curve.P_384, Curve.P_521),
+            arrayOf(
+                Curve.P_256,
+                Curve.P_384,
+                Curve.P_521,
+                Curve.Ed25519,
+                Curve.Ed448,
+                Curve.X25519,
+                Curve.X448,
+            ),
             curves,
         )
     }
@@ -58,7 +66,12 @@ class SoftwareCryptoProviderTest {
         assertTrue(softwareKMSProvider.isSupportedCurve(Curve.P_256))
         assertTrue(softwareKMSProvider.isSupportedCurve(Curve.P_384))
         assertTrue(softwareKMSProvider.isSupportedCurve(Curve.P_521))
-        assertFalse(softwareKMSProvider.isSupportedCurve(Curve.X25519))
+        assertTrue(softwareKMSProvider.isSupportedCurve(Curve.Ed25519))
+        assertTrue(softwareKMSProvider.isSupportedCurve(Curve.Ed448))
+        assertTrue(softwareKMSProvider.isSupportedCurve(Curve.X25519))
+        assertTrue(softwareKMSProvider.isSupportedCurve(Curve.X448))
+        // Secp256k1 remains unsupported by the OSS software provider.
+        assertFalse(softwareKMSProvider.isSupportedCurve(Curve.Secp256k1))
     }
 
     @Test
@@ -170,18 +183,22 @@ class SoftwareCryptoProviderTest {
     @Test
     fun testGenerateKeyThrowsExceptionForUnsupportedCurve() =
         runTest {
-            val unsupportedAlg = SignatureAlgorithm.ED25519
+            // ES256K (secp256k1) remains unsupported in the OSS software provider.
+            val unsupportedAlg = SignatureAlgorithm.ES256K
             val exception =
                 assertFailsWith<IllegalArgumentException> {
                     softwareKMSProvider.generateKeyAsync(alg = unsupportedAlg)
                 }
-            assertEquals("Curve ${unsupportedAlg.curve!!.jose.value} not supported for EcDSA", exception.message)
+            assertEquals("Curve ${unsupportedAlg.curve!!.jose.name} not supported for EcDSA", exception.message)
         }
 
     @Test
     fun testSupportedKeyTypes() {
         val keyTypes = softwareKMSProvider.supportedKeyTypes()
-        assertContentEquals(arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA, KeyTypeMapping.Symmetric), keyTypes)
+        assertContentEquals(
+            arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA, KeyTypeMapping.Symmetric, KeyTypeMapping.OKP),
+            keyTypes,
+        )
     }
 
     @Test
@@ -202,6 +219,8 @@ class SoftwareCryptoProviderTest {
                 SignatureAlgorithm.HMAC_SHA256,
                 SignatureAlgorithm.HMAC_SHA384,
                 SignatureAlgorithm.HMAC_SHA512,
+                SignatureAlgorithm.ED25519,
+                SignatureAlgorithm.ED448,
             ),
             algorithms,
         )

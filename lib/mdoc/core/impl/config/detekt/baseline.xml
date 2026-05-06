@@ -2,6 +2,8 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>BracesOnIfStatements:SessionCborCodecsImpl.kt$else</ID>
+    <ID>BracesOnIfStatements:SessionCborCodecsImpl.kt$if</ID>
     <ID>CyclomaticComplexMethod:DeviceEngagementCborCodecImpl.kt$private fun encodeDeviceEngagement(value: DeviceEngagement): ByteArray</ID>
     <ID>CyclomaticComplexMethod:DeviceEngagementCborCodecImpl.kt$private fun encodeDeviceRetrievalOptions(value: DeviceRetrievalOptions): CborMap&lt;NumberLabel, CborItem&lt;*>></ID>
     <ID>CyclomaticComplexMethod:MdocSignServiceImpl.kt$MdocSignServiceImpl.Utils$@JsStatic fun getSuppliedOrMSODerivedCborKeyInfo( keyInfo: KeyInfoType&lt;*>? = null, mso: MobileSecurityObject? = null, lookupManaged: Boolean = false, ): ResolvedKeyInfoType&lt;CoseKeyType></ID>
@@ -11,7 +13,9 @@
     <ID>FunctionNaming:DeviceEngagementCborCodecImpl.kt$private fun decodeDeviceEngagementV1_1( structure: CborMap&lt;NumberLabel, CborItem&lt;*>>, original: ByteArray, coseKeyCodec: CoseKeyCborCodec, ): DeviceEngagement.V1_1</ID>
     <ID>FunctionNaming:ReaderEngagementCborCodecImpl.kt$private fun decodeReaderEngagementV1_0( structure: CborMap&lt;NumberLabel, CborItem&lt;*>>, original: ByteArray, coseKeyCodec: CoseKeyCborCodec, ): ReaderEngagement.V1_0</ID>
     <ID>FunctionNaming:ReaderEngagementCborCodecImpl.kt$private fun decodeReaderEngagementV1_1( structure: CborMap&lt;NumberLabel, CborItem&lt;*>>, original: ByteArray, coseKeyCodec: CoseKeyCborCodec, ): ReaderEngagement.V1_1</ID>
+    <ID>LongMethod:IssuerAuthValidationImpl.kt$IssuerAuthValidationImpl$override fun verifyDigests( issuerAuth: COSE_Sign1&lt;MobileSecurityObject>, document: Document?, ): VerifyResultType</ID>
     <ID>LongMethod:IssuerAuthValidationImpl.kt$IssuerAuthValidationImpl$override suspend fun verifyValidityInfo( issuerAuth: COSE_Sign1&lt;MobileSecurityObject>, verificationTime: LocalDateTimeKMP, allowExpiredDocuments: Boolean?, allowNotYetValidDocuments: Boolean?, dateTimeUtils: DateTimeUtils, timeZoneId: String?, clockSkewAllowedInSec: Int, ): VerifyResultType</ID>
+    <ID>LongMethod:MdocOid4vpServiceImpl.kt$MdocOid4vpServiceImpl$override suspend fun signDocument( clientId: String, responseUri: String, mdocNonce: String, authorizationRequestNonce: String, deviceNamespaces: DeviceNameSpaces, document: Document?, inputDescriptor: IOid4VPInputDescriptor?, docType: DocType, deviceKeyInfo: KeyInfoType&lt;*>?, presentationDefinition: IOid4VPPresentationDefinition, ): Oid4vpSignResult</ID>
     <ID>LongMethod:MdocValidationsImpl.kt$MdocValidationsImpl$override suspend fun withParams( issuerAuth: CoseSign1&lt;MobileSecurityObject>?, document: Document?, mdocVerificationTypes: MdocVerificationTypes, keyInfo: KeyInfoType&lt;CoseKeyType>?, trustedCerts: Array&lt;String>?, verificationTime: LocalDateTimeKMP?, allowNotYetValidDocuments: Boolean?, allowExpiredDocuments: Boolean?, dateTimeUtils: DateTimeUtils, timeZoneId: String?, clockSkewAllowedInSec: Int, ): VerifyResultsType&lt;CoseKeyType></ID>
     <ID>LongMethod:ReaderEngagementCborCodecImpl.kt$private fun decodeDeviceRetrievalOptions( type: DeviceRetrievalMethodType, structure: CborMap&lt;NumberLabel, CborItem&lt;*>>, ): DeviceRetrievalOptions</ID>
     <ID>LongParameterList:DeviceRetrievalWebsiteImpl.kt$DeviceRetrievalWebsiteImpl$( private val log: LogService, private val httpClientFactory: HttpClientFactory, options: HttpClientOptions?, private val deviceEngagementCborCodec: DeviceEngagementCborCodec, private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec, private val sessionDataCborCodec: SessionDataCborCodec, override val readerEngagement: ReaderEngagement? = null, )</ID>
@@ -19,7 +23,8 @@
     <ID>MagicNumber:ReaderEngagementCborCodecImpl.kt$20</ID>
     <ID>MagicNumber:ReaderEngagementCborCodecImpl.kt$5</ID>
     <ID>MagicNumber:ReaderEngagementCborCodecImpl.kt$7</ID>
-    <ID>MagicNumber:SessionCborCodecsImpl.kt$3</ID>
+    <ID>ReturnCount:DeviceAuthValidationImpl.kt$DeviceAuthValidationImpl$override suspend fun verifyDeviceAuth( document: Document, expectedSessionTranscript: SessionTranscript, ): VerifySignatureResultType&lt;CoseKeyType></ID>
+    <ID>ReturnCount:IssuerAuthValidationImpl.kt$IssuerAuthValidationImpl$override fun verifyDigests( issuerAuth: COSE_Sign1&lt;MobileSecurityObject>, document: Document?, ): VerifyResultType</ID>
     <ID>ReturnCount:IssuerAuthValidationImpl.kt$IssuerAuthValidationImpl$override suspend fun verifyValidityInfo( issuerAuth: COSE_Sign1&lt;MobileSecurityObject>, verificationTime: LocalDateTimeKMP, allowExpiredDocuments: Boolean?, allowNotYetValidDocuments: Boolean?, dateTimeUtils: DateTimeUtils, timeZoneId: String?, clockSkewAllowedInSec: Int, ): VerifyResultType</ID>
     <ID>StringLiteralDuplication:DeviceCborCodecsImpl.kt$DeviceRequestCborCodecImpl$"DeviceRequest"</ID>
     <ID>StringLiteralDuplication:DeviceCborCodecsImpl.kt$DeviceResponseCborCodecImpl$"DeviceResponse"</ID>
@@ -48,6 +53,7 @@
     <ID>UnusedParameter:DeviceCborCodecsImpl.kt$typeName: String</ID>
     <ID>UnusedParameter:DeviceEngagementCborCodecImpl.kt$typeName: String</ID>
     <ID>UnusedParameter:DeviceSignedCborCodecImpl.kt$typeName: String</ID>
+    <ID>UnusedPrivateMember:SessionCborCodecsImpl.kt$private fun requireString( item: CborItem&lt;*>, fieldName: String, ): CborString</ID>
     <ID>UseRequire:MobileSecurityObjectCborCodecImpl.kt$throw IllegalArgumentException("$typeName must be encoded as a CBOR array")</ID>
   </CurrentIssues>
 </SmellBaseline>

@@ -72,6 +72,12 @@ data class AccessTokenData(
      */
     val dpopJkt: String? = null,
     /**
+     * RFC 8705 §3.1 SHA-256 thumbprint of the TLS client certificate this token is bound to
+     * (base64url, no padding). When non-null, resource servers MUST require the bearer to
+     * present the same certificate at the mTLS handshake, surfaced as `cnf.x5t#S256` in the JWT.
+     */
+    val certificateThumbprintS256: String? = null,
+    /**
      * Whether this token has been revoked
      */
     val revoked: Boolean = false,

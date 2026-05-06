@@ -2,69 +2,173 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>BracesOnIfStatements:OAuth2Handlers.kt$OAuth2Handlers$else</ID>
-    <ID>BracesOnIfStatements:OAuth2Handlers.kt$OAuth2Handlers$if</ID>
-    <ID>BracesOnIfStatements:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$else</ID>
-    <ID>BracesOnIfStatements:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$if</ID>
-    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$Companion</ID>
-    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun GenericHttpRequest.forwardedScheme(): String</ID>
-    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun GenericHttpRequest.hostHeader(): String</ID>
-    <ID>ClassOrdering:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun GenericHttpRequest.resolveBaseUrl(tenantPath: String? = null): String</ID>
-    <ID>CyclomaticComplexMethod:OAuth2Handlers.kt$OAuth2Handlers$private fun extractClientAuthentication( headers: Map&lt;String, String>, body: Map&lt;String, String>, ): ClientAuthenticationConfig</ID>
-    <ID>CyclomaticComplexMethod:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handleTokenRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, httpUrl: String, ): IdkResult&lt;TokenResponse, IdkError></ID>
-    <ID>CyclomaticComplexMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private fun mapErrorToResponse(error: IdkError): GenericHttpResponse</ID>
-    <ID>CyclomaticComplexMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCompleteOutcome( provider: FederatedUserAuthenticationProvider, sessionId: String, ): GenericHttpResponse</ID>
-    <ID>CyclomaticComplexMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleWalletAuthorization( session: AuthorizationSession, loginHint: String, ): GenericHttpResponse</ID>
-    <ID>LargeClass:OAuth2HttpAdapter.kt$OAuth2HttpAdapter : RoutedHttpAdapter</ID>
-    <ID>LongMethod:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handleTokenRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, httpUrl: String, ): IdkResult&lt;TokenResponse, IdkError></ID>
-    <ID>LongMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCompleteOutcome( provider: FederatedUserAuthenticationProvider, sessionId: String, ): GenericHttpResponse</ID>
-    <ID>LongMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleIaeEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
-    <ID>LongMethod:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleWalletAuthorization( session: AuthorizationSession, loginHint: String, ): GenericHttpResponse</ID>
-    <ID>LongMethod:OAuth2HttpAdapterDescriptorProvider.kt$OAuth2HttpAdapterDescriptorProvider$override fun describe(): HttpAdapterDescription</ID>
-    <ID>LongParameterList:OAuth2Handlers.kt$OAuth2Handlers$( session: AuthorizationSession, userId: String, consent: ConsentDecision, userClaims: Map&lt;String, Any> = emptyMap(), acr: String? = null, amr: List&lt;String>? = null, )</ID>
-    <ID>LongParameterList:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$( private val authorizationServerService: AuthorizationServerService, private val configProvider: OAuth2ServersConfigProvider, private val userAuthProvider: UserAuthenticationProvider, private val scopeClaimsMapper: OidcScopeClaimsMapper, private val handleIaeInitialRequestCommand: HandleIaeInitialRequestCommand, private val handleIaeFollowUpCommand: HandleIaeFollowUpCommand, private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage, )</ID>
-    <ID>MagicNumber:OAuth2Handlers.kt$OAuth2Handlers$0xFF</ID>
-    <ID>MagicNumber:OAuth2Handlers.kt$OAuth2Handlers$12</ID>
-    <ID>MagicNumber:OAuth2Handlers.kt$OAuth2Handlers$16</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$16</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$3</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$4</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$400</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$401</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$403</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$404</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$500</ID>
-    <ID>MagicNumber:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$503</ID>
-    <ID>NestedBlockDepth:OAuth2Handlers.kt$OAuth2Handlers$private fun extractClientAuthentication( headers: Map&lt;String, String>, body: Map&lt;String, String>, ): ClientAuthenticationConfig</ID>
-    <ID>ReturnCount:OAuth2Handlers.kt$OAuth2Handlers$private fun extractClientAuthentication( headers: Map&lt;String, String>, body: Map&lt;String, String>, ): ClientAuthenticationConfig</ID>
-    <ID>ReturnCount:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handlePushedAuthorizationRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, ): IdkResult&lt;PushedAuthorizationResponse, IdkError></ID>
-    <ID>ReturnCount:OAuth2Handlers.kt$OAuth2Handlers$suspend fun handleTokenRequest( requestBody: Map&lt;String, List&lt;String>>, requestHeaders: Map&lt;String, String>, httpUrl: String, ): IdkResult&lt;TokenResponse, IdkError></ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$@OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class) private suspend fun handleRegisterPreAuthCode(request: GenericHttpRequest): GenericHttpResponse</ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleAuthorizationCallback(request: GenericHttpRequest): GenericHttpResponse</ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCallbackEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleFederationCompleteOutcome( provider: FederatedUserAuthenticationProvider, sessionId: String, ): GenericHttpResponse</ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleIaeEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleReconciliationAuthorizeEndpoint(request: GenericHttpRequest): GenericHttpResponse</ID>
-    <ID>ReturnCount:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$private suspend fun handleWalletAuthorization( session: AuthorizationSession, loginHint: String, ): GenericHttpResponse</ID>
-    <ID>StringLiteralDuplication:OAuth2Handlers.kt$OAuth2Handlers$"Bearer"</ID>
-    <ID>StringLiteralDuplication:OAuth2Handlers.kt$OAuth2Handlers$"client_id"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"$errorUri&amp;state=${urlEncode(state)}"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"${redirectUri}${separator}error=server_error&amp;error_description=${urlEncode(approvalResult.error.message.defaultMessage ?: "Authorization approval failed")}"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Cache-Control"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Content-Type"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Federation is not configured"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Location"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"Missing or invalid request body"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"application/json"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"error"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"error_description"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"invalid_client"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"invalid_request"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"no-store"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"not_found"</ID>
-    <ID>StringLiteralDuplication:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$"server_error"</ID>
-    <ID>TooManyFunctions:OAuth2HttpAdapter.kt$OAuth2HttpAdapter : RoutedHttpAdapter</ID>
-    <ID>UnusedParameter:OAuth2HttpAdapter.kt$OAuth2HttpAdapter$request: GenericHttpRequest</ID>
-    <ID>UnusedPrivateProperty:OAuth2Handlers.kt$OAuth2Handlers$val verifiedAuth = commands.verifyClientAuthentication .execute( VerifyClientAuthenticationArgs( clientAuthentication = tokenRequest.clientAuthentication, clientId = tokenRequest.clientId, tokenEndpointUrl = httpUrl, ), ).getOrElse { error -> return Err(error) }</ID>
+    <ID>BracesOnIfStatements:AuthorizeCallbackHttpEndpointCommandImpl.kt$AuthorizeCallbackHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:AuthorizeCallbackHttpEndpointCommandImpl.kt$AuthorizeCallbackHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:FederationBaseUrlResolver.kt$else</ID>
+    <ID>BracesOnIfStatements:FederationBaseUrlResolver.kt$if</ID>
+    <ID>BracesOnIfStatements:FederationCallbackHttpEndpointCommandImpl.kt$FederationCallbackHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:IntrospectionHttpEndpointCommandImpl.kt$IntrospectionHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:IntrospectionHttpEndpointCommandImpl.kt$IntrospectionHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:LoginAssetHttpEndpointCommandImpl.kt$LoginAssetHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:LoginPageHttpEndpointCommandImpl.kt$LoginPageHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:LoginPageHttpEndpointCommandImpl.kt$LoginPageHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:OAuth2HttpResponses.kt$else</ID>
+    <ID>BracesOnIfStatements:OAuth2HttpResponses.kt$if</ID>
+    <ID>BracesOnIfStatements:ReconciliationCallbackHttpEndpointCommandImpl.kt$ReconciliationCallbackHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:RevocationHttpEndpointCommandImpl.kt$RevocationHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:TokenHttpEndpointCommandImpl.kt$TokenHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:TokenHttpEndpointCommandImpl.kt$TokenHttpEndpointCommandImpl$if</ID>
+    <ID>BracesOnIfStatements:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$if</ID>
+    <ID>ClassOrdering:OAuth2AttestationHttpAdapter.kt$OAuth2AttestationHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf(attestationChallengeEndpointCommand)</ID>
+    <ID>ClassOrdering:OAuth2AuthorizationHttpAdapter.kt$OAuth2AuthorizationHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( authorizeEndpointCommand, authorizeCallbackEndpointCommand, iaeEndpointCommand, )</ID>
+    <ID>ClassOrdering:OAuth2DeviceAuthorizationHttpAdapter.kt$OAuth2DeviceAuthorizationHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf(deviceAuthorizationEndpointCommand)</ID>
+    <ID>ClassOrdering:OAuth2DeviceVerificationHttpAdapter.kt$OAuth2DeviceVerificationHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( deviceEntryEndpointCommand, deviceSubmitEndpointCommand, deviceApprovalEndpointCommand, deviceApprovalSubmitEndpointCommand, )</ID>
+    <ID>ClassOrdering:OAuth2DiscoveryHttpAdapter.kt$OAuth2DiscoveryHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( oauth2ServerMetadataCommand, openidDiscoveryCommand, jwksCommand, )</ID>
+    <ID>ClassOrdering:OAuth2EndSessionHttpAdapter.kt$OAuth2EndSessionHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( endSessionGetEndpointCommand, endSessionPostEndpointCommand, )</ID>
+    <ID>ClassOrdering:OAuth2FederationHttpAdapter.kt$OAuth2FederationHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( federationAuthorizeCommand, federationCallbackCommand, reconciliationAuthorizeCommand, reconciliationCallbackCommand, listFederationProvidersCommand, )</ID>
+    <ID>ClassOrdering:OAuth2InternalHttpAdapter.kt$OAuth2InternalHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf(registerPreAuthorizedCodeCommand)</ID>
+    <ID>ClassOrdering:OAuth2LoginHttpAdapter.kt$OAuth2LoginHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( loginPageEndpointCommand, loginSubmitEndpointCommand, loginCancelEndpointCommand, loginAssetEndpointCommand, )</ID>
+    <ID>ClassOrdering:OAuth2TokenHttpAdapter.kt$OAuth2TokenHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( tokenEndpointCommand, introspectionEndpointCommand, revocationEndpointCommand, parEndpointCommand, )</ID>
+    <ID>ClassOrdering:OAuth2UserInfoHttpAdapter.kt$OAuth2UserInfoHttpAdapter$override val endpointCommands: List&lt;HttpEndpointCommand> = listOf(userInfoEndpointCommand)</ID>
+    <ID>CyclomaticComplexMethod:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>CyclomaticComplexMethod:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>CyclomaticComplexMethod:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>CyclomaticComplexMethod:OAuth2HttpResponses.kt$internal fun oauth2HtmlErrorPage( statusCode: Int, error: String, errorDescription: String? = null, requestParams: Map&lt;String, String> = emptyMap(), ): GenericHttpResponse</ID>
+    <ID>CyclomaticComplexMethod:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:DeviceAuthorizationHttpEndpointCommandImpl.kt$DeviceAuthorizationHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:EndSessionHttpEndpointCommandImpls.kt$private suspend fun handleEndSession( request: GenericHttpRequest, parameters: Map&lt;String, String>, handle: HandleEndSessionRequestCommand, configProvider: OAuth2ServersConfigProvider, json: Json, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:LoginCancelHttpEndpointCommandImpl.kt$LoginCancelHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:OAuth2HttpResponses.kt$internal fun oauth2HtmlErrorPage( statusCode: Int, error: String, errorDescription: String? = null, requestParams: Map&lt;String, String> = emptyMap(), ): GenericHttpResponse</ID>
+    <ID>LongMethod:TokenHttpEndpointCommandImpl.kt$TokenHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongMethod:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>LongParameterList:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$( execution: SessionExecution, private val renderer: DeviceVerificationPageRenderer, private val configProvider: OAuth2ServersConfigProvider, private val storage: DeviceAuthorizationStorage, private val loginSessionStore: OidcLoginSessionStore, private val loginSessionIdProvider: OidcLoginSessionIdProvider, private val clientRegistry: ClientRegistry, )</ID>
+    <ID>LongParameterList:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$( execution: SessionExecution, private val userAuthProvider: UserAuthenticationProvider, private val loginSessionStore: OidcLoginSessionStore, private val secureRandom: SecureRandom, private val configProvider: OAuth2ServersConfigProvider, private val clock: Clock, private val auditEmitter: OAuth2AuditEmitter, private val csrfTokenizer: LoginCsrfTokenizer, )</ID>
+    <ID>LongParameterList:OAuth2DeviceVerificationHttpAdapter.kt$OAuth2DeviceVerificationHttpAdapter$( execution: SessionExecution, asInstanceResolver: OAuth2ServerInstanceResolver, asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider, private val deviceEntryEndpointCommand: DeviceVerificationEntryHttpEndpointCommand, private val deviceSubmitEndpointCommand: DeviceVerificationSubmitHttpEndpointCommand, private val deviceApprovalEndpointCommand: DeviceVerificationApprovalHttpEndpointCommand, private val deviceApprovalSubmitEndpointCommand: DeviceVerificationApprovalSubmitHttpEndpointCommand, )</ID>
+    <ID>LongParameterList:OAuth2FederationHttpAdapter.kt$OAuth2FederationHttpAdapter$( execution: SessionExecution, asInstanceResolver: OAuth2ServerInstanceResolver, asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider, private val federationAuthorizeCommand: FederationAuthorizeHttpEndpointCommand, private val federationCallbackCommand: FederationCallbackHttpEndpointCommand, private val reconciliationAuthorizeCommand: ReconciliationAuthorizeHttpEndpointCommand, private val reconciliationCallbackCommand: ReconciliationCallbackHttpEndpointCommand, private val listFederationProvidersCommand: ListFederationProvidersHttpEndpointCommand, )</ID>
+    <ID>LongParameterList:OAuth2LoginHttpAdapter.kt$OAuth2LoginHttpAdapter$( execution: SessionExecution, asInstanceResolver: OAuth2ServerInstanceResolver, asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider, private val loginPageEndpointCommand: LoginPageHttpEndpointCommand, private val loginSubmitEndpointCommand: LoginSubmitHttpEndpointCommand, private val loginCancelEndpointCommand: LoginCancelHttpEndpointCommand, private val loginAssetEndpointCommand: LoginAssetHttpEndpointCommand, )</ID>
+    <ID>LongParameterList:OAuth2TokenHttpAdapter.kt$OAuth2TokenHttpAdapter$( execution: SessionExecution, asInstanceResolver: OAuth2ServerInstanceResolver, asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider, private val tokenEndpointCommand: TokenHttpEndpointCommand, private val introspectionEndpointCommand: IntrospectionHttpEndpointCommand, private val revocationEndpointCommand: RevocationHttpEndpointCommand, private val parEndpointCommand: ParHttpEndpointCommand, )</ID>
+    <ID>MagicNumber:AbstractOAuth2HttpAdapter.kt$AbstractOAuth2HttpAdapter$500</ID>
+    <ID>MagicNumber:AttestationChallengeHttpEndpointCommandImpl.kt$AttestationChallengeHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:AttestationChallengeHttpEndpointCommandImpl.kt$AttestationChallengeHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:AuthorizeCallbackHttpEndpointCommandImpl.kt$AuthorizeCallbackHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:AuthorizeCallbackHttpEndpointCommandImpl.kt$AuthorizeCallbackHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:DeviceAuthorizationHttpEndpointCommandImpl.kt$DeviceAuthorizationHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:DeviceAuthorizationHttpEndpointCommandImpl.kt$DeviceAuthorizationHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:DeviceVerificationEntryHttpEndpointCommandImpl.kt$DeviceVerificationEntryHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:DeviceVerificationEntryHttpEndpointCommandImpl.kt$DeviceVerificationEntryHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:EndSessionHttpEndpointCommandImpls.kt$EndSessionPostHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:IntrospectionHttpEndpointCommandImpl.kt$IntrospectionHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:ListFederationProvidersHttpEndpointCommandImpl.kt$ListFederationProvidersHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:LoginCancelHttpEndpointCommandImpl.kt$LoginCancelHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:LoginCancelHttpEndpointCommandImpl.kt$LoginCancelHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:LoginPageHttpEndpointCommandImpl.kt$LoginPageHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:LoginPageHttpEndpointCommandImpl.kt$LoginPageHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:OAuth2HttpResponses.kt$16</ID>
+    <ID>MagicNumber:OAuth2HttpResponses.kt$3</ID>
+    <ID>MagicNumber:OAuth2HttpResponses.kt$400</ID>
+    <ID>MagicNumber:OAuth2HttpResponses.kt$401</ID>
+    <ID>MagicNumber:OAuth2HttpResponses.kt$500</ID>
+    <ID>MagicNumber:OAuth2HttpResponses.kt$503</ID>
+    <ID>MagicNumber:ParHttpEndpointCommandImpl.kt$ParHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:ParHttpEndpointCommandImpl.kt$ParHttpEndpointCommandImpl$404</ID>
+    <ID>MagicNumber:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$401</ID>
+    <ID>MagicNumber:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$500</ID>
+    <ID>MagicNumber:RevocationHttpEndpointCommandImpl.kt$RevocationHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:TokenHttpEndpointCommandImpl.kt$TokenHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$3</ID>
+    <ID>MagicNumber:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$400</ID>
+    <ID>MagicNumber:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$401</ID>
+    <ID>MagicNumber:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$403</ID>
+    <ID>MatchingDeclarationName:OAuth2HttpResponses.kt$ResponseCategory</ID>
+    <ID>MaxLineLength:OAuth2HttpResponses.kt$"invalid_request" -> "The application sent a request the authorization server couldn't process. This often happens when a sign-in attempt has been reused, has expired, or was tampered with."</ID>
+    <ID>ReturnCount:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:DeviceAuthorizationHttpEndpointCommandImpl.kt$DeviceAuthorizationHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$private fun normaliseUserCode(raw: String): String?</ID>
+    <ID>ReturnCount:FederationCallbackHttpEndpointCommandImpl.kt$FederationCallbackHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$private suspend fun handleInitial(params: Map&lt;String, String>): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:LoginCancelHttpEndpointCommandImpl.kt$LoginCancelHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:ReconciliationCallbackHttpEndpointCommandImpl.kt$ReconciliationCallbackHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>ReturnCount:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
+    <ID>StringLiteralDuplication:AuthorizeCallbackHttpEndpointCommandImpl.kt$AuthorizeCallbackHttpEndpointCommandImpl$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$"Location"</ID>
+    <ID>StringLiteralDuplication:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$"no-store"</ID>
+    <ID>StringLiteralDuplication:AuthorizeHttpEndpointCommandImpl.kt$AuthorizeHttpEndpointCommandImpl$"server_error"</ID>
+    <ID>StringLiteralDuplication:DeviceAuthorizationHttpEndpointCommandImpl.kt$DeviceAuthorizationHttpEndpointCommandImpl$"Content-Type"</ID>
+    <ID>StringLiteralDuplication:DeviceAuthorizationHttpEndpointCommandImpl.kt$DeviceAuthorizationHttpEndpointCommandImpl$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$"no-store"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalHttpEndpointCommandImpl.kt$DeviceVerificationApprovalHttpEndpointCommandImpl$"server_error"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$"no-store"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationApprovalSubmitHttpEndpointCommandImpl.kt$DeviceVerificationApprovalSubmitHttpEndpointCommandImpl$"server_error"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$"no-store"</ID>
+    <ID>StringLiteralDuplication:DeviceVerificationSubmitHttpEndpointCommandImpl.kt$DeviceVerificationSubmitHttpEndpointCommandImpl$"server_error"</ID>
+    <ID>StringLiteralDuplication:EndSessionHttpEndpointCommandImpls.kt$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:EndSessionHttpEndpointCommandImpls.kt$"Set-Cookie"</ID>
+    <ID>StringLiteralDuplication:EndSessionHttpEndpointCommandImpls.kt$"no-store"</ID>
+    <ID>StringLiteralDuplication:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$"Cache-Control"</ID>
+    <ID>StringLiteralDuplication:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$"Content-Type"</ID>
+    <ID>StringLiteralDuplication:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$"application/json"</ID>
+    <ID>StringLiteralDuplication:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:IaeHttpEndpointCommandImpl.kt$IaeHttpEndpointCommandImpl$"no-store"</ID>
+    <ID>StringLiteralDuplication:LoginCancelHttpEndpointCommandImpl.kt$LoginCancelHttpEndpointCommandImpl$"Missing CSRF parameters"</ID>
+    <ID>StringLiteralDuplication:LoginCancelHttpEndpointCommandImpl.kt$LoginCancelHttpEndpointCommandImpl$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$"Missing CSRF parameters"</ID>
+    <ID>StringLiteralDuplication:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$"error_subcode"</ID>
+    <ID>StringLiteralDuplication:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$"invalid_credentials"</ID>
+    <ID>StringLiteralDuplication:LoginSubmitHttpEndpointCommandImpl.kt$LoginSubmitHttpEndpointCommandImpl$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpAdapterDescriptorProvider.kt$OAuth2LoginHttpAdapterDescriptorProvider$"text/html"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"Content-Type"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"HttpOnly"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"Secure"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"Strict-Transport-Security"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"X-Content-Type-Options"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"access_denied"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"https"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"invalid_client"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"invalid_request"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"invalid_scope"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"server_error"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"temporarily_unavailable"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"unauthorized_client"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"unsupported_response_type"</ID>
+    <ID>StringLiteralDuplication:OAuth2HttpResponses.kt$"use_dpop_nonce"</ID>
+    <ID>StringLiteralDuplication:RegisterPreAuthorizedCodeHttpEndpointCommandImpl.kt$RegisterPreAuthorizedCodeHttpEndpointCommandImpl$"invalid_client"</ID>
+    <ID>StringLiteralDuplication:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$"Content-Type"</ID>
+    <ID>StringLiteralDuplication:UserInfoHttpEndpointCommandImpl.kt$UserInfoHttpEndpointCommandImpl$"invalid_token"</ID>
+    <ID>TooManyFunctions:OAuth2HttpResponses.kt$com.sphereon.oauth2.server.authorization.impl.http.OAuth2HttpResponses.kt</ID>
   </CurrentIssues>
 </SmellBaseline>

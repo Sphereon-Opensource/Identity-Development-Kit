@@ -22,10 +22,14 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.oauth2.client.command.AuthorizationResponseSource
+import com.sphereon.oauth2.client.command.CompleteOidcLoginArgs
+import com.sphereon.oauth2.client.command.OidcLoginResult
 import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.TokenResponse
 import kotlin.jvm.JvmOverloads
@@ -60,6 +64,65 @@ interface OAuth2Client {
      * @return True if DPoP is supported
      */
     fun isDpopSupported(authorizationServerMetadata: AuthorizationServerMetadata): Boolean
+
+    /**
+     * Façade grouping the OIDC login API (`initiate` + `complete`) so the secure path is the
+     * obvious default for OIDC RPs. Raw OAuth2 methods (`initiateAuthorization`,
+     * `exchangeAuthorizationCode`) remain on the root for non-OIDC callers.
+     */
+    @JsExportIgnoreCompat
+    val oidcLogin: OidcLoginApi
+
+    /**
+     * Initiates an OIDC authorization-code login.
+     *
+     * Unlike [initiateAuthorization], this method generates CSRF `state`, replay-protection
+     * `nonce`, and an S256 PKCE verifier/challenge using the injected CSPRNG, persists the
+     * resulting [com.sphereon.oauth2.client.transaction.OidcLoginTransaction] via the
+     * [com.sphereon.oauth2.client.transaction.OidcLoginTransactionStore], and returns the
+     * authorization URL plus the `state` value the caller may want to echo back. Callback
+     * handling via `completeOidcLogin` consumes the transaction atomically.
+     *
+     * All parameters are OIDC Core-aligned — callers building non-OIDC OAuth2 flows should
+     * continue to use [initiateAuthorization].
+     *
+     * @param issuer The OIDC issuer URL — metadata is discovered via [fetchAuthorizationServerMetadata].
+     * @param clientId Registered OAuth2 client identifier.
+     * @param redirectUri Registered redirect URI for the callback.
+     * @param scopes OAuth2/OIDC scopes; defaults to `openid`.
+     * @param responseMode Response mode to request; defaults to `query`.
+     * @param prompt Optional `prompt` parameter (`login`, `consent`, `none`, ...).
+     * @param loginHint Optional `login_hint` parameter.
+     * @param tenantId Optional multi-tenant partition key for the transaction store.
+     */
+    @JsExportIgnoreCompat
+    suspend fun initiateOidcLogin(
+        issuer: String,
+        clientId: String,
+        redirectUri: String,
+        scopes: Set<String> = setOf("openid"),
+        responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+        prompt: String? = null,
+        loginHint: String? = null,
+        tenantId: String? = null,
+    ): IdkResult<OidcLoginInitiation, IdkError>
+
+    /**
+     * Metadata-typed overload of [initiateOidcLogin] for callers that have already resolved
+     * the authorization server metadata. Primarily used by tests and advanced integrations that
+     * cache metadata themselves.
+     */
+    @JsExportIgnoreCompat
+    suspend fun initiateOidcLogin(
+        authorizationServerMetadata: AuthorizationServerMetadata,
+        clientId: String,
+        redirectUri: String,
+        scopes: Set<String> = setOf("openid"),
+        responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+        prompt: String? = null,
+        loginHint: String? = null,
+        tenantId: String? = null,
+    ): IdkResult<OidcLoginInitiation, IdkError>
 
     /**
      * Initiates an authorization request
@@ -219,6 +282,60 @@ interface OAuth2Client {
         accessToken: String,
         metadata: AuthorizationServerMetadata,
     ): IdkResult<com.sphereon.oauth2.client.command.FetchUserInfoResult, IdkError>
+}
+
+/**
+ * Result of [OAuth2Client.initiateOidcLogin]: the authorization URL to redirect the user agent
+ * to, plus the generated `state` so the RP can echo it or log it. The `nonce` and PKCE verifier
+ * are held server-side in the transaction store and are NOT returned to the caller — that keeps
+ * the secure defaults in the happy path.
+ */
+@JsExportCompat
+public data class OidcLoginInitiation(
+    public val authorizationUrl: String,
+    public val state: String,
+)
+
+/**
+ * Façade grouping the OIDC login workflow into `initiate` + `complete`, so that callers have a
+ * single obvious place to reach for the secure authorization-code flow. Raw OAuth2 methods live
+ * on the parent [OAuth2Client] for non-OIDC callers.
+ */
+@JsExportIgnoreCompat
+interface OidcLoginApi {
+    /** Begin an OIDC login — generates state/nonce/PKCE and returns the authorization URL. */
+    suspend fun initiate(
+        issuer: String,
+        clientId: String,
+        redirectUri: String,
+        scopes: Set<String> = setOf("openid"),
+        responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+        prompt: String? = null,
+        loginHint: String? = null,
+        tenantId: String? = null,
+    ): IdkResult<OidcLoginInitiation, IdkError>
+
+    /** Metadata-typed variant of [initiate] — useful when metadata is cached elsewhere. */
+    suspend fun initiate(
+        authorizationServerMetadata: AuthorizationServerMetadata,
+        clientId: String,
+        redirectUri: String,
+        scopes: Set<String> = setOf("openid"),
+        responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+        prompt: String? = null,
+        loginHint: String? = null,
+        tenantId: String? = null,
+    ): IdkResult<OidcLoginInitiation, IdkError>
+
+    /** Complete an OIDC login by handling the authorization response callback. */
+    suspend fun complete(
+        clientId: String,
+        clientAuthentication: ClientAuthenticationConfig,
+        callbackUrl: String,
+        callbackFormBody: String? = null,
+        responseSource: AuthorizationResponseSource = AuthorizationResponseSource.QUERY,
+        tenantId: String? = null,
+    ): IdkResult<OidcLoginResult, IdkError>
 }
 
 /**

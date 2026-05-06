@@ -50,8 +50,16 @@ object WebDidUrlBuilder {
             "DID must start with 'did:web:': $did"
         }
 
+        // Strip DID-URL syntax components (path, query, fragment) per W3C DID Core §3.2.
+        // A DID URL like `did:web:issuer.example.com#0` or `did:web:example.com?service=foo`
+        // is dereferenced by resolving the *bare* DID (the part before `#`, `?`, or `/`)
+        // to its document and then locating the fragment locally. Concatenating the raw
+        // input into the HTTPS URL produced `https://issuer.example.com#0/.well-known/did.json`
+        // — fragments leak into the host component and the fetch hits the site root.
+        val bareDid = stripDidUrlSyntax(did)
+
         // Extract the method-specific identifier
-        val methodSpecificId = did.removePrefix("did:web:")
+        val methodSpecificId = bareDid.removePrefix("did:web:")
 
         // Split by colons to get domain and path segments
         val segments = methodSpecificId.split(":")
@@ -137,7 +145,10 @@ object WebDidUrlBuilder {
             return false
         }
 
-        val methodSpecificId = did.removePrefix("did:web:")
+        // Tolerate DID URL inputs (path, query, fragment) — only the bare DID is what
+        // determines did:web validity for resolution purposes.
+        val bareDid = stripDidUrlSyntax(did)
+        val methodSpecificId = bareDid.removePrefix("did:web:")
         if (methodSpecificId.isEmpty()) {
             return false
         }
@@ -154,5 +165,17 @@ object WebDidUrlBuilder {
         }
 
         return true
+    }
+
+    /**
+     * Strip DID URL syntax (path, query, fragment) from a DID input, leaving the bare DID.
+     * Per W3C DID Core §3.2 a DID URL has the form `did:method:id[/path][?query][#fragment]`
+     * — for resolution we want only the part up to the first `/`, `?`, or `#`. Note that
+     * `:` *inside* the method-specific id is preserved (it separates path segments per
+     * did:web; not a path delimiter in the URL sense).
+     */
+    fun stripDidUrlSyntax(did: String): String {
+        val firstSyntax = did.indexOfFirst { it == '/' || it == '?' || it == '#' }
+        return if (firstSyntax < 0) did else did.substring(0, firstSyntax)
     }
 }

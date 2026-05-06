@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 
 /**
@@ -46,7 +47,7 @@ interface CommandRequest
  * **Usage:**
  * ```kotlin
  * class HealthCheckCommand(execution: SessionExecution) :
- *     TypedServiceCommandAdapter<EmptyRequest, HealthStatus>(
+ *     TypedServiceCommandAdapter<EmptyRequest, HealthStatus, IdkError>(
  *         commandId = "health.check",
  *         execution = execution,
  *         inputTypeToken = typeToken<EmptyRequest>(),

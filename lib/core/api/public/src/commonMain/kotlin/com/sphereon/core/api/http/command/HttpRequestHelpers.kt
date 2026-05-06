@@ -54,17 +54,45 @@ fun GenericHttpRequest.requireQueryParam(name: String): IdkResult<String, IdkErr
 fun GenericHttpRequest.optionalQueryParam(name: String): IdkResult<String?, IdkError> = Ok(queryParams[name])
 
 /**
- * Extract a required header value.
- * Returns [Err] with [ErrorCategory.VALIDATION] if the header is missing.
+ * Extract a required header value case-insensitively per RFC 9110 §5.1. Returns [Err] with
+ * [ErrorCategory.VALIDATION] when no header matches [name] under case-insensitive comparison.
  */
 fun GenericHttpRequest.requireHeader(name: String): IdkResult<String, IdkError> {
-    val value = headers[name] ?: headers[name.lowercase()]
+    val value = headerIgnoreCase(name)
     return if (value != null) {
         Ok(value)
     } else {
         Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing required header: $name"))
     }
 }
+
+/**
+ * Look up a header value case-insensitively per RFC 9110 §5.1. Returns `null` when no header
+ * with [name] (case-insensitive) is present. Prefer this over `headers[name]` for every read so
+ * the lookup is robust to any case-normalisation that may happen in front of the application.
+ */
+fun GenericHttpRequest.headerIgnoreCase(name: String): String? = headers.headerIgnoreCase(name)
+
+/**
+ * All values for a header, case-insensitive, preserving multi-occurrence order. Returns an
+ * empty list when the header is absent. Use this when the call site needs to enforce
+ * single-occurrence semantics (e.g. RFC 9449 §4.1: a single `DPoP` HTTP header is REQUIRED) —
+ * the scalar [headers] map collapses duplicates by joining with `,`, which loses the original
+ * count.
+ */
+fun GenericHttpRequest.headerValuesIgnoreCase(name: String): List<String> =
+    multiValueHeaders.entries
+        .firstOrNull { it.key.equals(name, ignoreCase = true) }
+        ?.value
+        ?: headerIgnoreCase(name)?.let { listOf(it) }
+        ?: emptyList()
+
+/**
+ * Case-insensitive (RFC 9110 §5.1) header lookup on a plain `Map<String, String>`. Use when a
+ * caller carries headers as a flat map (not wrapped in [GenericHttpRequest]), e.g. across
+ * service-command boundaries where only primitives flow.
+ */
+fun Map<String, String>.headerIgnoreCase(name: String): String? = entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
 /**
  * Extract the tenant ID from request headers.

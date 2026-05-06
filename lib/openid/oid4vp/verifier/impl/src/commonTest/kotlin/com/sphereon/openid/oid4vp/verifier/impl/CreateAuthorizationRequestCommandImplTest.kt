@@ -428,6 +428,6 @@ class CreateAuthorizationRequestCommandImplTest {
             com.sphereon.crypto.core
                 .KeyInfo<Nothing>(alias = "stub")
 
-        override suspend fun resolveSignerBinding() = binding
+        override suspend fun resolveSignerBinding(scheme: com.sphereon.openid.oid4vp.common.ClientIdScheme?) = binding
     }
 }

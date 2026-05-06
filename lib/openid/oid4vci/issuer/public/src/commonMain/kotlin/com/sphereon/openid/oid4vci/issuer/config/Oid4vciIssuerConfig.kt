@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.issuer.config
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.common.model.BatchCredentialIssuance
@@ -63,12 +64,32 @@ interface Oid4vciIssuerConfigProvider {
         get() = null
 
     /**
-     * OID4VCI 1.1 credential request encryption metadata.
+     * OID4VCI 1.0 §11.2.4 credential request encryption metadata.
      *
-     * Declares the issuer's encryption key and supported algorithms for receiving encrypted requests.
-     * When null, the metadata omits the `credential_request_encryption` field.
+     * Declares the issuer's encryption key and supported algorithms for receiving encrypted
+     * requests. The `jwks` field on the returned object is allowed to be a placeholder
+     * (`{"keys": []}`); the metadata builder resolves [credentialRequestDecryptionKey] from
+     * KMS at runtime and replaces the placeholder with the real public JWK so we never have
+     * to store key material in YAML / git.
+     *
+     * When null, the metadata omits the `credential_request_encryption` field entirely.
      */
     val credentialRequestEncryption: MetadataCredentialRequestEncryption?
+        get() = null
+
+    /**
+     * KMS-managed identifier for the issuer's request-decryption keypair (ECDH-ES P-256). The
+     * public half is published in `credential_request_encryption.jwks` (with
+     * `kid = keyInfo.kid`) so wallets can encrypt credential-request bodies to it; the private
+     * half stays in the KMS and is resolved by `kid` when an encrypted credential request
+     * arrives.
+     *
+     * Mirrors the [signingKey] pattern: the config layer returns unresolved opts; consumers
+     * resolve them at use time via `MultiManagedIdentifierService` because the resolution is
+     * suspending and can fail. Returns null when the issuer doesn't advertise request
+     * encryption (the [credentialRequestEncryption] getter must also return null in that case).
+     */
+    val credentialRequestDecryptionKey: ManagedIdentifierOptsOrResult?
         get() = null
 
     /**
@@ -89,6 +110,35 @@ interface Oid4vciIssuerConfigProvider {
     @JsExportIgnoreCompat
     val credentialSigningConfigs: Map<String, CredentialSigningConfig>
         get() = emptyMap()
+
+    /**
+     * Per-credential, per-proof-carrier trust configuration for OID4VCI 1.0 §7.2 key
+     * attestations. The outer key is the credential configuration ID; the inner key is the
+     * `proof_type` value (`"jwt"`, `"attestation"`, …) — same nesting level as the
+     * `key_attestations_required` policy in `proof_types_supported`, so the operator
+     * configures policy and trust together inside one block per proof carrier.
+     *
+     * Each entry carries:
+     * - `trustedJwks` — direct JWK pinning (matched by `kid` or by JWK thumbprint).
+     * - `trustedIssuers` — required `iss` claim allow-list.
+     * - `x509TrustAnchorPaths` — extra PEM CA bundles for `x5c`-bound attestation JWTs,
+     *   used in addition to the global `lib/trust/x509` anchors.
+     *
+     * Absent entry = no per-config override; the verifier falls back to the global X.509
+     * anchors only.
+     */
+    @JsExportIgnoreCompat
+    val keyAttesterTrustConfigs: Map<String, Map<String, KeyAttesterTrustConfig>>
+        get() = emptyMap()
+
+    /**
+     * Convenience lookup for [keyAttesterTrustConfigs]. Returns null when the credential
+     * has no per-config trust override for the given proof carrier.
+     */
+    fun keyAttesterTrustFor(
+        credentialConfigId: String,
+        proofType: String,
+    ): KeyAttesterTrustConfig? = keyAttesterTrustConfigs[credentialConfigId]?.get(proofType)
 
     /**
      * All KMS aliases this issuer actively signs with — union of per-credential signing
@@ -154,3 +204,29 @@ data class CredentialSigningConfig(
      */
     val expirationInDays: Int? = null,
 )
+
+/**
+ * Trust configuration for OID4VCI 1.0 §7.2 key-attestation JWTs scoped to a single
+ * credential configuration.
+ *
+ * The verifier resolves the attester key in this priority order:
+ * 1. `x5c` header → validate chain via `X509TrustValidationService` against the union
+ *    of [x509TrustAnchorPaths] and the globally loaded `lib/trust/x509` anchors.
+ * 2. `kid` / `jwk` header → match against [trustedJwks] (by `kid`, falling back to
+ *    JWK thumbprint).
+ * 3. When [trustedIssuers] is non-empty, also enforce that the JWT's `iss` claim is
+ *    in the list.
+ *
+ * All-null = "no per-config override"; callers should fall back to the global trust
+ * store. An empty list explicitly trusts nothing of that flavour.
+ *
+ * YAML: `sphereon.oid4vci.issuer.credentials.[<id>].key-attester-trust.{jwks,issuers,x509-anchor-paths}`.
+ */
+@JsExportCompat
+data class KeyAttesterTrustConfig
+    @JsExportIgnoreCompat
+    constructor(
+        @JsExportIgnoreCompat val trustedJwks: List<Jwk>? = null,
+        val trustedIssuers: List<String>? = null,
+        val x509TrustAnchorPaths: List<String>? = null,
+    )

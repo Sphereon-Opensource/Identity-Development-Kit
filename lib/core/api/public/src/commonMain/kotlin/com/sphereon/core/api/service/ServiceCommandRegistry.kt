@@ -43,18 +43,18 @@ interface RegistrableServiceCommand {
 interface RegistrableServiceCommandDescriptor {
     val commandId: String
 
-    fun create(): ServiceCommand<*, *>
+    fun create(): ServiceCommand<*, *, *>
 
     companion object {
         @JvmStatic
         fun of(
             commandId: String,
-            factory: () -> ServiceCommand<*, *>,
+            factory: () -> ServiceCommand<*, *, *>,
         ): RegistrableServiceCommandDescriptor =
             object : RegistrableServiceCommandDescriptor {
                 override val commandId: String = commandId
 
-                override fun create(): ServiceCommand<*, *> = factory()
+                override fun create(): ServiceCommand<*, *, *> = factory()
             }
     }
 }
@@ -92,7 +92,7 @@ interface ServiceCommandRegistry {
  * lazily instantiated on first access.
  */
 interface SessionScopedCommandRegistry {
-    fun get(commandId: String): ServiceCommand<*, *>?
+    fun get(commandId: String): ServiceCommand<*, *, *>?
 
     fun has(commandId: String): Boolean = get(commandId) != null
 
@@ -106,7 +106,7 @@ interface SessionScopedCommandRegistry {
      * @param commandId The command to look up
      * @return The command implementation, or null if not found
      */
-    fun getLocal(commandId: String): ServiceCommand<*, *>? = get(commandId)
+    fun getLocal(commandId: String): ServiceCommand<*, *, *>? = get(commandId)
 
     @ContributesTo(SessionScope::class)
     interface Graph {

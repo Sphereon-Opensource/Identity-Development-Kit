@@ -85,7 +85,32 @@ class KeyInfoIdentifierResolutionServiceImpl(
 
         val opts = optsResult.value
         log.debug("opts.identifier.signatureAlgorithm = ${opts.identifier.signatureAlgorithm}")
-        var managedKeyInfo = kms.getKey(opts.identifier)
+        // Resolution policy:
+        //  - If the caller supplied a fully-formed key (e.g. via ManagedOptsJwk wrapping a
+        //    ResolvedKeyInfo whose key is already populated), respect the supplied key. The
+        //    KMS keystore is consulted only when the identifier is alias/kid-only. Substituting
+        //    a KMS-resident key in place of an explicitly-supplied one would silently change
+        //    which private/public key performs the cryptographic operation.
+        //  - Otherwise, look the key up in the KMS keystore.
+        var managedKeyInfo =
+            if (opts.identifier.key !== null) {
+                resolveFromSuppliedKey(opts.identifier)
+            } else {
+                try {
+                    kms.getKey(opts.identifier)
+                } catch (expected: Exception) {
+                    // Surface lookup failures as IdkResult.Err so JWE/JWS decrypt/verify callers
+                    // see a typed error rather than a raw exception bubbling out of the resolver.
+                    // Without this, a missing/unknown key throws PKIException and the higher-level
+                    // IdkResult-based contract is bypassed.
+                    log.debug("KMS lookup failed for identifier ${opts.identifier}: ${expected.message}")
+                    return IdkError
+                        .NOT_FOUND_ERROR(
+                            resource = "Key",
+                            message = "Could not resolve managed key identifier: ${expected.message}",
+                        ).asErrorResult()
+                }
+            }
         log.debug("Retrieved key with signatureAlgorithm = ${managedKeyInfo.signatureAlgorithm}")
 
         // If the opts.identifier has a signatureAlgorithm hint (e.g., from JWT header),
@@ -210,7 +235,63 @@ class KeyInfoIdentifierResolutionServiceImpl(
         return methodSupported && isSupportedIdentifier(managedArgs.identifier)
     }
 
+    /**
+     * Wraps a caller-supplied [KeyInfoType] (with key material already present) into a
+     * [ManagedKeyInfoType] without touching the KMS keystore. Used when the caller has
+     * explicitly provided the key to use; the resolver must respect that exact key.
+     *
+     * Field handling:
+     *  - `alias` reuses the supplied value, falling back to the supplied/derived `kid` (the
+     *    key's own identifier), then a synthetic literal. The alias is purely a label on the
+     *    in-flight result; it is never used to look up anything in the keystore.
+     *  - `providerId` reuses the supplied value, falling back to the registered KMS default
+     *    provider so that downstream cryptographic operations (wrap/unwrap/decrypt/derive) can
+     *    still pick a provider capable of handling the supplied key material.
+     */
+    private fun resolveFromSuppliedKey(identifier: KeyInfoType<*>): ManagedKeyInfoType<*> {
+        val key = requireNotNull(identifier.key) { "resolveFromSuppliedKey requires identifier.key to be non-null" }
+        val alias =
+            identifier.alias
+                ?: identifier.kid
+                ?: key.getKeyId(true)
+                ?: SUPPLIED_KEY_ALIAS_FALLBACK
+        val providerId =
+            identifier.providerId
+                ?: runCatching { kms.defaultProviderId() }.getOrNull()
+                ?: SUPPLIED_KEY_PROVIDER_LABEL
+        val resolvedKeyInfo =
+            ResolvedKeyInfo(
+                key = key,
+                signatureAlgorithm = identifier.signatureAlgorithm,
+                kid = identifier.kid ?: key.getKeyId(false),
+                alias = alias,
+                providerId = providerId,
+                keyVisibility = identifier.keyVisibility,
+                keyType = identifier.keyType ?: key.getKeyType(),
+                keyEncoding = identifier.keyEncoding,
+                x5c = identifier.x5c,
+            )
+        return ManagedKeyInfo(
+            alias = alias,
+            providerId = providerId,
+            resolvedKeyInfo = resolvedKeyInfo,
+        )
+    }
+
     companion object {
         const val COMMAND_ID = "crypto.resolution.keyinfo"
+
+        /**
+         * Synthetic alias used when a caller supplies key material but no alias/kid; the
+         * resolver still needs a non-null label to satisfy [ManagedKeyInfo]'s contract.
+         */
+        private const val SUPPLIED_KEY_ALIAS_FALLBACK = "supplied-key"
+
+        /**
+         * Last-resort provider label used only when a caller supplies key material with no
+         * providerId AND no KMS provider is registered yet; downstream operations on this
+         * placeholder will fail loudly rather than silently route to an unrelated provider.
+         */
+        private const val SUPPLIED_KEY_PROVIDER_LABEL = "supplied"
     }
 }

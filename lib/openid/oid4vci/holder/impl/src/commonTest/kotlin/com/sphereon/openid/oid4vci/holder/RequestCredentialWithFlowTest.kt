@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.holder
 
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
+import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -153,7 +154,7 @@ class RequestCredentialWithFlowTest {
     fun immediateResultHasCredentialAndNotificationSent() {
         val credential =
             CredentialResponse(
-                credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.payload.sig"),
+                credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.payload.sig"))),
                 notificationId = "notif-001",
             )
 
@@ -170,7 +171,7 @@ class RequestCredentialWithFlowTest {
 
     @Test
     fun immediateResultNotificationSentCanBeFalse() {
-        val credential = CredentialResponse(credential = JsonPrimitive("eyJ.x.y"))
+        val credential = CredentialResponse(credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJ.x.y"))))
 
         val result = CredentialFlowResult.Immediate(credential = credential, notificationSent = false)
 
@@ -185,7 +186,7 @@ class RequestCredentialWithFlowTest {
     fun deferredCompletedResultHasAllFields() {
         val credential =
             CredentialResponse(
-                credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.deferred.sig"),
+                credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.deferred.sig"))),
                 notificationId = "notif-deferred",
             )
 
@@ -227,7 +228,7 @@ class RequestCredentialWithFlowTest {
 
     @Test
     fun whenExpressionCoversAllSubtypes() {
-        val credential = CredentialResponse(credential = JsonPrimitive("eyJ.x.y"))
+        val credential = CredentialResponse(credentials = listOf(CredentialResponseItem(JsonPrimitive("eyJ.x.y"))))
         val results: List<CredentialFlowResult> =
             listOf(
                 CredentialFlowResult.Immediate(credential, false),
@@ -258,6 +259,6 @@ class RequestCredentialWithFlowTest {
 
     @Test
     fun commandIdIsCorrect() {
-        assertEquals("oid4vci.holder.flow.credentialflow", RequestCredentialWithFlowCommand.COMMAND_ID)
+        assertEquals("oid4vci.holder.credential-flow", RequestCredentialWithFlowCommand.COMMAND_ID)
     }
 }

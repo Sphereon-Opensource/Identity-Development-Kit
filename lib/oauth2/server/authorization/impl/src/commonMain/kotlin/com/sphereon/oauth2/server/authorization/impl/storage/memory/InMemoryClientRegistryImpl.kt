@@ -19,6 +19,7 @@ package com.sphereon.oauth2.server.authorization.impl.storage.memory
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
@@ -183,9 +184,12 @@ class InMemoryClientRegistryImpl(
             if (client == null) {
                 Ok(false)
             } else {
-                // Simple string comparison for in-memory implementation
-                // Production implementations should use secure password hashing (bcrypt, argon2, etc.)
-                val isValid = client.clientSecret == clientSecret
+                // Constant-time compare honours the SPI contract on
+                // ClientRegistry.verifyClientCredentials. The in-memory store keeps secrets
+                // in plaintext for dev convenience; the wire-side compare must still be CT
+                // so a timing oracle cannot enumerate the secret byte by byte.
+                val storedSecret = client.clientSecret
+                val isValid = storedSecret != null && ConstantTime.equalsCT(storedSecret, clientSecret)
                 Ok(isValid)
             }
         } catch (expected: Exception) {

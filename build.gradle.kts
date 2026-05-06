@@ -158,12 +158,21 @@ subprojects {
     }
 
     // xmlutil 0.90.1: duplicate function declarations in JS ESM output. 0.91.3 fixes this.
-    // kotlinx-datetime: force non-compat version (Gradle considers 0.7.1-0.6.x-compat > 0.7.1)
+    // kotlinx-datetime: pin to the `0.7.1-0.6.x-compat` flavour. Vanilla
+    // 0.7.1 moved `kotlinx.datetime.Instant` into `kotlin.time` (typealias)
+    // and ships no class file on the runtime classpath. Kotlin Dataframe's
+    // CSV / convert bytecode still calls the old class and throws
+    // `NoClassDefFoundError: kotlinx/datetime/Instant` at ingest. The compat
+    // build keeps both the legacy class and the new stdlib alias, so both
+    // Dataframe and IDK call sites resolve. Force on every configuration so
+    // a transitive 0.7.1 request loses the conflict (Gradle's version
+    // ordering does NOT consider `0.7.1-0.6.x-compat` greater than `0.7.1`,
+    // so without an explicit force the non-compat variant wins).
     configurations.configureEach {
         resolutionStrategy {
             force("io.github.pdvrieze.xmlutil:core:0.91.3")
             force("io.github.pdvrieze.xmlutil:serialization:0.91.3")
-            force("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1")
+            force("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
             // Kotlin RC: force all Kotlin artifacts to match compiler version across all targets
             val kotlinVersion = extra["kotlin.version"] as String
             force("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion")

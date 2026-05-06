@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/http/command/DirectPostResponseEndpointCommand.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+        <error line="155" column="33" source="standard:multiline-expression-wrapping" />
+        <error line="157" column="30" source="standard:multiline-expression-wrapping" />
+        <error line="174" column="71" source="standard:chain-method-continuation" />
+        <error line="174" column="77" source="standard:chain-method-continuation" />
+        <error line="174" column="83" source="standard:chain-method-continuation" />
+        <error line="174" column="93" source="standard:chain-method-continuation" />
+    </file>
+</baseline>

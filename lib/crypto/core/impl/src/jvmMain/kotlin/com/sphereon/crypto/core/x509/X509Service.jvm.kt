@@ -100,11 +100,17 @@ class X509VerifyServiceJvmAdapter :
             val cf = CertificateFactory.getInstance("X.509")
             require(certificateChain.isNotEmpty()) { "No certificate chain provided" }
 
-            // Determine trust anchors
-            val pemAnchors = pemAndDerToCertificateChain(pemChain = verifyContext.request.chainPEM, derChain = verifyContext.request.chainDER)
+            // Determine trust anchors. The request carries the chain to validate in `chainPEM`
+            // / `chainDER` and the trust anchors separately in `trustedCerts`. Earlier this
+            // function read `chainPEM` here, which is the chain itself — meaning the validator
+            // built `TrustAnchor`s from the leaf + intermediates and could only succeed when the
+            // chain happened to anchor at one of those certs (effectively self-trusting any
+            // submitted chain). Read from `trustedCerts` instead, falling back to the JVM
+            // default trust store only when no explicit anchors were configured.
+            val trustedCertsPemArray: Array<String>? = verifyContext.request.trustedCerts
             val anchors: Set<TrustAnchor> =
-                if (pemAnchors.isNotEmpty()) {
-                    // parse passed-in trusted certs
+                if (trustedCertsPemArray != null && trustedCertsPemArray.isNotEmpty()) {
+                    val pemAnchors = pemAndDerToCertificateChain(pemChain = trustedCertsPemArray, derChain = null)
                     pemAnchors
                         .map { pem ->
                             val tc =
@@ -114,7 +120,6 @@ class X509VerifyServiceJvmAdapter :
                             TrustAnchor(tc, null)
                         }.toSet()
                 } else {
-                    // use default JVM trust store (cacerts)
                     val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
                     tmf.init(null as KeyStore?)
                     tmf.trustManagers

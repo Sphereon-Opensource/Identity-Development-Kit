@@ -2,6 +2,10 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>StringLiteralDuplication:ResourceServerError.kt$ResourceServerError.InvalidToken$"reason"</ID>
+    <ID>BracesOnIfStatements:ResourceServerError.kt$ResourceServerError.InvalidToken.SignatureInvalid$else</ID>
+    <ID>BracesOnIfStatements:ResourceServerError.kt$ResourceServerError.InvalidToken.SignatureInvalid$if</ID>
+    <ID>CyclomaticComplexMethod:ResourceRequest.kt$ResourceRequest$override fun equals(other: Any?): Boolean</ID>
+    <ID>StringLiteralDuplication:ResourceServerError.kt$ResourceServerError.InvalidToken.Expired$"reason"</ID>
+    <ID>StringLiteralDuplication:ResourceServerError.kt$ResourceServerError.InvalidToken.IssuerMismatch$"actual"</ID>
   </CurrentIssues>
 </SmellBaseline>

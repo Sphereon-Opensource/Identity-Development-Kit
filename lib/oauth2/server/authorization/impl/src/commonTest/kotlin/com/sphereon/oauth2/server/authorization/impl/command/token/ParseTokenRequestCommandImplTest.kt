@@ -299,8 +299,11 @@ class ParseTokenRequestCommandImplTest {
         }
 
     @Test
-    fun `test attestation headers take priority over basic auth`() =
+    fun `test attestation headers plus basic auth rejects as invalid_request`() =
         runTest {
+            // OIDC Core §9 / RFC 6749 §2.3 — a client MUST use exactly one authentication method
+            // per token request; the prior "priority wins" fallback has been replaced with
+            // strict rejection.
             val requestBody =
                 mapOf(
                     "grant_type" to listOf("client_credentials"),
@@ -315,8 +318,8 @@ class ParseTokenRequestCommandImplTest {
 
             val result = command.execute(ParseTokenRequestArgs(requestBody, requestHeaders))
 
-            assertTrue(result.isOk)
-            assertTrue(result.value.clientAuthentication is ClientAuthenticationConfig.AttestationJwt)
+            assertTrue(result.isErr)
+            assertEquals("invalid_request", result.error.code)
         }
 
     @Test
@@ -384,8 +387,10 @@ class ParseTokenRequestCommandImplTest {
         }
 
     @Test
-    fun `test jwt assertion takes priority over post auth`() =
+    fun `test jwt assertion plus post auth rejects as invalid_request`() =
         runTest {
+            // OIDC Core §9 / RFC 6749 §2.3 — combining client_assertion with a body client_secret
+            // is two authentication methods in one request and must be rejected.
             val requestBody =
                 mapOf(
                     "grant_type" to listOf("client_credentials"),
@@ -397,8 +402,7 @@ class ParseTokenRequestCommandImplTest {
 
             val result = command.execute(ParseTokenRequestArgs(requestBody, emptyMap()))
 
-            assertTrue(result.isOk)
-            // JWT assertion should take priority over client_secret in body
-            assertTrue(result.value.clientAuthentication is ClientAuthenticationConfig.PrivateKeyJwt)
+            assertTrue(result.isErr)
+            assertEquals("invalid_request", result.error.code)
         }
 }

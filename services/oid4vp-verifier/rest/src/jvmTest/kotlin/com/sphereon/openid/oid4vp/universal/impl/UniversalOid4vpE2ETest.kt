@@ -48,6 +48,7 @@ import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.impl.Oid4VpVerifierServiceImpl
+import com.sphereon.openid.oid4vp.verifier.impl.TestRequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.sdjwt.IssueSdJwtArgs
 import com.sphereon.sdjwt.PresentSdJwtArgs
@@ -89,6 +90,11 @@ class UniversalOid4vpE2ETest {
     fun setup() {
         // Clear any previous test properties
         DefaultPrincipalMapPropertySource.getSource().clear()
+        // Reset the global JAR signing flag — the [TestRequestObjectSigningConfig] holds it in
+        // a `@Volatile var` so a previous test in another class that called `enableDidJwkSigning()`
+        // would otherwise leave it on, which makes the verifier try to load a key alias these
+        // tests don't generate and produces a 500 on the very first request.
+        TestRequestObjectSigningConfig.disable()
     }
 
     @Test

@@ -382,4 +382,221 @@ class ValidateIdTokenCommandE2ETest {
 
             assertTrue(result.isErr, "Validation should fail with wrong nonce")
         }
+
+    // OIDC Core §3.1.3.7 claim validations (aud array + azp + max_age).
+
+    @Test
+    fun validate_audArrayWithoutAzp_rejects() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = keyInfo,
+                    context = IdentifierContext(clientId = "https://example.com"),
+                )
+
+            val now = Clock.System.now().epochSeconds
+            val payload =
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "aud" to listOf("client-1", "other-audience"),
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                )
+
+            val idToken = createSignedIdToken(issuer, payload)
+
+            val result =
+                validateCommand.execute(
+                    ValidateIdTokenArgs(
+                        idToken = idToken,
+                        options =
+                            IdTokenValidationOptions(
+                                expectedIssuer = "https://example.com",
+                                expectedAudience = "client-1",
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isErr, "aud-array without azp must be rejected")
+            assertTrue(
+                result.error.message.defaultMessage
+                    ?.contains("azp") == true,
+                "rejection reason must cite azp; got: ${result.error.message.defaultMessage}",
+            )
+        }
+
+    @Test
+    fun validate_audArrayWithMatchingAzp_accepts() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = keyInfo,
+                    context = IdentifierContext(clientId = "https://example.com"),
+                )
+
+            val now = Clock.System.now().epochSeconds
+            val payload =
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "aud" to listOf("client-1", "other-audience"),
+                    "azp" to "client-1",
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                )
+
+            val idToken = createSignedIdToken(issuer, payload)
+
+            val result =
+                validateCommand.execute(
+                    ValidateIdTokenArgs(
+                        idToken = idToken,
+                        options =
+                            IdTokenValidationOptions(
+                                expectedIssuer = "https://example.com",
+                                expectedAudience = "client-1",
+                            ),
+                    ),
+                )
+
+            assertTrue(
+                result.isOk,
+                "aud-array + matching azp must pass; got: ${if (result.isErr) result.error else ""}",
+            )
+        }
+
+    @Test
+    fun validate_azpPresent_mismatchRejects() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = keyInfo,
+                    context = IdentifierContext(clientId = "https://example.com"),
+                )
+
+            val now = Clock.System.now().epochSeconds
+            // Even with a single aud, if azp is present it MUST equal client_id.
+            val payload =
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "aud" to listOf("client-1"),
+                    "azp" to "other-client",
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                )
+
+            val idToken = createSignedIdToken(issuer, payload)
+
+            val result =
+                validateCommand.execute(
+                    ValidateIdTokenArgs(
+                        idToken = idToken,
+                        options =
+                            IdTokenValidationOptions(
+                                expectedIssuer = "https://example.com",
+                                expectedAudience = "client-1",
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertTrue(
+                result.error.message.defaultMessage
+                    ?.contains("azp") == true,
+                "rejection must cite azp; got: ${result.error.message.defaultMessage}",
+            )
+        }
+
+    @Test
+    fun validate_maxAgeExceeded_rejects() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = keyInfo,
+                    context = IdentifierContext(clientId = "https://example.com"),
+                )
+
+            val now = Clock.System.now().epochSeconds
+            val payload =
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "aud" to listOf("client-1"),
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                    // auth_time is 1 hour ago; caller requires max_age=60s → stale.
+                    "auth_time" to (now - 3600),
+                )
+
+            val idToken = createSignedIdToken(issuer, payload)
+
+            val result =
+                validateCommand.execute(
+                    ValidateIdTokenArgs(
+                        idToken = idToken,
+                        options =
+                            IdTokenValidationOptions(
+                                expectedIssuer = "https://example.com",
+                                expectedAudience = "client-1",
+                                maxAge = 60,
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isErr, "stale authentication must be rejected")
+            assertTrue(
+                result.error.message.defaultMessage
+                    ?.contains("Authentication is too old") == true,
+                "rejection must cite age; got: ${result.error.message.defaultMessage}",
+            )
+        }
+
+    @Test
+    fun validate_audMissing_rejects() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = keyInfo,
+                    context = IdentifierContext(clientId = "https://example.com"),
+                )
+
+            val now = Clock.System.now().epochSeconds
+            // Construct payload WITHOUT 'aud' — the payload parser/structure validator must reject.
+            val payload =
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                )
+
+            // createSignedIdToken's current implementation requires aud during serialization, so
+            // sign a payload with an empty aud list and rely on the validator to reject it.
+            val idToken = createSignedIdToken(issuer, payload + ("aud" to emptyList<String>()))
+
+            val result =
+                validateCommand.execute(
+                    ValidateIdTokenArgs(
+                        idToken = idToken,
+                        options =
+                            IdTokenValidationOptions(
+                                expectedIssuer = "https://example.com",
+                                expectedAudience = "client-1",
+                            ),
+                    ),
+                )
+            assertTrue(result.isErr, "missing/empty aud must be rejected")
+        }
 }

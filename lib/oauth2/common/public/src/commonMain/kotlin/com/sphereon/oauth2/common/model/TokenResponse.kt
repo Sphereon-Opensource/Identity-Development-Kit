@@ -338,4 +338,16 @@ data class TokenRequest(
     @SerialName("requested_token_type") val requestedTokenType: String? = null,
     // Additional extension parameters (auto-captured from unknown JSON fields)
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
+    /**
+     * Selects the OAuth 2.0 client authentication method applied to this token request.
+     *
+     * `null` lets the exchange command pick the legacy default (body-only client_secret_post).
+     * Set explicitly to [ClientAuthenticationMethod.CLIENT_SECRET_BASIC] to force HTTP Basic
+     * (RFC 6749 Section 2.3.1) on the token endpoint, matching OIDF conformance suites that
+     * require `Authorization: Basic` and forbid body credentials.
+     *
+     * Not serialized over the wire (the custom [TokenRequestSerializer] omits it); this is a
+     * client-side directive for the exchange command only.
+     */
+    val tokenEndpointAuthMethod: ClientAuthenticationMethod? = null,
 )

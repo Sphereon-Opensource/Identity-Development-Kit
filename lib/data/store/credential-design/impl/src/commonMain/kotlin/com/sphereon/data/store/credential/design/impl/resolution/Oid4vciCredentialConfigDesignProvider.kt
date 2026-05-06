@@ -126,19 +126,19 @@ class Oid4vciCredentialConfigDesignProvider(
                 )
             } ?: emptyList()
 
-        // OID4VCI 1.0 claims: Map<String, ClaimMetadata> where key is the claim name.
-        // credentialDefinition.credentialSubject may also carry claim display info.
+        // OID4VCI 1.0 final §12.2.3 claims: List<CredentialClaim> with path-based pointers.
+        // credentialDefinition.credentialSubject (W3C VC formats) is still map-shaped per
+        // §A.2 and falls back to the legacy mapping helper.
         val claims =
             buildList {
                 val topClaims = config.claims
                 if (topClaims != null) {
-                    addAll(mapClaimsMap(topClaims))
-                }
-
-                // Also handle VC-SD-JWT / JWT-VC claim subject if present.
-                val subjectClaims = config.credentialDefinition?.credentialSubject
-                if (subjectClaims != null && topClaims == null) {
-                    addAll(mapClaimsMap(subjectClaims))
+                    addAll(mapClaimsList(topClaims))
+                } else {
+                    val subjectClaims = config.credentialDefinition?.credentialSubject
+                    if (subjectClaims != null) {
+                        addAll(mapClaimsMap(subjectClaims))
+                    }
                 }
             }
 
@@ -151,7 +151,8 @@ class Oid4vciCredentialConfigDesignProvider(
 
     /**
      * Maps a flat OID4VCI 1.0 claims map (claim name → [ClaimMetadata]) to [ClaimPresentation]
-     * list. The map key becomes a single-segment [DesignClaimPath].
+     * list. The map key becomes a single-segment [DesignClaimPath]. Used for W3C VC formats
+     * (`credentialDefinition.credentialSubject`) which still carry the map shape per §A.2.
      */
     private fun mapClaimsMap(claimsMap: Map<String, ClaimMetadata>): List<ClaimPresentation> =
         claimsMap.entries.mapIndexed { index, (name, meta) ->
@@ -167,6 +168,29 @@ class Oid4vciCredentialConfigDesignProvider(
                 path = path,
                 labels = labels,
                 mandatory = meta.mandatory ?: false,
+                order = index,
+            )
+        }
+
+    /**
+     * Maps the OID4VCI 1.0 final §12.2.3 path-based claims array to [ClaimPresentation]. Each
+     * entry's `path` is a claims-path-pointer (single-segment for SD-JWT VC, two-segment
+     * `[namespace, elementId]` for mso_mdoc).
+     */
+    private fun mapClaimsList(claims: List<com.sphereon.openid.oid4vci.common.model.CredentialClaim>): List<ClaimPresentation> =
+        claims.mapIndexed { index, c ->
+            val designPath = Oid4vciClaimPathMapper.toDesignPath(c.path.map { JsonPrimitive(it) })
+            val labels =
+                c.display?.map { d ->
+                    ClaimLabel(
+                        locale = d.locale ?: "",
+                        label = d.name,
+                    )
+                } ?: emptyList()
+            ClaimPresentation(
+                path = designPath,
+                labels = labels,
+                mandatory = c.mandatory ?: false,
                 order = index,
             )
         }

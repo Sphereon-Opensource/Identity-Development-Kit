@@ -3,6 +3,7 @@ package com.sphereon.crypto.kms.rest.server
 import com.sphereon.crypto.kms.rest.server.ktor.kmsRouting
 import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -46,6 +47,7 @@ fun Application.configureKms(appGraph: AppGraph) {
     // Install kotlin-inject plugin with AppGraph
     install(KotlinInjectPlugin) {
         this.appGraph = appGraph // ← AppGraph passed to plugin!
+        tenantResolver = FixedTenantResolver("default")
     }
     log.info("KotlinInject plugin installed - full DI enabled")
 

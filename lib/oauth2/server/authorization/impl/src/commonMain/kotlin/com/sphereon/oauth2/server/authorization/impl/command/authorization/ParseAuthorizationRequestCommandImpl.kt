@@ -30,8 +30,11 @@ import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
 import com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.model.Prompt
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -39,27 +42,27 @@ private const val MIN_PKCE_LENGTH = 43
 private const val MAX_PKCE_LENGTH = 128
 
 /**
- * Implementation of ParseAuthorizationRequestCommand
+ * Implementation of [ParseAuthorizationRequestCommand].
  *
- * Parses OAuth2 authorization endpoint requests according to RFC 6749 Section 4.1.1.
+ * Parses OAuth2 / OIDC authorization endpoint requests per RFC 6749 §4.1.1 and OpenID Connect
+ * Core 1.0 §3.1.2.1. Extracts **all** parameters that OIDC defines for the authorization
+ * request; whether each one is semantically supported is the verifier's concern. Parsing
+ * failures are limited to:
  *
- * Supported response types:
- * - code (Authorization Code Flow)
+ *   - missing required parameters (`response_type`, `client_id`)
+ *   - malformed values (PKCE format violations, bad `request_uri` shape, bad `claims` JSON, bad `max_age` integer)
  *
- * Request parameters (GET query parameters):
- * - response_type (REQUIRED) - Must be "code"
- * - client_id (REQUIRED) - Client identifier
- * - redirect_uri (OPTIONAL) - Redirection URI
- * - scope (OPTIONAL) - Scope of access request
- * - state (RECOMMENDED) - Opaque value to prevent CSRF
- * - code_challenge (OPTIONAL) - PKCE code challenge (RFC 7636)
- * - code_challenge_method (OPTIONAL) - PKCE method (plain or S256)
- * - request_uri (OPTIONAL) - PAR request URI (RFC 9126)
+ * Everything else (response-type enforcement, redirect-URI validation, scope policy, PKCE policy,
+ * PAR / request-object handling) is deferred to [VerifyAuthorizationRequestCommandImpl].
  *
- * This command performs basic parsing and validation, but does NOT:
- * - Verify client registration (use VerifyAuthorizationRequestCommand)
- * - Authenticate the user (use UserAuthenticationProvider)
- * - Check consent (use ConsentProvider)
+ * PKCE note: absent `code_challenge_method` is left `null`. RFC 7636 §4.3 defines `plain` as the
+ * default, but whether `plain` is acceptable is a server-policy decision belonging in the
+ * verifier. Earlier revisions silently upgraded absent-method to `S256`, masking non-compliant
+ * clients; we now preserve the wire-absent state.
+ *
+ * `redirect_uri` is optional at parse time. OAuth2 RFC 6749 §3.1.2.3 / OIDC §3.1.2.1 allow
+ * omission when exactly one redirect URI is registered for the client — the verifier resolves
+ * it from the client registration in that case.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -67,7 +70,7 @@ private const val MAX_PKCE_LENGTH = 128
 @ObjCName("ParseAuthorizationRequestCommandImpl", exact = true)
 class ParseAuthorizationRequestCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParseAuthorizationRequestArgs, AuthorizationRequestData>(
+) : TypedServiceCommandAdapter<ParseAuthorizationRequestArgs, AuthorizationRequestData, IdkError>(
         commandId = ParseAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseAuthorizationRequestArgs>(),
@@ -86,153 +89,161 @@ class ParseAuthorizationRequestCommandImpl(
         return executeInternal(applied.queryParameters).mapError { IdkError.fromDTO(it) }
     }
 
-    private suspend fun executeInternal(queryParameters: Map<String, String>): IdkResult<AuthorizationRequestData, AuthorizationServerError> {
-        // Extract response_type (REQUIRED)
-        val responseTypeStr = queryParameters["response_type"]
-        if (responseTypeStr.isNullOrBlank()) {
-            return Err(
-                AuthorizationServerError.InvalidRequest(
-                    details = "Missing required parameter: response_type",
+    private fun executeInternal(queryParameters: Map<String, String>): IdkResult<AuthorizationRequestData, AuthorizationServerError> {
+        val clientId =
+            queryParameters["client_id"]?.takeIf { it.isNotBlank() }
+                ?: return Err(AuthorizationServerError.InvalidRequest(details = "Missing required parameter: client_id"))
+
+        // PAR short-circuit: when request_uri carries a PAR URN, the verifier loads the original
+        // pushed request from the PAR store. Per OIDC Core §6.2, top-level Authentication Request
+        // parameters MAY accompany request_uri — they are fallback / supplementary, with the
+        // request object's values taking precedence on conflict. Only `request` is mutually
+        // exclusive with `request_uri` (OIDC Core §6.2: "MUST NOT use the request_uri parameter
+        // when the request parameter is also present"). Non-PAR request_uri values are NOT
+        // rejected here — they pass through so the verifier can emit `request_uri_not_supported`
+        // post-redirect once the redirect URI has been validated against the client registration
+        // (OIDC §3.1.2.6).
+        val requestUri = queryParameters["request_uri"]?.takeIf { it.isNotBlank() }
+        if (requestUri != null && requestUri.startsWith("urn:ietf:params:oauth:request_uri:")) {
+            if (queryParameters["request"]?.isNotBlank() == true) {
+                return Err(
+                    AuthorizationServerError.InvalidRequest(
+                        details = "request and request_uri are mutually exclusive (OIDC Core §6.2)",
+                    ),
+                )
+            }
+            // Surface any URL `response_type` parameter the wallet sent alongside the PAR URN.
+            // OIDC Core §6.2 lets the AS treat URL params as supplementary, but FAPI2-SP §5.3.2.1
+            // probes (`…-ensure-response-type-token-fails`) expect the AS to detect a conflicting
+            // URL `response_type` and reject. The downstream PAR-redeem path compares this list
+            // against the PAR-stored `responseType` and surfaces `invalid_request` on mismatch.
+            // Empty list means the wallet sent only `client_id + request_uri` and the PAR value
+            // is authoritative.
+            val frontChannelResponseTypes =
+                queryParameters["response_type"]
+                    ?.takeIf { it.isNotBlank() }
+                    ?.split(" ")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    ?.mapNotNull { typeStr ->
+                        when (typeStr.lowercase()) {
+                            "code" -> ResponseType.CODE
+                            "token" -> ResponseType.TOKEN
+                            "id_token" -> ResponseType.ID_TOKEN
+                            else -> null
+                        }
+                    }
+                    ?: emptyList()
+            return Ok(
+                AuthorizationRequestData(
+                    clientId = clientId,
+                    redirectUri = null,
+                    responseType = frontChannelResponseTypes,
+                    requestUri = requestUri,
                 ),
             )
         }
 
-        // Parse response types (can be space-separated for hybrid flows)
+        // response_type — REQUIRED (OIDC §3.1.2.1) but DELIBERATELY NOT enforced here. Missing
+        // / empty / unparseable values pass through as `responseType = emptyList()` so the
+        // verifier can emit `unsupported_response_type` AFTER client-id + redirect-uri have
+        // been validated — that lets the failure ride back to the client's redirect_uri
+        // (RFC 6749 §4.1.2.1) instead of stranding the user on the AS error page.
+        val responseTypeStr = queryParameters["response_type"]?.takeIf { it.isNotBlank() }.orEmpty()
         val responseTypes =
-            responseTypeStr.split(" ").mapNotNull { typeStr ->
-                when (typeStr.trim().lowercase()) {
-                    "code" -> ResponseType.CODE
-                    "token" -> ResponseType.TOKEN
-                    else -> null
+            responseTypeStr
+                .split(" ")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .mapNotNull { typeStr ->
+                    when (typeStr.lowercase()) {
+                        "code" -> ResponseType.CODE
+                        "token" -> ResponseType.TOKEN
+                        "id_token" -> ResponseType.ID_TOKEN
+                        else -> null
+                    }
                 }
-            }
 
-        if (responseTypes.isEmpty()) {
-            return Err(
-                AuthorizationServerError.UnsupportedResponseType(
-                    responseType = responseTypeStr,
-                ),
-            )
-        }
+        // redirect_uri — optional at parse time; verifier may require it depending on client registration.
+        val redirectUri = queryParameters["redirect_uri"]?.takeIf { it.isNotBlank() }
 
-        // Extract client_id (REQUIRED)
-        val clientId = queryParameters["client_id"]
-        if (clientId.isNullOrBlank()) {
-            return Err(
-                AuthorizationServerError.InvalidRequest(
-                    details = "Missing required parameter: client_id",
-                ),
-            )
-        }
-
-        // Extract redirect_uri (REQUIRED for authorization code flow)
-        val redirectUri =
-            queryParameters["redirect_uri"] ?: return Err(
-                AuthorizationServerError.InvalidRequest(
-                    details = "Missing required parameter: redirect_uri",
-                ),
-            )
-
-        // Extract scope (OPTIONAL)
         val scope = queryParameters["scope"]
-
-        // Extract state (RECOMMENDED for CSRF protection)
         val state = queryParameters["state"]
-
-        // Extract PKCE parameters (RFC 7636)
-        val codeChallenge = queryParameters["code_challenge"]
-        val codeChallengeMethodStr = queryParameters["code_challenge_method"]
-
-        // Parse code_challenge_method
-        val codeChallengeMethod =
-            if (codeChallengeMethodStr != null) {
-                when (codeChallengeMethodStr.uppercase()) {
-                    "PLAIN" -> {
-                        PkceMethod.PLAIN
-                    }
-
-                    "S256" -> {
-                        PkceMethod.S256
-                    }
-
-                    else -> {
-                        return Err(
-                            AuthorizationServerError.InvalidRequest(
-                                details = "Invalid code_challenge_method: $codeChallengeMethodStr. Must be 'plain' or 'S256'",
-                            ),
-                        )
-                    }
-                }
-            } else if (codeChallenge != null) {
-                // Default to S256 if code_challenge is present but method is not specified (RFC 7636)
-                PkceMethod.S256
-            } else {
-                null
-            }
-
-        // Validate PKCE parameters
-        if (codeChallenge != null) {
-            // Verify code_challenge format (RFC 7636 Section 4.2)
-            // Must be 43-128 characters, A-Z, a-z, 0-9, -, ., _, ~
-            if (codeChallenge.length !in MIN_PKCE_LENGTH..MAX_PKCE_LENGTH) {
-                return Err(
-                    AuthorizationServerError.InvalidRequest(
-                        details = "code_challenge must be 43-128 characters",
-                    ),
-                )
-            }
-
-            // Verify characters are valid (base64url)
-            val validChars = Regex("^[A-Za-z0-9._~-]+$")
-            if (!validChars.matches(codeChallenge)) {
-                return Err(
-                    AuthorizationServerError.InvalidRequest(
-                        details = "code_challenge contains invalid characters",
-                    ),
-                )
-            }
-        }
-
-        // Extract PAR request_uri (RFC 9126)
-        val requestUri = queryParameters["request_uri"]
-
-        // If request_uri is present, it should be the ONLY parameter besides client_id
-        // (PAR makes the authorization request via POST first)
-        if (requestUri != null) {
-            // Verify request_uri format (RFC 9126 Section 3)
-            if (!requestUri.startsWith("urn:ietf:params:oauth:request_uri:")) {
-                return Err(
-                    AuthorizationServerError.InvalidRequest(
-                        details = "Invalid request_uri format. Must start with 'urn:ietf:params:oauth:request_uri:'",
-                    ),
-                )
-            }
-
-            // When request_uri is present, most other parameters should NOT be present
-            val allowedWithRequestUri = setOf("request_uri", "client_id")
-            val unexpectedParams = queryParameters.keys - allowedWithRequestUri
-            if (unexpectedParams.isNotEmpty()) {
-                return Err(
-                    AuthorizationServerError.InvalidRequest(
-                        details = "When request_uri is present, only client_id should be provided",
-                    ),
-                )
-            }
-        }
-
-        // Extract DPoP JKT
+        val nonce = queryParameters["nonce"]
         val dpopJkt = queryParameters["dpop_jkt"]
-
-        // Extract response_mode
         val responseMode = queryParameters["response_mode"]
 
-        // Extract nonce (for OpenID Connect)
-        val nonce = queryParameters["nonce"]
+        // PKCE
+        val codeChallenge = queryParameters["code_challenge"]
+        val codeChallengeMethodStr = queryParameters["code_challenge_method"]
+        val codeChallengeMethod =
+            when (codeChallengeMethodStr?.uppercase()) {
+                null -> {
+                    null
+                }
 
-        // Extract authorization_details (RFC 9396 / OID4VCI)
+                // absent — verifier applies server policy (default 'plain' per RFC 7636 §4.3)
+                "PLAIN" -> {
+                    PkceMethod.PLAIN
+                }
+
+                "S256" -> {
+                    PkceMethod.S256
+                }
+
+                else -> {
+                    return Err(
+                        AuthorizationServerError.InvalidRequest(
+                            details = "Invalid code_challenge_method: $codeChallengeMethodStr. Must be 'plain' or 'S256'",
+                        ),
+                    )
+                }
+            }
+        if (codeChallenge != null) {
+            if (codeChallenge.length !in MIN_PKCE_LENGTH..MAX_PKCE_LENGTH) {
+                return Err(AuthorizationServerError.InvalidRequest(details = "code_challenge must be 43-128 characters"))
+            }
+            if (!PKCE_CHAR_REGEX.matches(codeChallenge)) {
+                return Err(AuthorizationServerError.InvalidRequest(details = "code_challenge contains invalid characters"))
+            }
+        }
+
+        // OIDC Core §3.1.2.1 params — parse into the typed model even when unsupported so the
+        // verifier can reject with a meaningful error instead of a generic parse failure.
+        val prompt = Prompt.parseSpaceSeparated(queryParameters["prompt"])
+        val display = queryParameters["display"]
+        val loginHint = queryParameters["login_hint"]
+        val idTokenHint = queryParameters["id_token_hint"]?.takeIf { it.isNotBlank() }
+        val acrValues = queryParameters["acr_values"]?.splitToNonEmpty()
+        val uiLocales = queryParameters["ui_locales"]?.splitToNonEmpty()
+        // OIDC Core §6 / JAR `request` (Request Object embedded inline). Captured here so the
+        // verifier can emit `request_not_supported` post-redirect; we do not process the JWT.
+        val requestObject = queryParameters["request"]?.takeIf { it.isNotBlank() }
+
+        val maxAge =
+            queryParameters["max_age"]
+                ?.let { raw ->
+                    raw.toIntOrNull()
+                        ?: return Err(AuthorizationServerError.InvalidRequest(details = "max_age must be a non-negative integer, got: $raw"))
+                }?.also {
+                    if (it < 0) {
+                        return Err(AuthorizationServerError.InvalidRequest(details = "max_age must be non-negative"))
+                    }
+                }
+
+        val claims =
+            queryParameters["claims"]?.let { raw ->
+                try {
+                    Json.parseToJsonElement(raw) as? JsonObject
+                        ?: return Err(AuthorizationServerError.InvalidRequest(details = "claims parameter must be a JSON object"))
+                } catch (expected: Exception) {
+                    return Err(AuthorizationServerError.InvalidRequest(details = "Malformed claims JSON: ${expected.message}"))
+                }
+            }
+
+        // authorization_details (RFC 9396 / OID4VCI) — validated by verifier
         val authorizationDetails = queryParameters["authorization_details"]
 
-        // Build authorization request data
         return Ok(
             AuthorizationRequestData(
                 clientId = clientId,
@@ -245,7 +256,16 @@ class ParseAuthorizationRequestCommandImpl(
                 dpopJkt = dpopJkt,
                 responseMode = responseMode,
                 nonce = nonce,
+                display = display,
+                prompt = prompt,
+                maxAge = maxAge,
+                uiLocales = uiLocales,
+                idTokenHint = idTokenHint,
+                loginHint = loginHint,
+                acrValues = acrValues,
+                request = requestObject,
                 requestUri = requestUri,
+                claims = claims,
                 additionalParameters =
                     buildMap {
                         authorizationDetails?.let { put("authorization_details", it) }
@@ -253,4 +273,11 @@ class ParseAuthorizationRequestCommandImpl(
             ),
         )
     }
+
+    private companion object {
+        // base64url alphabet for PKCE code_challenge per RFC 7636 §4.2
+        val PKCE_CHAR_REGEX = Regex("^[A-Za-z0-9._~-]+$")
+    }
 }
+
+private fun String.splitToNonEmpty(): List<String> = split(" ").map { it.trim() }.filter { it.isNotEmpty() }

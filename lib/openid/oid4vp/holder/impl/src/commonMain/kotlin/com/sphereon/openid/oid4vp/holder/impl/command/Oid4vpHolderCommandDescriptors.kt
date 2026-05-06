@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.holder.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommand
@@ -36,21 +37,21 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vpHolderCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ResolveClientMetadataCommand.COMMAND_ID)
-    fun resolveClientMetadata(impl: ResolveClientMetadataCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveClientMetadata(impl: ResolveClientMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveAuthorizationRequestCommand.COMMAND_ID)
-    fun resolveAuthorizationRequest(impl: ResolveAuthorizationRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveAuthorizationRequest(impl: ResolveAuthorizationRequestCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(SubmitAuthorizationResponseCommand.COMMAND_ID)
-    fun submitAuthorizationResponse(impl: SubmitAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun submitAuthorizationResponse(impl: SubmitAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateAuthorizationResponseCommand.COMMAND_ID)
-    fun createAuthorizationResponse(impl: CreateAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun createAuthorizationResponse(impl: CreateAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ParseAuthorizationRequestCommand.COMMAND_ID)
-    fun parseAuthorizationRequest(impl: ParseAuthorizationRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun parseAuthorizationRequest(impl: ParseAuthorizationRequestCommandImpl): ServiceCommand<*, *, *> = impl
 }

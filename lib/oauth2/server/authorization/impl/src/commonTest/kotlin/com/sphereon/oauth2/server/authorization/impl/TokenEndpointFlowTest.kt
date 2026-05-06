@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl
 
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
@@ -96,6 +97,7 @@ class TokenEndpointFlowTest {
                 VerifyAuthorizationCodeGrantCommandImpl(
                     execution = execution,
                     authorizationCodeStorage = codeStorage,
+                    tokenStorage = InMemoryTokenStorageImpl(storage),
                     clientRegistry = clientRegistry,
                     configProvider = configProvider,
                 )
@@ -160,6 +162,7 @@ class TokenEndpointFlowTest {
                 VerifyAuthorizationCodeGrantCommandImpl(
                     execution = execution,
                     authorizationCodeStorage = codeStorage,
+                    tokenStorage = InMemoryTokenStorageImpl(storage),
                     clientRegistry = InMemoryClientRegistryImpl(storage),
                     configProvider = configProvider,
                 )
@@ -195,6 +198,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    secureRandom = defaultSecureRandom(),
                 )
 
             val createResult =
@@ -245,6 +249,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    secureRandom = defaultSecureRandom(),
                 )
 
             val createResult =

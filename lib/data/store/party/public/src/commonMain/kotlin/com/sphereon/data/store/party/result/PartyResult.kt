@@ -64,7 +64,11 @@ data class PartyResult
         val partyType: PartyType,
         /** Origin of the party (external/managed) */
         val origin: PartyOrigin,
-        /** User-friendly display name (editable by user) */
+        /**
+         * User-friendly display name (editable by user). Non-null — see
+         * [com.sphereon.data.store.party.model.Party.displayName] for the
+         * abstract-vs-concrete-role convention.
+         */
         @SerialName("displayName")
         val displayName: String,
         /** Optional URI for the party (DID, URL, etc.) */

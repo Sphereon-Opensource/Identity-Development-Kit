@@ -42,7 +42,7 @@ import kotlin.native.ObjCName
 class CancelReconciliationSessionCommandImpl(
     execution: SessionExecution,
     private val sessionStore: ReconciliationSessionStore,
-) : TypedServiceCommandAdapter<CancelReconciliationSessionArgs, ReconciliationSession>(
+) : TypedServiceCommandAdapter<CancelReconciliationSessionArgs, ReconciliationSession, IdkError>(
         commandId = CancelReconciliationSessionCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CancelReconciliationSessionArgs>(),

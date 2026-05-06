@@ -63,7 +63,7 @@ import kotlin.native.ObjCName
 @ObjCName("CreateTokenResponseCommandImpl", exact = true)
 class CreateTokenResponseCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<CreateTokenResponseArgs, TokenResponse>(
+) : TypedServiceCommandAdapter<CreateTokenResponseArgs, TokenResponse, IdkError>(
         commandId = CreateTokenResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateTokenResponseArgs>(),

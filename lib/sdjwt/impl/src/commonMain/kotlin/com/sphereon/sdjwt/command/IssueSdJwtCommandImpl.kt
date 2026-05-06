@@ -54,7 +54,7 @@ import kotlin.native.ObjCName
 class IssueSdJwtCommandImpl(
     execution: SessionExecution,
     private val createJwsCompactCommand: CreateJwsCompactCommand,
-) : TypedServiceCommandAdapter<IssueSdJwtArgs, IssueSdJwtResult>(
+) : TypedServiceCommandAdapter<IssueSdJwtArgs, IssueSdJwtResult, IdkError>(
         commandId = IssueSdJwtCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<IssueSdJwtArgs>(),

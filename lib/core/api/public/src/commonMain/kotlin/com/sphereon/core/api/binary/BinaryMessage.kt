@@ -44,6 +44,14 @@ data class BinaryRequest(
     val contentType: String? = null,
     val accept: List<String> = emptyList(),
     val headers: Map<String, String> = emptyMap(),
+    /**
+     * Raw multi-value header view, preserving each `name → List<value>` arrival shape from the
+     * source HTTP request. Mirrors [GenericHttpRequest.multiValueHeaders] across the binary
+     * transport boundary so consumers that need single-occurrence semantics (e.g. RFC 9449 §4.1:
+     * a single `DPoP` header is REQUIRED) can detect duplicates without re-parsing the joined
+     * scalar [headers]. Empty by default — only HTTP-origin requests populate it.
+     */
+    val multiValueHeaders: Map<String, List<String>> = emptyMap(),
     val pathParams: Map<String, String> = emptyMap(),
     val queryParams: Map<String, String> = emptyMap(),
     val metadata: Map<String, String> = emptyMap(),
@@ -84,6 +92,7 @@ data class BinaryRequest(
             pathParameters = pathParams,
             queryParameters = queryParams,
             headers = headers,
+            multiValueHeaders = multiValueHeaders,
             bodyContent = body.toGenericHttpBody(),
         )
 
@@ -104,6 +113,7 @@ data class BinaryRequest(
                 contentType = request.contentType,
                 accept = request.accept,
                 headers = request.headers,
+                multiValueHeaders = request.multiValueHeaders,
                 pathParams = request.pathParameters,
                 queryParams = request.queryParameters.mapValues { it.value ?: "" },
                 body = StreamingBody.fromGenericHttpBody(request.bodyContent),

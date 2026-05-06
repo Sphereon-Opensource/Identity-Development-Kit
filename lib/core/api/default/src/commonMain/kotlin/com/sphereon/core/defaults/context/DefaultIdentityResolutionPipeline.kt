@@ -126,7 +126,7 @@ class DefaultIdentityResolutionPipeline(
             }
         }
 
-    private fun resolveTenant(
+    private suspend fun resolveTenant(
         resolverInputs: List<ResolverInput>,
         input: IdentityResolutionInput,
     ): Pair<String?, ResolutionSource> {

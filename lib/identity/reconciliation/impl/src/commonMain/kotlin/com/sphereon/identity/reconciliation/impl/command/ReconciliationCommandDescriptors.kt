@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.impl.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.reconciliation.command.CancelReconciliationSessionCommand
@@ -31,17 +32,17 @@ import dev.zacsweers.metro.StringKey
 interface ReconciliationCommandDescriptors {
     @Provides @IntoMap
     @StringKey(CreateReconciliationSessionCommand.COMMAND_ID)
-    fun createReconciliationSession(impl: CreateReconciliationSessionCommandImpl): ServiceCommand<*, *> = impl
+    fun createReconciliationSession(impl: CreateReconciliationSessionCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CompleteReconciliationCommand.COMMAND_ID)
-    fun completeReconciliation(impl: CompleteReconciliationCommandImpl): ServiceCommand<*, *> = impl
+    fun completeReconciliation(impl: CompleteReconciliationCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(GetReconciliationSessionCommand.COMMAND_ID)
-    fun getReconciliationSession(impl: GetReconciliationSessionCommandImpl): ServiceCommand<*, *> = impl
+    fun getReconciliationSession(impl: GetReconciliationSessionCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CancelReconciliationSessionCommand.COMMAND_ID)
-    fun cancelReconciliationSession(impl: CancelReconciliationSessionCommandImpl): ServiceCommand<*, *> = impl
+    fun cancelReconciliationSession(impl: CancelReconciliationSessionCommandImpl): ServiceCommand<*, *, *> = impl
 }

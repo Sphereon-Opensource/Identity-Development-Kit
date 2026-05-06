@@ -41,6 +41,16 @@ export const translations: Record<SupportedLocale, Record<string, string>> = {
     'qr.openWallet': 'Open in Wallet',
     'qr.copyLink': 'Copy Link',
     'qr.pinLabel': 'PIN Code:',
+    'walletTarget.label': 'Wallet target',
+    'walletTarget.customLabel': 'Custom…',
+    'walletTarget.placeholder': 'https://wallet.example.com/…',
+    'walletTarget.helpText': 'For https targets, the wallet must be configured to accept this issuer or verifier.',
+    'walletTarget.errorEmpty': 'URL is required.',
+    'walletTarget.errorFormat': 'Must be a valid URI (e.g. https://… or scheme://…).',
+    'advanced.toggle': 'Advanced options',
+    'advanced.requestUriMethod': 'Request URI method',
+    'advanced.responseMode': 'Response mode',
+    'details.toggle': 'Show details',
   },
   'de-DE': {
     'tab.issue': 'Credential ausstellen',
@@ -72,6 +82,16 @@ export const translations: Record<SupportedLocale, Record<string, string>> = {
     'qr.openWallet': 'Im Wallet öffnen',
     'qr.copyLink': 'Link kopieren',
     'qr.pinLabel': 'PIN-Code:',
+    'walletTarget.label': 'Wallet-Ziel',
+    'walletTarget.customLabel': 'Benutzerdefiniert…',
+    'walletTarget.placeholder': 'https://wallet.example.com/…',
+    'walletTarget.helpText': 'Für https-Ziele muss das Wallet so konfiguriert sein, dass es diesen Issuer oder Verifier akzeptiert.',
+    'walletTarget.errorEmpty': 'URL ist erforderlich.',
+    'walletTarget.errorFormat': 'Muss eine gültige URI sein (z. B. https://… oder scheme://…).',
+    'advanced.toggle': 'Erweiterte Optionen',
+    'advanced.requestUriMethod': 'Request-URI-Methode',
+    'advanced.responseMode': 'Antwortmodus',
+    'details.toggle': 'Details anzeigen',
   },
   'es-ES': {
     'tab.issue': 'Emitir Credencial',
@@ -103,6 +123,16 @@ export const translations: Record<SupportedLocale, Record<string, string>> = {
     'qr.openWallet': 'Abrir en Monedero',
     'qr.copyLink': 'Copiar enlace',
     'qr.pinLabel': 'Código PIN:',
+    'walletTarget.label': 'Destino del monedero',
+    'walletTarget.customLabel': 'Personalizado…',
+    'walletTarget.placeholder': 'https://wallet.example.com/…',
+    'walletTarget.helpText': 'Para destinos https, el monedero debe estar configurado para aceptar este emisor o verificador.',
+    'walletTarget.errorEmpty': 'La URL es obligatoria.',
+    'walletTarget.errorFormat': 'Debe ser una URI válida (p. ej. https://… o scheme://…).',
+    'advanced.toggle': 'Opciones avanzadas',
+    'advanced.requestUriMethod': 'Método de URI de solicitud',
+    'advanced.responseMode': 'Modo de respuesta',
+    'details.toggle': 'Mostrar detalles',
   },
   'nl-NL': {
     'tab.issue': 'Credential uitgeven',
@@ -134,5 +164,24 @@ export const translations: Record<SupportedLocale, Record<string, string>> = {
     'qr.openWallet': 'Openen in Wallet',
     'qr.copyLink': 'Link kopiëren',
     'qr.pinLabel': 'PIN-code:',
+    'walletTarget.label': 'Wallet-doel',
+    'walletTarget.customLabel': 'Aangepast…',
+    'walletTarget.placeholder': 'https://wallet.example.com/…',
+    'walletTarget.helpText': 'Voor https-doelen moet de wallet zo zijn geconfigureerd dat deze deze issuer of verifier accepteert.',
+    'walletTarget.errorEmpty': 'URL is vereist.',
+    'walletTarget.errorFormat': 'Moet een geldige URI zijn (bijv. https://… of scheme://…).',
+    'advanced.toggle': 'Geavanceerde opties',
+    'advanced.requestUriMethod': 'Request-URI-methode',
+    'advanced.responseMode': 'Antwoordmodus',
+    'details.toggle': 'Details tonen',
   },
+}
+
+const enKeys = Object.keys(translations['en-US'])
+for (const locale of SUPPORTED_LOCALES) {
+  if (locale === 'en-US') continue
+  const missing = enKeys.filter(k => !(k in translations[locale]))
+  if (missing.length > 0) {
+    console.warn(`[i18n] locale ${locale} is missing keys: ${missing.join(', ')}`)
+  }
 }

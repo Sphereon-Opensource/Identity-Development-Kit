@@ -74,10 +74,24 @@ data class CreateAuthorizationRequestInput(
     @SerialName("client_id_scheme")
     val clientIdScheme: ClientIdScheme? = null,
     /**
-     * Base URI for request URIs. Defaults to "oid4vp://".
+     * HTTPS base URL for the inner OID4VP §5.10 `request_uri` parameter — the URL the wallet
+     * GETs/POSTs to fetch the signed JAR. MUST be `https://` (or `http://` for localhost).
+     * Defaults to the verifier's `oid4vp.universal.external-base-url` config value.
+     *
+     * NOT the outer wallet-deeplink scheme — that's [walletUriScheme].
      */
     @SerialName("request_uri_base")
     val requestUriBase: String? = null,
+    /**
+     * URI scheme of the outer wallet deeplink (the part before `://?`), per OID4VP §5.10.
+     * Examples: `openid4vp` (default, spec-canonical), `haip` (HAIP profile),
+     * `oid4vp` (Sphereon mobile-wallet custom), `openid` (legacy).
+     *
+     * Sent without the trailing `://`. The verifier emits
+     * `<scheme>://?client_id=...&request_uri=https://.../...`.
+     */
+    @SerialName("wallet_uri_scheme")
+    val walletUriScheme: String? = null,
     /**
      * How the wallet accesses the request URI: "get" or "post". Default: "get".
      */

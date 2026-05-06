@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.TokenRequest
@@ -48,7 +49,7 @@ data class ExchangeTokenArgs(
  * - DPoP (RFC 9449)
  */
 @JsExportCompat
-interface ExchangeTokenCommand : ServiceCommand<ExchangeTokenArgs, TokenResponse> {
+interface ExchangeTokenCommand : ServiceCommand<ExchangeTokenArgs, TokenResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

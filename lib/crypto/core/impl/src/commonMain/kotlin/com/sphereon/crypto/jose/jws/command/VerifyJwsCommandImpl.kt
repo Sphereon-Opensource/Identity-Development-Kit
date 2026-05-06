@@ -52,6 +52,7 @@ import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -68,7 +69,7 @@ class VerifyJwsCommandImpl(
     execution: SessionExecution,
     private val identifierService: IdentifierService,
     private val signatureService: SignatureService,
-) : TypedServiceCommandAdapter<VerifyJwsArgs, JwsValidationResult>(
+) : TypedServiceCommandAdapter<VerifyJwsArgs, JwsValidationResult, IdkError>(
         commandId = VerifyJwsCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyJwsArgs>(),
@@ -97,6 +98,12 @@ class VerifyJwsCommandImpl(
         // Verify each signature
         val errorMessages = mutableListOf<String>()
         val signaturesWithIdentifiers = mutableListOf<JwsJsonSignatureWithIdentifier>()
+        val trustedJwks = appliedArgs.trustedJwks
+        // Diagnostic flags split "couldn't establish trust in a key" from "key found but
+        // crypto check failed". Aggregated across all signatures in this JWS.
+        var anyResolutionFailed = false
+        var anyCryptoAttempted = false
+        var anyCryptoFailed = false
 
         for ((index, signature) in general.signatures.withIndex()) {
             try {
@@ -109,6 +116,88 @@ class VerifyJwsCommandImpl(
                 // SECURITY: Reject "none" algorithm (RFC 9901 §8.1, RFC 8725 §2.1)
                 if (algValue?.lowercase() == "none") {
                     errorMessages.add("Signature $index: Algorithm 'none' is not allowed for security reasons")
+                    // No crypto attempt — pre-crypto rejection counts as trust-not-established.
+                    anyResolutionFailed = true
+                    continue
+                }
+
+                // Branch: when the caller pinned a trusted JWKS, signature verification MUST use
+                // ONLY a key from that document. Identifier resolvers are not consulted.
+                //
+                // Embedded `jwk` / `x5c` headers are NOT refused: a caller that pins `trustedJwks`
+                // is asserting the canonical trusted key set (typically resolved from a
+                // pre-validated x5c chain or a published JWKS). Any embedded JOSE key material in
+                // the header is informational. The signature check below is what makes the trust
+                // decision binding: if the JWS was actually signed by a key not in `trustedJwks`,
+                // signature verification fails and the result is rejected. The `kid` / alg-fitness
+                // lookup against `trustedJwks` happens unchanged.
+                if (trustedJwks != null) {
+                    if (algValue == null) {
+                        errorMessages.add("Signature $index: Missing 'alg' in JWS header")
+                        anyResolutionFailed = true
+                        signaturesWithIdentifiers.add(
+                            JwsJsonSignatureWithIdentifier(
+                                protected = signature.protected,
+                                parsedProtectedHeader = protectedHeader,
+                                header = signature.header,
+                                signature = signature.signature,
+                                identifier = null,
+                            ),
+                        )
+                        continue
+                    }
+                    val headerKid = protectedHeader["kid"]?.jsonPrimitive?.content
+                    val selected = selectJwk(trustedJwks, headerKid, algValue)
+                    if (selected == null) {
+                        errorMessages.add(
+                            "Signature $index: No matching trusted JWK for kid=$headerKid alg=$algValue",
+                        )
+                        // Trust establishment failure: pinned JWKS did not contain a usable key.
+                        anyResolutionFailed = true
+                        signaturesWithIdentifiers.add(
+                            JwsJsonSignatureWithIdentifier(
+                                protected = signature.protected,
+                                parsedProtectedHeader = protectedHeader,
+                                header = signature.header,
+                                signature = signature.signature,
+                                identifier = null,
+                            ),
+                        )
+                        continue
+                    }
+
+                    val keyInfo = buildKeyInfoFromJwk(selected.jsonObject, algValue)
+                    val signingInput = JwsUtils.createSigningInput(signature.protected, general.payload)
+                    val signatureBytes = signature.signature.decodeFrom(Encoding.BASE64URL)
+
+                    log.debug("Verifying signature against trusted JWKS key kid=${keyInfo.kid} alg=$algValue")
+                    anyCryptoAttempted = true
+                    val isValid =
+                        try {
+                            signatureService.isValidRawSignature(
+                                keyInfo = keyInfo,
+                                input = signingInput,
+                                signature = signatureBytes,
+                            )
+                        } catch (expected: Exception) {
+                            errorMessages.add("Signature $index: Verification failed - ${expected.message}")
+                            false
+                        }
+
+                    if (!isValid) {
+                        errorMessages.add("Signature $index: Invalid signature")
+                        anyCryptoFailed = true
+                    }
+
+                    signaturesWithIdentifiers.add(
+                        JwsJsonSignatureWithIdentifier(
+                            protected = signature.protected,
+                            parsedProtectedHeader = protectedHeader,
+                            header = signature.header,
+                            signature = signature.signature,
+                            identifier = null,
+                        ),
+                    )
                     continue
                 }
 
@@ -124,6 +213,8 @@ class VerifyJwsCommandImpl(
 
                 if (identifierResult.isErr) {
                     errorMessages.add("Signature $index: Failed to resolve identifier - ${identifierResult.error.message}")
+                    // Trust establishment failure: no key resolved for this signature.
+                    anyResolutionFailed = true
                     continue
                 }
 
@@ -142,6 +233,7 @@ class VerifyJwsCommandImpl(
 
                         else -> {
                             errorMessages.add("Signature $index: Unsupported identifier result type")
+                            anyResolutionFailed = true
                             continue
                         }
                     }
@@ -180,6 +272,7 @@ class VerifyJwsCommandImpl(
 
                 // Verify signature
                 log.debug("Verifying signature with keyInfo.signatureAlgorithm = ${keyInfo.signatureAlgorithm}")
+                anyCryptoAttempted = true
                 val isValid =
                     try {
                         signatureService.isValidRawSignature(
@@ -194,6 +287,7 @@ class VerifyJwsCommandImpl(
 
                 if (!isValid) {
                     errorMessages.add("Signature $index: Invalid signature")
+                    anyCryptoFailed = true
                 }
 
                 signaturesWithIdentifiers.add(
@@ -218,6 +312,18 @@ class VerifyJwsCommandImpl(
                 JsonObject(emptyMap())
             }
 
+        val isValid = errorMessages.isEmpty()
+        // Trust establishment is true iff *every* signature in the JWS got a verification
+        // key. cryptoVerified is null when no signature ever made it past identifier
+        // resolution (purely a trust failure); else it reflects the aggregate of attempted
+        // crypto checks. This lets callers distinguish "couldn't tell" from "actively wrong".
+        val trustEstablished = !anyResolutionFailed && general.signatures.isNotEmpty()
+        val cryptoVerified: Boolean? =
+            when {
+                !anyCryptoAttempted -> null
+                anyCryptoFailed -> false
+                else -> true
+            }
         val result =
             JwsValidationResult(
                 jws =
@@ -225,10 +331,12 @@ class VerifyJwsCommandImpl(
                         payload = general.payload,
                         signatures = signaturesWithIdentifiers,
                     ),
-                isValid = errorMessages.isEmpty(),
+                isValid = isValid,
                 errorMessages = errorMessages,
                 verificationTime = Clock.System.now().toEpochMilliseconds(),
                 parsedPayload = parsedPayload,
+                trustEstablished = trustEstablished,
+                cryptoVerified = cryptoVerified,
             )
 
         return result.asOkResult()
@@ -330,5 +438,31 @@ class VerifyJwsCommandImpl(
         return IdkResult.err(
             IdkError.fromString("Could not resolve identifier from JWS header. No x5c, jwk, or kid found."),
         )
+    }
+
+    /**
+     * Build a [ResolvedKeyInfo] directly from a trusted-JWKS entry, stamped with the
+     * [SignatureAlgorithm] derived from the JWS header `alg` so the signature service knows
+     * exactly which scheme to verify under.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun buildKeyInfoFromJwk(
+        jwkObject: JsonObject,
+        headerAlg: String,
+    ): ResolvedKeyInfo<*> {
+        val jwk = Jwk.fromJsonObject(jwkObject)
+        val base = ResolvedKeyInfo.fromKey(jwk) as ResolvedKeyInfo<*>
+        if (base.signatureAlgorithm != null) return base
+        val signatureAlg =
+            try {
+                SignatureAlgorithm.fromJose(JwaAlgorithm.fromValue(headerAlg))
+            } catch (_: Exception) {
+                null
+            }
+        return if (signatureAlg != null) {
+            (base as ResolvedKeyInfo<KeyType>).copy(signatureAlgorithm = signatureAlg)
+        } else {
+            base
+        }
     }
 }

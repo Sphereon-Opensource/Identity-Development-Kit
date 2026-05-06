@@ -54,6 +54,11 @@ class InterpolatingPropertySourcesPropertyResolver(
         targetType: KClass<T>,
         defaultValue: T?,
     ): T? {
+        val resolved = resolvePlaceholderForType(targetType) { delegate.getProperty(key, String::class, null) }
+        if (resolved != PlaceholderNotApplied) {
+            @Suppress("UNCHECKED_CAST")
+            return resolved as T?
+        }
         val raw = delegate.getProperty(key, targetType, defaultValue) ?: return null
         return interpolateIfString(raw)
     }
@@ -63,8 +68,66 @@ class InterpolatingPropertySourcesPropertyResolver(
         targetType: KClass<T>,
         scope: ConfigLevel,
     ): T? {
+        val resolved = resolvePlaceholderForType(targetType) { delegate.getPropertyAtScope(key, String::class, scope) }
+        if (resolved != PlaceholderNotApplied) {
+            @Suppress("UNCHECKED_CAST")
+            return resolved as T?
+        }
         val raw = delegate.getPropertyAtScope(key, targetType, scope) ?: return null
         return interpolateIfString(raw)
+    }
+
+    /**
+     * When the caller asks for a non-String type (Boolean, Int, etc.) and the underlying
+     * source stores a String with `${...}` placeholders, the source's strict type check
+     * throws before interpolation can run. Probe for a String value first; if it has
+     * placeholders, interpolate then coerce.
+     *
+     * Returns:
+     * - [PlaceholderNotApplied] sentinel when this path doesn't apply (target is
+     *   String/Any, no String value at this key, or the value has no placeholders) —
+     *   the caller falls back to the standard typed lookup.
+     * - The coerced value (possibly null) when the path applied — the caller commits
+     *   to that result. Falling back here would re-throw on the same raw template
+     *   string the strict type check rejected, which is the bug we're fixing.
+     */
+    private fun resolvePlaceholderForType(
+        targetType: KClass<*>,
+        rawStringFetcher: () -> String?,
+    ): Any? {
+        if (targetType == String::class || targetType == Any::class) {
+            return PlaceholderNotApplied
+        }
+        val rawString = runCatching { rawStringFetcher() }.getOrNull() ?: return PlaceholderNotApplied
+        if (!interpolator.containsPlaceholders(rawString)) {
+            return PlaceholderNotApplied
+        }
+        val result =
+            runBlockingCompat {
+                interpolator.interpolate(rawString, delegate)
+            }
+        if (!result.isOk) {
+            return PlaceholderNotApplied
+        }
+        return coerceStringTo(result.value, targetType)
+    }
+
+    private fun coerceStringTo(
+        value: String,
+        targetType: KClass<*>,
+    ): Any? =
+        when (targetType) {
+            Boolean::class -> value.toBooleanStrictOrNull()
+            Int::class -> value.toIntOrNull()
+            Long::class -> value.toLongOrNull()
+            Double::class -> value.toDoubleOrNull()
+            Float::class -> value.toFloatOrNull()
+            String::class -> value
+            else -> null
+        }
+
+    private companion object {
+        private val PlaceholderNotApplied = Any()
     }
 
     override fun getPropertyAsStringAtScope(

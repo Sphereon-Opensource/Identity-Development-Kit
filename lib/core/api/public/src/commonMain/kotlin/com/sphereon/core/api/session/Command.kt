@@ -488,9 +488,9 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
         }
 
         // ── Command-level validation (if this is a ServiceCommand with validateInput) ──
-        if (this is com.sphereon.core.api.service.ServiceCommand<*, *>) {
+        if (this is com.sphereon.core.api.service.ServiceCommand<*, *, *>) {
             @Suppress("UNCHECKED_CAST")
-            val svc = this as com.sphereon.core.api.service.ServiceCommand<Arg, *>
+            val svc = this as com.sphereon.core.api.service.ServiceCommand<Arg, *, IdkErrorType>
             val ctxValidation = svc.validateInput(args)
             if (ctxValidation.isErr) {
                 @Suppress("UNCHECKED_CAST")

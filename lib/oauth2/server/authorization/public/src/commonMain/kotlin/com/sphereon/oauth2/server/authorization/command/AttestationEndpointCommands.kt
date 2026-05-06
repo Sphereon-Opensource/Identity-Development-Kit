@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 
 /**
@@ -39,10 +40,10 @@ data class AttestationChallengeResponse(
  * Generates a challenge nonce that the client must include in the
  * attestation PoP JWT to prove freshness.
  */
-interface CreateAttestationChallengeCommand : ServiceCommand<CreateAttestationChallengeArgs, AttestationChallengeResponse> {
+interface CreateAttestationChallengeCommand : ServiceCommand<CreateAttestationChallengeArgs, AttestationChallengeResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oauth2.attestation.challenge.create"
+        const val COMMAND_ID = "oauth2.attestation.create-challenge"
     }
 }

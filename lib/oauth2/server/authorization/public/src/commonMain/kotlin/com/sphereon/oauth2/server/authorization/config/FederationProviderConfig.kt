@@ -48,4 +48,11 @@ data class FederationProviderConfig(
     val userinfoEndpointOverride: String? = null,
     val callbackPath: String = "/federation/callback",
     val stateMode: StateMode = StateMode.JWT,
+    /**
+     * Whether to fetch the upstream `.well-known/openid-configuration` on first use
+     * (the default). When false, callers must supply the `*Override` fields for any
+     * endpoint they need + the provider is used in "manual metadata" mode. Primarily
+     * useful for non-spec-compliant upstreams or air-gapped deployments.
+     */
+    val discoveryEnabled: Boolean = true,
 )

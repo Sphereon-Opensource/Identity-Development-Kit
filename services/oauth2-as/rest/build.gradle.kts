@@ -31,6 +31,15 @@ kotlin {
                 api(projects.libOauth2CommonPublic)
                 implementation(projects.libOauth2CommonImpl)
 
+                // OAuth2 resource-server validate command. UserInfo delegates access-token
+                // binding validation (cnf.jkt, cnf.x5t#S256, expiry, scope) to
+                // [com.sphereon.oauth2.server.resource.command.ValidateAccessTokenCommand]
+                // so the binding contract lives in one place. The -impl module supplies the
+                // session-scope command registry entry and JWT verifier; AS-rest code only
+                // references types from -public.
+                implementation(projects.libOauth2ServerResourcePublic)
+                implementation(projects.libOauth2ServerResourceImpl)
+
                 // OAuth2 client (for introspection/metadata)
                 implementation(projects.libOauth2ClientImpl)
 

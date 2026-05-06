@@ -24,6 +24,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.jarm.JarmMode
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseCommand
 import com.sphereon.openid.oid4vp.common.VpToken
@@ -60,7 +61,7 @@ import kotlinx.serialization.json.Json
 class ParseAuthorizationResponseCommandImpl(
     execution: SessionExecution,
     private val verifyJarmCommand: VerifyJarmResponseCommand,
-) : TypedServiceCommandAdapter<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse>(
+) : TypedServiceCommandAdapter<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse, IdkError>(
         commandId = ParseAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseAuthorizationResponseArgs>(),
@@ -115,12 +116,21 @@ class ParseAuthorizationResponseCommandImpl(
     }
 
     /**
-     * Parse a JARM (JWT-secured) authorization response.
+     * Parse the `response` parameter of a `direct_post.jwt` Authorization Response.
      *
-     * Per OpenID4VP 1.0 Section 8.4:
-     * - The "response" parameter contains the JWT
-     * - JWT may be signed, encrypted, or signed-then-encrypted
-     * - Claims include vp_token, state, iss, aud, exp
+     * Per OID4VP 1.0 final §8.3 / OID4VP 1.1 draft §8.x / HAIP 1.0 §5, the response value MUST
+     * be an **unsigned, encrypted JWT** whose payload is a JSON object carrying the OID4VP
+     * Authorization Response parameters (`vp_token`, `state`, …) as top-level members. The
+     * spec quotes verbatim:
+     *
+     *   "To encrypt the Authorization Response, implementations MUST use an unsigned,
+     *    encrypted JWT as described in [@!RFC7519]."
+     *   "The payload of the encrypted JWT response MUST include the contents of the response
+     *    as defined in (#response-parameters) as top-level JSON members."
+     *
+     * Therefore SIGNED and SIGNED_ENCRYPTED JARM modes are non-conformant for this response
+     * mode and the verifier rejects them after the JARM lib classifies the mode. The JARM lib
+     * itself remains general-purpose (other JARM callers may legitimately use signed modes).
      */
     private suspend fun parseJarmResponse(
         args: ParseAuthorizationResponseArgs,
@@ -128,7 +138,6 @@ class ParseAuthorizationResponseCommandImpl(
     ): IdkResult<ParsedAuthorizationResponse, IdkError> {
         log.debug("Parsing JARM authorization response")
 
-        // Verify and decode JARM JWT
         val verifyArgs =
             VerifyJarmResponseArgs(
                 jarmJwt = jarmJwt,
@@ -143,6 +152,17 @@ class ParseAuthorizationResponseCommandImpl(
                 log.error("Failed to verify JARM authorization response: ${error.message}")
                 return Err(error)
             }
+
+        if (jarmResult.mode != JarmMode.ENCRYPTED) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message =
+                        "OID4VP §8.3 requires direct_post.jwt responses to be unsigned-encrypted; " +
+                            "got JARM mode '${jarmResult.mode}'. Signed and signed-encrypted responses are not " +
+                            "permitted by OID4VP 1.0 / 1.1 / HAIP 1.0.",
+                ),
+            )
+        }
 
         val payload = jarmResult.payload
         val responseParams = payload.responseParameters

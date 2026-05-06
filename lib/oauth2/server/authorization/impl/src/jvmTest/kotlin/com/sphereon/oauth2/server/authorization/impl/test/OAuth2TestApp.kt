@@ -17,7 +17,13 @@
 
 package com.sphereon.oauth2.server.authorization.impl.test
 
+import com.sphereon.core.api.codec.StreamingCodec
+import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.IPropertyValueConversion
+import com.sphereon.core.api.http.codec.HttpBodyCodec
+import com.sphereon.core.api.log.Logger
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.core.events.EventService
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
@@ -42,8 +48,22 @@ interface TestOAuth2ConfigModule {
     fun provideTestServerIdentifier(): ManagedIdentifierOptsOrResult? = null
 }
 
+/**
+ * Test app graph that pulls in production modules wholesale (`lib-oauth2-server-authorization-impl`,
+ * `lib-core-api-default`) so the AS commands resolve real dependencies. The accessors below tell
+ * Metro the mass-contributed app-scope sets (HTTP codecs, loggers, events, config, property
+ * conversions) are reachable from the graph; without them Metro flags the synthetic multibindings
+ * as unused even though production code consumes them downstream.
+ */
 @DependencyGraph(AppScope::class)
 abstract class OAuth2TestAppGraph : AbstractAppGraph() {
+    abstract val httpBodyCodecs: Set<HttpBodyCodec>
+    abstract val loggers: Set<Logger>
+    abstract val eventServices: Set<EventService>
+    abstract val streamingCodecs: Set<StreamingCodec>
+    abstract val configServices: Set<ConfigService>
+    abstract val propertyValueConversions: Set<IPropertyValueConversion<*>>
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

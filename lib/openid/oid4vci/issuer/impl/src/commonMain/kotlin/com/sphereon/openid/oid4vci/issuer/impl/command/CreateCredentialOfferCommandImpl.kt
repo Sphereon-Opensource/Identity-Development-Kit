@@ -66,7 +66,7 @@ class CreateCredentialOfferCommandImpl(
     private val sessionStore: CredentialIssuanceSessionStore,
     private val policyResolver: CredentialIssuancePolicyResolver? = null,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<CreateCredentialOfferArgs, CreatedCredentialOffer>(
+) : TypedServiceCommandAdapter<CreateCredentialOfferArgs, CreatedCredentialOffer, IdkError>(
         commandId = CreateCredentialOfferCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateCredentialOfferArgs>(),
@@ -150,7 +150,8 @@ class CreateCredentialOfferCommandImpl(
         val offerId = Uuid.random().toString()
         val sessionId = Uuid.random().toString()
 
-        // Create session (issuerState = sessionId for auth-code grant linkage)
+        // Create session (issuerState = sessionId for auth-code grant linkage).
+        // preAuthCode is filled in after the AS bridge registers the code below.
         val session =
             IssuanceSession(
                 sessionId = sessionId,
@@ -164,6 +165,8 @@ class CreateCredentialOfferCommandImpl(
                     },
                 status = IssuanceSessionStatus.OFFER_CREATED,
                 preSeededAttributes = applied.preSeededAttributes,
+                boundUsageToken = applied.boundUsageToken,
+                postIssuanceHookAllowList = applied.postIssuanceHookAllowList,
                 createdAt = now.epochSeconds,
                 expiresAt = now.epochSeconds + applied.offerTtlSeconds,
             )
@@ -198,6 +201,12 @@ class CreateCredentialOfferCommandImpl(
                             null
                         },
                 )
+            // Stash the registered pre-auth code on the session so post-issuance
+            // hooks can correlate the signed credential to the code that
+            // authorized it (audit + downstream pre-auth lookup).
+            sessionStore
+                .update(session.copy(preAuthCode = registered.code))
+                .getOrElse { return Err(it) }
         }
 
         if (applied.authorizationCodeGrant) {
@@ -240,7 +249,15 @@ class CreateCredentialOfferCommandImpl(
         // base path is relative to the issuer identifier (so issuerId is expected to be the
         // full identifier URL, e.g. "${BASE}/oid4vci" when hosted under a sub-path).
         val issuerBase = applied.issuerId.trimEnd('/')
-        val offerUri = "openid-credential-offer://?credential_offer_uri=$issuerBase/credentials/offers/$offerId"
+        // Outer deeplink prefix the wallet listens on (OID4VCI 1.0 §4.1.1). Caller-supplied
+        // `scheme` lets the demo / production deployment switch between bare-scheme deeplinks
+        // (`openid-credential-offer://`, `haip://`) and full universal-link / app-link URLs
+        // (`https://wallet.example.com/credential_offer`). When the scheme already carries a
+        // query string (e.g. a custom URL with `?source=demo`), append with `&` instead of `?`
+        // so the resulting URI stays parseable.
+        val scheme = applied.scheme?.takeIf { it.isNotBlank() } ?: "openid-credential-offer://"
+        val separator = if (scheme.contains("?")) "&" else "?"
+        val offerUri = "$scheme${separator}credential_offer_uri=$issuerBase/credentials/offers/$offerId"
 
         return Ok(
             CreatedCredentialOffer(

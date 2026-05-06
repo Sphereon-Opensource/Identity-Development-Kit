@@ -76,7 +76,7 @@ class TenantResolutionHandlerImpl(
 ) : TenantResolutionHandler {
     val tenantResolvers = tenantResolvers.sorted()
 
-    override fun resolveTenant(tenantInput: TenantInput): TenantAware {
+    override suspend fun resolveTenant(tenantInput: TenantInput): TenantAware {
         val tenantId =
             tenantResolvers.find { it.supports(tenantInput) }?.resolveTenant(tenantInput) ?: throw IllegalArgumentException("TenantResolver not found for input: $tenantInput")
         return object : TenantAware {
@@ -210,7 +210,7 @@ class StaticTenantResolver : TenantResolver {
 
     override fun supports(tenantInput: TenantInput) = tenantInput.tenant is String && tenantInput.asString().isNotBlank()
 
-    override fun resolveTenant(tenantInput: TenantInput) = tenantInput.asString().trim().lowercase()
+    override suspend fun resolveTenant(tenantInput: TenantInput) = tenantInput.asString().trim().lowercase()
 }
 
 @Inject
@@ -221,7 +221,7 @@ class EmailDomainTenantResolver : TenantResolver {
 
     override fun supports(tenantInput: TenantInput) = tenantInput.tenant is String && tenantInput.asString().contains("@")
 
-    override fun resolveTenant(tenantInput: TenantInput): String =
+    override suspend fun resolveTenant(tenantInput: TenantInput): String =
         tenantInput
             .asString()
             .substringAfter("@")

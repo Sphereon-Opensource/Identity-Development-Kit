@@ -39,7 +39,7 @@ import kotlin.native.ObjCName
 class LookupIdentityMatchCommandImpl(
     execution: SessionExecution,
     private val store: IdentityMatchStore,
-) : TypedServiceCommandAdapter<LookupIdentityMatchArgs, MatchResult>(
+) : TypedServiceCommandAdapter<LookupIdentityMatchArgs, MatchResult, IdkError>(
         commandId = LookupIdentityMatchCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<LookupIdentityMatchArgs>(),

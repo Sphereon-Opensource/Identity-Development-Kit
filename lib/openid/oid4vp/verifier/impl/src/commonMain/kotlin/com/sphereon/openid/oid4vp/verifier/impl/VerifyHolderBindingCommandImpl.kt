@@ -28,12 +28,17 @@ import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.di.session.SessionScope
+import com.sphereon.mdoc.data.DeviceAuthValidation
+import com.sphereon.mdoc.data.MdocValidations
+import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
+import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.sdjwt.VerifySdJwtArgs
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
+import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
@@ -58,7 +63,11 @@ class VerifyHolderBindingCommandImpl(
     execution: SessionExecution,
     private val verifySdJwtCommand: VerifySdJwtCommand,
     private val verifyJwsCommand: VerifyJwsCommand,
-) : TypedServiceCommandAdapter<VerifyHolderBindingArgs, HolderBindingResult>(
+    private val mdocValidations: MdocValidations,
+    private val deviceAuthValidation: DeviceAuthValidation,
+    private val deviceResponseCborCodec: DeviceResponseCborCodec,
+    private val x509TrustAnchorLoader: X509TrustAnchorLoader,
+) : TypedServiceCommandAdapter<VerifyHolderBindingArgs, HolderBindingResult, IdkError>(
         commandId = VerifyHolderBindingCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyHolderBindingArgs>(),
@@ -93,7 +102,13 @@ class VerifyHolderBindingCommandImpl(
             }
 
             credentialFormat?.isMdoc == true -> {
-                verifyMdocHolderBinding(presentation, expectedNonce, expectedAudience)
+                verifyMdocHolderBinding(
+                    presentation = presentation,
+                    expectedNonce = expectedNonce,
+                    clientId = processedArgs.clientId,
+                    responseUri = processedArgs.responseUri,
+                    verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
+                )
             }
 
             credentialFormat?.isJwt == true -> {
@@ -172,6 +187,11 @@ class VerifyHolderBindingCommandImpl(
                 audienceValid = !audienceError,
                 sdHashValid = !sdHashError,
                 errors = result.errorMessages,
+                // Surface trust vs. crypto split so the wire-level error message can
+                // distinguish "issuer key never resolved" (relative-kid / did:web fetch
+                // / trust anchor) from a real ECDSA/EdDSA mismatch.
+                issuerTrustEstablished = result.issuerTrustEstablished,
+                issuerCryptoVerified = result.issuerCryptoVerified,
             ),
         )
     }
@@ -191,52 +211,175 @@ class VerifyHolderBindingCommandImpl(
     }
 
     /**
-     * Verify holder binding in mDoc using DeviceAuth.
+     * Verify the holder binding for an mDoc presentation per ISO 18013-5 §9.3 and ISO 18013-7
+     * §B.4.3 (the OID4VP profile of the mdoc handover).
      *
-     * Per ISO 18013-5, DeviceAuth contains a COSE_Sign1 signature over:
-     * - SessionTranscript (containing nonce/mdocGeneratedNonce and client_id/response_uri)
-     * - docType
-     * - DeviceNameSpaces
+     * Steps:
+     * 1. Decode the base64url presentation as a CBOR `DeviceResponse`.
+     * 2. For each `Document`:
+     *    - Run [MdocValidations.fromDocument] (cert chain, IssuerAuth COSE_Sign1, validity
+     *      window, docType match, IssuerSignedItem digest match against MSO `valueDigests`).
+     *    - Reconstruct the OID4VP `SessionTranscript` from the verifier's `client_id`,
+     *      `nonce`, encryption-key JWK thumbprint, and `response_uri` per OID4VP 1.0 final
+     *      §B.2.6 (`["OpenID4VPHandover", sha256(handoverInfoBytes)]` envelope around
+     *      `[client_id, nonce, JwkThumbprint OR null, response_uri]`).
+     *    - Verify the `DeviceAuth` COSE_Sign1 over that transcript using the device public
+     *      key from the MSO.
+     * 3. Aggregate per-document results — any critical=true failure marks the whole binding
+     *    invalid.
      *
-     * The signature is verified using the device public key from the MSO.
-     *
-     * Note: Full mDoc DeviceAuth verification requires the mdoc library integration.
-     * This is tracked as a separate enhancement to integrate with MdocReaderEngagementManager.
+     * @param verifierEncryptionJwkThumbprint Raw 32-byte SHA-256 thumbprint (RFC 7638) of
+     *   the verifier's encryption-key JWK. Required for `direct_post.jwt` / `dc_api.jwt`;
+     *   null for plain `direct_post` / `dc_api`. The §B.2.6 handover MUSt match the
+     *   response mode actually used.
      */
-    private fun verifyMdocHolderBinding(
+    private suspend fun verifyMdocHolderBinding(
         presentation: String,
         expectedNonce: String,
-        expectedAudience: String,
+        clientId: String?,
+        responseUri: String?,
+        verifierEncryptionJwkThumbprint: ByteArray?,
     ): IdkResult<HolderBindingResult, IdkError> {
         log.debug("Verifying mDoc holder binding")
 
-        // mDoc DeviceAuth verification requires:
-        // 1. Parse CBOR DeviceResponse from base64url presentation
-        // 2. Extract DeviceAuth (COSE_Sign1) from each Document
-        // 3. Build expected SessionTranscript with nonce and audience (client_id + response_uri)
-        // 4. Verify COSE_Sign1 signature using DeviceKey from MSO
-        //
-        // The verification is complex because SessionTranscript construction varies by transport:
-        // - OID4VP: SessionTranscript.fromOid4vpClientIdAndResponseUri(clientId, responseUri, mdocNonce, authRequestNonce)
-        // - BLE/NFC: Different SessionTranscript format per ISO 18013-5
-        //
-        // Full integration requires the mdoc module and COSE verification infrastructure.
-        // This will be implemented as a follow-up to integrate with MdocReaderEngagementManager.validateDeviceAuthentication()
+        if (clientId.isNullOrBlank() || responseUri.isNullOrBlank()) {
+            return Ok(
+                HolderBindingResult(
+                    verified = false,
+                    bindingMethod = "mdoc-device-auth",
+                    signatureValid = false,
+                    nonceValid = false,
+                    audienceValid = false,
+                    sdHashValid = null,
+                    errors =
+                        listOf(
+                            "mDoc holder-binding verification requires the OID4VP context " +
+                                "(clientId, responseUri). One or more were missing.",
+                        ),
+                ),
+            )
+        }
 
-        log.warn("mDoc DeviceAuth verification not yet fully integrated - returning placeholder success")
+        // The presentation is base64url(CBOR(DeviceResponse)) — see ISO 18013-7 §B.3.
+        val deviceResponseBytes =
+            try {
+                presentation.decodeFromBase64Url()
+            } catch (expected: Exception) {
+                return Ok(mdocFailure("Failed to base64url-decode the mDoc presentation: ${expected.message}"))
+            }
 
+        val deviceResponse =
+            deviceResponseCborCodec
+                .decode(deviceResponseBytes)
+                .getOrElse { error ->
+                    return Ok(mdocFailure("Failed to CBOR-decode DeviceResponse: ${error.message.defaultMessage}"))
+                }.value
+
+        val documents = deviceResponse.documents
+        if (documents.isNullOrEmpty()) {
+            return Ok(mdocFailure("DeviceResponse contains no documents to verify."))
+        }
+
+        val expectedSessionTranscript =
+            SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                clientId = clientId,
+                nonce = expectedNonce,
+                jwkThumbprint = verifierEncryptionJwkThumbprint,
+                responseUri = responseUri,
+            )
+
+        val errors = mutableListOf<String>()
+        var allDocsVerified = true
+        var allDeviceAuthsValid = true
+
+        // mDoc IACA anchors are X.509 per ISO 18013-5, so they flow through the
+        // shared `lib/trust/x509` loader (config keys: `trust.anchors.x509.*`).
+        // The same loader feeds X509TrustValidationService; consumers (mdoc IACA,
+        // SD-JWT issuer x5c, generic chain validation) share one config surface.
+        // When no anchors are configured, the X.509 service's default trust store
+        // is used and chain validation fails closed for unknown roots.
+        val trustedCerts = x509TrustAnchorLoader.loadTrustedCerts().takeIf { it.isNotEmpty() }?.toTypedArray()
+
+        // Track per-step outcomes separately so reporting doesn't conflate failures: a missing
+        // trust anchor (CERTIFICATE_CHAIN) is NOT a signature failure (ISSUER_AUTH_SIGNATURE),
+        // even though both contribute to overall rejection. The §10 verdict is `verified` AND
+        // of all steps; the wire-level `signatureValid` field reflects ONLY the cryptographic
+        // signature checks (issuer-auth + device-auth) so a downstream consumer can distinguish
+        // a trust-policy fail (caller misconfiguration) from a forgery (genuine attack).
+        var anyTrustChainFailed = false
+        var anyIssuerAuthSignatureFailed = false
+
+        documents.forEach { document ->
+            val mdocResults =
+                mdocValidations.fromDocument(
+                    document = document,
+                    trustedCerts = trustedCerts,
+                    verificationTime = null,
+                    keyInfo = null,
+                    allowNotYetValidDocuments = false,
+                    allowExpiredDocuments = false,
+                )
+            // Walk verifications by index (mirrors MdocVerification.DOCUMENT order: cert chain,
+            // issuer-auth signature, digests, docType, validity). Map each critical failure to
+            // the right outcome bucket — never to "signatureValid=false" unless the actual
+            // signature step failed.
+            val docTypeStr = document.docType.toString()
+            mdocResults.verifications.forEach { v ->
+                if (v.error && v.critical) {
+                    val detail = "$docTypeStr: ${v.message ?: v.name}"
+                    errors += detail
+                    allDocsVerified = false
+                    when (v.name) {
+                        com.sphereon.crypto.core.CryptoConst.X509_LITERAL -> anyTrustChainFailed = true
+                        com.sphereon.crypto.core.CryptoConst.COSE_LITERAL -> anyIssuerAuthSignatureFailed = true
+                    }
+                }
+            }
+
+            val deviceAuthResult =
+                deviceAuthValidation.verifyDeviceAuth(
+                    document = document,
+                    expectedSessionTranscript = expectedSessionTranscript,
+                )
+            if (deviceAuthResult.error && deviceAuthResult.critical) {
+                allDocsVerified = false
+                allDeviceAuthsValid = false
+                errors += "$docTypeStr: ${deviceAuthResult.message ?: deviceAuthResult.name}"
+            }
+        }
+
+        // Cryptographic-signature outcome bucket: TRUE iff every issuer-auth signature AND every
+        // device-auth signature actually verified. A trust-chain failure does NOT flip this —
+        // the COSE adapter still ran the signature check using the leaf cert from x5chain (in
+        // either header per RFC 9052 §3.1), independently of trust-anchor configuration.
+        val allSigsValid = !anyIssuerAuthSignatureFailed && allDeviceAuthsValid
         return Ok(
             HolderBindingResult(
-                verified = true, // Placeholder - full implementation pending mdoc integration
+                verified = allDocsVerified,
                 bindingMethod = "mdoc-device-auth",
-                signatureValid = true, // Placeholder
-                nonceValid = true, // Placeholder
-                audienceValid = true, // Placeholder
+                signatureValid = allSigsValid,
+                // OID4VP §10 / §B.2.6: the holder's nonce binding lives inside the session
+                // transcript (the verifier's nonce is mixed into the OpenID4VPHandover). If the
+                // device-auth signature verifies, the holder used the same transcript bytes
+                // — including the same nonce — that we reconstructed.
+                nonceValid = allDeviceAuthsValid,
+                audienceValid = allDeviceAuthsValid,
                 sdHashValid = null, // Not applicable for mDoc
-                errors = listOf("Full mDoc DeviceAuth verification pending - mdoc library integration required"),
+                errors = errors,
             ),
         )
     }
+
+    private fun mdocFailure(message: String): HolderBindingResult =
+        HolderBindingResult(
+            verified = false,
+            bindingMethod = "mdoc-device-auth",
+            signatureValid = false,
+            nonceValid = false,
+            audienceValid = false,
+            sdHashValid = null,
+            errors = listOf(message),
+        )
 
     /**
      * Verify holder binding in JWT VP using proof signature.

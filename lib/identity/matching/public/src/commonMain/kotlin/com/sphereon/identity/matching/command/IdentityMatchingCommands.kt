@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.matching.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.matching.model.CreateIdentityMatchArgs
@@ -26,7 +27,7 @@ import com.sphereon.identity.matching.model.LookupIdentityMatchArgs
 import com.sphereon.identity.matching.model.MatchResult
 
 @JsExportCompat
-interface LookupIdentityMatchCommand : ServiceCommand<LookupIdentityMatchArgs, MatchResult> {
+interface LookupIdentityMatchCommand : ServiceCommand<LookupIdentityMatchArgs, MatchResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -35,7 +36,7 @@ interface LookupIdentityMatchCommand : ServiceCommand<LookupIdentityMatchArgs, M
 }
 
 @JsExportCompat
-interface CreateIdentityMatchCommand : ServiceCommand<CreateIdentityMatchArgs, IdentityMatch> {
+interface CreateIdentityMatchCommand : ServiceCommand<CreateIdentityMatchArgs, IdentityMatch, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -44,7 +45,7 @@ interface CreateIdentityMatchCommand : ServiceCommand<CreateIdentityMatchArgs, I
 }
 
 @JsExportCompat
-interface DeleteIdentityMatchCommand : ServiceCommand<DeleteIdentityMatchArgs, Boolean> {
+interface DeleteIdentityMatchCommand : ServiceCommand<DeleteIdentityMatchArgs, Boolean, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -53,7 +54,7 @@ interface DeleteIdentityMatchCommand : ServiceCommand<DeleteIdentityMatchArgs, B
 }
 
 @JsExportCompat
-interface ListIdentityMatchesCommand : ServiceCommand<ListIdentityMatchesArgs, List<IdentityMatch>> {
+interface ListIdentityMatchesCommand : ServiceCommand<ListIdentityMatchesArgs, List<IdentityMatch>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

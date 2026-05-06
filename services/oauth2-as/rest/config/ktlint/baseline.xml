@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/commonMain/kotlin/com/sphereon/oauth2/server/authorization/impl/http/OAuth2HttpResponses.kt">
+        <error line="27" column="1" source="standard:kdoc" />
+        <error line="35" column="1" source="standard:no-consecutive-comments" />
+        <error line="70" column="13" source="standard:when-entry-bracing" />
+        <error line="80" column="13" source="standard:when-entry-bracing" />
+        <error line="88" column="13" source="standard:when-entry-bracing" />
+        <error line="101" column="104" source="standard:function-signature" />
+        <error line="115" column="1" source="standard:blank-line-between-when-conditions" />
+        <error line="379" column="201" source="standard:max-line-length" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/oauth2/server/authorization/impl/http/command/login/LoginSubmitHttpEndpointCommandImpl.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+        <error line="215" column="24" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/oauth2/server/authorization/impl/http/BrowserSecurityHeadersTest.kt">
+        <error line="150" column="65" source="standard:function-signature" />
+        <error line="154" column="1" source="standard:no-consecutive-blank-lines" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/oauth2/server/authorization/impl/http/TrustedProxyResolutionTest.kt">
+        <error line="50" column="85" source="standard:function-signature" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/oauth2/server/authorization/impl/http/command/TestSessionExecutionFixture.kt">
+        <error line="39" column="1" source="standard:kdoc" />
+        <error line="45" column="1" source="standard:blank-line-before-declaration" />
+        <error line="45" column="1" source="standard:no-consecutive-comments" />
+        <error line="53" column="44" source="standard:class-signature" />
+        <error line="53" column="90" source="standard:class-signature" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/oauth2/server/authorization/impl/http/command/login/LoginHttpFlowTest.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+        <error line="221" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="254" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="286" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="319" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="352" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="402" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="429" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="453" column="31" source="standard:multiline-expression-wrapping" />
+        <error line="473" column="31" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/oauth2/server/authorization/impl/http/command/token/TokenHttpEndpointCommandImplTest.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+    </file>
+</baseline>

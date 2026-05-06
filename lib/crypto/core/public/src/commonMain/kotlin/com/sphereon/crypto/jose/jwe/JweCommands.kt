@@ -459,7 +459,7 @@ JweDecryptionResult
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PrepareJweCommand", exact = true)
 @JsExportCompat
-interface PrepareJweCommand : ServiceCommand<PrepareJweArgs, PreparedJwe> {
+interface PrepareJweCommand : ServiceCommand<PrepareJweArgs, PreparedJwe, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -484,7 +484,7 @@ interface PrepareJweCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJweCompactCommand", exact = true)
 @JsExportCompat
-interface CreateJweCompactCommand : ServiceCommand<CreateJweCompactArgs, JweCompact> {
+interface CreateJweCompactCommand : ServiceCommand<CreateJweCompactArgs, JweCompact, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -509,7 +509,7 @@ interface CreateJweCompactCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJweJsonFlattenedCommand", exact = true)
 @JsExportCompat
-interface CreateJweJsonFlattenedCommand : ServiceCommand<CreateJweJsonArgs, JweJsonFlattened> {
+interface CreateJweJsonFlattenedCommand : ServiceCommand<CreateJweJsonArgs, JweJsonFlattened, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -534,7 +534,7 @@ interface CreateJweJsonFlattenedCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJweJsonGeneralCommand", exact = true)
 @JsExportCompat
-interface CreateJweJsonGeneralCommand : ServiceCommand<CreateJweJsonGeneralArgs, JweJsonGeneral> {
+interface CreateJweJsonGeneralCommand : ServiceCommand<CreateJweJsonGeneralArgs, JweJsonGeneral, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -559,7 +559,7 @@ interface CreateJweJsonGeneralCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DecryptJweCommand", exact = true)
 @JsExportCompat
-interface DecryptJweCommand : ServiceCommand<DecryptJweArgs, JweDecryptionResult> {
+interface DecryptJweCommand : ServiceCommand<DecryptJweArgs, JweDecryptionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

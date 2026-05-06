@@ -3,6 +3,8 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>LongMethod:KeyPair.jvm.kt$PrivatePlatformKey$@Suppress("MagicNumber") override fun toPublicKey(): PlatformKey</ID>
+    <ID>NestedBlockDepth:JweCompression.jvm.kt$internal actual suspend fun inflate(compressed: ByteArray): ByteArray</ID>
     <ID>UnusedPrivateProperty:KeyPair.jvm.kt$PrivatePlatformKey$val reimported = keyFactory.generatePrivate(pkcs8Spec) as ECPrivateKey</ID>
+    <ID>UseRequire:JweCompression.jvm.kt$throw IllegalArgumentException("Truncated DEFLATE stream")</ID>
   </CurrentIssues>
 </SmellBaseline>

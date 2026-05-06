@@ -33,7 +33,7 @@ import com.sphereon.core.compat.JsExportCompat
 @JsExportCompat
 interface InitiateOid4vpIdvCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.auth.idv.initiate"
+        const val COMMAND_ID = "oid4vp.auth.initiate-idv"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -59,7 +59,7 @@ interface InitiateOid4vpIdvCommand : HttpEndpointCommand {
 @JsExportCompat
 interface GetOid4vpIdvStatusCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.auth.idv.status"
+        const val COMMAND_ID = "oid4vp.auth.idv-status"
 
         val ENDPOINT =
             HttpEndpointDescriptor(

@@ -18,6 +18,7 @@ package com.sphereon.core.api.http
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -417,6 +418,103 @@ class CompiledPathPatternTest {
         val pattern2 = CompiledPathPattern.compile("/test")
         // Same pattern should be cached
         assertEquals(pattern1, pattern2)
+    }
+
+    // ===== Tail-wildcard ({name...}) tests =====
+
+    @Test
+    fun tailWildcardMatchesEmptyTail() {
+        val pattern = CompiledPathPattern.compile("/a/{path...}")
+        assertTrue(pattern.matches("/a"))
+        val params = pattern.extractParams("/a")
+        assertEquals("", params["path"])
+    }
+
+    @Test
+    fun tailWildcardMatchesSingleSegmentTail() {
+        val pattern = CompiledPathPattern.compile("/a/{path...}")
+        assertTrue(pattern.matches("/a/b"))
+        val params = pattern.extractParams("/a/b")
+        assertEquals("b", params["path"])
+    }
+
+    @Test
+    fun tailWildcardMatchesMultiSegmentTail() {
+        val pattern = CompiledPathPattern.compile("/a/{path...}")
+        assertTrue(pattern.matches("/a/b/c/d"))
+        val params = pattern.extractParams("/a/b/c/d")
+        assertEquals("b/c/d", params["path"])
+    }
+
+    @Test
+    fun tailWildcardMatchesAfterLiteralAndPlaceholder() {
+        val pattern = CompiledPathPattern.compile("/a/{name}/x/{rest...}")
+        assertTrue(pattern.matches("/a/foo/x/y/z"))
+        val params = pattern.extractParams("/a/foo/x/y/z")
+        assertEquals("foo", params["name"])
+        assertEquals("y/z", params["rest"])
+    }
+
+    @Test
+    fun tailWildcardRejectsTailWildcardNotAtEnd() {
+        assertFailsWith<IllegalArgumentException> {
+            CompiledPathPattern.compile("/a/{rest...}/b")
+        }
+    }
+
+    @Test
+    fun tailWildcardRejectsTailWildcardWithoutName() {
+        assertFailsWith<IllegalArgumentException> {
+            CompiledPathPattern.compile("/a/{...}")
+        }
+    }
+
+    @Test
+    fun tailWildcardNoMatchOnLiteralMismatch() {
+        val pattern = CompiledPathPattern.compile("/a/{path...}")
+        assertFalse(pattern.matches("/b/c"))
+        assertTrue(pattern.extractParams("/b/c").isEmpty())
+    }
+
+    @Test
+    fun tailWildcardTraversalIsNotSpecial() {
+        val pattern = CompiledPathPattern.compile("/a/{path...}")
+        assertTrue(pattern.matches("/a/../b"))
+        val params = pattern.extractParams("/a/../b")
+        assertEquals("../b", params["path"])
+    }
+
+    @Test
+    fun tailWildcardLoginAssetsCanonicalPattern() {
+        val pattern = CompiledPathPattern.compile("/login/assets/{path...}")
+        assertTrue(pattern.matches("/login/assets/css/login.css"))
+        assertEquals("css/login.css", pattern.extractParams("/login/assets/css/login.css")["path"])
+
+        assertTrue(pattern.matches("/login/assets/img/sphereon-logo.svg"))
+        assertEquals(
+            "img/sphereon-logo.svg",
+            pattern.extractParams("/login/assets/img/sphereon-logo.svg")["path"],
+        )
+
+        assertTrue(pattern.matches("/login/assets/foo"))
+        assertEquals("foo", pattern.extractParams("/login/assets/foo")["path"])
+
+        assertTrue(pattern.matches("/login/assets/a/b/c/d"))
+        assertEquals("a/b/c/d", pattern.extractParams("/login/assets/a/b/c/d")["path"])
+    }
+
+    @Test
+    fun tailWildcardSpecificityCountsLiteralsOnly() {
+        val pattern = CompiledPathPattern.compile("/login/assets/{path...}")
+        // /login + /assets are literal; {path...} is a wildcard.
+        assertEquals(2, pattern.specificity)
+    }
+
+    @Test
+    fun tailWildcardDoesNotMatchShorterPathThanLiteralPrefix() {
+        val pattern = CompiledPathPattern.compile("/login/assets/{path...}")
+        assertFalse(pattern.matches("/login"))
+        assertFalse(pattern.matches("/"))
     }
 }
 

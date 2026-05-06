@@ -74,7 +74,7 @@ class UserContextInterceptor(
         (appGraph as CoreApiAppExtensionGraph).appLogManager.withTag(LOG_TAG)
     }
 
-    suspend fun intercept(call: ApplicationCall) {
+    suspend fun intercept(call: ApplicationCall): RequestScopedContext {
         try {
             // Resolve tenant and principal
             val tenantInput = tenantResolver.resolve(call)
@@ -110,6 +110,7 @@ class UserContextInterceptor(
             call.attributes.put(RequestContextKey, requestContext)
 
             appLogger.trace("Context set: userContext=${contextInstance.contextId}, session=${sessionInstance.sessionId}")
+            return requestContext
         } catch (expected: Exception) {
             appLogger.error("Error processing request in UserContextInterceptor: ${expected.message}", expected)
             throw expected

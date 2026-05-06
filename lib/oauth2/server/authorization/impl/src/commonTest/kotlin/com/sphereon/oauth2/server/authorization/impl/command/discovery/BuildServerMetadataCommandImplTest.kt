@@ -23,6 +23,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.newBuildServerMetadataCommand
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,7 +40,6 @@ class BuildServerMetadataCommandImplTest {
             val config =
                 OAuth2ServerInstanceConfig(
                     issuer = "https://auth.example.com",
-                    baseUrl = "https://auth.example.com",
                     grantTypesEnabled = setOf("authorization_code", "client_credentials"),
                     responseTypesSupported = setOf("code"),
                     tokenEndpointAuthMethodsSupported = setOf("client_secret_basic", "client_secret_post"),
@@ -53,7 +53,7 @@ class BuildServerMetadataCommandImplTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -73,7 +73,7 @@ class BuildServerMetadataCommandImplTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     introspection = FeaturePolicy.DISABLED,
                     revocation = FeaturePolicy.DISABLED,
                     par = FeaturePolicy.DISABLED,
@@ -84,7 +84,7 @@ class BuildServerMetadataCommandImplTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -102,7 +102,7 @@ class BuildServerMetadataCommandImplTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     introspection = FeaturePolicy.SUPPORTED,
                     revocation = FeaturePolicy.SUPPORTED,
                     par = FeaturePolicy.SUPPORTED,
@@ -112,7 +112,7 @@ class BuildServerMetadataCommandImplTest {
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -132,14 +132,14 @@ class BuildServerMetadataCommandImplTest {
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://auth.example.com",
+                    issuer = "https://auth.example.com",
                     par = FeaturePolicy.REQUIRED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -153,13 +153,13 @@ class BuildServerMetadataCommandImplTest {
             val config =
                 OAuth2ServerInstanceConfig(
                     mode = AuthorizationServerMode.EXTERNAL,
-                    baseUrl = "https://external-as.example.com",
+                    issuer = "https://external-as.example.com",
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs())
 
@@ -171,19 +171,19 @@ class BuildServerMetadataCommandImplTest {
         runTest {
             val primary =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://primary.example.com",
+                    issuer = "https://primary.example.com",
                     revocation = FeaturePolicy.SUPPORTED,
                 )
             val secondary =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://secondary.example.com",
+                    issuer = "https://secondary.example.com",
                     revocation = FeaturePolicy.DISABLED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("primary" to primary, "secondary" to secondary)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result1 = command.execute(BuildServerMetadataArgs(serverId = "primary"))
             assertTrue(result1.isOk)
@@ -198,7 +198,7 @@ class BuildServerMetadataCommandImplTest {
     fun testUnknownServerReturnsError() =
         runTest {
             val configProvider = TestOAuth2ServersConfigProvider()
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result = command.execute(BuildServerMetadataArgs(serverId = "nonexistent"))
 
@@ -206,17 +206,95 @@ class BuildServerMetadataCommandImplTest {
         }
 
     @Test
-    fun testBaseUrlOverride() =
+    fun testLogoutEnabledAdvertisesLogoutEndpoints() =
         runTest {
+            // logout advertisement is gated on a dedicated `logout` FeaturePolicy,
+            // not `oidc` — OIDF Basic OP leaves `logout` off by default while keeping `oidc` on.
             val config =
                 OAuth2ServerInstanceConfig(
-                    baseUrl = "https://internal.example.com",
+                    issuer = "https://auth.example.com",
+                    oidc = FeaturePolicy.SUPPORTED,
+                    logout = FeaturePolicy.SUPPORTED,
                 )
             val configProvider =
                 TestOAuth2ServersConfigProvider(
                     OAuth2ServersConfig(servers = mapOf("default" to config)),
                 )
-            val command = BuildServerMetadataCommandImpl(ctx.execution, configProvider)
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
+
+            val result = command.execute(BuildServerMetadataArgs())
+
+            assertTrue(result.isOk)
+            val metadata = result.value
+            assertEquals("https://auth.example.com/logout", metadata.endSessionEndpoint)
+            assertEquals(true, metadata.backchannelLogoutSupported)
+            assertEquals(true, metadata.backchannelLogoutSessionSupported)
+            assertEquals(true, metadata.frontchannelLogoutSupported)
+            assertEquals(true, metadata.frontchannelLogoutSessionSupported)
+        }
+
+    @Test
+    fun testOidcEnabledButLogoutDisabledOmitsLogoutEndpoints() =
+        runTest {
+            // OIDF Basic OP shape: OIDC on (UserInfo / ID token), logout off.
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = "https://auth.example.com",
+                    oidc = FeaturePolicy.SUPPORTED,
+                    logout = FeaturePolicy.DISABLED,
+                )
+            val configProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(servers = mapOf("default" to config)),
+                )
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
+
+            val result = command.execute(BuildServerMetadataArgs())
+
+            assertTrue(result.isOk)
+            val metadata = result.value
+            assertNull(metadata.endSessionEndpoint, "end_session_endpoint must be absent when logout is disabled")
+            assertNull(metadata.backchannelLogoutSupported)
+            assertNull(metadata.backchannelLogoutSessionSupported)
+            assertNull(metadata.frontchannelLogoutSupported)
+            assertNull(metadata.frontchannelLogoutSessionSupported)
+        }
+
+    @Test
+    fun testOidcDisabledOmitsLogoutEndpoints() =
+        runTest {
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = "https://auth.example.com",
+                    oidc = FeaturePolicy.DISABLED,
+                )
+            val configProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(servers = mapOf("default" to config)),
+                )
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
+
+            val result = command.execute(BuildServerMetadataArgs())
+
+            assertTrue(result.isOk)
+            val metadata = result.value
+            assertNull(metadata.endSessionEndpoint)
+            assertNull(metadata.backchannelLogoutSupported)
+            assertNull(metadata.backchannelLogoutSessionSupported)
+            assertNull(metadata.frontchannelLogoutSupported)
+        }
+
+    @Test
+    fun testBaseUrlOverride() =
+        runTest {
+            // No `issuer` configured, so the per-request `baseUrlOverride` (resolved by the HTTP
+            // shell from `Host` + `X-Forwarded-Proto`) is what discovery uses for outbound URLs.
+            val config = OAuth2ServerInstanceConfig()
+            val configProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(servers = mapOf("default" to config)),
+                )
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
 
             val result =
                 command.execute(

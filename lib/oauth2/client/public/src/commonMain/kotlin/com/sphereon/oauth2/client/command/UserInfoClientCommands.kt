@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
@@ -54,10 +55,10 @@ data class FetchUserInfoResult
  * UserInfo endpoint using a Bearer access token.
  */
 @JsExportCompat
-interface FetchUserInfoCommand : ServiceCommand<FetchUserInfoArgs, FetchUserInfoResult> {
+interface FetchUserInfoCommand : ServiceCommand<FetchUserInfoArgs, FetchUserInfoResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oauth2.client.userinfo.fetch"
+        const val COMMAND_ID = "oauth2.client.fetch-userinfo"
     }
 }

@@ -2,6 +2,7 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>BracesOnIfStatements:JwkDidProviderImpl.kt$JwkDidProviderImpl.Companion$if</ID>
     <ID>ReturnCount:JwkDidProviderImpl.kt$JwkDidProviderImpl$override suspend fun create(options: DidCreateOptions): IdkResult&lt;DidCreateResult, IdkError></ID>
     <ID>ReturnCount:JwkDidResolverImpl.kt$JwkDidResolverImpl$override suspend fun dereference( didUrl: String, options: DidDereferenceOptions, ): IdkResult&lt;DidDereferenceResult, IdkError></ID>
     <ID>ReturnCount:JwkDidResolverImpl.kt$JwkDidResolverImpl$override suspend fun resolve( did: String, options: DidResolutionOptions, ): IdkResult&lt;DidResolutionResult, IdkError></ID>

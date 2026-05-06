@@ -1,0 +1,28 @@
+# Conformance overlay for the OIDF FAPI2 / OID4VC test suite.
+#
+# Layered on top of docker-compose.yaml by start-conformance-dev.{sh,bat} via
+# `-f docker-compose.yaml -f docker-compose.conformance.yaml`. Adds:
+#   - a TLS-terminating :8443 listener (BCP 195 cipher list lives in Caddyfile.conformance)
+#   - persistent caddy_data / caddy_config volumes so Let's Encrypt certs and the ACME
+#     account survive container restarts (otherwise every restart triggers a fresh ACME
+#     run and quickly hits Let's Encrypt rate limits)
+#   - a command override that points Caddy at /etc/caddy/Caddyfile.conformance instead
+#     of the regular /etc/caddy/Caddyfile (Caddyfile.conformance still imports the regular
+#     file for the (cors) and (routes) snippets and the :8080 site)
+#
+# Regular dev devs DO NOT use this overlay — `./start-dev.sh` and `./start.sh` keep
+# stock HTTP-only behaviour with no TLS provisioning, no ACME, no extra ports.
+
+services:
+  caddy:
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.conformance", "--adapter", "caddyfile"]
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile.conformance:/etc/caddy/Caddyfile.conformance:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -80,7 +80,7 @@ class HandleDirectPostResponseCommandImpl(
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val responseCodeStore: ResponseCodeStore,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<HandleDirectPostResponseArgs, DirectPostHandledResponse>(
+) : TypedServiceCommandAdapter<HandleDirectPostResponseArgs, DirectPostHandledResponse, IdkError>(
         commandId = HandleDirectPostResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<HandleDirectPostResponseArgs>(),
@@ -126,6 +126,22 @@ class HandleDirectPostResponseCommandImpl(
         val processedArgs = applyDuring(args)
 
         log.debug("Handling direct_post authorization response")
+        // Raw form params received from the wallet — the actual authorization response on the wire.
+        // Only `response` (when JARM/encrypted) or vp_token / presentation_submission / state are
+        // present in the standard direct_post; logging the whole map preserves whatever the wallet sent.
+        log.debug(
+            "Authorization response (raw form params): " +
+                processedArgs.responseParams.entries.joinToString(", ") { (k, v) ->
+                    "$k=${if (k == "vp_token" || k == "response") "(length=${v.length})" else v}"
+                },
+        )
+        processedArgs.responseParams["vp_token"]?.let { log.debug("Authorization response vp_token: $it") }
+        processedArgs.responseParams["presentation_submission"]?.let {
+            log.debug("Authorization response presentation_submission: $it")
+        }
+        processedArgs.responseParams["response"]?.let {
+            log.debug("Authorization response (JARM, length=${it.length}): $it")
+        }
 
         // Step 1: Parse the authorization response
         val parseArgs =
@@ -146,6 +162,13 @@ class HandleDirectPostResponseCommandImpl(
                 }
 
         log.debug("Parsed authorization response: vpToken queries=${parsedResponse.vpToken.queryIds.size}")
+        // Per-query presentations after JARM decryption (if any) — the actual SD-JWT / mdoc
+        // payloads the verifier will run holder-binding + DCQL validation against.
+        parsedResponse.vpToken.presentations.forEach { (queryId, presentations) ->
+            presentations.forEachIndexed { idx, p ->
+                log.debug("Parsed vp_token['$queryId'][$idx] (length=${p.length}): $p")
+            }
+        }
 
         // Best-effort session update using state as session correlation key.
         val correlationId = processedArgs.originalRequest.state
@@ -163,6 +186,7 @@ class HandleDirectPostResponseCommandImpl(
                 originalRequest = processedArgs.originalRequest,
                 dcqlQuery = processedArgs.dcqlQuery,
                 expectedNonce = processedArgs.originalRequest.nonce ?: "",
+                verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
             )
 
         val validationResult =

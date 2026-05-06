@@ -58,7 +58,7 @@ import kotlin.time.Clock
 class CreateCredentialRequestProofCommandImpl(
     execution: SessionExecution,
     private val createJwsCompactCommand: CreateJwsCompactCommand,
-) : TypedServiceCommandAdapter<CreateCredentialRequestProofArgs, CreatedProof>(
+) : TypedServiceCommandAdapter<CreateCredentialRequestProofArgs, CreatedProof, IdkError>(
         commandId = CreateCredentialRequestProofCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateCredentialRequestProofArgs>(),

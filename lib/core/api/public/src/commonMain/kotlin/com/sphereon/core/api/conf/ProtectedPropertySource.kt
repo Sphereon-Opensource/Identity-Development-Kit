@@ -246,6 +246,17 @@ open class ProtectedMutableMapPropertySource(
                     }
                 }
 
+                value is Boolean -> {
+                    // YAML's native Boolean parsing produces java.lang.Boolean values; downstream
+                    // binders that read via getPropertyAsString or getProperty(String::class) must
+                    // see the canonical string representation rather than throw.
+                    when (targetType) {
+                        String::class -> value.toString()
+                        Boolean::class -> value
+                        else -> null
+                    }
+                }
+
                 else -> {
                     null
                 }
@@ -345,12 +356,41 @@ open class ProtectedEnvPropertySource(
         // Look up using the original env key
         val originalKey = keyMapping[normalizedKey]
         if (originalKey != null) {
-            val value = Env.get(originalKey)
-            @Suppress("UNCHECKED_CAST")
-            return value as? T
+            return Env.get(originalKey)?.let { coerceFromString(it, targetType) }
         }
         // Fall back to delegate
         return delegateSource.getProperty(name, targetType)
+    }
+
+    /**
+     * Coerce a string-form environment-variable value to the requested [targetType]. Environment
+     * variables and `.env` file entries are always strings, but typed callers
+     * (`getProperty(key, Boolean::class)`, `Int::class`, etc.) expect a native value. Without
+     * coercion the previous `as T` cast threw `ClassCastException` at the call site whenever a
+     * caller used the typed overload against a string-backed source. Returns `null` on malformed
+     * values so the caller's default takes over — same observable behaviour as a missing key.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : Any> coerceFromString(
+        value: String,
+        targetType: KClass<T>
+    ): T? {
+        if (targetType.isInstance(value)) {
+            return value as T
+        }
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return null
+        val coerced: Any? =
+            when (targetType) {
+                String::class -> trimmed
+                Boolean::class -> trimmed.toBooleanStrictOrNull()
+                Int::class -> trimmed.toIntOrNull()
+                Long::class -> trimmed.toLongOrNull()
+                Double::class -> trimmed.toDoubleOrNull()
+                Float::class -> trimmed.toFloatOrNull()
+                else -> null
+            }
+        return coerced as T?
     }
 
     override fun getProtection(canonicalKey: String): PropertyProtection? {

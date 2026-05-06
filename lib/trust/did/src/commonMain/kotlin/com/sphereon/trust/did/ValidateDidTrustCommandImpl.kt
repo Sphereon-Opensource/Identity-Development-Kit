@@ -20,17 +20,19 @@ import com.sphereon.trust.core.model.TrustContext
 import com.sphereon.trust.core.model.TrustStatus
 import com.sphereon.trust.core.model.TrustValidationRequest
 import com.sphereon.trust.core.model.TrustValidationResult
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.IntoMap
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.StringKey
+import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
-interface ValidateDidTrustCommand : ServiceCommand<ValidateDidTrustArgs, TrustValidationResult> {
+interface ValidateDidTrustCommand : ServiceCommand<ValidateDidTrustArgs, TrustValidationResult, IdkError> {
     companion object {
         const val COMMAND_ID = "trust.did.validate"
     }
@@ -49,10 +51,11 @@ data class ValidateDidTrustArgs(
 
 @Inject
 @SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<ValidateDidTrustCommand>())
 class ValidateDidTrustCommandImpl(
     execution: SessionExecution,
     private val didTrustValidationService: DidTrustValidationService,
-) : TypedServiceCommandAdapter<ValidateDidTrustArgs, TrustValidationResult>(
+) : TypedServiceCommandAdapter<ValidateDidTrustArgs, TrustValidationResult, IdkError>(
         commandId = ValidateDidTrustCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateDidTrustArgs>(),
@@ -117,5 +120,5 @@ class ValidateDidTrustCommandImpl(
 interface DidTrustCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ValidateDidTrustCommand.COMMAND_ID)
-    fun validateDidTrust(impl: ValidateDidTrustCommandImpl): ServiceCommand<*, *> = impl
+    fun validateDidTrust(impl: ValidateDidTrustCommandImpl): ServiceCommand<*, *, *> = impl
 }

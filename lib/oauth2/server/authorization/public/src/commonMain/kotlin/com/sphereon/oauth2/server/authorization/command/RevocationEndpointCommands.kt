@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 
 // ============================================================================
@@ -36,7 +37,7 @@ data class ParseRevocationRequestArgs(
  *
  * Parses the token revocation request from the client.
  */
-interface ParseRevocationRequestCommand : ServiceCommand<ParseRevocationRequestArgs, RevocationRequestData> {
+interface ParseRevocationRequestCommand : ServiceCommand<ParseRevocationRequestArgs, RevocationRequestData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -67,7 +68,7 @@ data class RevokeTokenArgs(
  * - Revocation of refresh tokens cascades to associated access tokens
  * - Client must be authorized to revoke the token
  */
-interface RevokeTokenCommand : ServiceCommand<RevokeTokenArgs, Unit> {
+interface RevokeTokenCommand : ServiceCommand<RevokeTokenArgs, Unit, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

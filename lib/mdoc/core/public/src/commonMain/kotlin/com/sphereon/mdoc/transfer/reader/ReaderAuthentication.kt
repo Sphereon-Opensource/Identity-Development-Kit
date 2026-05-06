@@ -24,12 +24,11 @@ import com.sphereon.cbor.CborItem
 import com.sphereon.cbor.CborNil
 import com.sphereon.cbor.CborString
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.crypto.core.cose.CoseSign1
 import com.sphereon.mdoc.data.device.DeviceItemsRequest
 import com.sphereon.mdoc.engagement.DeviceEngagement
-import com.sphereon.mdoc.oid4vp.oid4vpHandoverFromClientIdAndResponseUri
+import com.sphereon.mdoc.oid4vp.oid4vpHandoverFromInputs
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmStatic
@@ -71,19 +70,30 @@ data class SessionTranscript(
         @JvmStatic
         fun fromOid4vpHandover(handover: OID4VPHandover): SessionTranscript = SessionTranscript(handover = handover as Handover<*, CborItem<*>>, original = null)
 
+        /**
+         * Build a SessionTranscript with the OID4VP 1.0 final §B.2.6 OpenID4VPHandover.
+         *
+         * @param clientId OID4VP `client_id` (with §5.9.3 prefix when applicable).
+         * @param nonce OID4VP `nonce` from the authorization request.
+         * @param jwkThumbprint Raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's
+         *   encryption-key JWK. REQUIRED for encrypted responses (`direct_post.jwt`,
+         *   `dc_api.jwt`); MUST be null for plain responses (`direct_post`, `dc_api`).
+         * @param responseUri OID4VP `response_uri` (or `redirect_uri` for non-`direct_post`
+         *   modes; pass whichever the request actually used).
+         */
         @JsStatic
         @JvmStatic
         fun fromOid4vpClientIdAndResponseUri(
             clientId: String,
+            nonce: String,
+            jwkThumbprint: ByteArray?,
             responseUri: String,
-            mdocNonce: String = Uuid.v4String(),
-            authorizationRequestNonce: String,
         ) = fromOid4vpHandover(
-            OID4VPHandover.fromClientIdAndResponseUri(
+            OID4VPHandover.fromOid4vpInputs(
                 clientId = clientId,
+                nonce = nonce,
+                jwkThumbprint = jwkThumbprint,
                 responseUri = responseUri,
-                mdocNonce = mdocNonce,
-                authorizationRequestNonce = authorizationRequestNonce,
             ),
         )
     }
@@ -140,58 +150,81 @@ data class NfcHandover(
     }
 }
 
+/**
+ * OpenID4VP SessionTranscript handover per OID4VP 1.0 final §B.2.6 (verbatim):
+ *
+ * ```
+ * OpenID4VPHandover         = ["OpenID4VPHandover", OpenID4VPHandoverInfoHash]
+ * OpenID4VPHandoverInfoHash = bstr  ; sha-256 of OpenID4VPHandoverInfoBytes
+ * OpenID4VPHandoverInfoBytes = bstr .cbor OpenID4VPHandoverInfo
+ * OpenID4VPHandoverInfo = [
+ *     client_id,
+ *     nonce,
+ *     JwkThumbprint OR null,
+ *     redirect_uri / response_uri
+ * ]
+ * ```
+ *
+ * Spec §8.3 / appendix B.2.6.2 verbatim:
+ * > "If the response is encrypted, e.g., using `direct_post.jwt`, the third element MUST be
+ * >  the JWK SHA-256 Thumbprint as defined in [@!RFC7638], encoded as a Byte String, of the
+ * >  Verifier's public key used to encrypt the response. Otherwise, the third element MUST
+ * >  be `null`."
+ *
+ * The pre-final `clientIdHash` / `responseUriHash` / `nonce` shape this replaced is no
+ * longer in any draft or the final spec — it has been removed entirely, not deprecated.
+ */
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OID4VPHandover", exact = true)
 data class OID4VPHandover(
-    val clientIdHash: ByteArray,
-    val responseUriHash: ByteArray,
-    /** Authorization request nonce*/
+    val clientId: String,
+    /** Authorization request `nonce`. */
     val nonce: String,
+    /**
+     * Verifier's encryption-key JWK thumbprint per RFC 7638, raw 32-byte SHA-256.
+     * Non-null for `direct_post.jwt` (encrypted response), null for `direct_post`.
+     */
+    val jwkThumbprint: ByteArray?,
+    val responseUri: String,
 ) : Handover<OID4VPHandover, CborArray<CborItem<*>>>() {
     override fun equals(other: Any?): Boolean {
-        if (this === other) {
-            return true
-        }
-        if (other == null || this::class != other::class) {
-            return false
-        }
-
+        if (this === other) return true
+        if (other == null || this::class != other::class) return false
         other as OID4VPHandover
-
-        if (!clientIdHash.contentEquals(other.clientIdHash)) {
-            return false
+        if (clientId != other.clientId) return false
+        if (nonce != other.nonce) return false
+        if (jwkThumbprint == null) {
+            if (other.jwkThumbprint != null) return false
+        } else {
+            if (other.jwkThumbprint == null) return false
+            if (!jwkThumbprint.contentEquals(other.jwkThumbprint)) return false
         }
-        if (!responseUriHash.contentEquals(other.responseUriHash)) {
-            return false
-        }
-        if (nonce != other.nonce) {
-            return false
-        }
-
+        if (responseUri != other.responseUri) return false
         return true
     }
 
     override fun hashCode(): Int {
-        var result = clientIdHash.contentHashCode()
-        result = 31 * result + responseUriHash.contentHashCode()
+        var result = clientId.hashCode()
         result = 31 * result + nonce.hashCode()
+        result = 31 * result + (jwkThumbprint?.contentHashCode() ?: 0)
+        result = 31 * result + responseUri.hashCode()
         return result
     }
 
     companion object {
         @JsStatic
         @JvmStatic
-        fun fromClientIdAndResponseUri(
+        fun fromOid4vpInputs(
             clientId: String,
+            nonce: String,
+            jwkThumbprint: ByteArray?,
             responseUri: String,
-            mdocNonce: String = Uuid.v4String(),
-            authorizationRequestNonce: String,
-        ) = oid4vpHandoverFromClientIdAndResponseUri(
+        ) = oid4vpHandoverFromInputs(
             clientId = clientId,
+            nonce = nonce,
+            jwkThumbprint = jwkThumbprint,
             responseUri = responseUri,
-            mdocGeneratedNonce = mdocNonce,
-            authorizationRequestNonce = authorizationRequestNonce,
         )
     }
 }

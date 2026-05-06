@@ -76,6 +76,20 @@ data class GenericHttpRequest(
     val queryParameters: Map<String, String?> = emptyMap(),
     val headers: Map<String, String> = emptyMap(),
     /**
+     * Raw multi-value header view, preserving each `name → List<value>` arrival shape from the
+     * underlying transport. RFC 9110 §5.3 allows multiple field lines with the same name; the
+     * scalar [headers] map collapses these by joining with `,`, which is sufficient for headers
+     * whose grammar permits comma-list (e.g. `Accept`, `Cache-Control`) but loses information
+     * for headers that MUST appear at most once.
+     *
+     * Consumers that need to enforce single-occurrence semantics (e.g. RFC 9449 §4.1: a single
+     * `DPoP` HTTP header is REQUIRED) should look here instead of inspecting [headers] for a
+     * fragile comma-presence heuristic. Empty by default so existing in-process call sites that
+     * synthesise a [GenericHttpRequest] from a scalar map continue to work; transport adapters
+     * (the Ktor / Universal HTTP adapters) populate it from their underlying multi-map.
+     */
+    val multiValueHeaders: Map<String, List<String>> = emptyMap(),
+    /**
      * Lazy body supplier - only invoked when body is accessed.
      * This avoids reading the request body for GET/DELETE requests.
      *
@@ -89,6 +103,19 @@ data class GenericHttpRequest(
      * For binary payloads, construct with an explicit [GenericHttpBody.Bytes] or [GenericHttpBody.LazyBytes].
      */
     val bodyContent: GenericHttpBody = bodySupplier?.let { GenericHttpBody.ofLazyText(it) } ?: GenericHttpBody.Empty,
+    /**
+     * TLS client certificate chain presented at the transport handshake (DER-encoded, leaf
+     * first). Populated by the platform HTTP adapter when:
+     *  - the server terminates TLS itself with `verifyClient = true` and the peer presented a
+     *    certificate, or
+     *  - the upstream proxy forwards the cert via the operator-configured trusted header (e.g.
+     *    `X-Forwarded-Client-Cert`) and the AS resolves it to DER.
+     *
+     * `null` means no certificate is available on this request, which is the common case for
+     * non-mTLS endpoints. Used by RFC 8705 client authentication (`tls_client_auth` /
+     * `self_signed_tls_client_auth`) and by the resource-server `cnf.x5t#S256` validation.
+     */
+    val clientCertificateChain: List<ByteArray>? = null,
 ) {
     /**
      * Request body as String - lazily loaded only when accessed.
@@ -168,6 +195,13 @@ data class GenericHttpRequest(
 
     /**
      * Copy method that preserves the bodySupplier and bodyContent for lazy loading.
+     *
+     * NOTE: This overload shadows the data class auto-generated `copy(...)` because the
+     * defaults must explicitly forward [bodySupplier] / [bodyContent] / [multiValueHeaders]
+     * from `this`. Forgetting to thread any of them silently drops the field on every
+     * downstream `request.copy(path = ...)` call (e.g. base-path stripping in
+     * [com.sphereon.core.api.http.command.CommandBackedHttpAdapter.stripAdapterBasePath])
+     * — which is how RFC 9449 §4.1 multi-DPoP detection lost the multi-value view.
      */
     fun copy(
         method: String = this.method,
@@ -175,6 +209,8 @@ data class GenericHttpRequest(
         pathParameters: Map<String, String> = this.pathParameters,
         queryParameters: Map<String, String?> = this.queryParameters,
         headers: Map<String, String> = this.headers,
+        multiValueHeaders: Map<String, List<String>> = this.multiValueHeaders,
+        clientCertificateChain: List<ByteArray>? = this.clientCertificateChain,
     ): GenericHttpRequest =
         GenericHttpRequest(
             method = method,
@@ -182,8 +218,10 @@ data class GenericHttpRequest(
             pathParameters = pathParameters,
             queryParameters = queryParameters,
             headers = headers,
+            multiValueHeaders = multiValueHeaders,
             bodySupplier = bodySupplier,
             bodyContent = bodyContent,
+            clientCertificateChain = clientCertificateChain,
         )
 
     companion object {
@@ -294,7 +332,9 @@ data class GenericHttpResponse(
             )
 
         /**
-         * Creates a response with binary body content.
+         * Creates a response with binary body content. The text [body] is left null so transport
+         * adapters that fall back to the String accessor never see a `decodeToString` of arbitrary
+         * bytes; correctness for non-UTF-8 payloads requires routing through [bodyContent].
          */
         @JvmStatic
         fun withBinaryBody(
@@ -305,7 +345,7 @@ data class GenericHttpResponse(
             GenericHttpResponse(
                 statusCode = statusCode,
                 headers = headers,
-                body = body?.decodeToString(), // Fallback for backward compat
+                body = null,
                 bodyContent = GenericHttpBody.ofBytes(body),
             )
     }
@@ -313,6 +353,14 @@ data class GenericHttpResponse(
 
 /**
  * Compiled path pattern for efficient matching.
+ *
+ * Pattern syntax:
+ * - Literal segment: `/keys` matches the segment `keys` exactly.
+ * - Single-segment placeholder: `/keys/{id}` matches one segment and captures it as `id`.
+ * - Tail wildcard: `/login/assets/{path...}` matches zero or more remaining segments and captures
+ *   them joined by `/` (no leading slash). The wildcard token MUST be the last token in the
+ *   pattern; placing it mid-path is rejected at compile time.
+ *
  * Pre-splits the pattern to avoid repeated string operations.
  */
 @JsExportCompat
@@ -328,7 +376,19 @@ class CompiledPathPattern private constructor(
         data class Parameter(
             val name: String,
         ) : Segment()
+
+        /**
+         * Tail wildcard: matches zero or more remaining path segments. Must appear as the last
+         * token in a pattern. The captured value is the remaining segments joined by `/` with no
+         * leading slash (empty string if there are zero remaining segments).
+         */
+        data class TailWildcard(
+            val name: String,
+        ) : Segment()
     }
+
+    private val tailWildcardIndex: Int = segments.indexOfFirst { it is Segment.TailWildcard }
+    private val hasTailWildcard: Boolean = tailWildcardIndex >= 0
 
     /**
      * Specificity score: number of literal segments.
@@ -343,16 +403,36 @@ class CompiledPathPattern private constructor(
     fun matches(path: String): Boolean {
         val pathSegments = splitPath(path)
 
-        if (pathSegments.size != segments.size) {
-            return false
-        }
-
-        return pathSegments.zip(segments).all { (pathSeg, patternSeg) ->
-            when (patternSeg) {
-                is Segment.Parameter -> true
-                is Segment.Literal -> pathSeg == patternSeg.value
+        if (!hasTailWildcard) {
+            if (pathSegments.size != segments.size) {
+                return false
+            }
+            return pathSegments.zip(segments).all { (pathSeg, patternSeg) ->
+                when (patternSeg) {
+                    is Segment.Parameter -> true
+                    is Segment.Literal -> pathSeg == patternSeg.value
+                    is Segment.TailWildcard -> true
+                }
             }
         }
+
+        // Tail-wildcard matching: every leading token must consume exactly one segment;
+        // the wildcard then absorbs zero or more remaining segments.
+        if (pathSegments.size < tailWildcardIndex) {
+            return false
+        }
+        for (i in 0 until tailWildcardIndex) {
+            val patternSeg = segments[i]
+            val pathSeg = pathSegments[i]
+            val ok =
+                when (patternSeg) {
+                    is Segment.Parameter -> true
+                    is Segment.Literal -> pathSeg == patternSeg.value
+                    is Segment.TailWildcard -> true // unreachable: tailWildcardIndex bounds us
+                }
+            if (!ok) return false
+        }
+        return true
     }
 
     /**
@@ -361,18 +441,41 @@ class CompiledPathPattern private constructor(
     fun extractParams(path: String): Map<String, String> {
         val pathSegments = splitPath(path)
 
-        if (pathSegments.size != segments.size) {
-            return emptyMap()
+        if (!hasTailWildcard) {
+            if (pathSegments.size != segments.size) {
+                return emptyMap()
+            }
+            return pathSegments
+                .zip(segments)
+                .mapNotNull { (pathSeg, patternSeg) ->
+                    when (patternSeg) {
+                        is Segment.Parameter -> patternSeg.name to pathSeg
+                        is Segment.Literal -> null
+                        is Segment.TailWildcard -> null
+                    }
+                }.toMap()
         }
 
-        return pathSegments
-            .zip(segments)
-            .mapNotNull { (pathSeg, patternSeg) ->
-                when (patternSeg) {
-                    is Segment.Parameter -> patternSeg.name to pathSeg
-                    is Segment.Literal -> null
-                }
-            }.toMap()
+        if (pathSegments.size < tailWildcardIndex) {
+            return emptyMap()
+        }
+        // Validate leading literals before extracting; mismatched literal => no params.
+        for (i in 0 until tailWildcardIndex) {
+            val patternSeg = segments[i]
+            if (patternSeg is Segment.Literal && pathSegments[i] != patternSeg.value) {
+                return emptyMap()
+            }
+        }
+        val params = mutableMapOf<String, String>()
+        for (i in 0 until tailWildcardIndex) {
+            val patternSeg = segments[i]
+            if (patternSeg is Segment.Parameter) {
+                params[patternSeg.name] = pathSegments[i]
+            }
+        }
+        val tail = segments[tailWildcardIndex] as Segment.TailWildcard
+        params[tail.name] = pathSegments.drop(tailWildcardIndex).joinToString("/")
+        return params
     }
 
     companion object {
@@ -382,14 +485,30 @@ class CompiledPathPattern private constructor(
         /**
          * Compile a path pattern for efficient matching.
          * Results are cached to avoid recompiling the same pattern.
+         *
+         * Throws [IllegalArgumentException] if a tail-wildcard token (`{name...}`) appears
+         * anywhere other than the last position.
          */
         @JvmStatic
         fun compile(pattern: String): CompiledPathPattern =
             cache.getOrPut(pattern) {
+                val rawSegments = splitPath(pattern)
                 val segments =
-                    splitPath(pattern).map { segment ->
+                    rawSegments.mapIndexed { index, segment ->
                         if (segment.startsWith("{") && segment.endsWith("}")) {
-                            Segment.Parameter(segment.removeSurrounding("{", "}"))
+                            val inner = segment.removeSurrounding("{", "}")
+                            if (inner.endsWith("...")) {
+                                require(index == rawSegments.lastIndex) {
+                                    "Tail-wildcard token '$segment' must be the last segment in pattern '$pattern'"
+                                }
+                                val name = inner.removeSuffix("...")
+                                require(name.isNotEmpty()) {
+                                    "Tail-wildcard token must declare a name in pattern '$pattern'"
+                                }
+                                Segment.TailWildcard(name)
+                            } else {
+                                Segment.Parameter(inner)
+                            }
                         } else {
                             Segment.Literal(segment)
                         }

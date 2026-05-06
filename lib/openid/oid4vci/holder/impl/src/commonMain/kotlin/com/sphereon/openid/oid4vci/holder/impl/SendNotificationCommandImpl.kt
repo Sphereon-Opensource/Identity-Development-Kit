@@ -54,7 +54,7 @@ import io.ktor.http.isSuccess
 class SendNotificationCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<SendNotificationArgs, Unit>(
+) : TypedServiceCommandAdapter<SendNotificationArgs, Unit, IdkError>(
         commandId = SendNotificationCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<SendNotificationArgs>(),

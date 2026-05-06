@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.resource.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.server.resource.model.TokenPayload
@@ -69,7 +70,7 @@ data class IntrospectTokenArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IntrospectTokenCommand", exact = true)
 @JsExportCompat
-interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenPayload.Introspection> {
+interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenPayload.Introspection, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

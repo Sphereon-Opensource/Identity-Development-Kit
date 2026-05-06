@@ -128,6 +128,22 @@ VerifyJwsArgs
         // If not provided, will be extracted from JWS header (kid, x5c, jwk, etc.)
         @Transient
         val identifier: IdentifierOptsOrResult? = null,
+        /**
+         * When set, the JWS verifier MUST use a key from this JWKS document for signature
+         * verification. Embedded JOSE key material (`jwk` / `x5c`) in the header is treated as
+         * informational, NOT as a trust source: the caller is asserting that any anchored chain
+         * has already been resolved to the keys in this JWKS (e.g. by validating an x5c chain
+         * via the trust libraries and extracting the leaf public key). External identifier
+         * resolvers are NOT consulted. Header `kid` selects the key when present; otherwise the
+         * verifier picks the unique JWK whose `kty`/`alg`/`use` are compatible with the header
+         * `alg`. The signature check is binding: if the JWS was signed by a key not in this
+         * JWKS, verification fails.
+         *
+         * Typical uses: ID-token signature verification bound to the issuer's advertised JWKS;
+         * HAIP §4.4.1 wallet-attestation verification once the leaf has been resolved from x5c
+         * via the configured `trust.anchors.x509.*` anchors; OAuth attestation client-auth.
+         */
+        val trustedJwks: JsonObject? = null,
     )
 
 // ============================================================================
@@ -140,7 +156,7 @@ VerifyJwsArgs
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PrepareJwsCommand", exact = true)
 @JsExportCompat
-interface PrepareJwsCommand : ServiceCommand<CreateJwsJsonArgs, PreparedJwsObject> {
+interface PrepareJwsCommand : ServiceCommand<CreateJwsJsonArgs, PreparedJwsObject, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -165,7 +181,7 @@ interface PrepareJwsCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJwsCompactCommand", exact = true)
 @JsExportCompat
-interface CreateJwsCompactCommand : ServiceCommand<CreateJwsArgs, JwtCompactResult> {
+interface CreateJwsCompactCommand : ServiceCommand<CreateJwsArgs, JwtCompactResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -190,7 +206,7 @@ interface CreateJwsCompactCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJwsJsonFlattenedCommand", exact = true)
 @JsExportCompat
-interface CreateJwsJsonFlattenedCommand : ServiceCommand<CreateJwsJsonArgs, JwsJsonFlattened> {
+interface CreateJwsJsonFlattenedCommand : ServiceCommand<CreateJwsJsonArgs, JwsJsonFlattened, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -215,7 +231,7 @@ interface CreateJwsJsonFlattenedCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateJwsJsonGeneralCommand", exact = true)
 @JsExportCompat
-interface CreateJwsJsonGeneralCommand : ServiceCommand<CreateJwsJsonArgs, JwsJsonGeneral> {
+interface CreateJwsJsonGeneralCommand : ServiceCommand<CreateJwsJsonArgs, JwsJsonGeneral, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -240,7 +256,7 @@ interface CreateJwsJsonGeneralCommandService {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyJwsCommand", exact = true)
 @JsExportCompat
-interface VerifyJwsCommand : ServiceCommand<VerifyJwsArgs, JwsValidationResult> {
+interface VerifyJwsCommand : ServiceCommand<VerifyJwsArgs, JwsValidationResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

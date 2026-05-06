@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.holder.impl
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.holder.BuildAuthorizationRequestCommand
@@ -47,69 +48,69 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vciHolderCommandDescriptors {
     @Provides @IntoMap
     @StringKey(ParseCredentialOfferCommand.COMMAND_ID)
-    fun parseCredentialOffer(impl: ParseCredentialOfferCommandImpl): ServiceCommand<*, *> = impl
+    fun parseCredentialOffer(impl: ParseCredentialOfferCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveIssuerMetadataCommand.COMMAND_ID)
-    fun resolveIssuerMetadata(impl: ResolveIssuerMetadataCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveIssuerMetadata(impl: ResolveIssuerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ResolveCredentialOfferCommand.COMMAND_ID)
-    fun resolveCredentialOffer(impl: ResolveCredentialOfferCommandImpl): ServiceCommand<*, *> = impl
+    fun resolveCredentialOffer(impl: ResolveCredentialOfferCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(SelectAuthorizationServerCommand.COMMAND_ID)
-    fun selectAuthorizationServer(impl: SelectAuthorizationServerCommandImpl): ServiceCommand<*, *> = impl
+    fun selectAuthorizationServer(impl: SelectAuthorizationServerCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RequestNonceCommand.COMMAND_ID)
-    fun requestNonce(impl: RequestNonceCommandImpl): ServiceCommand<*, *> = impl
+    fun requestNonce(impl: RequestNonceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ExchangePreAuthorizedCodeCommand.COMMAND_ID)
-    fun exchangePreAuthorizedCode(impl: ExchangePreAuthorizedCodeCommandImpl): ServiceCommand<*, *> = impl
+    fun exchangePreAuthorizedCode(impl: ExchangePreAuthorizedCodeCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateCredentialRequestProofCommand.COMMAND_ID)
-    fun createCredentialRequestProof(impl: CreateCredentialRequestProofCommandImpl): ServiceCommand<*, *> = impl
+    fun createCredentialRequestProof(impl: CreateCredentialRequestProofCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RequestCredentialCommand.COMMAND_ID)
-    fun requestCredential(impl: RequestCredentialCommandImpl): ServiceCommand<*, *> = impl
+    fun requestCredential(impl: RequestCredentialCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RequestDeferredCredentialCommand.COMMAND_ID)
-    fun requestDeferredCredential(impl: RequestDeferredCredentialCommandImpl): ServiceCommand<*, *> = impl
+    fun requestDeferredCredential(impl: RequestDeferredCredentialCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(SendNotificationCommand.COMMAND_ID)
-    fun sendNotification(impl: SendNotificationCommandImpl): ServiceCommand<*, *> = impl
+    fun sendNotification(impl: SendNotificationCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(FollowUpIaeCommand.COMMAND_ID)
-    fun followUpIae(impl: FollowUpIaeCommandImpl): ServiceCommand<*, *> = impl
+    fun followUpIae(impl: FollowUpIaeCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(InitiateIaeCommand.COMMAND_ID)
-    fun initiateIae(impl: InitiateIaeCommandImpl): ServiceCommand<*, *> = impl
+    fun initiateIae(impl: InitiateIaeCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(BuildAuthorizationRequestCommand.COMMAND_ID)
-    fun buildAuthorizationRequest(impl: BuildAuthorizationRequestCommandImpl): ServiceCommand<*, *> = impl
+    fun buildAuthorizationRequest(impl: BuildAuthorizationRequestCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ExchangeAuthorizationCodeCommand.COMMAND_ID)
-    fun exchangeAuthorizationCode(impl: ExchangeAuthorizationCodeCommandImpl): ServiceCommand<*, *> = impl
+    fun exchangeAuthorizationCode(impl: ExchangeAuthorizationCodeCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(PollDeferredCredentialCommand.COMMAND_ID)
-    fun pollDeferredCredential(impl: PollDeferredCredentialCommandImpl): ServiceCommand<*, *> = impl
+    fun pollDeferredCredential(impl: PollDeferredCredentialCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(SendNotificationWithRetryCommand.COMMAND_ID)
-    fun sendNotificationWithRetry(impl: SendNotificationWithRetryCommandImpl): ServiceCommand<*, *> = impl
+    fun sendNotificationWithRetry(impl: SendNotificationWithRetryCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RequestCredentialWithFlowCommand.COMMAND_ID)
-    fun requestCredentialWithFlow(impl: RequestCredentialWithFlowCommandImpl): ServiceCommand<*, *> = impl
+    fun requestCredentialWithFlow(impl: RequestCredentialWithFlowCommandImpl): ServiceCommand<*, *, *> = impl
 }

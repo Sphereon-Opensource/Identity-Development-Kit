@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.client.model.AuthorizationRequestUrlResult
@@ -26,10 +27,37 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import kotlin.jvm.JvmOverloads
 
+/**
+ * Source of an authorization response — controls how [ParseAuthorizationResponseArgs.redirectUrl]
+ * is interpreted.
+ */
 @JsExportCompat
-data class ParseAuthorizationResponseArgs(
-    val redirectUrl: String,
-)
+enum class AuthorizationResponseSource {
+    /** Response parameters appended to the redirect URI as query string. */
+    QUERY,
+
+    /** Response parameters delivered as an `application/x-www-form-urlencoded` POST body. */
+    FORM_POST,
+
+    /** Response parameters appended as URL fragment. Not supported for the first OIDF pass. */
+    FRAGMENT,
+}
+
+@JsExportCompat
+data class ParseAuthorizationResponseArgs
+    @JvmOverloads
+    constructor(
+        /**
+         * Location of the response.
+         * - [AuthorizationResponseSource.QUERY]: full redirect URL with query parameters.
+         * - [AuthorizationResponseSource.FORM_POST]: redirect URI (no query), with [formBody] set.
+         * - [AuthorizationResponseSource.FRAGMENT]: full redirect URL (only for future use).
+         */
+        val redirectUrl: String,
+        val source: AuthorizationResponseSource = AuthorizationResponseSource.QUERY,
+        /** Raw `application/x-www-form-urlencoded` body — required when [source] is FORM_POST. */
+        val formBody: String? = null,
+    )
 
 /**
  * Command for parsing an authorization response redirect URL
@@ -38,7 +66,7 @@ data class ParseAuthorizationResponseArgs(
  * as either a success response (with code) or error response.
  */
 @JsExportCompat
-interface ParseAuthorizationResponseCommand : ServiceCommand<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse> {
+interface ParseAuthorizationResponseCommand : ServiceCommand<ParseAuthorizationResponseArgs, ParsedAuthorizationResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -101,7 +129,7 @@ data class CreateAuthorizationRequestUrlOptions
  * 3. Builds the final authorization URL with all parameters
  */
 @JsExportCompat
-interface CreateAuthorizationRequestUrlCommand : ServiceCommand<CreateAuthorizationRequestUrlOptions, AuthorizationRequestUrlResult> {
+interface CreateAuthorizationRequestUrlCommand : ServiceCommand<CreateAuthorizationRequestUrlOptions, AuthorizationRequestUrlResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

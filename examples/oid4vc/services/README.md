@@ -39,14 +39,16 @@ Two entrypoints are provided. Pick the one that matches your situation:
 **End-users / demos (published images):**
 
 ```bash
-./start.sh                                   # Linux / macOS, auto-detect LAN IP
+./start.sh                                   # Linux / macOS, auto-detect LAN IP, default profile
 ./start.sh https://my.ngrok.app              # Pass external URL
+./start.sh https://my.ngrok.app haip         # Layer the HAIP conformance profile
 IDK_VERSION=0.25.0 ./start.sh                # Pin a specific release
 EXTERNAL_BASE_URL=http://192.168.1.100:8080 ./start.sh
 ```
 ```cmd
 start.bat                                    REM Windows
 start.bat https://my.ngrok.app
+start.bat https://my.ngrok.app haip          REM HAIP conformance profile
 set IDK_VERSION=0.25.0 && start.bat
 ```
 
@@ -55,10 +57,35 @@ set IDK_VERSION=0.25.0 && start.bat
 ```bash
 ./start-dev.sh
 ./start-dev.sh https://my.ngrok.app
+./start-dev.sh https://my.ngrok.app haip     # HAIP conformance profile
 ```
 ```cmd
 start-dev.bat
+start-dev.bat https://my.ngrok.app haip
 ```
+
+### Conformance profiles (second positional argument)
+
+The OIDF conformance suite tests three OID4VP `client_id` prefix modes
+plus a HAIP-shaped OAuth2 AS. The start scripts accept a profile name as
+the second positional argument and translate it into the right
+`docker compose --env-file` layering:
+
+| Arg | Verifier prefix | AS shape | When to use |
+|---|---|---|---|
+| _omitted_ / `default` | `did:jwk` | plain | Regular demo. |
+| `did-jwk` | `did:jwk` (explicit) | plain | OID4VP plan with `did:jwk` cells; identical to default. |
+| `x509-san-dns` | `x509_san_dns` | plain | OID4VP plan with `x509_san_dns` cells. Requires a fresh keystore baked with the SAN — delete `keystores/oid4vp-verifier/keystore.p12` and rerun if you've used a previous keystore that didn't have the SAN. |
+| `x509-hash` | `x509_hash` | plain | OID4VP plan with `x509_hash` cells. The keystore script auto-syncs the cert thumbprint into `profiles/conformance-x509-hash.env`. |
+| `haip` | `x509_hash` | HAIP-shaped | OID4VP HAIP test plan + OID4VCI HAIP test plan. Layers the verifier x509_hash profile and a HAIP-shaped AS profile that switches `token_endpoint_auth_methods_supported` to `attest_jwt_client_auth` (the IANA-registered name for OAuth Attestation-based Client Authentication), sets `dpop=REQUIRED` + `dpop_nonce_required=true`, and turns attestation-based client auth on. |
+
+Bogus values fail fast with a usage message listing the allowed set.
+The shipped `.env` (`EXTERNAL_BASE_URL`, `IDK_VERSION`) is always
+loaded automatically; profile env files layer on top.
+
+For full conformance-testing setup including trust-anchor configuration
+and test-plan to profile mapping, see
+[`docs/conformance/running-the-suite.md`](../../../docs/conformance/running-the-suite.md).
 
 ### Versioning
 

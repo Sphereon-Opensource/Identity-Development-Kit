@@ -25,7 +25,6 @@ import kotlin.test.assertNull
 // ========================================
 
 class ExtractHeaderValueTest {
-
     @Test
     fun exactCaseMatch() {
         val headers = mapOf("X-Tenant-Id" to "t1")
@@ -64,10 +63,11 @@ class ExtractHeaderValueTest {
     @Test
     fun prefersExactCaseWhenBothPresent() {
         // Fast-path (direct key access) returns before iterating
-        val headers = mapOf(
-            "Host" to "exact",
-            "host" to "lowercase"
-        )
+        val headers =
+            mapOf(
+                "Host" to "exact",
+                "host" to "lowercase"
+            )
         assertEquals("exact", RequestUtils.extractHeaderValue(headers, "Host"))
     }
 }
@@ -77,7 +77,6 @@ class ExtractHeaderValueTest {
 // ========================================
 
 class ExtractTenantIdTest {
-
     @Test
     fun extractsTenantId() {
         val headers = mapOf("X-Tenant-Id" to "tenant-abc")
@@ -113,7 +112,6 @@ class ExtractTenantIdTest {
 // ========================================
 
 class GetSchemeTest {
-
     @Test
     fun returnsForwardedProto() {
         val headers = mapOf("X-Forwarded-Proto" to "https")
@@ -168,10 +166,11 @@ class GetSchemeTest {
 
     @Test
     fun fallsBackWhenForwardedProtoIsInvalid() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "ftp",
-            "Host" to "example.com:443"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "ftp",
+                "Host" to "example.com:443"
+            )
         assertEquals("https", RequestUtils.getScheme(headers))
     }
 
@@ -182,10 +181,11 @@ class GetSchemeTest {
 
     @Test
     fun forwardedProtoTakesPriorityOverHostPort() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "http",
-            "Host" to "example.com:443"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "http",
+                "Host" to "example.com:443"
+            )
         assertEquals("http", RequestUtils.getScheme(headers))
     }
 }
@@ -195,13 +195,13 @@ class GetSchemeTest {
 // ========================================
 
 class GetHostTest {
-
     @Test
     fun returnsForwardedHost() {
-        val headers = mapOf(
-            "X-Forwarded-Host" to "public.example.com",
-            "Host" to "internal:8080"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Host" to "public.example.com",
+                "Host" to "internal:8080"
+            )
         assertEquals("public.example.com", RequestUtils.getHostWithPort(headers))
     }
 
@@ -252,31 +252,33 @@ class GetHostTest {
 // ========================================
 
 class GetPortTest {
-
     @Test
     fun returnsForwardedPort() {
-        val headers = mapOf(
-            "X-Forwarded-Port" to "8443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Port" to "8443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("8443", RequestUtils.getPort(headers))
     }
 
     @Test
     fun suppressesDefaultHttpsPort() {
-        val headers = mapOf(
-            "X-Forwarded-Port" to "443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Port" to "443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertNull(RequestUtils.getPort(headers))
     }
 
     @Test
     fun suppressesDefaultHttpPort() {
-        val headers = mapOf(
-            "X-Forwarded-Port" to "80",
-            "X-Forwarded-Proto" to "http"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Port" to "80",
+                "X-Forwarded-Proto" to "http"
+            )
         assertNull(RequestUtils.getPort(headers))
     }
 
@@ -293,10 +295,11 @@ class GetPortTest {
 
     @Test
     fun usesFirstForwardedPortFromCombinedHeader() {
-        val headers = mapOf(
-            "X-Forwarded-Port" to "8443, 8080",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Port" to "8443, 8080",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("8443", RequestUtils.getPort(headers))
     }
 }
@@ -306,7 +309,6 @@ class GetPortTest {
 // ========================================
 
 class GetPrefixTest {
-
     @Test
     fun returnsForwardedPrefix() {
         val headers = mapOf("X-Forwarded-Prefix" to "/api/v1")
@@ -348,7 +350,6 @@ class GetPrefixTest {
 // ========================================
 
 class GetClientIpTest {
-
     @Test
     fun returnsSingleIp() {
         val headers = mapOf("X-Forwarded-For" to "203.0.113.50")
@@ -372,24 +373,25 @@ class GetClientIpTest {
 // ========================================
 
 class GetAuthorityTest {
-
     @Test
     fun hostWithForwardedPort() {
-        val headers = mapOf(
-            "X-Forwarded-Host" to "example.com",
-            "X-Forwarded-Port" to "8443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Host" to "example.com",
+                "X-Forwarded-Port" to "8443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("example.com:8443", RequestUtils.getAuthority(headers))
     }
 
     @Test
     fun hostWithDefaultPortSuppressed() {
-        val headers = mapOf(
-            "X-Forwarded-Host" to "example.com",
-            "X-Forwarded-Port" to "443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Host" to "example.com",
+                "X-Forwarded-Port" to "443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("example.com", RequestUtils.getAuthority(headers))
     }
 
@@ -401,11 +403,12 @@ class GetAuthorityTest {
 
     @Test
     fun forwardedPortOverridesPortInHostHeader() {
-        val headers = mapOf(
-            "Host" to "internal-service:8080",
-            "X-Forwarded-Port" to "8443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "Host" to "internal-service:8080",
+                "X-Forwarded-Port" to "8443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("internal-service:8443", RequestUtils.getAuthority(headers))
     }
 
@@ -417,21 +420,23 @@ class GetAuthorityTest {
 
     @Test
     fun bracketedIpv6HostGetsForwardedPort() {
-        val headers = mapOf(
-            "Host" to "[2001:db8::1]",
-            "X-Forwarded-Port" to "8443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "Host" to "[2001:db8::1]",
+                "X-Forwarded-Port" to "8443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("[2001:db8::1]:8443", RequestUtils.getAuthority(headers))
     }
 
     @Test
     fun forwardedPortOverridesPortInBracketedIpv6HostHeader() {
-        val headers = mapOf(
-            "Host" to "[2001:db8::1]:8080",
-            "X-Forwarded-Port" to "8443",
-            "X-Forwarded-Proto" to "https"
-        )
+        val headers =
+            mapOf(
+                "Host" to "[2001:db8::1]:8080",
+                "X-Forwarded-Port" to "8443",
+                "X-Forwarded-Proto" to "https"
+            )
         assertEquals("[2001:db8::1]:8443", RequestUtils.getAuthority(headers))
     }
 }
@@ -441,53 +446,57 @@ class GetAuthorityTest {
 // ========================================
 
 class BuildBaseUrlTest {
-
     @Test
     fun simpleProxy() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Host" to "example.com"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Host" to "example.com"
+            )
         assertEquals("https://example.com", RequestUtils.buildBaseUrl(headers))
     }
 
     @Test
     fun includesNonDefaultForwardedPort() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Host" to "example.com",
-            "X-Forwarded-Port" to "8443"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Host" to "example.com",
+                "X-Forwarded-Port" to "8443"
+            )
         assertEquals("https://example.com:8443", RequestUtils.buildBaseUrl(headers))
     }
 
     @Test
     fun forwardedPortOverridesInternalHostPortInBaseUrl() {
-        val headers = mapOf(
-            "Host" to "internal-service:8080",
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Port" to "8443"
-        )
+        val headers =
+            mapOf(
+                "Host" to "internal-service:8080",
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Port" to "8443"
+            )
         assertEquals("https://internal-service:8443", RequestUtils.buildBaseUrl(headers))
     }
 
     @Test
     fun proxyWithPrefixAndBasePath() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Host" to "example.com",
-            "X-Forwarded-Prefix" to "/proxy"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Host" to "example.com",
+                "X-Forwarded-Prefix" to "/proxy"
+            )
         assertEquals("https://example.com/proxy/api/v1", RequestUtils.buildBaseUrl(headers, basePath = "/api/v1"))
     }
 
     @Test
     fun normalizesPrefixWithoutLeadingSlash() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Host" to "example.com",
-            "X-Forwarded-Prefix" to "api/v1"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Host" to "example.com",
+                "X-Forwarded-Prefix" to "api/v1"
+            )
         assertEquals("https://example.com/api/v1", RequestUtils.buildBaseUrl(headers))
     }
 
@@ -509,14 +518,14 @@ class BuildBaseUrlTest {
 // ========================================
 
 class BuildFullUrlTest {
-
     @Test
     fun fullUrlBehindProxy() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Host" to "example.com",
-            "X-Forwarded-Prefix" to "/proxy"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Host" to "example.com",
+                "X-Forwarded-Prefix" to "/proxy"
+            )
         assertEquals(
             "https://example.com/proxy/oauth2/token",
             RequestUtils.buildFullUrl(headers, path = "/oauth2/token")
@@ -534,10 +543,11 @@ class BuildFullUrlTest {
 
     @Test
     fun fullUrlWithBasePath() {
-        val headers = mapOf(
-            "X-Forwarded-Proto" to "https",
-            "X-Forwarded-Host" to "api.example.com"
-        )
+        val headers =
+            mapOf(
+                "X-Forwarded-Proto" to "https",
+                "X-Forwarded-Host" to "api.example.com"
+            )
         assertEquals(
             "https://api.example.com/api/v1/users",
             RequestUtils.buildFullUrl(headers, path = "/users", basePath = "/api/v1")

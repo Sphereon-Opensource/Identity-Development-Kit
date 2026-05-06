@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 
 // ============================================================================
@@ -54,7 +55,7 @@ data class VerifiedPreAuthCodeGrant(
  * - Checks code expiry
  * - Returns associated session and credential configuration data
  */
-interface VerifyPreAuthorizedCodeGrantCommand : ServiceCommand<VerifyPreAuthCodeArgs, VerifiedPreAuthCodeGrant> {
+interface VerifyPreAuthorizedCodeGrantCommand : ServiceCommand<VerifyPreAuthCodeArgs, VerifiedPreAuthCodeGrant, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

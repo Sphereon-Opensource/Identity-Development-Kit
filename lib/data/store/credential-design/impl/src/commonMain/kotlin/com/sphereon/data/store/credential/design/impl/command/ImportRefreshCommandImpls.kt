@@ -56,7 +56,7 @@ import kotlin.uuid.ExperimentalUuidApi
 class ImportCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ImportExternalDesignArgs, CredentialDesignRecord>(
+) : TypedServiceCommandAdapter<ImportExternalDesignArgs, CredentialDesignRecord, IdkError>(
         commandId = ImportCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ImportExternalDesignArgs>(),
@@ -88,7 +88,7 @@ class ImportCredentialDesignServiceCommandImpl(
 class ImportIssuerDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ImportExternalDesignArgs, IssuerDesignRecord>(
+) : TypedServiceCommandAdapter<ImportExternalDesignArgs, IssuerDesignRecord, IdkError>(
         commandId = ImportIssuerDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ImportExternalDesignArgs>(),
@@ -120,7 +120,7 @@ class ImportIssuerDesignServiceCommandImpl(
 class ImportVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<ImportExternalDesignArgs, VerifierDesignRecord>(
+) : TypedServiceCommandAdapter<ImportExternalDesignArgs, VerifierDesignRecord, IdkError>(
         commandId = ImportVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ImportExternalDesignArgs>(),
@@ -152,7 +152,7 @@ class ImportVerifierDesignServiceCommandImpl(
 class RefreshCredentialDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<RefreshDesignArgs, CredentialDesignRecord>(
+) : TypedServiceCommandAdapter<RefreshDesignArgs, CredentialDesignRecord, IdkError>(
         commandId = RefreshCredentialDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RefreshDesignArgs>(),
@@ -176,7 +176,7 @@ class RefreshCredentialDesignServiceCommandImpl(
 class RefreshIssuerDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<RefreshDesignArgs, IssuerDesignRecord>(
+) : TypedServiceCommandAdapter<RefreshDesignArgs, IssuerDesignRecord, IdkError>(
         commandId = RefreshIssuerDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RefreshDesignArgs>(),
@@ -200,7 +200,7 @@ class RefreshIssuerDesignServiceCommandImpl(
 class RefreshVerifierDesignServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<RefreshDesignArgs, VerifierDesignRecord>(
+) : TypedServiceCommandAdapter<RefreshDesignArgs, VerifierDesignRecord, IdkError>(
         commandId = RefreshVerifierDesignServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RefreshDesignArgs>(),
@@ -224,7 +224,7 @@ class RefreshVerifierDesignServiceCommandImpl(
 class GetSourceSnapshotServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<GetSourceSnapshotArgs, SourceSnapshotRecord>(
+) : TypedServiceCommandAdapter<GetSourceSnapshotArgs, SourceSnapshotRecord, IdkError>(
         commandId = GetSourceSnapshotServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetSourceSnapshotArgs>(),
@@ -248,7 +248,7 @@ class GetSourceSnapshotServiceCommandImpl(
 class RefreshSourceSnapshotServiceCommandImpl(
     execution: SessionExecution,
     private val designService: CredentialDesignService,
-) : TypedServiceCommandAdapter<RefreshSourceSnapshotArgs, SourceSnapshotRecord>(
+) : TypedServiceCommandAdapter<RefreshSourceSnapshotArgs, SourceSnapshotRecord, IdkError>(
         commandId = RefreshSourceSnapshotServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RefreshSourceSnapshotArgs>(),

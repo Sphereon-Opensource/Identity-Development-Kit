@@ -26,11 +26,12 @@ oid4vp:
         #                     header `x5c` = chain from the KMS key's x5c field.
         #                     Requires `san-dns-name` below matching a dNSName SAN
         #                     entry in the leaf certificate.
-        #   x509_hash       - client_id = "x509_hash:<certHash>",
+        #   x509_hash       - client_id = "x509_hash:<base64url(SHA-256(DER(leaf cert)))>",
         #                     header `x5c` = chain from the KMS key's x5c field.
-        #                     Requires `cert-hash` below (base64url SHA-256 of the
-        #                     DER-encoded leaf certificate — pinned trust anchor).
-        mode: "did:jwk"
+        #                     The hash is derived on the fly from the leaf cert in the
+        #                     `x5c[0]` chain (OID4VP §5.9.3 — "MUST match the hash of the
+        #                     leaf certificate passed with the request"); no extra config.
+        mode: "${env:VERIFIER_CLIENT_ID_PREFIX}"
         # For DID modes, the verification-method URL used as the JOSE `kid`. Priority:
         #   1. verification-method-id   — full DID URL (e.g. did:jwk:abc#0 or did:web:x#key-2)
         #   2. verification-method-fragment — fragment only; appended to the derived DID
@@ -40,10 +41,8 @@ oid4vp:
         # than fabricate one (only did:jwk uses #0; did:key, did:web etc. don't).
         # verification-method-id: "did:jwk:...#0"
         # verification-method-fragment: "0"
-        # Only used when mode is x509_san_dns:
-        # san-dns-name: verifier.example.com
-        # Only used when mode is x509_hash:
-        # cert-hash: Uvo3HtuIxuhC92rShpgqcT3YXwrqRxWEviRiA0OZszk
+        # Only consulted when mode == x509_san_dns. Empty string for other modes.
+        san-dns-name: "${env:VERIFIER_SAN_DNS_NAME}"
         # Whether the signed Request Object emits a JWT `iss` claim. Defaults to false.
         # OID4VP §5.10 / RFC 9101 §3 list `iss` as SHOULD (not MUST) and the §5.9.3
         # non-normative example omits it. Wallets that strictly follow the spec work
@@ -55,8 +54,31 @@ oid4vp:
         audience: "https://self-issued.me/v2"
         expiration-seconds: 300
 
+# X.509 trust anchors live in the shared `trust.*` framework so the same loader
+# feeds X509TrustValidationService (generic chain validation, sd-jwt issuer x5c,
+# etc.) and the OID4VP mDoc IACA path. HAIP also covers DID and OIDF as
+# additional trust paths — those use `trust.anchors.did.*` and
+# `trust.anchors.oidfed.*` and are validated through the same TrustValidationService
+# framework, but are not relevant to the mdoc path which is X.509-only per
+# ISO 18013-5.
+trust:
+  anchors:
+    x509:
+      enabled: true
+      # IACA trust anchors for the mDoc IssuerAuth chain check
+      # (ISO 18013-5 §9.3.1 step 1). The path below is mounted into the container
+      # by the demo docker-compose from `services/trust-anchors/iaca.pem` on the host.
+      # See docs/conformance/running-the-suite.md for OIDF suite IACA import steps.
+      ca-bundle-paths:
+        - "${env:VERIFIER_TRUST_X509_CA_BUNDLE_PATH:/app/trust-anchors/iaca.pem}"
+      # When unset the X.509 validator falls back to the platform trust store and
+      # chain validation fails closed for unknown roots — the right outcome for
+      # production. Fingerprints (`trusted-fingerprints`) and CA bundle URLs
+      # (`ca-bundle-urls`) are also supported per X509TrustConfig.
+
 kms:
   providers:
+    # Persistent KMS — long-lived signing key (oid4vp-verifier-signing) for the JAR.
     software:
       type: software
       enabled: true
@@ -65,3 +87,21 @@ kms:
         id: software
         password: "${env:KEYSTORE_PASSWORD}"
         path: /app/keystore/keystore.p12
+    # Ephemeral KMS — JARM response-encryption keypairs (one per direct_post.jwt session).
+    # Memory-backed so keys never touch disk; scopeBinding=APP because the request-creation
+    # session and the wallet's response-POST session are different sessions — APP scope
+    # gives a single shared map keyed by the alias we mint per authorization session.
+    # Process restart wipes everything; the AuthorizationSession store has a 5-min TTL so
+    # the lifetimes match. The persistent PKCS12 keystore above MUST NOT be reused for
+    # ephemerals — it would bloat across runs and conflate trust boundaries.
+    ephemeral:
+      type: software
+      enabled: true
+      keystore:
+        type: memory
+        id: ephemeral
+        scopeBinding: APP
+        # MemoryKeyStoreConfig defaults to PUBLIC; we need PRIVATE so the keystore
+        # accepts the private half of the ephemeral ECDH-ES keypair (the verifier
+        # must be able to derive the shared secret to decrypt JARM responses).
+        keyVisibility: PRIVATE

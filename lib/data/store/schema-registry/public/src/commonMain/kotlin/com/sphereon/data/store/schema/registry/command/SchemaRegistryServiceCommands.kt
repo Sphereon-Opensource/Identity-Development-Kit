@@ -18,6 +18,7 @@
 
 package com.sphereon.data.store.schema.registry.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.schema.registry.ResolvedSchemaContent
@@ -25,7 +26,7 @@ import com.sphereon.data.store.schema.registry.SchemaRecord
 import kotlin.uuid.ExperimentalUuidApi
 
 @JsExportCompat
-interface CreateSchemaServiceCommand : ServiceCommand<CreateSchemaArgs, SchemaRecord> {
+interface CreateSchemaServiceCommand : ServiceCommand<CreateSchemaArgs, SchemaRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -34,7 +35,7 @@ interface CreateSchemaServiceCommand : ServiceCommand<CreateSchemaArgs, SchemaRe
 }
 
 @JsExportCompat
-interface GetSchemaServiceCommand : ServiceCommand<GetSchemaArgs, SchemaRecord> {
+interface GetSchemaServiceCommand : ServiceCommand<GetSchemaArgs, SchemaRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -43,7 +44,7 @@ interface GetSchemaServiceCommand : ServiceCommand<GetSchemaArgs, SchemaRecord> 
 }
 
 @JsExportCompat
-interface FindSchemaByNameServiceCommand : ServiceCommand<FindSchemaByNameArgs, SchemaRecord> {
+interface FindSchemaByNameServiceCommand : ServiceCommand<FindSchemaByNameArgs, SchemaRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -52,7 +53,7 @@ interface FindSchemaByNameServiceCommand : ServiceCommand<FindSchemaByNameArgs, 
 }
 
 @JsExportCompat
-interface ListSchemasServiceCommand : ServiceCommand<ListSchemasArgs, List<SchemaRecord>> {
+interface ListSchemasServiceCommand : ServiceCommand<ListSchemasArgs, List<SchemaRecord>, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -61,7 +62,7 @@ interface ListSchemasServiceCommand : ServiceCommand<ListSchemasArgs, List<Schem
 }
 
 @JsExportCompat
-interface UpdateSchemaServiceCommand : ServiceCommand<UpdateSchemaArgs, SchemaRecord> {
+interface UpdateSchemaServiceCommand : ServiceCommand<UpdateSchemaArgs, SchemaRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -70,7 +71,7 @@ interface UpdateSchemaServiceCommand : ServiceCommand<UpdateSchemaArgs, SchemaRe
 }
 
 @JsExportCompat
-interface DeleteSchemaServiceCommand : ServiceCommand<DeleteSchemaArgs, DeleteSchemaResult> {
+interface DeleteSchemaServiceCommand : ServiceCommand<DeleteSchemaArgs, DeleteSchemaResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -79,7 +80,7 @@ interface DeleteSchemaServiceCommand : ServiceCommand<DeleteSchemaArgs, DeleteSc
 }
 
 @JsExportCompat
-interface GetContentServiceCommand : ServiceCommand<GetContentArgs, ResolvedSchemaContent> {
+interface GetContentServiceCommand : ServiceCommand<GetContentArgs, ResolvedSchemaContent, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -88,7 +89,7 @@ interface GetContentServiceCommand : ServiceCommand<GetContentArgs, ResolvedSche
 }
 
 @JsExportCompat
-interface ResolveByPathServiceCommand : ServiceCommand<ResolveByPathArgs, ResolvedSchemaContent> {
+interface ResolveByPathServiceCommand : ServiceCommand<ResolveByPathArgs, ResolvedSchemaContent, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -97,7 +98,7 @@ interface ResolveByPathServiceCommand : ServiceCommand<ResolveByPathArgs, Resolv
 }
 
 @JsExportCompat
-interface ImportExternalServiceCommand : ServiceCommand<ImportExternalArgs, SchemaRecord> {
+interface ImportExternalServiceCommand : ServiceCommand<ImportExternalArgs, SchemaRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -106,7 +107,7 @@ interface ImportExternalServiceCommand : ServiceCommand<ImportExternalArgs, Sche
 }
 
 @JsExportCompat
-interface RefreshCachedServiceCommand : ServiceCommand<RefreshCachedArgs, SchemaRecord> {
+interface RefreshCachedServiceCommand : ServiceCommand<RefreshCachedArgs, SchemaRecord, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

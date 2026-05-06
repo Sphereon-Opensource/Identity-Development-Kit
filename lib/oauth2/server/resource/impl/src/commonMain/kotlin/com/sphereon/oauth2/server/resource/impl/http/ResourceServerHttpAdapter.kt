@@ -116,9 +116,7 @@ class ResourceServerHttpAdapter(
     /**
      * Build full URL from request.
      */
-    private fun buildFullUrl(request: GenericHttpRequest): String {
-        return RequestUtils.buildFullUrl(request.headers, request.path)
-    }
+    private fun buildFullUrl(request: GenericHttpRequest): String = RequestUtils.buildFullUrl(request.headers, request.path)
 
     /**
      * Map IdkError to HTTP response with WWW-Authenticate header.

@@ -22,6 +22,7 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
 
+                api(projects.libAttributeFlowPublic)
                 api(projects.libCoreApiPublic)
                 api(projects.libCryptoCorePublic)
                 api(projects.libDataStorePartyPublic)

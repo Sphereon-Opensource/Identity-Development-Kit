@@ -37,13 +37,26 @@ class TestOAuth2ServersConfigProvider(
         serverId: String,
         tenantId: String,
     ): String {
-        val server = config.getServer(serverId) ?: return "http://localhost:8080"
+        val server =
+            config.getServer(serverId)
+                ?: error("OAuth2 server '$serverId' not found in configuration")
         val issuer = server.issuer
         val template = server.issuerTemplate
         return when {
-            issuer != null -> issuer
-            template != null -> template.replace("{tenant-id}", tenantId)
-            else -> server.baseUrl
+            issuer != null -> {
+                issuer
+            }
+
+            template != null -> {
+                template.replace("{tenant-id}", tenantId)
+            }
+
+            else -> {
+                error(
+                    "OAuth2 server '$serverId' has no issuer configured; " +
+                        "set issuer or issuerTemplate on OAuth2ServerInstanceConfig",
+                )
+            }
         }
     }
 }

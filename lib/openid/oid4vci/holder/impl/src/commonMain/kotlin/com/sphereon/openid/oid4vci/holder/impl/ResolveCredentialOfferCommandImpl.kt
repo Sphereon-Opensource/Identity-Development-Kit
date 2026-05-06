@@ -40,7 +40,7 @@ import dev.zacsweers.metro.binding
 class ResolveCredentialOfferCommandImpl(
     execution: SessionExecution,
     private val resolveIssuerMetadataCommand: ResolveIssuerMetadataCommand,
-) : TypedServiceCommandAdapter<ResolveCredentialOfferArgs, ResolvedCredentialOffer>(
+) : TypedServiceCommandAdapter<ResolveCredentialOfferArgs, ResolvedCredentialOffer, IdkError>(
         commandId = ResolveCredentialOfferCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveCredentialOfferArgs>(),

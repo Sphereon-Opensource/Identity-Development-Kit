@@ -25,22 +25,23 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.headerValuesIgnoreCase
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.jsonResponse
 import com.sphereon.crypto.jose.jwe.DecryptJweCommand
-import com.sphereon.crypto.jose.jwe.JweCompact
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.DeferredCredentialRequest
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestCommand
+import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
+import com.sphereon.openid.oid4vci.issuer.impl.encryption.MaybeEncryptedCredentialResponse
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Endpoint command for handling deferred credential requests.
@@ -75,6 +76,8 @@ class HandleDeferredCredentialEndpointCommandImpl(
     execution: SessionExecution,
     private val handleDeferredCommand: HandleDeferredCredentialRequestCommand,
     private val decryptJweCommand: DecryptJweCommand,
+    private val credentialResponseEncryptor: CredentialResponseEncryptor,
+    private val configProvider: com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider,
 ) : HttpEndpointCommandAdapter(
         id = HandleDeferredCredentialEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -88,12 +91,21 @@ class HandleDeferredCredentialEndpointCommandImpl(
         val request = applyDuring(args)
 
         val accessToken =
-            extractBearerToken(request)
+            extractAccessToken(request)
                 ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "Missing or invalid Authorization header"))
-        val dpopProof = request.headers["DPoP"] ?: request.headers["dpop"]
+        // RFC 9449 §4.1: exactly one `DPoP` header is REQUIRED.
+        val dpopValues = request.headerValuesIgnoreCase("DPoP")
+        if (dpopValues.size > 1) {
+            return Err(
+                IdkError.UNAUTHORIZED_ERROR(
+                    message = "Multiple DPoP HTTP headers presented (${dpopValues.size}); RFC 9449 §4.1 requires exactly one",
+                ),
+            )
+        }
+        val dpopProof = dpopValues.singleOrNull()
 
         val requestBody =
-            decryptRequestIfNeeded(request, decryptJweCommand)
+            decryptRequestIfNeeded(request, decryptJweCommand, configProvider.credentialRequestDecryptionKey)
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to decrypt JWE request body"))
 
         val deferredRequest =
@@ -110,39 +122,47 @@ class HandleDeferredCredentialEndpointCommandImpl(
                         accessToken = accessToken,
                         dpopProof = dpopProof,
                         deferredRequest = deferredRequest,
+                        // RFC 9449 §7.1: use the metadata-advertised public URL so DPoP `htu`
+                        // verification compares against what the wallet signed (matches the
+                        // `deferred_credential_endpoint` field built from the issuer identifier).
+                        httpUrl = "${configProvider.issuerIdentifier}/deferredCredential",
+                        httpMethod = request.method,
                     ),
                 ).getOrElse { error -> return Err(error) }
 
-        // OID4VCI 1.1 Section 8.3: When the response is encrypted, return the raw
-        // JWE compact string with Content-Type: application/jwt
-        val deferredCredentialElement = response.credential
-        if (deferredRequest.credentialResponseEncryption != null &&
-            deferredCredentialElement is JsonPrimitive
-        ) {
-            val jweCandidate = deferredCredentialElement.content
-            if (JweCompact.isValidCompactFormat(jweCandidate)) {
-                return Ok(
-                    GenericHttpResponse(
-                        statusCode = 200,
-                        headers = JWT_HEADERS,
-                        body = jweCandidate,
-                    ),
-                )
-            }
-        }
-
-        // OID4VCI 1.1 Section 10.2: a pending response carries transaction_id + interval
-        // but no credential. Return 202 in that case, 200 when the credential is ready.
-        return if (response.transactionId != null && response.credential == null && response.credentials == null) {
-            Ok(
+        // OID4VCI 1.0 §10.2: a pending response carries `transaction_id` + `interval` and no
+        // credentials — render as 202 unencrypted (encryption applies only to the issued
+        // credential body). When the credential is ready, encrypt-or-render per §8.3.5.
+        val isPending = response.transactionId != null && response.credentials == null
+        if (isPending) {
+            return Ok(
                 GenericHttpResponse(
                     statusCode = 202,
                     headers = JSON_HEADERS,
                     body = protocolJson.encodeToString(response),
                 ),
             )
-        } else {
-            Ok(jsonResponse(200, protocolJson.encodeToString(response)))
+        }
+
+        val maybeEncrypted =
+            credentialResponseEncryptor
+                .encryptIfRequested(response, deferredRequest.credentialResponseEncryption)
+                .getOrElse { error -> return Err(error) }
+
+        return when (maybeEncrypted) {
+            is MaybeEncryptedCredentialResponse.Encrypted -> {
+                Ok(
+                    GenericHttpResponse(
+                        statusCode = 200,
+                        headers = JWT_HEADERS,
+                        body = maybeEncrypted.jweCompact,
+                    ),
+                )
+            }
+
+            is MaybeEncryptedCredentialResponse.Plain -> {
+                Ok(jsonResponse(200, protocolJson.encodeToString(maybeEncrypted.response)))
+            }
         }
     }
 }

@@ -24,13 +24,48 @@ oid4vci:
     # Key alias in the issuer KMS used to sign issuer metadata (OID4VCI §13.2.4).
     # Reuses the TestCredential signing key for the demo; production should use a dedicated key.
     signing-key-alias: TestCredential
-    credential-configuration-ids: TestCredential,EuPid,AgeOver18
+    credential-configuration-ids: TestCredential,EuPid,AgeOver18,Mdl
+    # OID4VCI 1.0 §11.2.4: declare the JWE algs and enc methods the issuer accepts on
+    # `credential_response_encryption`. Without these the metadata block is omitted and the
+    # OIDF `VCICheckCredentialResponseEncryptionSupported` condition trips. The encryptor
+    # validates the wallet's request against these lists and returns `invalid_encryption_parameters`
+    # on a mismatch; `encryption-required` is the per-deployment policy switch.
+    #
+    # `zip_values_supported` advertises DEFLATE (RFC 7516 §4.1.3, JWE `zip="DEF"`). The OIDF
+    # encrypted-variant conformance flow's `performCompressedEncryptionRequest` always asks
+    # for `zip=DEF`, so without it advertised the encryptor's strict validator rejects with
+    # `invalid_encryption_parameters`. The field is OPTIONAL in both 1.0 and 1.1; advertising
+    # it is forward-compatible (1.0 wallets simply ignore the unknown field).
+    encryption:
+      response:
+        alg-values-supported: "${env:OID4VCI_RESPONSE_ENC_ALG_VALUES:ECDH-ES,ECDH-ES+A128KW,ECDH-ES+A256KW}"
+        enc-values-supported: "${env:OID4VCI_RESPONSE_ENC_ENC_VALUES:A256GCM,A128GCM}"
+        zip-values-supported: "${env:OID4VCI_RESPONSE_ENC_ZIP_VALUES:DEF}"
+        encryption-required: "${env:OID4VCI_RESPONSE_ENCRYPTION_REQUIRED:false}"
+      # OID4VCI 1.0 §11.2.4 credential_request_encryption: the issuer's public key the wallet
+      # encrypts credential requests TO. The `decryption-key-alias` points at a KMS-managed
+      # ECDH-ES P-256 keypair (minted by lib/generate-keystores.{sh,ps1}) — the metadata builder
+      # extracts the public JWK at request time and publishes the JWKS dynamically so we never
+      # store private key material in YAML / git.
+      #
+      # `enc-values-supported` is REQUIRED by spec when this object is published. The
+      # encryption_required flag is INDEPENDENT from the response side so an operator can
+      # advertise request decryption without forcing it (or vice versa).
+      request:
+        decryption-key-alias: "${env:OID4VCI_REQUEST_DECRYPTION_KEY_ALIAS:oid4vci-request-decryption}"
+        enc-values-supported: "${env:OID4VCI_REQUEST_ENC_ENC_VALUES:A256GCM,A128GCM}"
+        zip-values-supported: "${env:OID4VCI_REQUEST_ENC_ZIP_VALUES:}"
+        encryption-required: "${env:OID4VCI_REQUEST_ENCRYPTION_REQUIRED:false}"
     as-bridge:
       internal-url: "${env:OAUTH2_AS_INTERNAL_URL}"
       client-id: issuer-service
       client-secret: "${env:INTERNAL_CLIENT_SECRET}"
-    # Credential configuration IDs use bracket notation as map keys, e.g. "[TestCredential]"
-    # This ensures they are parsed as explicit map keys rather than YAML tags or anchors.
+    # Credential configuration IDs AND claim names use bracket notation as map keys
+    # (e.g. "[TestCredential]", "[family_name]"). The PropertyKeyNormalizer converts
+    # underscores into dots when keys are bare (so `family_name` would become the
+    # path `family.name` and silently rename the on-the-wire claim); bracket-quoting
+    # tells the normalizer to preserve the segment verbatim. mso_mdoc deployments
+    # also encode the namespace inline, e.g. "[org.iso.18013.5.1.birth_date]".
     credentials:
       "[TestCredential]":
         format: "dc+sd-jwt"
@@ -47,11 +82,11 @@ oid4vci:
           jwt:
             signing-algorithms: ES256
         claims:
-          given_name:
+          "[given_name]":
             mandatory: false
-          family_name:
+          "[family_name]":
             mandatory: false
-          email:
+          "[email]":
             mandatory: true
         display:
           name: Test Credential
@@ -62,40 +97,64 @@ oid4vci:
         vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/EuPid"
         scope: eu_pid
         signing-key-alias: PID
-        signing-key-mode: "did:jwk"
+        # HAIP §4.3: the credential issuer MUST convey the issuer certificate via the JOSE
+        # `x5c` header. The PID signing key in the keystore is CA-signed, so the chain is
+        # served straight from the KMS-stored JWK's x5c attribute.
+        signing-key-mode: "x5c"
         signing-algorithms: ES256
+        # HAIP §6.1-2.2 RECOMMENDS limiting validity via `exp`, status claim, or both. PID
+        # credentials get a 1-year window; tune per deployment policy.
+        expiration-in-days: 365
         binding-methods: jwk,did:jwk,did:key
         proof-types:
           jwt:
             signing-algorithms: ES256
+            # OID4VCI 1.0 §11.2.3 + §7.2. `enabled: true` publishes the
+            # `key_attestations_required` metadata field and forces every proof to carry a
+            # verifiable key attestation; `false` (the default) omits the field and accepts
+            # proofs without one. When enabled, `key-storage` / `user-authentication` are
+            # the minimum-acceptable ISO 18045 attack-potential-resistance levels.
+            #
+            # `key-attester-trust` is part of the same group — only meaningful when
+            # attestations are enabled. Its `jwks` is a JSON array of JWK objects (the OIDF
+            # conformance plan publishes its attester JWKS in this exact shape under
+            # `vci_key_attestation_jwks`). When unset and the policy is on, only `x5c`-
+            # bound attestations validated against the global lib/trust/x509 anchors are
+            # accepted.
+            key-attestations:
+              enabled: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_REQUIRED:false}"
+              key-storage: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_KEY_STORAGE:iso_18045_moderate}"
+              user-authentication: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH:iso_18045_moderate}"
+              key-attester-trust:
+                jwks: "${env:OID4VCI_EUPID_KEY_ATTESTER_JWKS:}"
         claims:
-          family_name:
+          "[family_name]":
             mandatory: true
-          given_name:
+          "[given_name]":
             mandatory: true
-          birth_date:
+          "[birth_date]":
             mandatory: true
-          age_over_18:
+          "[age_over_18]":
             mandatory: false
-          nationality:
+          "[nationality]":
             mandatory: true
-          resident_country:
+          "[resident_country]":
             mandatory: false
-          resident_city:
+          "[resident_city]":
             mandatory: false
-          resident_postal_code:
+          "[resident_postal_code]":
             mandatory: false
-          resident_street:
+          "[resident_street]":
             mandatory: false
-          issuing_authority:
+          "[issuing_authority]":
             mandatory: true
-          issuing_country:
+          "[issuing_country]":
             mandatory: true
-          document_number:
+          "[document_number]":
             mandatory: false
-          gender:
+          "[gender]":
             mandatory: false
-          birth_place:
+          "[birth_place]":
             mandatory: false
         display:
           name: EU Personal ID
@@ -116,12 +175,62 @@ oid4vci:
           jwt:
             signing-algorithms: ES256
         claims:
-          age_over_18:
+          "[age_over_18]":
             mandatory: true
         display:
           name: EU Age Verification
           locale: en-US
           description: Age over 18 attestation per EU Digital Identity Wallet
+      # ISO 18013-5 mobile Driver's License. doctype = "org.iso.18013.5.1.mDL",
+      # data elements live in the "org.iso.18013.5.1" namespace per ISO 18013-5
+
+      "[Mdl]":
+        format: "mso_mdoc"
+        doctype: "org.iso.18013.5.1.mDL"
+        scope: mdl
+        signing-key-alias: Mdl
+        signing-algorithms: ES256
+        expiration-in-days: 365
+        binding-methods: cose_key
+        proof-types:
+          jwt:
+            signing-algorithms: ES256
+            key-attestations:
+              enabled: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_REQUIRED:false}"
+              key-storage: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_KEY_STORAGE:iso_18045_moderate}"
+              user-authentication: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH:iso_18045_moderate}"
+              key-attester-trust:
+                jwks: "${env:OID4VCI_MDL_KEY_ATTESTER_JWKS:}"
+        # Bracket notation per the convention noted at the top of `credentials:` —
+        # ensures dotted claim keys are treated as a single map key (namespace +
+        # element id) rather than a nested path by the YAML/property loader.
+        claims:
+          "[org.iso.18013.5.1.family_name]":
+            mandatory: true
+          "[org.iso.18013.5.1.given_name]":
+            mandatory: true
+          "[org.iso.18013.5.1.birth_date]":
+            mandatory: true
+          "[org.iso.18013.5.1.issue_date]":
+            mandatory: true
+          "[org.iso.18013.5.1.expiry_date]":
+            mandatory: true
+          "[org.iso.18013.5.1.issuing_country]":
+            mandatory: true
+          "[org.iso.18013.5.1.issuing_authority]":
+            mandatory: true
+          "[org.iso.18013.5.1.document_number]":
+            mandatory: true
+          "[org.iso.18013.5.1.portrait]":
+            mandatory: true
+          "[org.iso.18013.5.1.driving_privileges]":
+            mandatory: true
+          "[org.iso.18013.5.1.un_distinguishing_sign]":
+            mandatory: true
+        display:
+          name: ISO mDL
+          locale: en-US
+          description: ISO 18013-5 mobile Driver's License
     display:
       name: IDK Example Issuer
       locale: en-US

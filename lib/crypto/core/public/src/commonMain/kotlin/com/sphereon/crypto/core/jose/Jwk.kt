@@ -650,6 +650,17 @@ Jwk
                     )
                 }
 
+                JwaKeyType.OKP -> {
+                    // RFC 8037 §2: OKP minimal JWK is kty, crv, x.
+                    Ok(
+                        Jwk(
+                            kty = kty,
+                            crv = crv,
+                            x = x,
+                        ),
+                    )
+                }
+
                 else -> {
                     Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unsupported key type for minimal JWK: $kty"))
                 }
@@ -1479,6 +1490,21 @@ fun tryGenerateJwkThumbprint(jwk: JwkType): IdkResult<String, IdkError> {
                     "kty" to jwk.kty.value,
                     "x" to x,
                     "y" to y,
+                )
+            }
+
+            JwaKeyType.OKP -> {
+                // RFC 8037 §2: OKP thumbprint subset is {crv, kty, x} in lex order.
+                val crv =
+                    jwk.crv?.value
+                        ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "crv is required for OKP key thumbprint"))
+                val x =
+                    jwk.x
+                        ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "x is required for OKP key thumbprint"))
+                mapOf(
+                    "crv" to crv,
+                    "kty" to jwk.kty.value,
+                    "x" to x,
                 )
             }
 

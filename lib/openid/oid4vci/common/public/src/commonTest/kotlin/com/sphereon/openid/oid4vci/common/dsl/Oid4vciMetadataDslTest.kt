@@ -22,6 +22,7 @@ import com.sphereon.openid.oid4vc.common.ProofType
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -83,7 +84,7 @@ class Oid4vciMetadataDslTest {
         assertEquals("https://credentials.example.com/university_degree", uniDegree.vct)
         assertEquals("UniversityDegree", uniDegree.scope)
         assertEquals(listOf("did:key"), uniDegree.cryptographicBindingMethodsSupported)
-        assertEquals(listOf("ES256"), uniDegree.credentialSigningAlgValuesSupported)
+        assertEquals(listOf("ES256"), uniDegree.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.content })
         assertEquals(listOf("ES256"), uniDegree.proofTypesSupported?.get("jwt")?.proofSigningAlgValuesSupported)
 
         val uniDisplay = uniDegree.display?.firstOrNull()
@@ -124,7 +125,7 @@ class Oid4vciMetadataDslTest {
         assertEquals("https://credentials.example.com/identity_credential", config.vct)
         assertEquals("IdentityCredential", config.scope)
         assertEquals(listOf("did:key", "did:jwk"), config.cryptographicBindingMethodsSupported)
-        assertEquals(listOf("ES256", "ES384"), config.credentialSigningAlgValuesSupported)
+        assertEquals(listOf("ES256", "ES384"), config.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.content })
 
         val proof = config.proofTypesSupported?.get("jwt")
         assertNotNull(proof)
@@ -156,7 +157,8 @@ class Oid4vciMetadataDslTest {
         assertEquals("mso_mdoc", config.format)
         assertEquals("org.iso.18013.5.1.mDL", config.doctype)
         assertEquals(listOf("cose_key"), config.cryptographicBindingMethodsSupported)
-        assertEquals(listOf("ES256"), config.credentialSigningAlgValuesSupported)
+        // mso_mdoc encodes credential_signing_alg_values_supported as integers (COSE ids); ES256 → -7
+        assertEquals(listOf(-7), config.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.int })
 
         val display = config.display?.firstOrNull()
         assertNotNull(display)
@@ -262,17 +264,12 @@ class Oid4vciMetadataDslTest {
 
         assertNotNull(config.claims)
         assertEquals(3, config.claims?.size)
-        assertEquals(true, config.claims?.get("given_name")?.mandatory)
-        assertEquals("string", config.claims?.get("given_name")?.valueType)
-        assertEquals(
-            "Given Name",
-            config.claims
-                ?.get("given_name")
-                ?.display
-                ?.firstOrNull()
-                ?.name,
-        )
-        assertEquals(false, config.claims?.get("birth_date")?.mandatory)
+        val givenName = config.claims?.firstOrNull { it.path == listOf("given_name") }
+        assertNotNull(givenName)
+        assertEquals(true, givenName.mandatory)
+        assertEquals("string", givenName.valueType)
+        assertEquals("Given Name", givenName.display?.firstOrNull()?.name)
+        assertEquals(false, config.claims?.firstOrNull { it.path == listOf("birth_date") }?.mandatory)
 
         assertNotNull(config.proofTypesSupported?.get("jwt"))
     }

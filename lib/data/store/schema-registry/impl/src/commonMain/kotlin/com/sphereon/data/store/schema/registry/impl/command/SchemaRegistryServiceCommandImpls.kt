@@ -62,7 +62,7 @@ import kotlin.uuid.ExperimentalUuidApi
 class CreateSchemaServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<CreateSchemaArgs, SchemaRecord>(
+) : TypedServiceCommandAdapter<CreateSchemaArgs, SchemaRecord, IdkError>(
         commandId = CreateSchemaServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateSchemaArgs>(),
@@ -86,7 +86,7 @@ class CreateSchemaServiceCommandImpl(
 class GetSchemaServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<GetSchemaArgs, SchemaRecord>(
+) : TypedServiceCommandAdapter<GetSchemaArgs, SchemaRecord, IdkError>(
         commandId = GetSchemaServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetSchemaArgs>(),
@@ -110,7 +110,7 @@ class GetSchemaServiceCommandImpl(
 class FindSchemaByNameServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<FindSchemaByNameArgs, SchemaRecord>(
+) : TypedServiceCommandAdapter<FindSchemaByNameArgs, SchemaRecord, IdkError>(
         commandId = FindSchemaByNameServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FindSchemaByNameArgs>(),
@@ -134,7 +134,7 @@ class FindSchemaByNameServiceCommandImpl(
 class ListSchemasServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<ListSchemasArgs, List<SchemaRecord>>(
+) : TypedServiceCommandAdapter<ListSchemasArgs, List<SchemaRecord>, IdkError>(
         commandId = ListSchemasServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ListSchemasArgs>(),
@@ -158,7 +158,7 @@ class ListSchemasServiceCommandImpl(
 class UpdateSchemaServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<UpdateSchemaArgs, SchemaRecord>(
+) : TypedServiceCommandAdapter<UpdateSchemaArgs, SchemaRecord, IdkError>(
         commandId = UpdateSchemaServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<UpdateSchemaArgs>(),
@@ -182,7 +182,7 @@ class UpdateSchemaServiceCommandImpl(
 class DeleteSchemaServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<DeleteSchemaArgs, DeleteSchemaResult>(
+) : TypedServiceCommandAdapter<DeleteSchemaArgs, DeleteSchemaResult, IdkError>(
         commandId = DeleteSchemaServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DeleteSchemaArgs>(),
@@ -209,7 +209,7 @@ class DeleteSchemaServiceCommandImpl(
 class GetContentServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<GetContentArgs, ResolvedSchemaContent>(
+) : TypedServiceCommandAdapter<GetContentArgs, ResolvedSchemaContent, IdkError>(
         commandId = GetContentServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetContentArgs>(),
@@ -233,7 +233,7 @@ class GetContentServiceCommandImpl(
 class ResolveByPathServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<ResolveByPathArgs, ResolvedSchemaContent>(
+) : TypedServiceCommandAdapter<ResolveByPathArgs, ResolvedSchemaContent, IdkError>(
         commandId = ResolveByPathServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveByPathArgs>(),
@@ -257,7 +257,7 @@ class ResolveByPathServiceCommandImpl(
 class ImportExternalServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<ImportExternalArgs, SchemaRecord>(
+) : TypedServiceCommandAdapter<ImportExternalArgs, SchemaRecord, IdkError>(
         commandId = ImportExternalServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ImportExternalArgs>(),
@@ -281,7 +281,7 @@ class ImportExternalServiceCommandImpl(
 class RefreshCachedServiceCommandImpl(
     execution: SessionExecution,
     private val schemaService: SchemaRegistryService,
-) : TypedServiceCommandAdapter<RefreshCachedArgs, SchemaRecord>(
+) : TypedServiceCommandAdapter<RefreshCachedArgs, SchemaRecord, IdkError>(
         commandId = RefreshCachedServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RefreshCachedArgs>(),

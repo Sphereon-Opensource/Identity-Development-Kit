@@ -97,7 +97,7 @@ class SubmitAuthorizationResponseCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     private val externalIdentifierService: MultiExternalIdentifierService,
     private val createJarmCommand: CreateJarmResponseCommand,
-) : TypedServiceCommandAdapter<SubmitAuthorizationResponseArgs, SubmissionResult>(
+) : TypedServiceCommandAdapter<SubmitAuthorizationResponseArgs, SubmissionResult, IdkError>(
         commandId = SubmitAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<SubmitAuthorizationResponseArgs>(),
@@ -519,50 +519,43 @@ class SubmitAuthorizationResponseCommandImpl(
     }
 
     /**
-     * Derives JARM configuration from client_metadata parameters.
+     * Derive the JARM/JWE config to use for an OID4VP §8.3 encrypted authorization
+     * response. OID4VP §8.3 specifies:
      *
-     * Per RFC 9101:
-     * - authorization_signed_response_alg: JWS algorithm (signing only or sign+encrypt)
-     * - authorization_encrypted_response_alg: JWE key encryption algorithm (encrypt only or sign+encrypt)
-     * - authorization_encrypted_response_enc: JWE content encryption algorithm
+     *  - "Implementations MUST use an unsigned, encrypted JWT" — sign-only and
+     *    sign+encrypt are JARM-RFC features and are out of scope for OID4VP §8.3.
+     *  - "The JWE `alg` algorithm used MUST be equal to the `alg` value of the chosen `jwk`."
+     *  - "The JWE `enc` content encryption algorithm used is obtained from the
+     *    `encrypted_response_enc_values_supported` parameter of client metadata, …
+     *    allowing for the default value of `A128GCM` when not explicitly set."
      *
-     * @return JarmConfig if JARM parameters present, null otherwise
+     * Returns null when client_metadata holds no enc key (no encryption requested).
      */
     private fun deriveJarmConfigFromClientMetadata(resolvedRequest: ResolvedOid4vpRequest): JarmConfig? {
         val clientMetadata = resolvedRequest.clientMetadata ?: return null
 
-        val signedAlg = clientMetadata.authorizationSignedResponseAlg
-        val encryptedAlg = clientMetadata.authorizationEncryptedResponseAlg
-        val encryptedEnc = clientMetadata.authorizationEncryptedResponseEnc
+        // Pick the first enc-shaped JWK that carries an `alg`. The full key-selection
+        // logic (curve preference, multiple keys, jwks_uri fallback) lives in
+        // resolveEncryptionRecipient — here we only need to know IF encryption is on
+        // and which JWE alg to advertise.
+        val encJwk =
+            clientMetadata.jwks?.keys?.firstOrNull { jwk ->
+                (
+                    jwk.use == "enc" ||
+                        jwk.key_ops?.any { it == JoseKeyOperations.ENCRYPT || it == JoseKeyOperations.WRAP_KEY } == true
+                ) &&
+                    jwk.alg != null
+            } ?: return null
 
-        return when {
-            // Sign + Encrypt mode
-            signedAlg != null && encryptedAlg != null -> {
-                JarmConfig.signedEncrypted(
-                    signingAlg = signedAlg,
-                    keyEncryptionAlg = encryptedAlg,
-                    contentEncryptionAlg = encryptedEnc ?: JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG,
-                )
-            }
+        val keyAlg = encJwk.alg!!.value
+        val contentEnc =
+            clientMetadata.encryptedResponseEncValuesSupported?.firstOrNull()
+                ?: JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG
 
-            // Sign only mode
-            signedAlg != null -> {
-                JarmConfig.signed(signedAlg)
-            }
-
-            // Encrypt only mode
-            encryptedAlg != null -> {
-                JarmConfig.encrypted(
-                    keyEncryptionAlg = encryptedAlg,
-                    contentEncryptionAlg = encryptedEnc ?: JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG,
-                )
-            }
-
-            // No JARM parameters
-            else -> {
-                null
-            }
-        }
+        return JarmConfig.encrypted(
+            keyEncryptionAlg = keyAlg,
+            contentEncryptionAlg = contentEnc,
+        )
     }
 
     private suspend fun resolveEncryptionRecipient(

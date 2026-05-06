@@ -54,7 +54,7 @@ import dev.zacsweers.metro.SingleIn
 class GenerateMacCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<GenerateMacArgs, GenerateMacResult>(
+) : TypedServiceCommandAdapter<GenerateMacArgs, GenerateMacResult, IdkError>(
         commandId = GenerateMacCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GenerateMacArgs>(),
@@ -136,7 +136,7 @@ class GenerateMacCommandImpl(
 class VerifyMacCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<VerifyMacArgs, VerifyMacResult>(
+) : TypedServiceCommandAdapter<VerifyMacArgs, VerifyMacResult, IdkError>(
         commandId = VerifyMacCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyMacArgs>(),

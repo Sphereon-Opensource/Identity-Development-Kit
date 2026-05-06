@@ -62,7 +62,7 @@ import kotlin.native.ObjCName
 class BlobStorePutCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobPutInput, BlobDescriptor>(
+) : TypedServiceCommandAdapter<BlobPutInput, BlobDescriptor, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobPutInput>(),
@@ -100,7 +100,7 @@ class BlobStorePutCommand(
 class BlobStoreGetCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobGetInput, BlobGetOutput>(
+) : TypedServiceCommandAdapter<BlobGetInput, BlobGetOutput, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobGetInput>(),
@@ -146,7 +146,7 @@ class BlobStoreGetCommand(
 class BlobStoreDeleteCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobDeleteInput, BlobDeleteOutput>(
+) : TypedServiceCommandAdapter<BlobDeleteInput, BlobDeleteOutput, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobDeleteInput>(),
@@ -182,7 +182,7 @@ class BlobStoreDeleteCommand(
 class BlobStoreStatCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobStatInput, BlobDescriptor>(
+) : TypedServiceCommandAdapter<BlobStatInput, BlobDescriptor, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobStatInput>(),
@@ -214,7 +214,7 @@ class BlobStoreStatCommand(
 class BlobStoreListCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobListInput, ListResult>(
+) : TypedServiceCommandAdapter<BlobListInput, ListResult, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobListInput>(),
@@ -249,7 +249,7 @@ class BlobStoreListCommand(
 class BlobStoreCopyCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobCopyInput, BlobDescriptor>(
+) : TypedServiceCommandAdapter<BlobCopyInput, BlobDescriptor, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobCopyInput>(),
@@ -284,7 +284,7 @@ class BlobStoreCopyCommand(
 class BlobStoreMoveCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<BlobMoveInput, BlobDescriptor>(
+) : TypedServiceCommandAdapter<BlobMoveInput, BlobDescriptor, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BlobMoveInput>(),
@@ -319,7 +319,7 @@ class BlobStoreMoveCommand(
 class CasStoreCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<CasStoreInput, ContentAddressDescriptor>(
+) : TypedServiceCommandAdapter<CasStoreInput, ContentAddressDescriptor, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CasStoreInput>(),
@@ -357,7 +357,7 @@ class CasStoreCommand(
 class CasGetCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<CasGetInput, BlobGetOutput>(
+) : TypedServiceCommandAdapter<CasGetInput, BlobGetOutput, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CasGetInput>(),
@@ -408,7 +408,7 @@ class CasGetCommand(
 class CasVerifyCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<CasVerifyInput, CasVerifyOutput>(
+) : TypedServiceCommandAdapter<CasVerifyInput, CasVerifyOutput, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CasVerifyInput>(),
@@ -449,7 +449,7 @@ class CasVerifyCommand(
 class MetadataSearchCommand(
     execution: SessionExecution,
     private val blobService: BlobService,
-) : TypedServiceCommandAdapter<MetadataSearchInput, List<BlobDescriptor>>(
+) : TypedServiceCommandAdapter<MetadataSearchInput, List<BlobDescriptor>, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<MetadataSearchInput>(),

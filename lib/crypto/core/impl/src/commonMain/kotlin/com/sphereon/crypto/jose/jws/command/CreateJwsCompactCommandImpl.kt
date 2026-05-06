@@ -44,7 +44,7 @@ import kotlin.native.ObjCName
 class CreateJwsCompactCommandImpl(
     execution: SessionExecution,
     private val createJwsJsonFlattenedCommand: CreateJwsJsonFlattenedCommand,
-) : TypedServiceCommandAdapter<CreateJwsArgs, JwtCompactResult>(
+) : TypedServiceCommandAdapter<CreateJwsArgs, JwtCompactResult, IdkError>(
         commandId = CreateJwsCompactCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJwsArgs>(),

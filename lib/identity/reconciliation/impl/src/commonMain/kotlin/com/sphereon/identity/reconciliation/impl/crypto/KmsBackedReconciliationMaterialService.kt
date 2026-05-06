@@ -16,11 +16,11 @@
 
 package com.sphereon.identity.reconciliation.impl.crypto
 
+import com.sphereon.attribute.flow.AttributeBag
+import com.sphereon.attribute.flow.AttributePath
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.kms.command.GenerateMacArgs
 import com.sphereon.crypto.core.kms.command.GenerateMacCommand
-import com.sphereon.identity.idv.model.AttributeBag
-import com.sphereon.identity.idv.model.AttributePath
 import com.sphereon.identity.matching.crypto.HashedIdentifier
 import com.sphereon.identity.matching.model.IdentifierType
 import com.sphereon.identity.reconciliation.api.DerivedMaterial

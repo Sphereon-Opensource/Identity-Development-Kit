@@ -3,5 +3,15 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>ClassOrdering:Oid4vciUrls.kt$Oid4vciUrls$private const val SCHEME_SEPARATOR_LENGTH = 3</ID>
+    <ID>MagicNumber:CredentialConfigurationSupportedExtensions.kt$35</ID>
+    <ID>MagicNumber:CredentialConfigurationSupportedExtensions.kt$36</ID>
+    <ID>MagicNumber:CredentialConfigurationSupportedExtensions.kt$47</ID>
+    <ID>MagicNumber:CredentialConfigurationSupportedExtensions.kt$7</ID>
+    <ID>MagicNumber:CredentialConfigurationSupportedExtensions.kt$8</ID>
+    <ID>MagicNumber:Oid4vciMetadataDsl.kt$35</ID>
+    <ID>MagicNumber:Oid4vciMetadataDsl.kt$36</ID>
+    <ID>MagicNumber:Oid4vciMetadataDsl.kt$47</ID>
+    <ID>MagicNumber:Oid4vciMetadataDsl.kt$7</ID>
+    <ID>MagicNumber:Oid4vciMetadataDsl.kt$8</ID>
   </CurrentIssues>
 </SmellBaseline>

@@ -29,7 +29,12 @@ import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2HttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2AuthorizationHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2DiscoveryHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2FederationHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2InternalHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2TokenHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2UserInfoHttpAdapter
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
@@ -142,9 +147,15 @@ class InProcessHttpClientFactory(
                         bodySupplier = body?.let { { it } },
                     )
 
-                // Try each adapter until one handles the request (not 404)
+                // Try each adapter until one handles the request (not 404). Skip adapters
+                // whose canHandle() returns false so adapters that share the root mount but
+                // serve different paths don't pollute the result with their unsupported-arg
+                // error responses.
                 var response: GenericHttpResponse? = null
                 for (adapter in adapters) {
+                    if (adapter is com.sphereon.core.api.http.RoutableHttpAdapter && !adapter.canHandle(genericRequest)) {
+                        continue
+                    }
                     val result = adapter.handleRequest(genericRequest)
                     if (result.statusCode != 404 || adapters.size == 1) {
                         response = result
@@ -215,7 +226,7 @@ class WalletClientE2ETest {
             format = "jwt_vc_json",
             scope = "degree",
             cryptographicBindingMethodsSupported = listOf("did:key", "did:jwk"),
-            credentialSigningAlgValuesSupported = listOf("ES256"),
+            credentialSigningAlgValuesSupported = listOf(kotlinx.serialization.json.JsonPrimitive("ES256")),
             credentialDefinition =
                 CredentialDefinition(
                     type = listOf("VerifiableCredential", "UniversityDegreeCredential"),
@@ -245,10 +256,21 @@ class WalletClientE2ETest {
             ?: error("Oid4vciIssuerMetadataHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
     }
 
-    private fun oauthAdapter(): OAuth2HttpAdapter {
+    private fun oauthAdapters(): List<HttpAdapter> {
         val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        return adapters.filterIsInstance<OAuth2HttpAdapter>().firstOrNull()
-            ?: error("OAuth2HttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
+        val oauth2 =
+            adapters.filter { adapter ->
+                adapter is OAuth2DiscoveryHttpAdapter ||
+                    adapter is OAuth2TokenHttpAdapter ||
+                    adapter is OAuth2AuthorizationHttpAdapter ||
+                    adapter is OAuth2UserInfoHttpAdapter ||
+                    adapter is OAuth2FederationHttpAdapter ||
+                    adapter is OAuth2InternalHttpAdapter
+            }
+        require(oauth2.isNotEmpty()) {
+            "No OAuth2 AS HttpAdapter found in DI graph. Found: ${adapters.map { it::class.simpleName }}"
+        }
+        return oauth2
     }
 
     private fun verifierAdapter(): Oid4vpVerifierHttpAdapter {
@@ -264,13 +286,13 @@ class WalletClientE2ETest {
     private fun createInProcessFactory(): InProcessHttpClientFactory {
         // Order matters: specific-path adapters first, catch-all metadata adapter last
         return InProcessHttpClientFactory(
-            adapters = linkedSetOf(issuerAdapter(), oauthAdapter(), metadataAdapter()),
+            adapters = (listOf(issuerAdapter()) + oauthAdapters() + metadataAdapter()).toCollection(linkedSetOf()),
         )
     }
 
     private fun createInProcessFactoryWithVerifier(): InProcessHttpClientFactory =
         InProcessHttpClientFactory(
-            adapters = linkedSetOf(verifierAdapter(), issuerAdapter(), oauthAdapter(), metadataAdapter()),
+            adapters = (listOf(verifierAdapter(), issuerAdapter()) + oauthAdapters() + metadataAdapter()).toCollection(linkedSetOf()),
         )
 
     // =========================================================================
@@ -507,13 +529,7 @@ class WalletClientE2ETest {
             // =====================================================================
             // Step 3: AS creates access token (server-side)
             // =====================================================================
-            val asKeyResult =
-                kms.generateKeyResult(
-                    alias = "oauth2-server-signing",
-                    use = JwkUse.sig,
-                    alg = SignatureAlgorithm.ECDSA_SHA256,
-                )
-            assertTrue(asKeyResult.isOk, "AS signing key generation should succeed")
+            ctx.ensureAsSigningKey()
 
             val tokenResult =
                 asService.createAccessToken(

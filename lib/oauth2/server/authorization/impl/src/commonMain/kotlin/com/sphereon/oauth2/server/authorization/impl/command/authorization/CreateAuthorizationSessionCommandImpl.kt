@@ -19,29 +19,29 @@ package com.sphereon.oauth2.server.authorization.impl.command.authorization
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationSessionCommand
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
+import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_ID_TOKEN
+import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_USERINFO
 import com.sphereon.oauth2.server.authorization.model.SessionStatus
 import com.sphereon.oauth2.server.authorization.storage.SessionStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
-
-private const val RANDOM_TOKEN_BYTES = 32
 
 /**
  * Implementation of CreateAuthorizationSessionCommand
@@ -78,9 +78,10 @@ private const val RANDOM_TOKEN_BYTES = 32
 class CreateAuthorizationSessionCommandImpl(
     execution: SessionExecution,
     private val sessionStorage: SessionStorage,
+    private val secureRandom: SecureRandom,
     // 15 minutes default
     private val sessionLifetimeSeconds: Int = 900,
-) : TypedServiceCommandAdapter<VerifiedAuthorizationRequest, AuthorizationSession>(
+) : TypedServiceCommandAdapter<VerifiedAuthorizationRequest, AuthorizationSession, IdkError>(
         commandId = CreateAuthorizationSessionCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifiedAuthorizationRequest>(),
@@ -106,7 +107,13 @@ class CreateAuthorizationSessionCommandImpl(
         // Generate cryptographically secure random session ID
         val sessionId = generateSecureSessionId()
 
-        // Create authorization session
+        // Create authorization session.
+        //
+        // `redirectUri`, `codeChallengeMethod`, and `responseMode` are taken from the resolved
+        // fields on [VerifiedAuthorizationRequest] (not directly from request.request) so server
+        // defaults applied in the verifier (single-registered redirect URI resolution, PKCE method
+        // default + policy, OIDC Core §3.1.2.1 response_mode default) are correctly propagated to
+        // the session and, downstream, to the authorization code and token endpoint.
         val session =
             AuthorizationSession(
                 sessionId = sessionId,
@@ -115,8 +122,9 @@ class CreateAuthorizationSessionCommandImpl(
                 scope = request.request.scope,
                 state = request.request.state,
                 responseType = request.request.responseType.joinToString(" ") { it.value },
+                responseMode = request.responseMode,
                 codeChallenge = request.request.codeChallenge,
-                codeChallengeMethod = request.request.codeChallengeMethod?.value,
+                codeChallengeMethod = request.resolvedPkceMethod?.value,
                 dpopJkt = request.request.dpopJkt,
                 nonce = request.request.nonce,
                 status = SessionStatus.PENDING_AUTHENTICATION,
@@ -124,6 +132,21 @@ class CreateAuthorizationSessionCommandImpl(
                 consentDecision = null,
                 createdAt = now,
                 expiresAt = expiresAt,
+                // Carry the PAR `request_uri` through to code-issuance so we can finalize
+                // single-use semantics atomically there (FAPI 2.0 SP §5.3.2.2 Note 3).
+                requestUri = request.request.requestUri,
+                // Carry `acr_values` through so the granted `acr` claim on the id_token can
+                // echo the first requested level (OIDC Core §3.1.2.1) when the authenticator
+                // doesn't surface a specific acr.
+                acrValues = request.request.acrValues,
+                // Carry max_age through so [CreateAuthorizationCodeCommandImpl] can enforce
+                // the freshness gate as a final check before minting. The OIDC layer in
+                // [StandardAuthorizeRequestCommand] also enforces max_age earlier (force
+                // re-auth when stale), but those two layers cover different races: the
+                // earlier check stops the user reaching the consent screen with a stale
+                // session, the later check stops a code from being issued if max_age has
+                // elapsed during a slow consent flow.
+                maxAge = request.request.maxAge?.toLong(),
                 additionalData =
                     buildMap {
                         // Carry authorization_details through the session
@@ -138,6 +161,19 @@ class CreateAuthorizationSessionCommandImpl(
                                 }
                             } catch (expected: Exception) {
                                 execution.log.debug("Failed to parse authorization_details JSON: ${expected.message}")
+                            }
+                        }
+                        // OIDC Core §5.5 — `claims` request parameter. Stash the userinfo and
+                        // id_token claim-name lists so downstream userinfo/id_token assembly can
+                        // honor explicit per-claim requests in addition to scope-derived ones.
+                        // We don't model the `value`/`values`/`essential` sub-properties yet —
+                        // the test suite checks presence, not the strength flag.
+                        request.request.claims?.let { claimsObj ->
+                            (claimsObj["userinfo"] as? JsonObject)?.keys?.toList()?.takeIf { it.isNotEmpty() }?.let {
+                                put(SESSION_KEY_OIDC_CLAIMS_USERINFO, it)
+                            }
+                            (claimsObj["id_token"] as? JsonObject)?.keys?.toList()?.takeIf { it.isNotEmpty() }?.let {
+                                put(SESSION_KEY_OIDC_CLAIMS_ID_TOKEN, it)
                             }
                         }
                     },
@@ -155,11 +191,8 @@ class CreateAuthorizationSessionCommandImpl(
     }
 
     /**
-     * Generate a cryptographically secure random session ID
-     * 32 bytes (256 bits) of entropy, base64url encoded
+     * Generate a cryptographically secure random session ID.
+     * 32 bytes (256 bits) of entropy, base64url encoded with an `authz_` prefix.
      */
-    private fun generateSecureSessionId(): String {
-        val randomBytes = Random.Default.nextBytes(RANDOM_TOKEN_BYTES)
-        return "authz_" + randomBytes.encodeToBase64Url()
-    }
+    private suspend fun generateSecureSessionId(): String = "authz_" + secureRandom.newToken()
 }

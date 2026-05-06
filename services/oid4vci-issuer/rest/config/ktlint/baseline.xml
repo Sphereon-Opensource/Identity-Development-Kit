@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vci/issuer/impl/http/HttpAsBridge.kt">
+        <error line="202" column="29" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vci/issuer/impl/http/command/GetIssuerMetadataEndpointCommand.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+        <error line="189" column="9" source="standard:function-signature" />
+        <error line="189" column="56" source="standard:function-signature" />
+        <error line="193" column="30" source="standard:multiline-expression-wrapping" />
+        <error line="231" column="32" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vci/issuer/impl/http/command/HandleCredentialEndpointCommand.kt">
+        <error line="180" column="17" source="standard:when-entry-bracing" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vci/issuer/impl/http/command/HandleDeferredCredentialEndpointCommand.kt">
+        <error line="154" column="17" source="standard:when-entry-bracing" />
+        <error line="163" column="17" source="standard:when-entry-bracing" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/openid/oid4vci/issuer/impl/http/Oid4vciIssuerProtocolHttpAdapterTest.kt">
+        <error line="68" column="5" source="standard:spacing-between-declarations-with-comments" />
+    </file>
+</baseline>

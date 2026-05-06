@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.compat.JsExportCompat
@@ -128,7 +129,7 @@ data class ParsedJarResult(
  * 4. Returns the compact JWS serialization
  */
 @JsExportCompat
-interface CreateSignedJarCommand : ServiceCommand<CreateSignedJarArgs, StringResult> {
+interface CreateSignedJarCommand : ServiceCommand<CreateSignedJarArgs, StringResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -147,7 +148,7 @@ interface CreateSignedJarCommand : ServiceCommand<CreateSignedJarArgs, StringRes
  * The result is a nested JWT: JWE(JWS(authorization_request))
  */
 @JsExportCompat
-interface CreateEncryptedJarCommand : ServiceCommand<CreateEncryptedJarArgs, StringResult> {
+interface CreateEncryptedJarCommand : ServiceCommand<CreateEncryptedJarArgs, StringResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -166,7 +167,7 @@ interface CreateEncryptedJarCommand : ServiceCommand<CreateEncryptedJarArgs, Str
  * 5. Extracts authorization request parameters
  */
 @JsExportCompat
-interface ParseJarCommand : ServiceCommand<ParseJarArgs, ParsedJarResult> {
+interface ParseJarCommand : ServiceCommand<ParseJarArgs, ParsedJarResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

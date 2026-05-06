@@ -16,6 +16,9 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.attribute.flow.AttributeBinding
+import com.sphereon.attribute.flow.AttributePath
+import com.sphereon.attribute.flow.InputFieldId
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -98,41 +101,6 @@ data class IdvDisplay(
     val description: String? = null,
     val iconUri: String? = null,
 )
-
-@JsExportCompat
-@Serializable
-data class AttributeBinding(
-    val source: AttributeSource,
-    val target: AttributeTarget,
-    val required: Boolean = true,
-)
-
-@JsExportCompat
-@Serializable
-data class AttributeTarget(
-    val attributePath: AttributePath,
-)
-
-@JsExportCompat
-@Serializable
-sealed interface AttributeSource
-
-@Serializable
-data class ContextAttribute(
-    val attributePath: AttributePath,
-) : AttributeSource
-
-@Serializable
-data class PriorNodeAttribute(
-    val nodeId: IdvNodeId,
-    val attributePath: AttributePath,
-) : AttributeSource
-
-@Serializable
-data class UserInputAttribute(
-    val fieldId: InputFieldId,
-    val fieldLabel: String,
-) : AttributeSource
 
 @JsExportCompat
 @Serializable
@@ -251,6 +219,14 @@ enum class InputFieldType {
     CODE,
     SELECT,
     HIDDEN,
+
+    /**
+     * Browser renders as `<input type="password">` so the value is masked on
+     * screen and excluded from password-manager autofill on hostile origins.
+     * The transport itself does not impose a different validation contract;
+     * the driver is responsible for any server-side strength / breach checks.
+     */
+    PASSWORD,
 }
 
 @JsExportCompat

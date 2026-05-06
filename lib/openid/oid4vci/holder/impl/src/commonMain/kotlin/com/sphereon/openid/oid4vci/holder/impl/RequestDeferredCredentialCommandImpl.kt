@@ -76,7 +76,7 @@ class RequestDeferredCredentialCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     private val decryptJweCommand: DecryptJweCommand,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<RequestDeferredCredentialArgs, CredentialResponse>(
+) : TypedServiceCommandAdapter<RequestDeferredCredentialArgs, CredentialResponse, IdkError>(
         commandId = RequestDeferredCredentialCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RequestDeferredCredentialArgs>(),

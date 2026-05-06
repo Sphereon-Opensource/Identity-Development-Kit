@@ -20,11 +20,14 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
+import com.sphereon.core.api.service.ServiceCommandRegistry
+import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.data.store.credential.design.CredentialDesignService
@@ -48,7 +51,9 @@ import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SdPolicy
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.openid.oid4vci.issuer.hook.PostIssuanceHookArgs
 import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
+import com.sphereon.openid.oid4vci.issuer.impl.hook.PostIssuanceHookDispatcher
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.impl.proof.ProofVerifier
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
@@ -108,7 +113,22 @@ class HandleCredentialRequestCommandImpl(
      */
     private val credentialDesignService: CredentialDesignService? = null,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<HandleCredentialRequestArgs, CredentialResponse>(
+    /**
+     * Optional service-command registry for post-issuance hook dispatch. When
+     * null (pure-IDK deployment that didn't wire the command-framework
+     * registry) no hooks fire — the issuer is a zero-cost no-op at the
+     * dispatch site. See [com.sphereon.openid.oid4vci.issuer.hook.PostIssuanceHookArgs].
+     */
+    private val serviceCommandRegistry: ServiceCommandRegistry? = null,
+    private val sessionScopedCommandRegistry: SessionScopedCommandRegistry? = null,
+    /**
+     * Optional property resolver so operators can configure which hook
+     * command IDs fire at the `oid4vci.after-credential-issued` extension
+     * point. When null the default pattern `hook.post-issuance.**` applies.
+     */
+    private val propertyResolver: PropertyResolver? = null,
+    private val clock: Clock,
+) : TypedServiceCommandAdapter<HandleCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleCredentialRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<HandleCredentialRequestArgs>(),
@@ -119,13 +139,83 @@ class HandleCredentialRequestCommandImpl(
 
     override suspend fun supports(args: Any): Boolean = args is HandleCredentialRequestArgs
 
+    /**
+     * Session correlation context captured during [doExecuteInternal]. Set
+     * only when an [IssuanceSession] was resolved for the request; stays
+     * null for sessionless flows. Read by [dispatchPostIssuanceHooks] to
+     * populate [PostIssuanceHookArgs.boundUsageToken] / `preAuthCode` /
+     * `subject` from the offer-side source of truth without re-resolving.
+     *
+     * Instance state is safe here: the command is session-scoped and a
+     * single HTTP request is processed sequentially within its session.
+     */
+    private var pendingHookContext: HookContext? = null
+
+    private data class HookContext(
+        val boundUsageToken: String?,
+        val preAuthCode: String?,
+        val subject: String?,
+        val hookAllowList: List<String>?,
+    )
+
     override suspend fun doExecute(
         args: HandleCredentialRequestArgs,
         applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs,
     ): IdkResult<CredentialResponse, IdkError> {
+        pendingHookContext = null
         val result = doExecuteInternal(args, applyDuring)
         emitOutcome(args, result)
+        if (result.isOk) {
+            dispatchPostIssuanceHooks(args, result.value)
+        }
+        pendingHookContext = null
         return result
+    }
+
+    /**
+     * Post-issuance hook fan-out. Resolves the configured set of hook
+     * `ServiceCommand`s via [ServiceCommandRegistry] + [PropertyResolver] and
+     * invokes each one whose [ServiceCommand.supports] returns true for the
+     * args. Per-hook failures are isolated via `runCatching` so one failing
+     * hook doesn't cascade to siblings or roll back the already-issued
+     * credential. Retry semantics are the hook's own concern — the issuer
+     * is fire-and-forget here.
+     *
+     * Pure-IDK deployments that didn't wire `serviceCommandRegistry` /
+     * `sessionScopedCommandRegistry` get a zero-cost no-op. EDK-on-classpath
+     * deployments with a registered `hook.post-issuance.*` command see it
+     * invoked automatically; operator config under
+     * `hooks.oid4vci.after-credential-issued.{commands,patterns}` overrides
+     * the default pattern.
+     */
+    private suspend fun dispatchPostIssuanceHooks(
+        args: HandleCredentialRequestArgs,
+        response: CredentialResponse,
+    ) {
+        val discovery = serviceCommandRegistry ?: return
+        val resolver = sessionScopedCommandRegistry ?: return
+        val tenantId = runCatching { execution.sessionContext.context.tenant.tenantId }.getOrNull() ?: return
+        val correlation = pendingHookContext
+
+        val hookArgs =
+            PostIssuanceHookArgs(
+                credentialResponse = response,
+                credentialConfigurationId = args.credentialRequest.credentialConfigurationId,
+                tenantId = tenantId,
+                issuedAt = clock.now(),
+                boundUsageToken = correlation?.boundUsageToken,
+                preAuthCode = correlation?.preAuthCode,
+                subject = correlation?.subject,
+            )
+
+        PostIssuanceHookDispatcher(
+            resolver = discovery,
+            sessionCommands = resolver,
+            propertyResolver = propertyResolver,
+        ).dispatch(
+            args = hookArgs,
+            sessionAllowList = correlation?.hookAllowList,
+        )
     }
 
     private suspend fun emitOutcome(
@@ -165,7 +255,12 @@ class HandleCredentialRequestCommandImpl(
         val tokenContext =
             asBridge
                 .validateAccessToken(
-                    ValidateAccessTokenArgs(accessToken = applied.accessToken, dpopProof = applied.dpopProof),
+                    ValidateAccessTokenArgs(
+                        accessToken = applied.accessToken,
+                        dpopProof = applied.dpopProof,
+                        httpUrl = applied.httpUrl,
+                        httpMethod = applied.httpMethod,
+                    ),
                 ).getOrElse { return Err(it) }
 
         // 2. Validate credential request basics
@@ -176,15 +271,20 @@ class HandleCredentialRequestCommandImpl(
         if (request.credentialConfigurationId != null && request.credentialIdentifier != null) {
             return Err(IdkError.fromString(code = "invalid_credential_request", message = "credential_configuration_id and credential_identifier are mutually exclusive"))
         }
-        // 2b. Validate credential_identifier against token authorization_details (OID4VCI 1.1 Section 9.3.1.2)
+        // 2b. Validate credential_identifier against token authorization_details (OID4VCI 1.0 §8.2):
+        // a credential_identifier MUST appear in the token's authorization_details. When the token
+        // carries no `credential_identifiers` (deployment doesn't use the §5.3 RAR shape) any
+        // request-supplied credential_identifier is by definition unknown — reject with the
+        // dedicated `unknown_credential_identifier` error rather than letting the request fall
+        // through to a generic configuration-resolution error.
         val requestedIdentifier = request.credentialIdentifier
         if (requestedIdentifier != null) {
             val tokenIdentifiers = tokenContext.credentialIdentifiers
-            if (!tokenIdentifiers.isNullOrEmpty() && requestedIdentifier !in tokenIdentifiers) {
+            if (tokenIdentifiers.isNullOrEmpty() || requestedIdentifier !in tokenIdentifiers) {
                 return Err(
                     IdkError.fromString(
-                        code = "UNKNOWN_CREDENTIAL_IDENTIFIER",
-                        message = "Requested credential_identifier '$requestedIdentifier' is not in token authorization_details",
+                        code = "unknown_credential_identifier",
+                        message = "Unknown credential_identifier: '$requestedIdentifier'",
                     ),
                 )
             }
@@ -209,6 +309,40 @@ class HandleCredentialRequestCommandImpl(
             sessionStore.update(session.copy(status = IssuanceSessionStatus.CREDENTIAL_REQUESTED))
         }
 
+        // Capture the session-side correlation fields for post-issuance hooks.
+        // `subject` falls back to the token context's subject when the session
+        // doesn't carry one explicitly.
+        if (session != null) {
+            pendingHookContext =
+                HookContext(
+                    boundUsageToken = session.boundUsageToken,
+                    preAuthCode = session.preAuthCode,
+                    subject = session.subject ?: tokenContext.subject,
+                    hookAllowList = session.postIssuanceHookAllowList,
+                )
+        } else {
+            pendingHookContext =
+                HookContext(
+                    boundUsageToken = null,
+                    preAuthCode = null,
+                    subject = tokenContext.subject,
+                    hookAllowList = null,
+                )
+        }
+
+        // OID4VCI 1.0 §8.3.1: when the request carries `credential_configuration_id` and the AS
+        // doesn't recognise it, the response error MUST be `unknown_credential_configuration`.
+        // Falling through to a minimal-config heuristic would emit `invalid_credential_request`
+        // about a missing `vct`/`doctype` which masks the real cause.
+        val explicitConfigId = request.credentialConfigurationId
+        if (explicitConfigId != null && !applied.credentialConfigurations.containsKey(explicitConfigId)) {
+            return Err(
+                IdkError.fromString(
+                    code = "unknown_credential_configuration",
+                    message = "Unknown credential_configuration_id: '$explicitConfigId'",
+                ),
+            )
+        }
         val configuration =
             applied.credentialConfigurations[configId]
                 ?: resolveMinimalConfiguration(request.format ?: CredentialFormat.SD_JWT_DC.value, request.vct, request.doctype)
@@ -219,13 +353,28 @@ class HandleCredentialRequestCommandImpl(
         val proofs = request.proofs
         val isBatch = proofs != null && proofs.proofValues.size > 1
 
+        // OID4VCI 1.0 §8.2.1.2: when `proof_types_supported` is non-empty on the credential
+        // configuration, the credential request MUST include a proof of possession. Reject
+        // missing proofs here so wallet flows get a precise `invalid_proof` instead of
+        // silently issuing an unbound credential.
+        if (proofs == null && !configuration.proofTypesSupported.isNullOrEmpty()) {
+            return Err(
+                IdkError.fromString(
+                    code = "invalid_proof",
+                    message =
+                        "Credential request is missing the `proofs` parameter, but the credential " +
+                            "configuration '$configId' declares proof_types_supported " +
+                            "(${configuration.proofTypesSupported?.keys?.joinToString()}); " +
+                            "proof of possession is REQUIRED (OID4VCI 1.0 §8.2.1.2).",
+                ),
+            )
+        }
+
         val batchVerifiedProofs =
             if (proofs != null) {
-                // §F.1: if the credential configuration declares proof_signing_alg_values_supported,
-                // the proof's `alg` MUST match one of those values. Thread the list through to the
-                // verifier so it can enforce the allowlist.
-                val supportedAlgorithms =
-                    configuration.proofTypesSupported?.get(proofs.proofType)?.proofSigningAlgValuesSupported
+                // §F.1 alg-allowlist + §11.2.3 key-attestation policy both live on the
+                // proof_types_supported.<type> block — pass it whole rather than fanning fields out.
+                val proofTypeSupported = configuration.proofTypesSupported?.get(proofs.proofType)
                 val results =
                     coroutineScope {
                         proofs.proofValues
@@ -235,7 +384,9 @@ class HandleCredentialRequestCommandImpl(
                                         proofType = proofs.proofType,
                                         proofValue = proofValue,
                                         audience = expectedAudience,
-                                        supportedAlgorithms = supportedAlgorithms,
+                                        expectedClientId = tokenContext.clientId.takeIf { it.isNotEmpty() },
+                                        credentialConfigId = configId,
+                                        proofTypeSupported = proofTypeSupported,
                                     )
                                 }
                             }.awaitAll()
@@ -385,12 +536,9 @@ class HandleCredentialRequestCommandImpl(
                         CredentialResponseItem(credential = envelope.credential)
                     }
 
-                val newNonce = nonceManager.issue().getOrElse { return Err(it) }
                 CredentialResponse(
                     credentials = items,
                     notificationId = notificationId,
-                    cNonce = newNonce.cNonce,
-                    cNonceExpiresIn = newNonce.cNonceExpiresIn,
                 )
             } else {
                 // Single issuance (single-proof or no-proof)
@@ -412,6 +560,7 @@ class HandleCredentialRequestCommandImpl(
                         signingKeyAlias = signingConfig?.signingKeyAlias,
                         signingKeyMode = signingConfig?.signingKeyMode ?: SigningKeyMode.None,
                         signingCertChainPath = signingConfig?.signingCertChainPath,
+                        expirationInDays = signingConfig?.expirationInDays,
                     )
 
                 val envelope =
@@ -442,12 +591,9 @@ class HandleCredentialRequestCommandImpl(
                     )
                 }
 
-                val newNonce = nonceManager.issue().getOrElse { return Err(it) }
                 CredentialResponse(
-                    credential = envelope.credential,
+                    credentials = listOf(CredentialResponseItem(credential = envelope.credential)),
                     notificationId = envelope.notificationId,
-                    cNonce = newNonce.cNonce,
-                    cNonceExpiresIn = newNonce.cNonceExpiresIn,
                 )
             }
 
@@ -456,8 +602,7 @@ class HandleCredentialRequestCommandImpl(
             sessionStore.update(session.copy(status = IssuanceSessionStatus.CREDENTIAL_ISSUED))
         }
 
-        // 10. Encrypt response if requested
-        return encryptor.encryptIfRequested(response, request.credentialResponseEncryption)
+        return Ok(response)
     }
 
     /**
@@ -470,12 +615,14 @@ class HandleCredentialRequestCommandImpl(
         proofType: String,
         proofValue: JsonElement,
         audience: String,
-        supportedAlgorithms: List<String>? = null,
+        expectedClientId: String?,
+        credentialConfigId: String,
+        proofTypeSupported: com.sphereon.openid.oid4vci.common.model.ProofTypeSupported? = null,
     ): IdkResult<VerifiedProof, IdkError> {
         val verifier =
             proofVerifiers.firstOrNull { it.supportedProofType == proofType }
                 ?: return Err(IdkError.fromString(code = "UNSUPPORTED_PROOF_TYPE", message = "Proof type '$proofType' is not supported"))
-        return verifier.verify(proofValue, audience, supportedAlgorithms)
+        return verifier.verify(proofValue, audience, expectedClientId, credentialConfigId, proofTypeSupported)
     }
 
     /**

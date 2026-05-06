@@ -60,6 +60,9 @@ kotlin {
                 // OID4VCI common (for IaeInteractionType enum and @Oid4vciDsl marker used in DSL builders)
                 api(projects.libOpenidOid4vciCommonPublic)
 
+                // IDV graph models (for RequiredActionGraphProvider returning IdvNode)
+                api(projects.libIdvPublic)
+
                 // Dependency injection
                 api(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)

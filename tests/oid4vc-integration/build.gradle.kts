@@ -45,6 +45,14 @@ kotlin {
                 implementation(projects.libOauth2ServerAuthorizationPublic)
                 implementation(projects.libOauth2ServerAuthorizationImpl)
 
+                // OAuth2 resource-server: ValidateAccessTokenCommand is the single entry
+                // point for token-bearing endpoints (`/userinfo` etc.) and is injected by
+                // UserInfoHttpEndpointCommandImpl in services-oauth2-as-rest. Both the
+                // public interface and the impl-side command-descriptor multibinding must
+                // be on the test classpath for the SessionScope subgraph to compose.
+                implementation(projects.libOauth2ServerResourcePublic)
+                implementation(projects.libOauth2ServerResourceImpl)
+
                 // OAuth2 client (holder-side token exchange)
                 implementation(projects.libOauth2ClientPublic)
                 implementation(projects.libOauth2ClientImpl)

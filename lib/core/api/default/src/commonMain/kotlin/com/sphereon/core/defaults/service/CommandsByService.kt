@@ -46,7 +46,7 @@ class CommandsByService(
      * @param serviceId The module.service prefix, e.g. "kms.keys"
      * @return Map of full commandId to command
      */
-    operator fun get(serviceId: String): Map<String, ServiceCommand<*, *>> =
+    operator fun get(serviceId: String): Map<String, ServiceCommand<*, *, *>> =
         registry
             .listCommandIds()
             .filter { it.servicePrefix() == serviceId }

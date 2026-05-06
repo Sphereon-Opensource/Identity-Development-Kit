@@ -290,7 +290,7 @@ class TenantResolverCompareToTest {
     private class TestTenantResolver(
         override val order: Int,
     ) : TenantResolver {
-        override fun resolveTenant(tenantInput: TenantInput) = "test"
+        override suspend fun resolveTenant(tenantInput: TenantInput) = "test"
 
         override fun supports(tenantInput: TenantInput) = true
     }

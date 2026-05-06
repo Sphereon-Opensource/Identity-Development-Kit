@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
@@ -49,7 +50,7 @@ data class IntrospectTokenArgs(
  * authorization server about the state and metadata of a token.
  */
 @JsExportCompat
-interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenIntrospectionResponse> {
+interface IntrospectTokenCommand : ServiceCommand<IntrospectTokenArgs, TokenIntrospectionResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

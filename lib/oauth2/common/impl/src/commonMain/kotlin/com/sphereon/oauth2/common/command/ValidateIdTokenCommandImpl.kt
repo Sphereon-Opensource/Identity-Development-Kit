@@ -21,11 +21,14 @@ import com.sphereon.core.api.asErrorResult
 import com.sphereon.core.api.asOkResult
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.core.json.cryptoJsonSerializer
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
@@ -34,14 +37,17 @@ import com.sphereon.oauth2.common.error.Oauth2Error
 import com.sphereon.oauth2.common.model.IdTokenPayload
 import com.sphereon.oauth2.common.model.IdTokenValidationOptions
 import com.sphereon.oauth2.common.model.ValidatedIdToken
+import com.sphereon.oauth2.common.validation.buildOidcAudienceAzpValidation
 import com.sphereon.oauth2.common.validation.isAuthenticationFresh
 import com.sphereon.oauth2.common.validation.isIdTokenExpired
 import com.sphereon.oauth2.common.validation.isIdTokenIssuedAtValid
-import com.sphereon.oauth2.common.validation.validateAudience
+import com.sphereon.oauth2.common.validation.jwsAlgToDigest
 import com.sphereon.oauth2.common.validation.validateIdTokenPayload
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -64,7 +70,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ValidateIdTokenCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
-) : TypedServiceCommandAdapter<ValidateIdTokenArgs, ValidatedIdToken>(
+) : TypedServiceCommandAdapter<ValidateIdTokenArgs, ValidatedIdToken, IdkError>(
         commandId = ValidateIdTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ValidateIdTokenArgs>(),
@@ -87,11 +93,49 @@ class ValidateIdTokenCommandImpl(
         idToken: String,
         options: IdTokenValidationOptions,
     ): IdkResult<ValidatedIdToken, Oauth2Error> {
+        // Pre-validate header against OIDF constraints before touching crypto — alg allow-list,
+        // reject embedded keys, enforce JWKS-bound `kid` when a trusted key set was provided.
+        val header =
+            parseJwsHeader(idToken)
+                ?: return Oauth2Error
+                    .InvalidIdToken(reason = "ID Token JWS header could not be parsed")
+                    .asErrorResult()
+
+        val alg = header["alg"]?.jsonPrimitive?.content
+        if (alg.isNullOrBlank()) {
+            return Oauth2Error.InvalidIdToken(reason = "ID Token JWS header is missing 'alg'").asErrorResult()
+        }
+        if (alg !in options.allowedAlgorithms) {
+            return Oauth2Error
+                .InvalidIdToken(
+                    reason = "ID Token alg '$alg' is not in the allow-list ${options.allowedAlgorithms}",
+                ).asErrorResult()
+        }
+
+        if (!options.allowEmbeddedKeyInHeader) {
+            if (header.containsKey("jwk")) {
+                return Oauth2Error
+                    .InvalidIdToken(reason = "ID Token JWS header must not contain embedded 'jwk'")
+                    .asErrorResult()
+            }
+            if (header.containsKey("x5c")) {
+                return Oauth2Error
+                    .InvalidIdToken(reason = "ID Token JWS header must not contain embedded 'x5c' chain")
+                    .asErrorResult()
+            }
+        }
+
+        val trustedJwks = options.trustedJwks
+        // kid resolution and signature verification both happen inside the JWS verifier when
+        // trustedJwks is supplied. The verifier refuses embedded jwk/x5c headers in that mode and
+        // only accepts a key drawn from the trusted set, so no standalone precheck is needed here.
+
         // Step 1: Verify JWT signature using JwtService
         val verificationResult =
             jwtService.verifyJws(
                 VerifyJwsArgs(
                     jws = JwsCompact(idToken),
+                    trustedJwks = trustedJwks?.asJsonObject(),
                 ),
             )
 
@@ -139,13 +183,15 @@ class ValidateIdTokenCommandImpl(
                 ).asErrorResult()
         }
 
-        // Step 5: Validate audience
-        if (!validateAudience(payload.aud, options.expectedAudience)) {
-            return Oauth2Error
-                .InvalidIdToken(
-                    reason = "Audience validation failed: expected '${options.expectedAudience}' in ${payload.aud}",
-                ).asErrorResult()
-        }
+        // Step 5: Validate audience + azp (OIDC Core §3.1.3.7 steps 3-6) via Konform.
+        val audAzpValidation =
+            buildOidcAudienceAzpValidation(options.expectedAudience)(payload)
+                .toIdkResult { errors ->
+                    Oauth2Error.InvalidIdToken(
+                        reason = errors.joinToString("; ") { it.message },
+                    )
+                }
+        if (audAzpValidation.isErr) return audAzpValidation.error.asErrorResult()
 
         // Step 6: Validate expiration
         if (isIdTokenExpired(payload.exp, options.clockSkewSeconds)) {
@@ -268,6 +314,30 @@ class ValidateIdTokenCommandImpl(
     }
 
     /**
+     * Parse the JWS protected header from the compact serialisation without touching the
+     * signature verifier — used for OIDF-level pre-validation (alg allow-list, embedded key
+     * rejection, `kid`/JWKS binding). Returns `null` on malformed input; callers surface the
+     * validation failure themselves rather than throwing.
+     */
+    private fun parseJwsHeader(idToken: String): JsonObject? {
+        val firstDot = idToken.indexOf('.')
+        if (firstDot <= 0) return null
+        val headerSegment = idToken.substring(0, firstDot)
+        return try {
+            val decoded = headerSegment.decodeFromBase64Url().decodeToString()
+            Json.parseToJsonElement(decoded).jsonObject
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Render a [JwkSet] as a `{"keys": [...]}` JSON object so the verifier can apply RFC 7517
+     * key selection without a typed dependency on the JWKS data class.
+     */
+    private fun JwkSet.asJsonObject(): JsonObject = cryptoJsonSerializer.encodeToJsonElement(JwkSet.serializer(), this).jsonObject
+
+    /**
      * Extracts the signing algorithm from the JWS header
      */
     private fun extractAlgorithmFromJws(jws: com.sphereon.crypto.jose.jws.JwsJsonGeneralWithIdentifiers): String {
@@ -298,32 +368,15 @@ class ValidateIdTokenCommandImpl(
         token: String,
         expectedHash: String,
         algorithm: String,
-    ): Boolean {
+    ): Boolean =
         try {
-            // Map JWT algorithm to digest algorithm
             val digestAlg =
-                when (algorithm) {
-                    "RS256", "ES256", "PS256", "HS256" -> DigestAlg.SHA256
-                    "RS384", "ES384", "PS384", "HS384" -> DigestAlg.SHA384
-                    "RS512", "ES512", "PS512", "HS512" -> DigestAlg.SHA512
-                    else -> throw IllegalArgumentException("Unsupported algorithm: $algorithm")
-                }
-
-            // Hash the token
-            val tokenBytes = token.encodeToByteArray()
-            val hashBytes = hash(tokenBytes, digestAlg)
-
-            // Take left-most half
-            val halfLength = hashBytes.size / 2
-            val leftHalf = hashBytes.copyOfRange(0, halfLength)
-
-            // Base64url encode
-            val actualHash = leftHalf.encodeToBase64Url()
-
-            return actualHash == expectedHash
+                jwsAlgToDigest(algorithm)
+                    ?: throw IllegalArgumentException("Unsupported algorithm: $algorithm")
+            val hashBytes = hash(token.encodeToByteArray(), digestAlg)
+            val leftHalf = hashBytes.copyOfRange(0, hashBytes.size / 2)
+            leftHalf.encodeToBase64Url() == expectedHash
         } catch (_: Exception) {
-            // Hash validation failed
-            return false
+            false
         }
-    }
 }

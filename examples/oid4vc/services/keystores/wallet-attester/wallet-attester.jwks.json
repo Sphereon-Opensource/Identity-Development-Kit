@@ -1,0 +1,15 @@
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "sig",
+      "alg": "ES256",
+      "kid": "wallet-attester",
+      "x": "r8lJWAbfbePddc4RkXpCG0-bcCwegwW7e-TnqobDnk0",
+      "y": "RXs5zALuH-UxoU1Cme0j5LxAkj_sDhBCB3GwrBO9Xfw",
+      "d": "RiTMsUYicJc8nL2tBN8NPtKAEkIwj-f0ujSMndEgICw",
+      "x5c": ["MIIBvDCCAWOgAwIBAgIUBLQhxPwu6uo4EloFsWwkv19KwewwCgYIKoZIzj0EAwIwJzElMCMGA1UEAwwcSURLIEUyRSBDQSwgTz1TcGhlcmVvbiwgQz1OTDAeFw0yNjA0MjkyMTM5NTNaFw0zNjA0MjYyMTM5NTNaMDQxMjAwBgNVBAMMKUlESyBFMkUgV2FsbGV0IEF0dGVzdGVyLCBPPVNwaGVyZW9uLCBDPU5MMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEr8lJWAbfbePddc4RkXpCG0+bcCwegwW7e+TnqobDnk1FeznMAu4f5TGhTUKZ7SPkvECSP+wOEEIHcbCsE71d/KNgMF4wDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0OBBYEFPpcMwPNsui3rXwQO6p3mFTty0q5MB8GA1UdIwQYMBaAFOMhmqA/36jY0W7Q/qC2C1NucXquMAoGCCqGSM49BAMCA0cAMEQCIDGEb0g2Qzl9pK7f6B8p+sLQYBc7EIH45zcdoBLG6pTwAiAsD5Y+IzGw+EniC+YrnjQGvRwjDQ11qU+rgJ9kCz2Fng=="]
+    }
+  ]
+}

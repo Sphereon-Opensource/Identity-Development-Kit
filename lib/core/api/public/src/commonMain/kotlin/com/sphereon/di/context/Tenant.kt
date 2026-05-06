@@ -45,7 +45,7 @@ interface TenantContextData {
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TenantResolutionHandler", exact = true)
 interface TenantResolutionHandler {
-    fun resolveTenant(tenantInput: TenantInput): TenantAware
+    suspend fun resolveTenant(tenantInput: TenantInput): TenantAware
 }
 
 @OptIn(ExperimentalObjCName::class)
@@ -92,7 +92,7 @@ interface PrincipalInputString : PrincipalInput {
 interface TenantResolver : Comparable<TenantResolver> {
     val order: Int get() = Order.MEDIUM.orderValue
 
-    fun resolveTenant(tenantInput: TenantInput): String
+    suspend fun resolveTenant(tenantInput: TenantInput): String
 
     fun supports(tenantInput: TenantInput): Boolean
 

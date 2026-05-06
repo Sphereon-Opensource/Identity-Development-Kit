@@ -24,6 +24,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
+import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
@@ -64,6 +66,7 @@ import kotlin.time.Duration.Companion.minutes
 class SphereonAsBridge(
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
     private val authorizationServerService: AuthorizationServerService,
+    private val verifyDpopProofCommand: VerifyDpopProofCommand,
 ) : Oid4vciAuthorizationServerBridge {
     override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
         val code = CryptographyRandom.nextBytes(32).encodeToBase64Url()
@@ -146,6 +149,38 @@ class SphereonAsBridge(
 
         val clientId = introspection.clientId ?: ""
 
+        // RFC 9449 §7.1: when the access token carries `cnf.jkt`, the resource server MUST
+        // require a DPoP proof in the request and verify that:
+        //   - the proof's signature validates with the embedded JWK,
+        //   - `htm` / `htu` match the resource request,
+        //   - `iat` is fresh,
+        //   - `ath` = base64url(SHA-256(access token)),
+        //   - JWK thumbprint of the proof matches `cnf.jkt`.
+        // The verifier handles all of these in one pass given the right options.
+        val cnfJkt = introspection.cnf?.jkt
+        if (cnfJkt != null) {
+            val proof =
+                args.dpopProof
+                    ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "DPoP proof required for DPoP-bound access token (RFC 9449 §7.1)"))
+            val httpUrl = args.httpUrl
+            val httpMethod = args.httpMethod
+            if (httpUrl == null || httpMethod == null) {
+                return Err(IdkError.UNKNOWN_ERROR(message = "Resource endpoint did not propagate request URL/method for DPoP htu/htm verification"))
+            }
+            verifyDpopProofCommand
+                .execute(
+                    VerifyDpopProofOptions(
+                        dpopProof = proof,
+                        httpMethod = httpMethod,
+                        httpUrl = httpUrl,
+                        accessToken = args.accessToken,
+                        expectedJwkThumbprint = cnfJkt,
+                    ),
+                ).getOrElse { error ->
+                    return Err(IdkError.UNAUTHORIZED_ERROR(message = "Invalid DPoP proof: ${error.message.defaultMessage}"))
+                }
+        }
+
         // Extract credential_configuration_ids from authorization_details (RFC 9396 array of objects)
         val authDetailsArray =
             introspection.additionalClaims["authorization_details"]?.let { ad ->
@@ -176,6 +211,7 @@ class SphereonAsBridge(
                 scope = introspection.scope,
                 credentialConfigurationIds = credentialConfigurationIds,
                 credentialIdentifiers = credentialIdentifiers.ifEmpty { null },
+                cnfJkt = cnfJkt,
             ),
         )
     }

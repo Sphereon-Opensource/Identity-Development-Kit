@@ -286,6 +286,62 @@ class InterpolatingPropertyResolverWithInterpolationTest {
         val sub = resolver.getSubProperties(setOf("db"), stripPrefix = true)
         assertEquals("jdbc:postgresql://localhost:5432/mydb", sub["url"])
     }
+
+    @Test
+    fun interpolatesAndCoercesPlaceholderToBoolean() {
+        // YAML stores `dpop-nonce-required: "${env:OAUTH2_DPOP_NONCE_REQUIRED:false}"`
+        // as a String. Boolean-typed callers must still see the interpolated value
+        // coerced to Boolean instead of throwing on the raw template.
+        val resolver =
+            createResolver(
+                "feature.enabled" to "\${FEATURE_FLAG:true}",
+            )
+
+        assertEquals(true, resolver.getProperty("feature.enabled", Boolean::class))
+    }
+
+    @Test
+    fun interpolatesAndCoercesPlaceholderToInt() {
+        val resolver =
+            createResolver(
+                "server.port" to "\${HTTP_PORT:8080}",
+            )
+
+        assertEquals(8080, resolver.getProperty("server.port", Int::class))
+    }
+
+    @Test
+    fun interpolatesAndCoercesPlaceholderToLong() {
+        val resolver =
+            createResolver(
+                "session.timeout" to "\${SESSION_TIMEOUT_MS:60000}",
+            )
+
+        assertEquals(60_000L, resolver.getProperty("session.timeout", Long::class))
+    }
+
+    @Test
+    fun interpolatedBooleanFalseIsRespected() {
+        val resolver =
+            createResolver(
+                "feature.enabled" to "\${FLAG:false}",
+            )
+
+        assertEquals(false, resolver.getProperty("feature.enabled", Boolean::class))
+    }
+
+    @Test
+    fun interpolatedNonCoercibleStringFallsThroughToTypedLookup() {
+        // When the interpolated value can't be coerced, fall back to the typed lookup
+        // (which then throws or returns null per the underlying source's contract).
+        // Here the typed lookup returns null because no Boolean is stored.
+        val resolver =
+            createResolver(
+                "feature.enabled" to "\${FLAG:not-a-boolean}",
+            )
+
+        assertEquals(null, resolver.getProperty("feature.enabled", Boolean::class))
+    }
 }
 
 class InterpolatingPropertyResolverErrorHandlingTest {

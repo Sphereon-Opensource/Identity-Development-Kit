@@ -59,7 +59,7 @@ import kotlin.native.ObjCName
 @ObjCName("ParseTokenRequestCommandImpl", exact = true)
 class ParseTokenRequestCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParseTokenRequestArgs, TokenRequestData>(
+) : TypedServiceCommandAdapter<ParseTokenRequestArgs, TokenRequestData, IdkError>(
         commandId = ParseTokenRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseTokenRequestArgs>(),
@@ -75,12 +75,15 @@ class ParseTokenRequestCommandImpl(
         applyDuring: (ParseTokenRequestArgs) -> ParseTokenRequestArgs,
     ): IdkResult<TokenRequestData, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.requestBody, applied.requestHeaders).mapError { IdkError.fromDTO(it) }
+        return executeInternal(applied.requestBody, applied.requestHeaders, applied.httpUrl, applied.clientCertificateDer)
+            .mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
         requestBody: Map<String, List<String>>,
         requestHeaders: Map<String, String>,
+        httpUrl: String,
+        clientCertificateDer: ByteArray?,
     ): IdkResult<TokenRequestData, AuthorizationServerError> {
         // Extract grant_type (REQUIRED)
         val grantTypeString = requestBody["grant_type"]?.firstOrNull()
@@ -106,6 +109,8 @@ class ParseTokenRequestCommandImpl(
 
                 "urn:ietf:params:oauth:grant-type:token-exchange" -> GrantType.TOKEN_EXCHANGE
 
+                "urn:ietf:params:oauth:grant-type:device_code" -> GrantType.DEVICE_CODE
+
                 else -> return Err(
                     AuthorizationServerError.UnsupportedGrantType(
                         grantType = grantTypeString,
@@ -113,95 +118,19 @@ class ParseTokenRequestCommandImpl(
                 )
             }
 
-        // Extract attestation headers (draft-ietf-oauth-attestation-based-client-auth)
-        val attestationHeader =
-            requestHeaders["OAuth-Client-Attestation"]
-                ?: requestHeaders["oauth-client-attestation"]
-        val attestationPopHeader =
-            requestHeaders["OAuth-Client-Attestation-PoP"]
-                ?: requestHeaders["oauth-client-attestation-pop"]
+        // Shared client-auth extraction  — identical for /token, /introspect, /revoke.
+        // Rejects multiple-method requests per OIDC Core §9 / RFC 6749 §2.3 .
+        val extracted =
+            com.sphereon.oauth2.server.authorization.impl.command
+                .extractClientAuthentication(requestBody, requestHeaders, clientCertificateDer)
+                .getOrElse { return Err(it) }
+        val clientAuthentication = extracted.clientAuthentication
+        val resolvedClientId = extracted.clientId
 
-        // Extract JWT assertion from body (RFC 7523)
-        val assertionType = requestBody["client_assertion_type"]?.firstOrNull()
-        val assertion = requestBody["client_assertion"]?.firstOrNull()
-
-        // Extract client credentials from headers if present (Basic Auth)
-        val authHeader = requestHeaders["Authorization"] ?: requestHeaders["authorization"]
-        val (clientIdFromAuth, clientSecretFromAuth) = parseBasicAuth(authHeader)
-
-        // Extract client_id from body (for public clients or if not in header)
-        val clientIdFromBody = requestBody["client_id"]?.firstOrNull()
-        val clientSecretFromBody = requestBody["client_secret"]?.firstOrNull()
-
-        // Determine final client_id and client_secret
-        // Prefer header over body (per OAuth2 spec)
-        val clientId = clientIdFromAuth ?: clientIdFromBody
-        val clientSecret = clientSecretFromAuth ?: clientSecretFromBody
-
-        // Build client authentication config
-        // Priority: attestation headers > JWT assertion > Basic auth > Post auth > None > Anonymous
-        val clientAuthentication =
-            when {
-                // 1. Attestation headers (highest priority)
-                attestationHeader != null && attestationPopHeader != null -> {
-                    ClientAuthenticationConfig.AttestationJwt(
-                        ClientAttestation(attestationHeader, attestationPopHeader),
-                    )
-                }
-
-                // 2. JWT assertion in body (RFC 7523)
-                assertionType != null && assertion != null -> {
-                    val assertionClientId = clientId ?: ""
-                    when (assertionType) {
-                        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" -> {
-                            ClientAuthenticationConfig.PrivateKeyJwt(
-                                ClientAssertion(assertionClientId, assertionType, assertion),
-                            )
-                        }
-
-                        else -> {
-                            ClientAuthenticationConfig.SecretJwt(
-                                ClientAssertion(assertionClientId, assertionType, assertion),
-                            )
-                        }
-                    }
-                }
-
-                // 3. Basic auth (existing)
-                clientIdFromAuth != null && clientSecretFromAuth != null -> {
-                    ClientAuthenticationConfig.Basic(ClientCredentials(clientIdFromAuth, clientSecretFromAuth))
-                }
-
-                // 4. Post auth (existing)
-                clientId != null && clientSecret != null -> {
-                    ClientAuthenticationConfig.Post(ClientCredentials(clientId, clientSecret))
-                }
-
-                // 5. None (public client)
-                clientId != null -> {
-                    ClientAuthenticationConfig.None(clientId)
-                }
-
-                // 6. Anonymous
-                else -> {
-                    ClientAuthenticationConfig.Anonymous
-                }
-            }
-
-        // For attestation auth, extract client_id from attestation JWT sub claim if not in body
-        val resolvedClientId =
-            if (clientAuthentication is ClientAuthenticationConfig.AttestationJwt && clientId == null) {
-                extractClientIdFromAttestationJwt(attestationHeader)
-            } else {
-                clientId
-            }
-
-        // Extract DPoP JWT from header if present (RFC 9449)
-        val dpopProof = requestHeaders["DPoP"] ?: requestHeaders["dpop"]
-
-        // Get HTTP URL from request (needed for DPoP verification)
-        // TODO: This should be passed from the caller
-        val httpUrl = "https://example.com/token" // Placeholder
+        // RFC 9110 §5.1: HTTP header field names are case-insensitive. Different hops in the
+        // deployment topology may canonicalise differently before reaching the AS, so look the
+        // header up case-insensitively rather than relying on a specific wire casing.
+        val dpopProof = requestHeaders.entries.firstOrNull { it.key.equals("DPoP", ignoreCase = true) }?.value
 
         // Parse based on grant type
         val grantParameters =
@@ -216,6 +145,8 @@ class ParseTokenRequestCommandImpl(
 
                 GrantType.TOKEN_EXCHANGE -> parseTokenExchangeGrant(requestBody)
 
+                GrantType.DEVICE_CODE -> parseDeviceCodeGrant(requestBody)
+
                 else -> return Err(
                     AuthorizationServerError.UnsupportedGrantType(
                         grantType = grantTypeString,
@@ -223,7 +154,7 @@ class ParseTokenRequestCommandImpl(
                 )
             }
 
-        val finalClientId = resolvedClientId ?: clientId
+        val finalClientId = resolvedClientId
         if (finalClientId == null && clientAuthentication !is ClientAuthenticationConfig.Anonymous) {
             return Err(
                 AuthorizationServerError.InvalidRequest(
@@ -299,6 +230,24 @@ class ParseTokenRequestCommandImpl(
     }
 
     /**
+     * Parse device authorization grant request (RFC 8628 §3.4).
+     *
+     * Mirrors the other grant parsers: extracts `device_code` and `client_id` from the form body
+     * and defers the "value present" check to the verify-side command (Phase B). Defaulting to
+     * the empty string keeps the grant-specific verifier as the single source of truth for
+     * `invalid_grant` / `invalid_request` shaping.
+     */
+    private fun parseDeviceCodeGrant(requestBody: Map<String, List<String>>): GrantParameters {
+        val deviceCode = requestBody["device_code"]?.firstOrNull() ?: ""
+        val clientId = requestBody["client_id"]?.firstOrNull()
+
+        return GrantParameters.DeviceCode(
+            deviceCode = deviceCode,
+            clientId = clientId,
+        )
+    }
+
+    /**
      * Parse token exchange grant request (RFC 8693)
      */
     private fun parseTokenExchangeGrant(requestBody: Map<String, List<String>>): GrantParameters {
@@ -322,51 +271,5 @@ class ParseTokenRequestCommandImpl(
             scope = scope,
             requestedTokenType = requestedTokenType,
         )
-    }
-
-    /**
-     * Parse HTTP Basic Authentication header
-     *
-     * Returns (clientId, clientSecret) or (null, null) if not present or invalid
-     */
-    private fun parseBasicAuth(authHeader: String?): Pair<String?, String?> {
-        if (authHeader == null) {
-            return Pair(null, null)
-        }
-
-        // Format: "Basic base64(client_id:client_secret)"
-        val parts = authHeader.trim().split(" ", limit = 2)
-        if (parts.size != 2 || !parts[0].equals("Basic", ignoreCase = true)) {
-            return Pair(null, null)
-        }
-
-        return try {
-            // Decode base64
-            val decoded = parts[1].decodeBase64ToString()
-            val credentials = decoded.split(":", limit = 2)
-            if (credentials.size == 2) {
-                Pair(credentials[0], credentials[1])
-            } else {
-                Pair(null, null)
-            }
-        } catch (_: Exception) {
-            Pair(null, null)
-        }
-    }
-
-    /**
-     * Decode base64 string to UTF-8 string
-     */
-    private fun String.decodeBase64ToString(): String = decodeFromBase64().decodeToString()
-
-    /**
-     * Extract client_id from attestation JWT sub claim (lightweight decode, no verification).
-     */
-    private fun extractClientIdFromAttestationJwt(attestationJwt: String?): String? {
-        if (attestationJwt == null) {
-            return null
-        }
-        val claims = JwtClaimsParser.parseClaimsOrNull(attestationJwt) ?: return null
-        return claims["sub"]?.jsonPrimitive?.content
     }
 }

@@ -27,6 +27,7 @@ import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.common.model.TxCodeConfig
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -68,7 +69,7 @@ class PreAuthCodeIssuanceE2ETest {
             format = "jwt_vc_json",
             scope = "degree",
             cryptographicBindingMethodsSupported = listOf("did:key", "did:jwk"),
-            credentialSigningAlgValuesSupported = listOf("ES256"),
+            credentialSigningAlgValuesSupported = listOf(kotlinx.serialization.json.JsonPrimitive("ES256")),
             credentialDefinition =
                 CredentialDefinition(
                     type = listOf("VerifiableCredential", "UniversityDegreeCredential"),
@@ -88,7 +89,7 @@ class PreAuthCodeIssuanceE2ETest {
             vct = "https://credentials.example.com/identity_credential",
             scope = "pid",
             cryptographicBindingMethodsSupported = listOf("did:key"),
-            credentialSigningAlgValuesSupported = listOf("ES256"),
+            credentialSigningAlgValuesSupported = listOf(kotlinx.serialization.json.JsonPrimitive("ES256")),
             proofTypesSupported =
                 mapOf(
                     "jwt" to
@@ -246,7 +247,10 @@ class PreAuthCodeIssuanceE2ETest {
             assertEquals("jwt_vc_json", degree.format)
             assertEquals("degree", degree.scope)
             assertEquals(listOf("did:key", "did:jwk"), degree.cryptographicBindingMethodsSupported)
-            assertEquals(listOf("ES256"), degree.credentialSigningAlgValuesSupported)
+            assertEquals(
+                listOf("ES256"),
+                degree.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.content },
+            )
             val degreeDef = degree.credentialDefinition
             assertNotNull(degreeDef)
             assertEquals(listOf("VerifiableCredential", "UniversityDegreeCredential"), degreeDef.type)
@@ -329,13 +333,15 @@ class PreAuthCodeIssuanceE2ETest {
     @Test
     fun credentialResponseWireFormatMatchesSpec() =
         runTest {
-            // OID4VCI Section 7.3 — Credential Response wire format
+            // OID4VCI 1.0 §8.3 — Credential Response wire format. Synchronous issuance is
+            // a `credentials` array (size ≥ 1); nonces are obtained from the dedicated
+            // /nonce endpoint and are no longer carried inline on the credential response.
             val responseJson =
                 """
                 {
-                    "credential": "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDprZXk6ejZNa2hhWGdCWkR2b3REa0w1TFBHcGVLR2VQQnQ0TGtEY2VzWDZMTGVtdmg0Umo5IiwidmMiOnsiQGNvbnRleHQiOlsiaHR0cHM6Ly93d3cudzMub3JnLzIwMTgvY3JlZGVudGlhbHMvdjEiXSwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCIsIlVuaXZlcnNpdHlEZWdyZWVDcmVkZW50aWFsIl19fQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-                    "c_nonce": "tZWys7eMYqxlMOGoLHyBIw",
-                    "c_nonce_expires_in": 300
+                    "credentials": [
+                        {"credential": "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDprZXk6ejZNa2hhWGdCWkR2b3REa0w1TFBHcGVLR2VQQnQ0TGtEY2VzWDZMTGVtdmg0Umo5IiwidmMiOnsiQGNvbnRleHQiOlsiaHR0cHM6Ly93d3cudzMub3JnLzIwMTgvY3JlZGVudGlhbHMvdjEiXSwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCIsIlVuaXZlcnNpdHlEZWdyZWVDcmVkZW50aWFsIl19fQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"}
+                    ]
                 }
                 """.trimIndent()
 
@@ -345,22 +351,20 @@ class PreAuthCodeIssuanceE2ETest {
                         .serializer(),
                     responseJson,
                 )
-            assertNotNull(parsed.credential)
-            assertEquals("tZWys7eMYqxlMOGoLHyBIw", parsed.cNonce)
-            assertEquals(300, parsed.cNonceExpiresIn)
+            assertNotNull(parsed.credentials)
+            assertEquals(1, parsed.credentials!!.size)
             assertNull(parsed.transactionId, "Immediate response has no transaction_id")
         }
 
     @Test
     fun deferredCredentialResponseWireFormat() =
         runTest {
-            // OID4VCI Section 9 — Deferred issuance: transaction_id instead of credential
+            // OID4VCI 1.0 §8.3 / §10 — Deferred issuance: transaction_id instead of credentials.
             val responseJson =
                 """
                 {
                     "transaction_id": "txn_abc123",
-                    "c_nonce": "new-nonce-for-retry",
-                    "c_nonce_expires_in": 600
+                    "interval": 5
                 }
                 """.trimIndent()
 
@@ -370,9 +374,9 @@ class PreAuthCodeIssuanceE2ETest {
                         .serializer(),
                     responseJson,
                 )
-            assertNull(parsed.credential, "Deferred response has no credential")
+            assertNull(parsed.credentials, "Deferred response has no credentials")
             assertEquals("txn_abc123", parsed.transactionId)
-            assertNotNull(parsed.cNonce)
+            assertEquals(5, parsed.interval)
         }
 
     // =========================================================================

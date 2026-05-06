@@ -34,10 +34,31 @@ val CredentialConfigurationSupported.credentialFormat: CredentialFormat?
 
 /**
  * Returns the credential signing algorithms as typed [JwaAlgorithm] values.
- * Unknown algorithm strings are silently dropped.
+ *
+ * Per OID4VCI 1.0 final §12.2.3 / §A.3.2 the wire entries are format-specific: JWA strings
+ * (`"ES256"`) for JWS-based formats, numeric COSE algorithm identifiers (`-7`) for `mso_mdoc`.
+ * Both shapes round-trip into [JwaAlgorithm] here — strings via the JWA name, integers via
+ * the IANA COSE → JWA mapping. Unknown values (no match in either registry) are dropped.
  */
 val CredentialConfigurationSupported.signingAlgorithms: List<JwaAlgorithm>
-    get() = credentialSigningAlgValuesSupported?.mapNotNull { JwaAlgorithm.fromValue(it) } ?: emptyList()
+    get() =
+        credentialSigningAlgValuesSupported?.mapNotNull { element ->
+            val primitive = element as? kotlinx.serialization.json.JsonPrimitive ?: return@mapNotNull null
+            if (primitive.isString) {
+                JwaAlgorithm.fromValue(primitive.content)
+            } else {
+                primitive.content.toIntOrNull()?.let { coseId ->
+                    when (coseId) {
+                        -7 -> JwaAlgorithm.fromValue("ES256")
+                        -8 -> JwaAlgorithm.fromValue("EdDSA")
+                        -35 -> JwaAlgorithm.fromValue("ES384")
+                        -36 -> JwaAlgorithm.fromValue("ES512")
+                        -47 -> JwaAlgorithm.fromValue("ES256K")
+                        else -> null
+                    }
+                }
+            }
+        } ?: emptyList()
 
 /**
  * Returns the supported proof types as a typed map of [ProofType] to [ProofTypeSupported].

@@ -66,7 +66,7 @@ class ResourceServerVerifyDpopProofCommandImpl(
     execution: SessionExecution,
     private val clientVerifyDpopProofCommand: ClientVerifyDpopProofCommand,
     private val dpopNonceCache: DpopNonceCache,
-) : TypedServiceCommandAdapter<VerifyDpopProofArgs, DpopVerificationResult>(
+) : TypedServiceCommandAdapter<VerifyDpopProofArgs, DpopVerificationResult, IdkError>(
         commandId = VerifyDpopProofCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyDpopProofArgs>(),
@@ -87,7 +87,13 @@ class ResourceServerVerifyDpopProofCommandImpl(
         applyDuring: (VerifyDpopProofArgs) -> VerifyDpopProofArgs,
     ): IdkResult<DpopVerificationResult, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.dpopProof, applied.httpMethod, applied.httpUrl, applied.expectedJkt).mapError { IdkError.fromDTO(it) }
+        return executeInternal(
+            dpopProof = applied.dpopProof,
+            httpMethod = applied.httpMethod,
+            httpUrl = applied.httpUrl,
+            expectedJkt = applied.expectedJkt,
+            accessToken = applied.accessToken,
+        ).mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
@@ -95,15 +101,19 @@ class ResourceServerVerifyDpopProofCommandImpl(
         httpMethod: String,
         httpUrl: String,
         expectedJkt: String?,
+        accessToken: String?,
     ): IdkResult<DpopVerificationResult, ResourceServerError> {
-        // 1. Prepare verification options
+        // 1. Prepare verification options. RFC 9449 §4.3: when a DPoP-bound access token is
+        // presented at a protected resource, the proof MUST carry an `ath` claim equal to the
+        // base64url-encoded SHA-256 of the access token, and the resource server MUST enforce
+        // it. Forward the access token so the underlying verifier computes and compares `ath`.
         val options =
             VerifyDpopProofOptions(
                 dpopProof = dpopProof,
                 httpMethod = httpMethod,
                 httpUrl = httpUrl,
                 expectedJwkThumbprint = expectedJkt,
-                accessToken = null, // Resource server doesn't validate ath (that's for token endpoint)
+                accessToken = accessToken,
             )
 
         // 2. Verify DPoP proof using client command (signature, typ, claims)

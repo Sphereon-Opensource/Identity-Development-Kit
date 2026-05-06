@@ -44,7 +44,7 @@ import kotlin.time.Clock
  *
  * Creates JARM (JWT Secured Authorization Response) for OAuth 2.0.
  *
- * Reference: RFC 9101 - JWT Secured Authorization Response Mode for OAuth 2.0
+ * Reference: OpenID Foundation JARM spec, JWT Secured Authorization Response Mode for OAuth 2.0 (https://openid.net/specs/oauth-v2-jarm.html)
  *
  * Supports three modes:
  * - SIGNED: Creates a JWS compact serialization
@@ -57,7 +57,7 @@ class CreateJarmResponseCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val jweService: JweService,
-) : TypedServiceCommandAdapter<CreateJarmResponseArgs, CreateJarmResponseResult>(
+) : TypedServiceCommandAdapter<CreateJarmResponseArgs, CreateJarmResponseResult, IdkError>(
         commandId = CreateJarmResponseCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJarmResponseArgs>(),
@@ -286,7 +286,7 @@ class CreateJarmResponseCommandImpl(
     /**
      * Builds the JARM payload as a JsonObject.
      *
-     * Per RFC 9101, the JWT payload contains:
+     * Per the JARM spec, the JWT payload contains:
      * - Standard claims: iss, aud, exp, iat
      * - Authorization response parameters as additional claims
      */

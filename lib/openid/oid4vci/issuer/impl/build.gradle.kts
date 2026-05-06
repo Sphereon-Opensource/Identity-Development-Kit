@@ -75,6 +75,10 @@ kotlin {
                 // OAuth2 AS (for SphereonAsBridge)
                 api(projects.libOauth2ServerAuthorizationPublic)
 
+                // X.509 trust anchors for key-attestation x5c chain validation
+                // (OID4VCI 1.0 §7.2 — KeyAttestationVerifier)
+                implementation(projects.libTrustX509)
+
                 // Konform for validation
                 api(sphereonlib.io.konform.konform)
 

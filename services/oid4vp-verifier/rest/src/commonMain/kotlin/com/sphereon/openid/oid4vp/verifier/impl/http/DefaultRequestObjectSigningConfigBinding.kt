@@ -2,6 +2,7 @@ package com.sphereon.openid.oid4vp.verifier.impl.http
 
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.verifier.impl.ConfigDrivenRequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
@@ -30,5 +31,5 @@ class DefaultRequestObjectSigningConfigBinding
 
         override suspend fun resolveSigningKey(): KeyInfoType<*> = configDriven.resolveSigningKey()
 
-        override suspend fun resolveSignerBinding(): VerifierSignerBinding? = configDriven.resolveSignerBinding()
+        override suspend fun resolveSignerBinding(scheme: ClientIdScheme?): VerifierSignerBinding? = configDriven.resolveSignerBinding(scheme)
     }

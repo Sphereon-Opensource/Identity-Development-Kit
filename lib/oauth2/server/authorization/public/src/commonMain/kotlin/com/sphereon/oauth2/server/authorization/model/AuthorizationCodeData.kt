@@ -107,4 +107,29 @@ data class AuthorizationCodeData(
      * Can contain resource indicators, authorization_details, etc.
      */
     val additionalData: Map<String, @Contextual Any> = emptyMap(),
+    /**
+     * Authorization session identifier that produced this code. Propagated
+     * into `CreateIdTokenArgs.sessionId` at token-exchange so the AS's
+     * [com.sphereon.oauth2.server.authorization.provider.SessionParticipationRecorder]
+     * can record `(sessionId, clientId)` for OIDC Back-Channel Logout 1.0 §2.4
+     * recipient selection. Null when the code came from a flow that doesn't
+     * bind to a session (pre-authorized credential offer, machine-to-machine).
+     */
+    val sessionId: String? = null,
+    /**
+     * Access token minted from this authorization code on first redemption.
+     *
+     * RFC 6749 §10.5: "If an authorization code is used more than once, the authorization
+     * server MUST deny the request and SHOULD revoke (when possible) all tokens previously
+     * issued based on that authorization code." We retain the token string here so a replay
+     * detection at the storage layer can pass it to [TokenStorage.revokeAccessToken] without
+     * a side-channel. Null until the first successful redemption records the issued token.
+     */
+    val issuedAccessToken: String? = null,
+    /**
+     * Refresh token minted from this authorization code on first redemption. Same revocation
+     * rationale as [issuedAccessToken]; null when no refresh token was issued or before the
+     * first successful redemption.
+     */
+    val issuedRefreshToken: String? = null,
 )

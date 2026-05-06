@@ -17,7 +17,7 @@
 package com.sphereon.openid.oid4vci.common.serializer
 
 import com.sphereon.openid.oid4vc.common.DisplayProperties
-import com.sphereon.openid.oid4vci.common.model.ClaimMetadata
+import com.sphereon.openid.oid4vci.common.model.CredentialClaim
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialMetadata
@@ -32,6 +32,7 @@ import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -93,7 +94,7 @@ internal object CredentialConfigurationSupportedSerializer : KSerializer<Credent
                     put(KEY_CRYPTO_BINDING, json.encodeToJsonElement(ListSerializer(String.serializer()), it))
                 }
                 value.credentialSigningAlgValuesSupported?.let {
-                    put(KEY_SIGNING_ALG, json.encodeToJsonElement(ListSerializer(String.serializer()), it))
+                    put(KEY_SIGNING_ALG, json.encodeToJsonElement(ListSerializer(JsonElement.serializer()), it))
                 }
                 value.proofTypesSupported?.let {
                     put(KEY_PROOF_TYPES, json.encodeToJsonElement(MapSerializer(String.serializer(), ProofTypeSupported.serializer()), it))
@@ -106,7 +107,7 @@ internal object CredentialConfigurationSupportedSerializer : KSerializer<Credent
                 }
                 value.vct?.let { put(KEY_VCT, JsonPrimitive(it)) }
                 value.claims?.let {
-                    put(KEY_CLAIMS, json.encodeToJsonElement(MapSerializer(String.serializer(), ClaimMetadata.serializer()), it))
+                    put(KEY_CLAIMS, json.encodeToJsonElement(ListSerializer(CredentialClaim.serializer()), it))
                 }
                 value.doctype?.let { put(KEY_DOCTYPE, JsonPrimitive(it)) }
                 value.order?.let {
@@ -145,7 +146,7 @@ internal object CredentialConfigurationSupportedSerializer : KSerializer<Credent
                 },
             credentialSigningAlgValuesSupported =
                 jsonObject[KEY_SIGNING_ALG]?.let {
-                    json.decodeFromJsonElement(ListSerializer(String.serializer()), it)
+                    json.decodeFromJsonElement(ListSerializer(JsonElement.serializer()), it)
                 },
             proofTypesSupported =
                 jsonObject[KEY_PROOF_TYPES]?.let {
@@ -162,7 +163,7 @@ internal object CredentialConfigurationSupportedSerializer : KSerializer<Credent
             vct = jsonObject[KEY_VCT]?.jsonPrimitive?.content,
             claims =
                 jsonObject[KEY_CLAIMS]?.let {
-                    json.decodeFromJsonElement(MapSerializer(String.serializer(), ClaimMetadata.serializer()), it)
+                    json.decodeFromJsonElement(ListSerializer(CredentialClaim.serializer()), it)
                 },
             doctype = jsonObject[KEY_DOCTYPE]?.jsonPrimitive?.content,
             order =

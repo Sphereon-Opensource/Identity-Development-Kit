@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
@@ -79,7 +80,7 @@ class HandleIaeFollowUpCommandImpl(
     execution: SessionExecution,
     private val iaeSessionStore: IaeSessionStore,
     private val verifierService: Oid4vpVerifierService? = null,
-) : TypedServiceCommandAdapter<HandleIaeFollowUpArgs, IaeResult>(
+) : TypedServiceCommandAdapter<HandleIaeFollowUpArgs, IaeResult, IdkError>(
         commandId = HandleIaeFollowUpCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<HandleIaeFollowUpArgs>(),
@@ -372,7 +373,11 @@ class HandleIaeFollowUpCommandImpl(
                     PkceMethod.PLAIN -> codeVerifier
                 }
 
-            if (computedChallenge != session.codeChallenge) {
+            // PKCE compare on the IAE follow-up flow. Same RFC 7636 §4.6 timing-attack
+            // surface as the standard /token PKCE check — must be constant-time so a probe
+            // cannot recover the stored code_challenge byte by byte.
+            val storedChallenge = session.codeChallenge
+            if (storedChallenge == null || !ConstantTime.equalsCT(computedChallenge, storedChallenge)) {
                 return Ok(
                     IaeResult.Error(
                         IaeErrorResponse(

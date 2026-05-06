@@ -49,7 +49,7 @@ data class ResolveScopeArgs(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolveScopeCommand", exact = true)
 @JsExportCompat
-interface ResolveScopeCommand : ServiceCommand<ResolveScopeArgs, ScopeResolutionResult> {
+interface ResolveScopeCommand : ServiceCommand<ResolveScopeArgs, ScopeResolutionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

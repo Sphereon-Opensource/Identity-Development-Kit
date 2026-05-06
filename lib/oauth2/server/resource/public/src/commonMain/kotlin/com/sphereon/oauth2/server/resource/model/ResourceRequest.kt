@@ -52,6 +52,14 @@ data class ResourceRequest(
      * Not used for token verification, but may be needed by the application
      */
     val body: ByteArray? = null,
+    /**
+     * Leaf TLS client certificate (DER bytes) presented at the resource server's TLS edge.
+     * Populated by the platform HTTP adapter for mTLS deployments. `null` when no cert was
+     * presented; required to be non-null and match `cnf.x5t#S256` when validating an
+     * RFC 8705 §3.2 certificate-bound access token.
+     */
+    @property:JsExportIgnoreCompat
+    val clientCertificateDer: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -82,6 +90,16 @@ data class ResourceRequest(
         } else if (other.body != null) {
             return false
         }
+        if (clientCertificateDer != null) {
+            if (other.clientCertificateDer == null) {
+                return false
+            }
+            if (!clientCertificateDer.contentEquals(other.clientCertificateDer)) {
+                return false
+            }
+        } else if (other.clientCertificateDer != null) {
+            return false
+        }
 
         return true
     }
@@ -91,6 +109,7 @@ data class ResourceRequest(
         result = 31 * result + url.hashCode()
         result = 31 * result + headers.hashCode()
         result = 31 * result + (body?.contentHashCode() ?: 0)
+        result = 31 * result + (clientCertificateDer?.contentHashCode() ?: 0)
         return result
     }
 }

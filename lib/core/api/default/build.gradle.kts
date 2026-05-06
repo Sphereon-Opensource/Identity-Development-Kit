@@ -47,6 +47,11 @@ kotlin {
                 // default deps are already injected by conventions plugin!
                 implementation(libs.bundles.app.platform.di)
                 api(projects.libCoreApiPublic)
+                // CSPRNG backing for DefaultSecureRandom (OAuth2/OIDC token entropy source)
+                implementation(sphereonlib.dev.whyoleg.cryptography.random)
+                // AES-GCM for AesGcmEncryptionService (the default EncryptionService impl).
+                implementation(sphereonlib.dev.whyoleg.cryptography.core)
+                implementation(sphereonlib.dev.whyoleg.cryptography.provider.optimal)
             }
         }
         val commonTest by getting {

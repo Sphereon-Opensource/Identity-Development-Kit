@@ -16,12 +16,16 @@
 
 package com.sphereon.oauth2.server.authorization.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.StringResult
+import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.model.ConsentDecision
+import com.sphereon.oauth2.server.authorization.model.Prompt
+import kotlinx.serialization.json.JsonObject
 
 // ============================================================================
 // 1. ParseAuthorizationRequestCommand
@@ -42,7 +46,7 @@ data class ParseAuthorizationRequestArgs(
  * Parses and validates the incoming authorization request.
  * Extracts all parameters from query string.
  */
-interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRequestArgs, AuthorizationRequestData> {
+interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRequestArgs, AuthorizationRequestData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -66,7 +70,7 @@ interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRe
  * - Validates scope
  * - Validates PKCE (if present)
  */
-interface VerifyAuthorizationRequestCommand : ServiceCommand<AuthorizationRequestData, VerifiedAuthorizationRequest> {
+interface VerifyAuthorizationRequestCommand : ServiceCommand<AuthorizationRequestData, VerifiedAuthorizationRequest, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -84,7 +88,7 @@ interface VerifyAuthorizationRequestCommand : ServiceCommand<AuthorizationReques
  * Creates a session to track the authorization flow across multiple requests.
  * The session stores all request parameters and will be updated as the flow progresses.
  */
-interface CreateAuthorizationSessionCommand : ServiceCommand<VerifiedAuthorizationRequest, AuthorizationSession> {
+interface CreateAuthorizationSessionCommand : ServiceCommand<VerifiedAuthorizationRequest, AuthorizationSession, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -115,7 +119,7 @@ data class CreateAuthorizationCodeArgs(
  *
  * RFC 6749 Section 4.1.2: Authorization Response
  */
-interface CreateAuthorizationCodeCommand : ServiceCommand<CreateAuthorizationCodeArgs, StringResult> {
+interface CreateAuthorizationCodeCommand : ServiceCommand<CreateAuthorizationCodeArgs, StringResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -129,12 +133,46 @@ interface CreateAuthorizationCodeCommand : ServiceCommand<CreateAuthorizationCod
 
 /**
  * Arguments for creating an authorization response
+ *
+ * @property code The authorization code minted by [CreateAuthorizationCodeCommand].
+ * @property state State value echoed from the request (RFC 6749 §4.1.2).
+ * @property redirectUri Validated redirect URI; the response is delivered there.
+ * @property responseMode Resolved response mode (`query` / `fragment` / `form_post` for the bare
+ *   carriers, or one of the JARM `*.jwt` variants when the client requested JARM).
+ * @property clientId Client id of the recipient. Required when [responseMode] is a JARM mode (it
+ *   becomes the JARM JWT's `aud` claim) and used by the OIDF JARM spec for client-key resolution
+ *   when the response is encrypted.
+ * @property baseUrlOverride Per-request issuer URL override used when no static issuer is
+ *   configured on the AS. Mirrors the same field on token / id-token args; consumed by JARM to
+ *   set the response JWT's `iss` claim when [com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.issuer]
+ *   is unset.
  */
 data class CreateAuthorizationResponseArgs(
     val code: String,
     val state: String? = null,
     val redirectUri: String,
-    val responseMode: String = "query",
+    val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+    val clientId: String? = null,
+    val baseUrlOverride: String? = null,
+    /**
+     * OIDC Core §3.3 (Hybrid Flow) — front-channel id_token minted at /authorize alongside
+     * the code. Carried back to the client in the URL fragment or form_post body. Null for
+     * pure code flow.
+     */
+    val idToken: String? = null,
+    /**
+     * OIDC Core §3.3 (Hybrid Flow with `code token` / `code id_token token`) — front-channel
+     * access token. Null for pure code flow and for `code id_token`.
+     */
+    val accessToken: String? = null,
+    /**
+     * Token type (typically "Bearer") echoed back when [accessToken] is non-null.
+     */
+    val tokenType: String? = null,
+    /**
+     * Expiration (seconds) for the front-channel access token, when present.
+     */
+    val accessTokenExpiresIn: Int? = null,
 )
 
 /**
@@ -144,7 +182,7 @@ data class CreateAuthorizationResponseArgs(
  *
  * RFC 6749 Section 4.1.2: Authorization Response
  */
-interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizationResponseArgs, AuthorizationResponseData> {
+interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizationResponseArgs, AuthorizationResponseData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -157,7 +195,12 @@ interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizatio
 // ============================================================================
 
 /**
- * Arguments for creating an authorization error response
+ * Arguments for creating an authorization error response.
+ *
+ * The [responseMode] must match the mode the client requested in the original authorization
+ * request (or its OIDC Core §3.1.2.1 default) — the OIDF RP tests verify that errors are
+ * returned via the same mechanism as the success response would have been (query / fragment /
+ * form_post).
  */
 data class CreateAuthorizationErrorResponseArgs(
     val error: String,
@@ -165,6 +208,9 @@ data class CreateAuthorizationErrorResponseArgs(
     val errorUri: String? = null,
     val state: String? = null,
     val redirectUri: String,
+    val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+    val clientId: String? = null,
+    val baseUrlOverride: String? = null,
 )
 
 /**
@@ -174,7 +220,7 @@ data class CreateAuthorizationErrorResponseArgs(
  *
  * RFC 6749 Section 4.1.2.1: Error Response
  */
-interface CreateAuthorizationErrorResponseCommand : ServiceCommand<CreateAuthorizationErrorResponseArgs, AuthorizationErrorResponseData> {
+interface CreateAuthorizationErrorResponseCommand : ServiceCommand<CreateAuthorizationErrorResponseArgs, AuthorizationErrorResponseData, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -195,9 +241,11 @@ data class AuthorizationRequestData(
      */
     val clientId: String,
     /**
-     * Redirect URI
+     * Redirect URI. Nullable because OAuth2 RFC 6749 §3.1.2.3 / OIDC §3.1.2.1 allow omission when
+     * exactly one redirect URI is registered for the client; the verifier resolves it from the
+     * client registration in that case.
      */
-    val redirectUri: String,
+    val redirectUri: String? = null,
     /**
      * Response type (code, token, id_token, etc.)
      */
@@ -235,9 +283,12 @@ data class AuthorizationRequestData(
      */
     val display: String? = null,
     /**
-     * Prompt (none, login, consent, select_account)
+     * OIDC `prompt` parameter (Core 1.0 §3.1.2.1) decoded from the space-separated wire value
+     * via [Prompt.parseSpaceSeparated]. Empty when the parameter was absent or contained only
+     * unrecognised tokens. Drives the Group I session-evaluation table (`none` -> silent flow,
+     * `login` / `select_account` -> force reauth, `consent` -> show consent UI).
      */
-    val prompt: String? = null,
+    val prompt: Set<Prompt> = emptySet(),
     /**
      * Max age (maximum authentication age)
      */
@@ -270,6 +321,14 @@ data class AuthorizationRequestData(
      * Request object (JAR)
      */
     val request: String? = null,
+    /**
+     * OIDC `claims` parameter (OpenID Connect Core §5.5) — a JSON object that requests specific
+     * claims be returned from the UserInfo endpoint and/or included in the ID token.
+     * Parsed eagerly so the parser can reject malformed JSON at the boundary, even when the
+     * verifier ultimately ignores the value (e.g. when no downstream claims-driven behavior is
+     * wired).
+     */
+    val claims: JsonObject? = null,
     /**
      * Additional parameters
      */
@@ -304,6 +363,19 @@ data class VerifiedAuthorizationRequest(
      * Whether PAR is required for this client
      */
     val parRequired: Boolean,
+    /**
+     * PKCE `code_challenge_method` resolved after applying server policy. When the request
+     * supplies `code_challenge` without `code_challenge_method`, RFC 7636 §4.3 defines the
+     * default as `plain`; the verifier may reject that if the server's
+     * `pkceMethodsSupported` policy forbids it. `null` means the request did not use PKCE.
+     */
+    val resolvedPkceMethod: PkceMethod? = null,
+    /**
+     * Response mode resolved against server metadata and (if applicable) client registration.
+     * Parser emits the raw string; the verifier translates to the typed enum and applies the
+     * OIDC Core §3.1.2.1 default per response_type when the parameter is absent.
+     */
+    val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
 )
 
 /**
@@ -319,17 +391,32 @@ data class AuthorizationResponseData(
      */
     val state: String?,
     /**
-     * Redirect URI with parameters
+     * Final URL the client should land on. For [OAuth2ResponseMode.QUERY] / [OAuth2ResponseMode.FRAGMENT]
+     * this is the registered redirect URI with response parameters appended; for
+     * [OAuth2ResponseMode.FORM_POST] this is the bare registered redirect URI (parameters live in
+     * [formPostHtml]).
      */
     val redirectUri: String,
     /**
-     * Response mode used (query or fragment)
+     * Response mode used for this response.
      */
-    val responseMode: String = "query",
+    val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+    /**
+     * HTML body for `form_post` responses — an auto-submitting form POSTing the response
+     * parameters to [redirectUri]. Populated iff [responseMode] is [OAuth2ResponseMode.FORM_POST];
+     * `null` otherwise. Callers emit a `200 OK` with `Content-Type: text/html;charset=UTF-8`
+     * when this field is non-null, in place of the usual `302 Location` redirect.
+     */
+    val formPostHtml: String? = null,
 )
 
 /**
- * Authorization error response data
+ * Authorization error response data.
+ *
+ * Mirrors [AuthorizationResponseData]: for [OAuth2ResponseMode.QUERY] / [OAuth2ResponseMode.FRAGMENT]
+ * the [redirectUri] carries the error parameters and the adapter emits a 302 redirect; for
+ * [OAuth2ResponseMode.FORM_POST], [redirectUri] is the bare registered URI and error params live
+ * in [formPostHtml] which the adapter renders as a 200-OK auto-submitting form.
  */
 data class AuthorizationErrorResponseData(
     /**
@@ -349,7 +436,16 @@ data class AuthorizationErrorResponseData(
      */
     val state: String? = null,
     /**
-     * Redirect URI with error parameters
+     * Redirect URI with error parameters for QUERY/FRAGMENT, bare registered URI for FORM_POST.
      */
     val redirectUri: String,
+    /**
+     * Response mode used for this error response.
+     */
+    val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+    /**
+     * Auto-submitting HTML form body — populated iff [responseMode] is [OAuth2ResponseMode.FORM_POST];
+     * `null` otherwise.
+     */
+    val formPostHtml: String? = null,
 )

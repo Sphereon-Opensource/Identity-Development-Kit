@@ -19,7 +19,6 @@ package com.sphereon.ktor.server.inject
 
 import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.resolver.DefaultPrincipalResolver
-import com.sphereon.ktor.server.inject.resolver.DefaultTenantResolver
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 
@@ -60,13 +59,6 @@ class KotlinInjectConfiguration {
     var appGraph: AppGraph? = null
 
     /**
-     * HTTP header name for extracting tenant ID.
-     * Used by the default tenant resolver.
-     * Default: "X-Tenant-ID"
-     */
-    var tenantHeader: String = "X-Tenant-ID"
-
-    /**
      * HTTP header name for extracting principal/user ID.
      * Used by the default principal resolver.
      * Default: "X-User-ID"
@@ -75,7 +67,12 @@ class KotlinInjectConfiguration {
 
     /**
      * Custom tenant resolver implementation.
-     * If not set, a default header-based resolver will be used.
+     *
+     * Tenant resolution from a client-controlled header is unsafe — the previous
+     * `DefaultTenantResolver` that read `X-Tenant-ID` has been removed. Deployments
+     * MUST provide a real strategy; the canonical option is to install the
+     * `TenantResolutionPlugin` from `services/ktor-server-tenant-resolution` which
+     * delegates to the IDK `TenantResolutionHandler` chain (JWT + host).
      */
     private var _tenantResolver: TenantResolver? = null
 
@@ -87,10 +84,21 @@ class KotlinInjectConfiguration {
 
     /**
      * The tenant resolver to use for extracting tenant information from requests.
-     * Defaults to header-based resolver using [tenantHeader].
+     *
+     * REQUIRED — there is no default. Header-based tenant resolution was removed
+     * because client-supplied headers cannot be trusted. Use the
+     * `TenantResolutionPlugin` (from `services/ktor-server-tenant-resolution`),
+     * which composes a Ktor [TenantResolver] backed by the IDK
+     * [com.sphereon.di.context.TenantResolutionHandler] chain (JWT, custom domain,
+     * platform subdomain).
      */
     var tenantResolver: TenantResolver
-        get() = _tenantResolver ?: DefaultTenantResolver(tenantHeader)
+        get() =
+            _tenantResolver
+                ?: throw IllegalStateException(
+                    "tenantResolver is required. Install the TenantResolutionPlugin and assign its produced resolver, " +
+                        "or provide a custom strategy. Header-based resolution has been removed.",
+                )
         set(value) {
             _tenantResolver = value
         }

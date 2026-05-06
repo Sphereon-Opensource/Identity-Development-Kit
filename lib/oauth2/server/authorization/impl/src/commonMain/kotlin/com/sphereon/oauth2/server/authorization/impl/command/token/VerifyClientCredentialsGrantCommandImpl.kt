@@ -62,7 +62,7 @@ import kotlin.native.ObjCName
 class VerifyClientCredentialsGrantCommandImpl(
     execution: SessionExecution,
     private val clientRegistry: ClientRegistry,
-) : TypedServiceCommandAdapter<VerifyClientCredentialsGrantArgs, VerifiedClientCredentialsGrant>(
+) : TypedServiceCommandAdapter<VerifyClientCredentialsGrantArgs, VerifiedClientCredentialsGrant, IdkError>(
         commandId = VerifyClientCredentialsGrantCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<VerifyClientCredentialsGrantArgs>(),

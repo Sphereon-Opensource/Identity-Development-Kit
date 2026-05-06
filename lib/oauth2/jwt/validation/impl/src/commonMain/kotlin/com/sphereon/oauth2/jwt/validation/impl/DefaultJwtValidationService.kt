@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
@@ -38,8 +39,12 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 /**
  * Default implementation of JwtValidationService.
@@ -52,6 +57,18 @@ import kotlinx.serialization.json.JsonPrimitive
  * 2. Look up IdP configuration based on issuer or tenant hint
  * 3. Delegate to VerifyJwtCommand for full verification
  * 4. Map result to ValidatedAccessToken
+ *
+ * Tenant resolution is intentionally NOT performed here. The authentication
+ * pipeline (IdentityResolutionPipeline, typically wired by the Ktor/Spring
+ * adapters) is the single source of truth for tenant resolution, and exposes
+ * the resolved tenant through [com.sphereon.di.session.SessionContext] after
+ * successful signature and claim validation. [ValidatedAccessToken] and
+ * [ValidatedIdToken] no longer carry a tenant field.
+ *
+ * Stays in [SessionScope] because its transitive dependency
+ * [VerifyJwtCommand] is SessionScope. The underlying [IdpRegistry] is
+ * AppScope-cached, so IdP configuration is loaded once app-wide and
+ * persisted across sessions even though this service is rebuilt per session.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -110,10 +127,8 @@ class DefaultJwtValidationService(
                     }
                 }
 
-                // Extract tenant ID from configured claim
-                val tenantId = extractTenantId(jwtPayload, idpConfig)
-
-                // Map to ValidatedAccessToken
+                // Tenant is resolved by the authentication pipeline, not by this service.
+                // See class-level KDoc.
                 Ok(
                     ValidatedAccessToken(
                         subject = jwtPayload.sub,
@@ -123,7 +138,6 @@ class DefaultJwtValidationService(
                         issuedAt = jwtPayload.iat.epochSeconds,
                         notBefore = null, // TokenPayload.Jwt doesn't include nbf
                         scopes = jwtPayload.scope?.split(" ")?.toSet() ?: emptySet(),
-                        tenantId = tenantId,
                         clientId = jwtPayload.clientId,
                         jwtId = jwtPayload.jti,
                         rawToken = token,
@@ -133,29 +147,7 @@ class DefaultJwtValidationService(
                 )
             },
             failure = { error ->
-                // Map IDK error to JwtValidationError
-                val errorMessage = error.message?.defaultMessage ?: "JWT verification failed"
-                when {
-                    errorMessage.contains("expired", ignoreCase = true) -> {
-                        Err(JwtValidationError.expired(0))
-                    }
-
-                    errorMessage.contains("signature", ignoreCase = true) -> {
-                        Err(JwtValidationError.signatureInvalid(idpConfig.issuer))
-                    }
-
-                    errorMessage.contains("issuer", ignoreCase = true) -> {
-                        Err(JwtValidationError.untrustedIssuer(idpConfig.issuer, listOf(idpConfig.issuer)))
-                    }
-
-                    errorMessage.contains("audience", ignoreCase = true) -> {
-                        Err(JwtValidationError.invalidAudience(emptyList(), expectedAudience ?: ""))
-                    }
-
-                    else -> {
-                        Err(JwtValidationError.validationError(errorMessage))
-                    }
-                }
+                Err(mapVerifyJwtError(error, idpConfig, expectedAudience))
             },
         )
     }
@@ -209,8 +201,8 @@ class DefaultJwtValidationService(
                     }
                 }
 
-                val tenantId = extractTenantId(jwtPayload, idpConfig)
-
+                // Tenant is resolved by the authentication pipeline, not by this service.
+                // See class-level KDoc.
                 Ok(
                     ValidatedIdToken(
                         subject = jwtPayload.sub,
@@ -226,7 +218,6 @@ class DefaultJwtValidationService(
                         preferredUsername = jwtPayload.additionalClaims["preferred_username"],
                         givenName = jwtPayload.additionalClaims["given_name"],
                         familyName = jwtPayload.additionalClaims["family_name"],
-                        tenantId = tenantId,
                         rawToken = token,
                         claims = buildClaims(jwtPayload),
                         idpId = idpConfig.id,
@@ -234,11 +225,7 @@ class DefaultJwtValidationService(
                 )
             },
             failure = { error ->
-                Err(
-                    JwtValidationError.validationError(
-                        error.message?.defaultMessage ?: "ID token verification failed",
-                    ),
-                )
+                Err(mapVerifyJwtError(error, idpConfig, options.expectedAudience ?: idpConfig.audience))
             },
         )
     }
@@ -249,39 +236,46 @@ class DefaultJwtValidationService(
             return Err(JwtValidationError.invalidFormat("JWT must have 3 parts, got ${parts.size}"))
         }
 
-        return try {
-            // Decode header and payload (base64url)
-            val headerJson = decodeBase64Url(parts[0])
-            val payloadJson = decodeBase64Url(parts[1])
+        val headerJson =
+            decodeBase64Url(parts[0]).ifEmpty {
+                return Err(JwtValidationError.invalidFormat("Cannot decode JWT header"))
+            }
+        val payloadJson =
+            decodeBase64Url(parts[1]).ifEmpty {
+                return Err(JwtValidationError.invalidFormat("Cannot decode JWT payload"))
+            }
 
-            // Parse as JSON - simplified parsing without full JSON parsing
-            // In real implementation, use kotlinx.serialization
-            val issuer = extractJsonString(payloadJson, "iss")
-            val subject = extractJsonString(payloadJson, "sub")
-            val exp = extractJsonNumber(payloadJson, "exp")
-            val iat = extractJsonNumber(payloadJson, "iat")
-            val audRaw = extractJsonString(payloadJson, "aud")
-            val audiences =
-                if (audRaw != null) {
-                    listOf(audRaw)
-                } else {
-                    emptyList()
+        val header =
+            runCatching { JSON.parseToJsonElement(headerJson).jsonObject }
+                .getOrElse {
+                    return Err(
+                        JwtValidationError.invalidFormat(
+                            "JWT header is not a JSON object: ${it.message}",
+                        ),
+                    )
                 }
 
-            Ok(
-                TokenClaims(
-                    header = emptyMap(), // Simplified - would parse header JSON
-                    payload = emptyMap(), // Simplified - would parse payload JSON
-                    issuer = issuer,
-                    subject = subject,
-                    audiences = audiences,
-                    expiresAt = exp,
-                    issuedAt = iat,
-                ),
-            )
-        } catch (expected: Exception) {
-            Err(JwtValidationError.invalidFormat("Failed to parse JWT: ${expected.message}"))
-        }
+        val payload =
+            runCatching { JSON.parseToJsonElement(payloadJson).jsonObject }
+                .getOrElse {
+                    return Err(
+                        JwtValidationError.invalidFormat(
+                            "JWT payload is not a JSON object: ${it.message}",
+                        ),
+                    )
+                }
+
+        return Ok(
+            TokenClaims(
+                header = header.toMap(),
+                payload = payload.toMap(),
+                issuer = readString(payload, "iss"),
+                subject = readString(payload, "sub"),
+                audiences = readAudiences(payload),
+                expiresAt = readLong(payload, "exp"),
+                issuedAt = readLong(payload, "iat"),
+            ),
+        )
     }
 
     private suspend fun resolveIdpConfig(
@@ -316,22 +310,6 @@ class DefaultJwtValidationService(
         return idpRegistry.getDefaultIdp()
     }
 
-    private fun extractTenantId(
-        jwtPayload: TokenPayload.Jwt,
-        idpConfig: IdpConfig,
-    ): String? {
-        // Try primary tenant claim
-        jwtPayload.additionalClaims[idpConfig.tenantClaim]?.let { return it }
-
-        // Try alternative claims
-        for (altClaim in idpConfig.tenantClaimAlternatives) {
-            jwtPayload.additionalClaims[altClaim]?.let { return it }
-        }
-
-        // Client ID as fallback
-        return jwtPayload.clientId
-    }
-
     private fun buildClaims(jwtPayload: TokenPayload.Jwt): Map<String, JsonElement> =
         buildMap {
             put("sub", JsonPrimitive(jwtPayload.sub))
@@ -352,26 +330,134 @@ class DefaultJwtValidationService(
             ""
         }
 
-    private fun extractJsonString(
-        json: String,
-        key: String,
-    ): String? {
-        val pattern = """"$key"\s*:\s*"([^"]+)""""
-        val regex = Regex(pattern)
-        return regex.find(json)?.groupValues?.get(1)
+    /**
+     * Map a [VerifyJwtCommand] failure to a typed [JwtValidationError].
+     *
+     * Classification is driven entirely by the stable [IdkError.code] values
+     * emitted by the discriminated
+     * [com.sphereon.oauth2.server.resource.error.ResourceServerError.InvalidToken]
+     * subtypes in
+     * [com.sphereon.oauth2.server.resource.impl.command.VerifyJwtCommandImpl]
+     * (and [com.sphereon.oauth2.server.resource.error.ResourceServerError.AudienceMismatch]).
+     * Supporting context (expiry timestamp, issuer, audience lists) is read
+     * from the structured [IdkError.meta] map. No `startsWith`-style matching
+     * on [IdkError.message] is performed; codes are the primary dispatch.
+     *
+     * Unknown codes fall through to a generic [JwtValidationError.validationError]
+     * with the original default message and `reason` meta preserved as cause.
+     */
+    private fun mapVerifyJwtError(
+        error: IdkError,
+        idpConfig: IdpConfig,
+        expectedAudience: String?,
+    ): JwtValidationError {
+        val defaultMessage = error.message.defaultMessage
+        val reason = (error.meta["reason"] as? String) ?: defaultMessage
+
+        return when (error.code) {
+            AUDIENCE_MISMATCH_CODE -> {
+                val actual = (error.meta["actual"] as? List<*>)?.filterIsInstance<String>().orEmpty()
+                JwtValidationError.invalidAudience(
+                    tokenAudience = actual,
+                    expectedAudience = expectedAudience ?: (error.meta["expected"] as? String).orEmpty(),
+                )
+            }
+
+            TOKEN_EXPIRED_CODE -> {
+                val expiresAt = (error.meta["expires_at"] as? Long) ?: 0L
+                JwtValidationError.expired(expiresAt)
+            }
+
+            ISSUER_MISMATCH_CODE -> {
+                val expected =
+                    (error.meta["expected"] as? String) ?: idpConfig.issuer
+                JwtValidationError.untrustedIssuer(
+                    issuer = expected,
+                    trustedIssuers = listOf(idpConfig.issuer),
+                )
+            }
+
+            SIGNATURE_INVALID_CODE -> {
+                JwtValidationError.signatureInvalid(idpConfig.issuer)
+            }
+
+            MISSING_KID_CODE -> {
+                JwtValidationError.keyNotFound(kid = "", issuer = idpConfig.issuer)
+            }
+
+            UNSUPPORTED_ALGORITHM_CODE -> {
+                val algorithm = (error.meta["algorithm"] as? String).orEmpty()
+                JwtValidationError.algorithmNotAllowed(
+                    algorithm = algorithm,
+                    allowedAlgorithms = emptyList(),
+                )
+            }
+
+            TOKEN_MALFORMED_CODE, PARSE_FAILURE_CODE -> {
+                JwtValidationError.invalidFormat(reason)
+            }
+
+            // Generic, non-JWT-specific `invalid_token` failures (e.g. introspection
+            // paths, bearer/DPoP scheme mismatches) continue to surface as a
+            // validation error so callers still see the underlying reason.
+            INVALID_TOKEN_CODE -> {
+                JwtValidationError.validationError(message = reason, cause = reason)
+            }
+
+            else -> {
+                JwtValidationError.validationError(message = defaultMessage, cause = reason)
+            }
+        }
     }
 
-    private fun extractJsonNumber(
-        json: String,
+    private fun readString(
+        payload: JsonObject,
         key: String,
-    ): Long? {
-        val pattern = """"$key"\s*:\s*(\d+\.?\d*)"""
-        val regex = Regex(pattern)
-        return regex
-            .find(json)
-            ?.groupValues
-            ?.get(1)
-            ?.toDoubleOrNull()
-            ?.toLong()
+    ): String? = (payload[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    private fun readLong(
+        payload: JsonObject,
+        key: String,
+    ): Long? = (payload[key] as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+
+    private fun readAudiences(payload: JsonObject): List<String> =
+        when (val aud = payload["aud"]) {
+            null -> {
+                emptyList()
+            }
+
+            is JsonPrimitive -> {
+                if (aud.isString) listOf(aud.content) else emptyList()
+            }
+
+            is JsonArray -> {
+                aud.mapNotNull { element ->
+                    (element as? JsonPrimitive)?.takeIf { it.isString }?.content
+                }
+            }
+
+            else -> {
+                emptyList()
+            }
+        }
+
+    private companion object {
+        private val JSON =
+            Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+            }
+
+        // RFC 6750 Bearer-token error codes emitted by VerifyJwtCommandImpl via the
+        // discriminated ResourceServerError.InvalidToken subtypes.
+        private const val INVALID_TOKEN_CODE = "invalid_token"
+        private const val AUDIENCE_MISMATCH_CODE = "audience_mismatch"
+        private const val TOKEN_EXPIRED_CODE = "token_expired"
+        private const val ISSUER_MISMATCH_CODE = "issuer_mismatch"
+        private const val SIGNATURE_INVALID_CODE = "signature_invalid"
+        private const val TOKEN_MALFORMED_CODE = "token_malformed"
+        private const val MISSING_KID_CODE = "missing_kid"
+        private const val UNSUPPORTED_ALGORITHM_CODE = "unsupported_algorithm"
+        private const val PARSE_FAILURE_CODE = "parse_failure"
     }
 }

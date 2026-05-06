@@ -34,6 +34,31 @@ data class StringResult(
 )
 
 /**
+ * Wrapper for commands that return a ByteArray value.
+ *
+ * Used instead of raw `ByteArray` as `ServiceCommand<Args, ByteArray>` output type
+ * to ensure proper serialization through binary transport (EDK remote/server modules).
+ *
+ * Bytes are serialized as base64url strings on the wire via [Base64UrlSerializer].
+ *
+ * @property bytes The raw byte result
+ */
+@JsExportCompat
+@Serializable
+data class ByteArrayResult(
+    @Serializable(with = com.sphereon.core.api.Base64UrlSerializer::class)
+    val bytes: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ByteArrayResult) return false
+        return bytes.contentEquals(other.bytes)
+    }
+
+    override fun hashCode(): Int = bytes.contentHashCode()
+}
+
+/**
  * Wrapper for commands that return Unit (no meaningful output).
  *
  * Used instead of raw `Unit` as `ServiceCommand<Args, Unit>` output type

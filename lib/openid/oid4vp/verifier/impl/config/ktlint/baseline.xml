@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/ConfigDrivenRequestObjectSigningConfig.kt">
+        <error line="110" column="1" source="standard:blank-line-between-when-conditions" />
+        <error line="110" column="44" source="standard:when-entry-bracing" />
+        <error line="111" column="1" source="standard:blank-line-between-when-conditions" />
+        <error line="111" column="41" source="standard:when-entry-bracing" />
+        <error line="112" column="1" source="standard:blank-line-between-when-conditions" />
+        <error line="122" column="1" source="standard:blank-line-between-when-conditions" />
+        <error line="122" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="122" column="21" source="standard:when-entry-bracing" />
+        <error line="221" column="26" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/CreateAuthorizationRequestCommandImpl.kt">
+        <error line="359" column="31" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/ParseAuthorizationResponseCommandImpl.kt">
+        <error line="159" column="31" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/RequestUriHandlerImpl.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/ValidateAuthorizationResponseCommandImpl.kt">
+        <error line="184" column="37" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/commonMain/kotlin/com/sphereon/openid/oid4vp/verifier/impl/VerifyHolderBindingCommandImpl.kt">
+        <error line="208" column="5" source="standard:kdoc" />
+        <error line="221" column="5" source="standard:blank-line-before-declaration" />
+        <error line="221" column="5" source="standard:no-consecutive-comments" />
+        <error line="221" column="5" source="standard:spacing-between-declarations-with-comments" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/openid/oid4vp/verifier/impl/RequestUriHandlerImplTest.kt">
+        <error line="56" column="28" source="standard:multiline-expression-wrapping" />
+        <error line="86" column="28" source="standard:multiline-expression-wrapping" />
+        <error line="92" column="61" source="standard:chain-method-continuation" />
+        <error line="102" column="28" source="standard:multiline-expression-wrapping" />
+        <error line="108" column="61" source="standard:chain-method-continuation" />
+        <error line="118" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="132" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="136" column="36" source="standard:multiline-expression-wrapping" />
+        <error line="181" column="47" source="standard:function-signature" />
+    </file>
+    <file name="src/commonTest/kotlin/com/sphereon/openid/oid4vp/verifier/impl/VerifyHolderBindingCommandImplTest.kt">
+        <error line="19" column="1" source="standard:import-ordering" />
+        <error line="423" column="75" source="standard:function-signature" />
+        <error line="441" column="85" source="standard:function-signature" />
+    </file>
+</baseline>

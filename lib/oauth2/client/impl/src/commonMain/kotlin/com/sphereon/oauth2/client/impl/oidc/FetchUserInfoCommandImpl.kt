@@ -67,7 +67,7 @@ import kotlin.native.ObjCName
 class FetchUserInfoCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<FetchUserInfoArgs, FetchUserInfoResult>(
+) : TypedServiceCommandAdapter<FetchUserInfoArgs, FetchUserInfoResult, IdkError>(
         commandId = FetchUserInfoCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FetchUserInfoArgs>(),

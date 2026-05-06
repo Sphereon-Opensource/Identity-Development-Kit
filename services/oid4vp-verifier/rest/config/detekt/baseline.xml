@@ -4,12 +4,16 @@
   <CurrentIssues>
     <ID>BracesOnIfStatements:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$if</ID>
     <ID>BracesOnIfStatements:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$if</ID>
-    <ID>ClassOrdering:Oid4vpVerifierHttpAdapter.kt$Oid4vpVerifierHttpAdapter$/** * Endpoint commands for OID4VP request_uri handling. * * Commands are injected via constructor following the standard IDK DI pattern. */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( getRequestObjectCommand, postRequestObjectCommand, directPostResponseCommand, )</ID>
+    <ID>BracesOnIfStatements:ReadyEndpointCommand.kt$ReadyEndpointCommandImpl$else</ID>
+    <ID>BracesOnIfStatements:ReadyEndpointCommand.kt$ReadyEndpointCommandImpl$if</ID>
+    <ID>ClassOrdering:Oid4vpVerifierHttpAdapter.kt$Oid4vpVerifierHttpAdapter$/** * Endpoint commands for OID4VP request_uri handling. * * Commands are injected via constructor following the standard IDK DI pattern. */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( getRequestObjectCommand, postRequestObjectCommand, directPostResponseCommand, readyCommand, )</ID>
     <ID>ClassOrdering:UniversalOid4vpHttpAdapter.kt$UniversalOid4vpHttpAdapter$/** * Endpoint commands for Universal OID4VP. */ override val endpointCommands: List&lt;HttpEndpointCommand> = listOf( createCommand, getStatusCommand, deleteCommand, )</ID>
-    <ID>LoopWithTooManyJumpStatements:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$for</ID>
+    <ID>LongMethod:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
     <ID>MagicNumber:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$16</ID>
     <ID>MagicNumber:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$3</ID>
+    <ID>MagicNumber:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$16</ID>
+    <ID>MagicNumber:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$3</ID>
     <ID>ReturnCount:DirectPostResponseEndpointCommand.kt$DirectPostResponseEndpointCommandImpl$override suspend fun doExecute( args: GenericHttpRequest, applyDuring: (GenericHttpRequest) -> GenericHttpRequest, ): IdkResult&lt;GenericHttpResponse, IdkError></ID>
-    <ID>ReturnCount:PostRequestObjectEndpointCommand.kt$PostRequestObjectEndpointCommandImpl$private fun parseRequestUriPostBody(body: String?): Pair&lt;String?, String?></ID>
+    <ID>TooGenericExceptionCaught:ReadyEndpointCommand.kt$ReadyEndpointCommandImpl$t: Throwable</ID>
   </CurrentIssues>
 </SmellBaseline>

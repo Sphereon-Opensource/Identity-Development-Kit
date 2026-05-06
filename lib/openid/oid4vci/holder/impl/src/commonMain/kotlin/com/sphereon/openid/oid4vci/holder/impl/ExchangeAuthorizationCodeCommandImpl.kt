@@ -62,7 +62,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ExchangeAuthorizationCodeCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<ExchangeAuthorizationCodeArgs, TokenResponseWithContext>(
+) : TypedServiceCommandAdapter<ExchangeAuthorizationCodeArgs, TokenResponseWithContext, IdkError>(
         commandId = ExchangeAuthorizationCodeCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ExchangeAuthorizationCodeArgs>(),

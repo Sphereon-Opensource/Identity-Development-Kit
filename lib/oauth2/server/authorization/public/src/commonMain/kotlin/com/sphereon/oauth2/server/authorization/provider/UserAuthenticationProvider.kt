@@ -17,6 +17,8 @@
 package com.sphereon.oauth2.server.authorization.provider
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.IdkErrorType
 
 /**
  * User authentication provider abstraction
@@ -295,66 +297,102 @@ data class UserInfo(
      * Additional user attributes
      */
     val attributes: Map<String, Any> = emptyMap(),
-)
+) {
+    /**
+     * Project this [UserInfo] into the flat `Map<String, Any>` shape the AS uses for
+     * `userClaims` on `CreateAuthorizationCodeArgs` / `CreateIdTokenArgs`. Top-level
+     * fields are mapped to their OIDC standard claim names; everything in [attributes]
+     * is included verbatim. Any field whose value is `null` is omitted so we never
+     * emit `null`-valued claims into the id_token / userinfo response.
+     *
+     * One source of truth for this projection — both the post-authn-callback path
+     * (`HandleAuthorizeCallbackCommandImpl`) and the SSO short-circuit path
+     * (`StandardAuthorizeRequestCommandImpl.issueCodeFromActiveSession`) build
+     * `userClaims` from this same helper.
+     */
+    fun toClaimsMap(): Map<String, Any> =
+        buildMap {
+            username?.let { put("preferred_username", it) }
+            displayName?.let { put("name", it) }
+            email?.let { put("email", it) }
+            emailVerified?.let { put("email_verified", it) }
+            phoneNumber?.let { put("phone_number", it) }
+            phoneNumberVerified?.let { put("phone_number_verified", it) }
+            putAll(attributes)
+        }
+}
 
 /**
- * Authentication errors
+ * Authentication failures surfaced by [UserAuthenticationProvider]. Implements [IdkErrorType] so
+ * federation [com.sphereon.core.api.service.ServiceCommand]s can return [AuthenticationError]
+ * directly without an `IdkError`-to-domain mapping shim in the facade.
+ *
+ * The `description` constructor parameter carries the user-facing text; the [IdkErrorType.message]
+ * override projects it into the [IdkError.Message] shape the framework expects.
  */
-sealed interface AuthenticationError {
-    val message: String
+sealed interface AuthenticationError : IdkErrorType {
+    val description: String
 
-    /**
-     * User not found
-     */
+    override val message: IdkError.Message
+        get() = IdkError.Message(i18nKey = code, defaultMessage = description)
+
+    override val severity: IdkError.Severity
+        get() = IdkError.Severity.ERROR
+
+    override val exception: Throwable?
+        get() = null
+
+    override val causes: List<IdkErrorType>
+        get() = emptyList()
+
+    override val meta: Map<String, Any?>
+        get() = emptyMap()
+
     data class UserNotFound(
-        override val message: String = "User not found",
-    ) : AuthenticationError
+        override val description: String = "User not found",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_USER_NOT_FOUND"
+    }
 
-    /**
-     * Invalid credentials
-     */
     data class InvalidCredentials(
-        override val message: String = "Invalid credentials",
-    ) : AuthenticationError
+        override val description: String = "Invalid credentials",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_INVALID_CREDENTIALS"
+    }
 
-    /**
-     * Authentication timeout
-     */
     data class Timeout(
-        override val message: String = "Authentication timeout",
-    ) : AuthenticationError
+        override val description: String = "Authentication timeout",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_TIMEOUT"
+    }
 
-    /**
-     * Authentication method unavailable
-     */
     data class MethodUnavailable(
         val method: AuthenticationMethod,
-        override val message: String = "Authentication method unavailable: $method",
-    ) : AuthenticationError
+        override val description: String = "Authentication method unavailable: $method",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_METHOD_UNAVAILABLE"
+    }
 
-    /**
-     * MFA required
-     */
     data class MfaRequired(
         val userId: String,
         val methods: List<String>,
-        override val message: String = "Multi-factor authentication required",
-    ) : AuthenticationError
+        override val description: String = "Multi-factor authentication required",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_MFA_REQUIRED"
+    }
 
-    /**
-     * Account locked
-     */
     data class AccountLocked(
         val userId: String,
         val unlockAt: kotlin.time.Instant?,
-        override val message: String = "Account locked",
-    ) : AuthenticationError
+        override val description: String = "Account locked",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_ACCOUNT_LOCKED"
+    }
 
-    /**
-     * Generic error
-     */
     data class Generic(
-        val exception: Throwable? = null,
-        override val message: String = "Authentication error",
-    ) : AuthenticationError
+        override val exception: Throwable? = null,
+        override val description: String = "Authentication error",
+    ) : AuthenticationError {
+        override val code: String = "AUTH_GENERIC"
+    }
 }

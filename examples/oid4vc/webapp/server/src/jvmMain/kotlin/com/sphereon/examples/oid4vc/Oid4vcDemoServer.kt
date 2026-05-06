@@ -32,14 +32,19 @@ fun main() {
     val issuerUrl = System.getenv("ISSUER_URL") ?: "http://localhost:8082"
     val verifierUrl = System.getenv("VERIFIER_URL") ?: "http://localhost:8083"
     val externalBaseUrl = System.getenv("EXTERNAL_BASE_URL") ?: "http://localhost:8080"
+    // Demo profile name. Surfaces HAIP / x509-* compose env-files to the frontend so the
+    // verifier UI can lock the options HAIP fixes (response_mode = direct_post.jwt,
+    // request_uri_method = post). Set via DEMO_PROFILE in compose; defaults to "default".
+    val demoProfile = System.getenv("DEMO_PROFILE")?.takeIf { it.isNotBlank() } ?: "default"
 
     println("Starting OID4VC Demo Web Application...")
     println("  Issuer URL:   $issuerUrl")
     println("  Verifier URL: $verifierUrl")
     println("  External URL: $externalBaseUrl")
+    println("  Profile:      $demoProfile")
 
     embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
-        configureOid4vcDemo(issuerUrl, verifierUrl, externalBaseUrl)
+        configureOid4vcDemo(issuerUrl, verifierUrl, externalBaseUrl, demoProfile)
     }.start(wait = true)
 }
 
@@ -47,6 +52,7 @@ fun Application.configureOid4vcDemo(
     issuerUrl: String,
     verifierUrl: String,
     externalBaseUrl: String,
+    demoProfile: String = "default",
 ) {
     val httpClient =
         HttpClient(ClientCIO) {
@@ -136,8 +142,12 @@ fun Application.configureOid4vcDemo(
 
             // Config
             get("/config") {
+                // `profile` is the compose env-file profile (default / did-jwk / x509-san-dns
+                // / x509-hash / haip). When `haip`, the frontend locks options HAIP fixes:
+                // response_mode = direct_post.jwt, request_uri_method = post (HAIP §5).
+                val haipMode = demoProfile.equals("haip", ignoreCase = true)
                 call.respondText(
-                    """{"externalBaseUrl":"$externalBaseUrl"}""",
+                    """{"externalBaseUrl":"$externalBaseUrl","profile":"$demoProfile","haip":$haipMode}""",
                     ContentType.Application.Json,
                 )
             }

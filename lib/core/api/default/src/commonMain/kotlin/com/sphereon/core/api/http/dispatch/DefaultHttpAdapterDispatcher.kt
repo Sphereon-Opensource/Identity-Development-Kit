@@ -351,6 +351,10 @@ private fun startsWithSegments(
 
 private fun endpointSpecificity(pathPattern: String): Pair<Int, Int> {
     val segments = splitSegments(pathPattern)
-    val literalCount = segments.count { !(it.startsWith("{") && it.endsWith("}")) }
+    val literalCount =
+        segments.count { segment ->
+            // Both single-segment placeholders ({id}) and tail-wildcards ({path...}) are non-literal.
+            !(segment.startsWith("{") && segment.endsWith("}"))
+        }
     return literalCount to segments.size
 }

@@ -54,7 +54,7 @@ class DeleteAuthRequestServiceCommandImpl(
     execution: SessionExecution,
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val sessionEventService: SessionEventService,
-) : TypedServiceCommandAdapter<GetAuthRequestStatusInput, DeleteAuthRequestOutput>(
+) : TypedServiceCommandAdapter<GetAuthRequestStatusInput, DeleteAuthRequestOutput, IdkError>(
         commandId = DeleteAuthRequestServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<GetAuthRequestStatusInput>(),

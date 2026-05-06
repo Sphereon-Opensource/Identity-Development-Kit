@@ -51,7 +51,7 @@ import dev.zacsweers.metro.SingleIn
 @SingleIn(SessionScope::class)
 class ParseClientIdCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ParseClientIdArgs, ParsedClientId>(
+) : TypedServiceCommandAdapter<ParseClientIdArgs, ParsedClientId, IdkError>(
         commandId = ParseClientIdCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ParseClientIdArgs>(),

@@ -27,6 +27,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import com.sphereon.core.api.coroutines.runBlockingCompat as runBlocking
 
 class TenantContextDataImplTest {
     @Test
@@ -226,14 +227,14 @@ class StaticTenantResolverTest {
     fun resolveTenantTrimsAndLowercases() {
         val resolver = StaticTenantResolver()
         val input = DefaultTenantInputString("  MY-TENANT  ")
-        assertEquals("my-tenant", resolver.resolveTenant(input))
+        assertEquals("my-tenant", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantHandlesNormalInput() {
         val resolver = StaticTenantResolver()
         val input = DefaultTenantInputString("tenant-123")
-        assertEquals("tenant-123", resolver.resolveTenant(input))
+        assertEquals("tenant-123", runBlocking { resolver.resolveTenant(input) })
     }
 }
 
@@ -262,14 +263,14 @@ class EmailDomainTenantResolverTest {
     fun resolveTenantExtractsDomainAndLowercases() {
         val resolver = EmailDomainTenantResolver()
         val input = DefaultTenantInputString("user@EXAMPLE.COM")
-        assertEquals("example.com", resolver.resolveTenant(input))
+        assertEquals("example.com", runBlocking { resolver.resolveTenant(input) })
     }
 
     @Test
     fun resolveTenantTrimsWhitespace() {
         val resolver = EmailDomainTenantResolver()
         val input = DefaultTenantInputString("user@example.com  ")
-        assertEquals("example.com", resolver.resolveTenant(input))
+        assertEquals("example.com", runBlocking { resolver.resolveTenant(input) })
     }
 }
 
@@ -372,7 +373,7 @@ class TenantResolutionHandlerImplTest {
         // Email resolver has higher priority (MEDIUM) than static (LOWEST)
         // So for email input, email resolver should be used
         val emailInput = DefaultTenantInputString("user@example.com")
-        val result = handler.resolveTenant(emailInput)
+        val result = runBlocking { handler.resolveTenant(emailInput) }
         assertEquals("example.com", result.tenant.tenantId)
     }
 
@@ -384,7 +385,7 @@ class TenantResolutionHandlerImplTest {
 
         // For non-email input, static resolver should be used
         val normalInput = DefaultTenantInputString("my-tenant")
-        val result = handler.resolveTenant(normalInput)
+        val result = runBlocking { handler.resolveTenant(normalInput) }
         assertEquals("my-tenant", result.tenant.tenantId)
     }
 
@@ -395,7 +396,7 @@ class TenantResolutionHandlerImplTest {
 
         val normalInput = DefaultTenantInputString("   ") // blank, no resolver supports
         assertFailsWith<IllegalArgumentException> {
-            handler.resolveTenant(normalInput)
+            runBlocking { handler.resolveTenant(normalInput) }
         }
     }
 }

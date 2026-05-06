@@ -80,7 +80,7 @@ import kotlin.native.ObjCName
 class CreateJweCompactCommandImpl(
     execution: SessionExecution,
     private val keyManagerService: KeyManagerService,
-) : TypedServiceCommandAdapter<CreateJweCompactArgs, JweCompact>(
+) : TypedServiceCommandAdapter<CreateJweCompactArgs, JweCompact, IdkError>(
         commandId = CreateJweCompactCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJweCompactArgs>(),

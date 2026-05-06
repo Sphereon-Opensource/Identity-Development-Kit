@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ReturnCount:WebvhDidUrlBuilder.kt$WebvhDidUrlBuilder$fun decompose(did: String): IdkResult&lt;Decomposed, IdkError></ID>
+    <ID>ReturnCount:WebvhDidUrlBuilder.kt$WebvhDidUrlBuilder$private fun parseHostAndPort(raw: String): Pair&lt;String, Int?>?</ID>
+  </CurrentIssues>
+</SmellBaseline>

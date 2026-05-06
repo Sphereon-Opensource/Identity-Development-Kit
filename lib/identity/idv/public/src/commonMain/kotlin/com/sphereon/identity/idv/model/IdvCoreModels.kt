@@ -34,6 +34,51 @@ data class IdvMethodType(
         val WALLET = IdvMethodType("wallet")
         val REST_API = IdvMethodType("rest_api")
         val CLAIM_MATCH = IdvMethodType("claim_match")
+        val EMAIL = IdvMethodType("email")
+
+        /**
+         * One-time link the user clicks to authenticate without a password. Click
+         * resolution materialises an authenticated session at AAL1 with `amr=mlk`.
+         * Distinct from [EMAIL] (which only verifies an email address) and from
+         * [PASSWORD_RESET] (which gates a credential mutation).
+         */
+        val MAGIC_LINK = IdvMethodType("magic_link")
+
+        /**
+         * One-time link the user clicks to begin a password-reset flow. After link
+         * resolution the driver yields a [com.sphereon.identity.idv.model.UserInputAction]
+         * collecting the new password; the submit handler validates against policy
+         * and writes via the credential store.
+         */
+        val PASSWORD_RESET = IdvMethodType("password_reset")
+
+        /**
+         * RFC 6238 Time-based One-Time Password — `amr=otp` second-factor authenticator.
+         * Two distinct method definition shapes share this type: one for enrollment
+         * (the user scans a QR + types the first code; secret is persisted) and one for
+         * verification (existing secret, user types a code). Both are handled by the
+         * same EDK `TotpIdvMethodDriver` which branches on the definition's mode field.
+         */
+        val TOTP = IdvMethodType("totp")
+
+        /**
+         * Terms-of-service / privacy-policy acceptance. The driver displays the ToS
+         * body (carried in the definition or fetched per `required_version`) and
+         * collects an explicit accept; on submit the acceptance is persisted via the
+         * `TermsAcceptanceStore` so the corresponding required-action evaluator stops
+         * firing on subsequent logins until the version rolls forward.
+         */
+        val ACCEPT_TERMS = IdvMethodType("accept_terms")
+
+        /**
+         * Forced password rotation for an already-authenticated user. Distinct from
+         * [PASSWORD_RESET]: that flow starts from "user knows email", emails a
+         * one-time link, then collects the new password; this one starts from
+         * "user is mid-session", skips the link issuance, and goes straight to
+         * collecting + persisting the new password. Wired by the `must-change-password`
+         * required-action evaluator.
+         */
+        val FORCE_PASSWORD_ROTATION = IdvMethodType("force_password_rotation")
     }
 }
 
@@ -154,6 +199,14 @@ data class AuthMethodReference(
         val SC = AuthMethodReference("sc")
         val PIN = AuthMethodReference("pin")
         val PWD = AuthMethodReference("pwd")
+
+        /**
+         * Magic-link sign-in. Not registered in IANA's RFC 8176 AMR registry; the
+         * value is widely used by IdPs that ship magic-link auth and signals
+         * "single-factor link click via verified inbox" so step-up policies can
+         * treat it distinctly from [OTP] or [PWD].
+         */
+        val MLK = AuthMethodReference("mlk")
     }
 }
 
@@ -250,18 +303,6 @@ data class IdvEvidenceType(
 @JsExportCompat
 @Serializable
 data class IdvProviderType(
-    val value: String,
-)
-
-@JsExportCompat
-@Serializable
-data class AttributePath(
-    val value: String,
-)
-
-@JsExportCompat
-@Serializable
-data class InputFieldId(
     val value: String,
 )
 

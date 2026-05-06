@@ -2,7 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ClassOrdering:TrustCommandContracts.kt$ValidateTrustContract$override suspend fun plan( args: ValidateTrustArgs, context: PlanningContext, ): CommandPlan</ID>
     <ID>MagicNumber:RevocationChecker.kt$RevocationReason.AA_COMPROMISE$10</ID>
     <ID>MagicNumber:RevocationChecker.kt$RevocationReason.AFFILIATION_CHANGED$3</ID>
     <ID>MagicNumber:RevocationChecker.kt$RevocationReason.CERTIFICATE_HOLD$6</ID>

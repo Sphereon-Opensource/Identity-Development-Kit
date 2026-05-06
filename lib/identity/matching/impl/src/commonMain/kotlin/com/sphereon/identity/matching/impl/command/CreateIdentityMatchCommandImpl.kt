@@ -44,7 +44,7 @@ import kotlin.uuid.Uuid
 class CreateIdentityMatchCommandImpl(
     execution: SessionExecution,
     private val store: IdentityMatchStore,
-) : TypedServiceCommandAdapter<CreateIdentityMatchArgs, IdentityMatch>(
+) : TypedServiceCommandAdapter<CreateIdentityMatchArgs, IdentityMatch, IdkError>(
         commandId = CreateIdentityMatchCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateIdentityMatchArgs>(),

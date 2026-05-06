@@ -25,6 +25,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
+import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
@@ -68,7 +69,7 @@ class RevokeTokenCommandImpl(
     private val tokenStorage: TokenStorage,
     private val configProvider: OAuth2ServersConfigProvider,
     private val eventService: SessionEventService? = null,
-) : TypedServiceCommandAdapter<RevokeTokenArgs, Unit>(
+) : TypedServiceCommandAdapter<RevokeTokenArgs, Unit, IdkError>(
         commandId = RevokeTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<RevokeTokenArgs>(),
@@ -201,7 +202,11 @@ class RevokeTokenCommandImpl(
                 .getOrElse { emptyList() }
 
         for (accessTokenData in accessTokens) {
-            if (accessTokenData.refreshTokenId == refreshToken && !accessTokenData.revoked) {
+            // Defense in depth: refreshTokenId is already client-scoped via the prior
+            // findAccessTokensByClient call, so a timing oracle here can only leak which of
+            // the caller's own tokens match — which they already know. Still cheap to do CT.
+            val storedRefreshId = accessTokenData.refreshTokenId
+            if (storedRefreshId != null && ConstantTime.equalsCT(storedRefreshId, refreshToken) && !accessTokenData.revoked) {
                 tokenStorage.revokeAccessToken(accessTokenData.accessToken)
             }
         }

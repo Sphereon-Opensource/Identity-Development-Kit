@@ -64,7 +64,7 @@ abstract class PublicApiHttpAdapter(
     mount: HttpAdapterMount,
 ) : CommandBackedHttpAdapter(id = id, execution = sessionExecution, mount = mount) {
     /** Service commands to expose as HTTP endpoints. Must implement [PublicApiCommand]. */
-    abstract val serviceCommands: List<ServiceCommand<*, *>>
+    abstract val serviceCommands: List<ServiceCommand<*, *, *>>
 
     override val endpointCommands: List<HttpEndpointCommand> by lazy {
         serviceCommands.mapNotNull { cmd ->

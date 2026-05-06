@@ -461,6 +461,12 @@ sealed class SignatureAlgorithm(
     object ED25519 : SignatureAlgorithm(CoseAlgorithm.EdDSA, JwaAlgorithm.EdDSA, cryptoAlgorithm = CryptoAlg.ED25519, curve = Curve.Ed25519)
 
     /**
+     * EdDSA over Curve448-Goldilocks (Ed448) per RFC 8032 §5.2. JWA `crv = "Ed448"` (RFC 8037 update),
+     * COSE `alg = -8 (EdDSA)` with `crv = 7 (Ed448)`. Signatures are 114 bytes.
+     */
+    object ED448 : SignatureAlgorithm(CoseAlgorithm.EdDSA, JwaAlgorithm.EdDSA, cryptoAlgorithm = CryptoAlg.ED448, curve = Curve.Ed448)
+
+    /**
      * Represents the ECDSA algorithm with SHA-256 hashing.
      * It utilizes the P-256 curve for elliptic curve operations.
      * This algorithm is used for digital signatures and is mapped to the
@@ -1086,10 +1092,20 @@ sealed class Curve(
     object Ed25519 : Curve(CoseCurve.Ed25519, JwaCurve.Ed25519)
 
     /**
+     * Ed448 (Curve448-Goldilocks) signing curve per RFC 8032 §5.2.
+     */
+    object Ed448 : Curve(CoseCurve.Ed448, JwaCurve.Ed448)
+
+    /**
      * Represents the X25519 curve mapping for both COSE and JWA standards.
      * This object is used to map the X25519 curve within the `CurveMapping` sealed class.
      */
     object X25519 : Curve(CoseCurve.X25519, JwaCurve.X25519)
+
+    /**
+     * X448 (Curve448-Goldilocks) Diffie-Hellman key-agreement curve per RFC 7748 §5.
+     */
+    object X448 : Curve(CoseCurve.X448, JwaCurve.X448)
 
     /**
      * Represents the JWA curve associated with the specific CurveMapping instance.
@@ -1117,13 +1133,15 @@ sealed class Curve(
          * - P_521
          * - Secp256k1
          * - Ed25519
+         * - Ed448
          * - X25519
+         * - X448
          *
          * The list is used for performing lookups and conversions between COSE and JOSE curve representations.
          */
         @JsStatic
         val asList: List<Curve>
-            get() = listOf(P_256, P_384, P_521, Secp256k1, Ed25519, X25519)
+            get() = listOf(P_256, P_384, P_521, Secp256k1, Ed25519, Ed448, X25519, X448)
 
         // Safe (non-throwing) variants - return IdkResult
 

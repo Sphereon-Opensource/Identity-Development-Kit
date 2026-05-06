@@ -51,7 +51,6 @@ interface OAuth2ServersConfigProvider {
      * Resolution order:
      * 1. Explicit `issuer` on the config (takes precedence)
      * 2. `issuerTemplate` with `{tenant-id}` interpolated
-     * 3. Fall back to `baseUrl`
      */
     fun resolveIssuer(
         serverId: String,

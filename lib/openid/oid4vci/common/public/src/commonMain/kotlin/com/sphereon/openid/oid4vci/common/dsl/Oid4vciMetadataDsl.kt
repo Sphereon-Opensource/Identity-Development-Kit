@@ -26,6 +26,7 @@ import com.sphereon.openid.oid4vc.common.ProofType
 import com.sphereon.openid.oid4vci.common.model.BatchCredentialIssuance
 import com.sphereon.openid.oid4vci.common.model.ClaimDisplay
 import com.sphereon.openid.oid4vci.common.model.ClaimMetadata
+import com.sphereon.openid.oid4vci.common.model.CredentialClaim
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
@@ -212,7 +213,7 @@ class CredentialConfigurationBuilder(
     private val proofTypes = mutableMapOf<String, ProofTypeSupported>()
     private val displayEntries = mutableListOf<DisplayProperties>()
     private var credentialDefinition: CredentialDefinition? = null
-    private var claims: MutableMap<String, ClaimMetadata>? = null
+    private var claims: MutableList<CredentialClaim>? = null
     private var credentialMetadata: CredentialMetadataBuilder? = null
     private var responseEncryption: CredentialResponseEncryption? = null
 
@@ -296,19 +297,40 @@ class CredentialConfigurationBuilder(
     }
 
     /**
-     * Add an OID4VCI 1.0 map-based claim metadata entry.
+     * Add an OID4VCI 1.0 final §12.2.3 path-based claim description.
      *
-     * [claimName] is the key in the claims map.
+     * [path] is a claims-path-pointer per §A.5 — a non-empty array of strings:
+     *   - SD-JWT VC / JWT-based: typically a single-element `["family_name"]` (or longer
+     *     for nested objects).
+     *   - mso_mdoc: exactly two strings — `[namespace, elementIdentifier]`,
+     *     e.g. `["org.iso.18013.5.1", "family_name"]`.
+     */
+    fun claim(
+        path: List<String>,
+        builder: ClaimMetadataBuilder.() -> Unit,
+    ) {
+        if (claims == null) {
+            claims = mutableListOf()
+        }
+        val cm = ClaimMetadataBuilder().apply(builder).build()
+        claims!!.add(
+            CredentialClaim(
+                path = path,
+                mandatory = cm.mandatory,
+                valueType = cm.valueType,
+                display = cm.display,
+            ),
+        )
+    }
+
+    /**
+     * Convenience overload: single-segment path. Suitable for SD-JWT VC and other JWS-based
+     * formats whose path pointers are typically one element.
      */
     fun claim(
         claimName: String,
         builder: ClaimMetadataBuilder.() -> Unit,
-    ) {
-        if (claims == null) {
-            claims = mutableMapOf()
-        }
-        claims!![claimName] = ClaimMetadataBuilder().apply(builder).build()
-    }
+    ): Unit = claim(path = listOf(claimName), builder = builder)
 
     /**
      * Configure OID4VCI 1.1 [CredentialMetadata] (path-based claims with display).
@@ -324,23 +346,117 @@ class CredentialConfigurationBuilder(
         responseEncryption = CredentialEncryptionBuilder().apply(builder).build()
     }
 
-    internal fun build(): CredentialConfigurationSupported =
-        CredentialConfigurationSupported(
+    internal fun build(): CredentialConfigurationSupported {
+        // Format-specific encoding of credential_signing_alg_values_supported per OID4VCI
+        // 1.0 final §12.2.3 (and §A.3.2 for mso_mdoc):
+        //   - mso_mdoc → integers (numeric COSE algorithm identifiers, IANA COSE registry).
+        //   - JWS-based formats → strings (JWA algorithm names, IANA JOSE registry).
+        // The DSL accepts JwaAlgorithm internally; map to the appropriate JSON element type
+        // here so the wire form is spec-correct without callers having to think about it.
+        val isMdoc = format.value == CredentialFormat.MSO_MDOC.value
+        val signingAlgValues: List<JsonElement>? =
+            signingAlgorithms
+                .map { jwa ->
+                    if (isMdoc) {
+                        val coseId =
+                            jwa.toCoseAlgorithmIdOrNull()
+                                ?: error(
+                                    "Algorithm '${jwa.value}' has no COSE numeric identifier (IANA COSE registry); " +
+                                        "cannot be advertised in mso_mdoc credential_signing_alg_values_supported. " +
+                                        "Configure an algorithm that maps to a COSE id (e.g. ES256 → -7).",
+                                )
+                        JsonPrimitive(coseId)
+                    } else {
+                        JsonPrimitive(jwa.value)
+                    }
+                }.takeIf { it.isNotEmpty() }
+
+        // Per OID4VCI 1.0 final §12.2.3 / §A.3.2 + Appendix A schema, the location of the
+        // claims metadata depends on the credential format:
+        //   - dc+sd-jwt, jwt_vc_json: top-level `claims` array on the credential
+        //     configuration. The §A.4 / §A.6 format branches define `claims` as a sibling
+        //     of `vct`/`credential_definition` and the schema rejects it elsewhere.
+        //   - mso_mdoc: top-level `claims` is NOT defined (the §A.3 branch only allows
+        //     `doctype` + `credential_signing_alg_values_supported`). Claims metadata
+        //     instead lives inside `credential_metadata.claims` per the spec's normative
+        //     mso_mdoc example, with paths shaped as [namespace, elementId].
+        // Route the accumulated `claims` list into the right slot here so callers don't
+        // have to know the §A.x rules.
+        val accumulatedClaims = claims?.toList()
+        val (topLevelClaims, mdocCredentialMetadata) =
+            if (isMdoc && accumulatedClaims != null) {
+                val mergedMetadata =
+                    mergeMdocCredentialMetadata(
+                        existing = credentialMetadata?.build(),
+                        mdocClaims = accumulatedClaims,
+                    )
+                null to mergedMetadata
+            } else {
+                accumulatedClaims to credentialMetadata?.build()
+            }
+        return CredentialConfigurationSupported(
             format = format.value,
             scope = scope,
             cryptographicBindingMethodsSupported = cryptographicBindingMethods.takeIf { it.isNotEmpty() },
-            credentialSigningAlgValuesSupported = signingAlgorithms.map { it.value }.takeIf { it.isNotEmpty() },
+            credentialSigningAlgValuesSupported = signingAlgValues,
             proofTypesSupported = proofTypes.toMap().takeIf { it.isNotEmpty() },
             display = displayEntries.takeIf { it.isNotEmpty() },
             credentialDefinition = credentialDefinition,
             vct = vct,
-            claims = claims?.toMap(),
+            claims = topLevelClaims,
             doctype = doctype,
             order = order,
             credentialResponseEncryption = responseEncryption,
-            credentialMetadata = credentialMetadata?.build(),
+            credentialMetadata = mdocCredentialMetadata,
         )
+    }
 }
+
+/**
+ * For `mso_mdoc` configurations, fold the accumulated top-level claim entries into the
+ * spec-correct location at `credential_metadata.claims`, preserving any existing
+ * `credential_metadata.display` block that the caller authored explicitly.
+ *
+ * The DSL's top-level `CredentialClaim.path` is `List<String>` (claims-path-pointer per
+ * §A.5 with two segments for mdoc); `CredentialMetadataClaim.path` is `List<JsonElement>`
+ * because §A.5 also permits integer indices. For our string-segment paths the conversion
+ * is a straight wrap into JsonPrimitive.
+ */
+private fun mergeMdocCredentialMetadata(
+    existing: CredentialMetadata?,
+    mdocClaims: List<com.sphereon.openid.oid4vci.common.model.CredentialClaim>,
+): CredentialMetadata {
+    val converted =
+        mdocClaims.map { c ->
+            CredentialMetadataClaim(
+                path = c.path.map { JsonPrimitive(it) },
+                mandatory = c.mandatory,
+                display = c.display,
+            )
+        }
+    val combinedClaims = (existing?.claims.orEmpty()) + converted
+    return CredentialMetadata(
+        display = existing?.display,
+        claims = combinedClaims.takeIf { it.isNotEmpty() },
+    )
+}
+
+/**
+ * Map a JWA algorithm name to its numeric COSE algorithm identifier. Returns null when no
+ * mapping is registered (RSA-PSS variants, EdDSA mappings handled separately, etc.).
+ *
+ * Sourced from IANA COSE Algorithms registry — only the algorithms our issuer actually
+ * issues with today are populated; extend as needed when new algs land.
+ */
+private fun JwaAlgorithm.toCoseAlgorithmIdOrNull(): Int? =
+    when (this.value) {
+        "ES256" -> -7
+        "ES384" -> -35
+        "ES512" -> -36
+        "EdDSA" -> -8
+        "ES256K" -> -47
+        else -> null
+    }
 
 // ---------------------------------------------------------------------------
 // DisplayBuilder

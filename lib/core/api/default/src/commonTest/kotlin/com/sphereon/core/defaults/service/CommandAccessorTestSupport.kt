@@ -27,9 +27,9 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 
 internal class StubRegistry(
-    private val commands: Map<String, ServiceCommand<*, *>>,
+    private val commands: Map<String, ServiceCommand<*, *, *>>,
 ) : SessionScopedCommandRegistry {
-    override fun get(commandId: String): ServiceCommand<*, *>? = commands[commandId]
+    override fun get(commandId: String): ServiceCommand<*, *, *>? = commands[commandId]
 
     override fun has(commandId: String): Boolean = commands.containsKey(commandId)
 
@@ -38,7 +38,7 @@ internal class StubRegistry(
 
 internal class StubCommand(
     override val commandId: String,
-) : ServiceCommand<Any, Any> {
+) : ServiceCommand<Any, Any, IdkError> {
     override val id: String get() = commandId
     override val isEnabled: Boolean get() = true
     override val subsystem: EventSubsystem get() = EventSubsystems.CUSTOM

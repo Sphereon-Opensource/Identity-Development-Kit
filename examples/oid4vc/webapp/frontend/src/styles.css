@@ -170,13 +170,57 @@ body {
 .form-field label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 4px; }
 .form-field .required { color: var(--color-error); margin-left: 2px; }
 .field-hint { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 4px; }
-.form-field input {
+.form-field input[type="text"],
+.form-field input[type="email"],
+.form-field input[type="url"],
+.form-field input[type="password"],
+.form-field input[type="number"],
+.form-field input[type="search"],
+.form-field input[type="tel"],
+.form-field textarea {
   width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-border);
   background: var(--color-bg); color: var(--color-text); font-size: 0.9rem;
 }
 .form-field input:focus { outline: none; border-color: var(--color-primary); }
+/* Radios / checkboxes inside form fields stay natural-width inline controls. */
+.form-field input[type="radio"],
+.form-field input[type="checkbox"] { width: auto; margin-right: 8px; vertical-align: middle; }
+
+/* Reusable option-group panel — matches the issuer page's Grant Type look:
+   filled surface, rounded, h3 heading, one radio/checkbox per row. */
+.option-group {
+  background: var(--color-surface); border-radius: var(--radius); padding: 16px;
+  margin-bottom: 12px;
+}
+.option-group h3 { margin: 0 0 12px 0; font-size: 0.95rem; }
+.option-group label {
+  display: flex; align-items: center; padding: 6px 0; cursor: pointer;
+  font-weight: 500; margin-bottom: 0;
+}
+.option-group input[type="radio"],
+.option-group input[type="checkbox"] { width: auto; margin-right: 8px; vertical-align: middle; }
+.option-group label:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
+.option-group .field-hint { margin: 4px 0 0 0; }
+.form-field select {
+  width: 100%; padding: 8px 32px 8px 12px; border-radius: 6px; border: 1px solid var(--color-border);
+  background: var(--color-bg); color: var(--color-text); font-size: 0.9rem;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%23a0a0a0' d='M2 4l4 4 4-4z'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center;
+  cursor: pointer;
+}
+.form-field select:focus { outline: none; border-color: var(--color-primary); }
 .checkbox-field { display: flex; align-items: center; gap: 8px; padding: 8px 0; cursor: pointer; }
 .checkbox-field input[type="checkbox"] { width: auto; }
+
+/* Wallet target: preset select + optional custom URL input on the same row */
+.wallet-target-field .wallet-target-row {
+  display: flex; gap: 8px; align-items: stretch;
+}
+.wallet-target-field select { flex: 0 0 200px; }
+.wallet-target-field .wallet-target-custom { flex: 1 1 auto; }
+.wallet-target-field .field-hint { margin-top: 4px; margin-bottom: 0; }
+.wallet-target-field .field-error { font-size: 0.8rem; color: var(--color-error); margin: 4px 0 0 0; }
 
 /* === QR Code === */
 .qr-section { text-align: center; margin: 24px 0; }

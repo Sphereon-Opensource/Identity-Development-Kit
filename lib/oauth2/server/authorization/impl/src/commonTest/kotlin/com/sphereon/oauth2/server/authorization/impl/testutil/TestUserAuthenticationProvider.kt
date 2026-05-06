@@ -29,17 +29,18 @@ import com.sphereon.oauth2.server.authorization.provider.UserInfo
 
 /**
  * Test implementation of UserAuthenticationProvider for manual construction in tests.
+ * Subclasses may override individual methods (e.g. [getUserInfo]) for targeted fixtures.
  */
-class TestUserAuthenticationProvider : UserAuthenticationProvider {
+open class TestUserAuthenticationProvider : UserAuthenticationProvider {
     override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = Ok(null)
 
     override suspend fun initiateAuthentication(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
-    ): IdkResult<String, AuthenticationError> = Err(AuthenticationError.Generic(message = "Not implemented in test"))
+    ): IdkResult<String, AuthenticationError> = Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(message = "Not implemented in test"))
+    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)
 

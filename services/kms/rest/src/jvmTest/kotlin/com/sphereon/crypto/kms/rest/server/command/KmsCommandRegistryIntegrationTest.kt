@@ -17,6 +17,7 @@
 package com.sphereon.crypto.kms.rest.server.command
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
@@ -50,7 +51,7 @@ import com.sphereon.crypto.kms.rest.api.generated.models.SignatureAlgorithm as S
  *   Routed command -> ServiceCommandTransportFactory -> LocalServiceCommandTransport
  *   -> SessionScopedCommandRegistry.get(commandId) -> execute()
  *
- * The registry discovers commands through `Map<String, ServiceCommand<*, *>>` multibinding.
+ * The registry discovers commands through `Map<String, ServiceCommand<*, *, *>>` multibinding.
  * This test proves that real DI-injected KMS commands are in that map and executable
  * through the commandId-based lookup + execute path.
  */
@@ -67,7 +68,7 @@ class KmsCommandRegistryIntegrationTest {
     }
 
     private lateinit var registry: SessionScopedCommandRegistry
-    private lateinit var commandMap: Map<String, ServiceCommand<Any, Any>>
+    private lateinit var commandMap: Map<String, ServiceCommand<Any, Any, IdkError>>
 
     @BeforeTest
     fun setUp() {
@@ -111,7 +112,7 @@ class KmsCommandRegistryIntegrationTest {
         @Suppress("UNCHECKED_CAST")
         commandMap =
             kmsCommandIds
-                .mapNotNull { id -> registry.get(id)?.let { id to it as ServiceCommand<Any, Any> } }
+                .mapNotNull { id -> registry.get(id)?.let { id to it as ServiceCommand<Any, Any, IdkError> } }
                 .toMap()
     }
 

@@ -3,9 +3,10 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>ClassOrdering:EventContext.kt$EventContext$Companion</ID>
-    <ID>ClassOrdering:EventContext.kt$EventContext.Companion$/** * Empty context for app-scope events without session/user context. */ val EMPTY = EventContext( sessionId = null, tenantId = null, principalId = null, correlationId = null, )</ID>
+    <ID>ClassOrdering:EventContext.kt$EventContext.Companion$/** * Empty context for app-scope events without session/user context. */ @JvmField val EMPTY: EventContext = EventContext( sessionId = null, tenantId = null, principalId = null, correlationId = null, )</ID>
     <ID>ComplexInterface:Event.kt$Event</ID>
     <ID>ComplexInterface:EventHub.kt$EventHub</ID>
+    <ID>ComplexInterface:EventService.kt$EventBuilder</ID>
     <ID>CyclomaticComplexMethod:EventFilter.kt$EventFilter$fun matches(event: Event): Boolean</ID>
     <ID>LongParameterList:EventService.kt$EventService$( event: Event, sign: Boolean = false, encrypt: Boolean = false, keyAlias: String? = null, encryptionKeyAlias: String? = null, encryptParts: Set&lt;EncryptedPart> = setOf(EncryptedPart.PAYLOAD), )</ID>
     <ID>MagicNumber:EventStore.kt$EventStoreConfig$1000L</ID>

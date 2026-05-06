@@ -16,9 +16,9 @@
 
 package com.sphereon.identity.reconciliation.api
 
+import com.sphereon.attribute.flow.AttributeBag
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
-import com.sphereon.identity.idv.model.AttributeBag
 import com.sphereon.identity.matching.crypto.HashedIdentifier
 import com.sphereon.identity.matching.model.IdentifierType
 import com.sphereon.identity.reconciliation.model.CanonicalAttributeBag

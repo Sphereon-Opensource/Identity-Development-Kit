@@ -55,7 +55,7 @@ import kotlin.native.ObjCName
 class PrepareJwsCommandImpl(
     execution: SessionExecution,
     private val identifierService: MultiManagedIdentifierService,
-) : TypedServiceCommandAdapter<CreateJwsJsonArgs, PreparedJwsObject>(
+) : TypedServiceCommandAdapter<CreateJwsJsonArgs, PreparedJwsObject, IdkError>(
         commandId = PrepareJwsCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateJwsJsonArgs>(),
@@ -147,17 +147,19 @@ class PrepareJwsCommandImpl(
         mode: JwsIdentifierMode,
         noIdentifierInHeader: Boolean,
     ) {
-        if (noIdentifierInHeader) {
-            return
-        }
-
-        // Ensure alg is set
+        // RFC 7515 §4.1.1 makes `alg` REQUIRED in every JWS protected header — independent of
+        // whether the caller wants identifier hints (kid/x5c/jwk) included. Set it first, then
+        // skip the rest when `noIdentifierInHeader` is on.
         if (!header.containsKey("alg")) {
             val sigAlg = identifier.keyInfo.key.getSignatureAlgorithm()
             val joseAlg = sigAlg?.jose
             if (joseAlg != null) {
                 header["alg"] = JsonPrimitive(joseAlg.value)
             }
+        }
+
+        if (noIdentifierInHeader) {
+            return
         }
 
         when (mode) {

@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.attribute.flow.AttributePath
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 

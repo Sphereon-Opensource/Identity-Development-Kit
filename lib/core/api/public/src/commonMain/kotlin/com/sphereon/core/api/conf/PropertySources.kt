@@ -255,7 +255,6 @@ class EnvPropertySource :
 
     override fun getPropertyAsString(name: String): String? = getProperty(name, String::class)
 
-    @Suppress("UNCHECKED_CAST")
     override fun <T : Any> getProperty(
         name: String,
         targetType: KClass<T>,
@@ -263,19 +262,47 @@ class EnvPropertySource :
         val normalizedKey = keyNormalizer.normalize(name)
 
         // First check our lazy-loaded normalized map
-        val value = envMap[normalizedKey]
-        if (value != null) {
-            return value as T?
-        }
+        envMap[normalizedKey]?.let { return coerceFromEnvString(it, targetType) }
 
         // If not found, try the original env key via keyMapping
-        val originalKey = keyMapping[normalizedKey]
-        if (originalKey != null) {
-            return Env.get(originalKey) as T?
+        keyMapping[normalizedKey]?.let { originalKey ->
+            Env.get(originalKey)?.let { return coerceFromEnvString(it, targetType) }
         }
 
         // Final fallback: direct lookup (for platforms that don't support getAll)
-        return (Env.get(normalizedKey) ?: Env.get(name)) as T?
+        return (Env.get(normalizedKey) ?: Env.get(name))?.let { coerceFromEnvString(it, targetType) }
+    }
+
+    /**
+     * Environment variables and `.env` file entries are always strings, but typed property reads
+     * (`getProperty(key, Boolean::class)`, `Int::class`, `Long::class`, `Double::class`) expect a
+     * native-typed value. Coerce the string to the requested type rather than `as T`-casting and
+     * blowing up at the call site with a `ClassCastException`. Returns `null` for malformed values
+     * (e.g. `getProperty("PORT", Int::class)` on `PORT=foo`) so the caller's default takes over —
+     * the same behaviour as a missing key.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : Any> coerceFromEnvString(
+        value: Any,
+        targetType: KClass<T>
+    ): T? {
+        if (targetType.isInstance(value)) {
+            return value as T
+        }
+        val str = value as? String ?: return null
+        val trimmed = str.trim()
+        if (trimmed.isEmpty()) return null
+        val coerced: Any? =
+            when (targetType) {
+                String::class -> trimmed
+                Boolean::class -> trimmed.toBooleanStrictOrNull()
+                Int::class -> trimmed.toIntOrNull()
+                Long::class -> trimmed.toLongOrNull()
+                Double::class -> trimmed.toDoubleOrNull()
+                Float::class -> trimmed.toFloatOrNull()
+                else -> null
+            }
+        return coerced as T?
     }
 
     override fun getAllPropertyNames(): Set<String> = envMap.keys

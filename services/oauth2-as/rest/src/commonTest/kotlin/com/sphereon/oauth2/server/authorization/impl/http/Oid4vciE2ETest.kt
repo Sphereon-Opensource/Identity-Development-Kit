@@ -24,13 +24,17 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.service.StringResult
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
@@ -38,6 +42,7 @@ import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.TokenResponse
+import com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.command.AttestationChallengeResponse
 import com.sphereon.oauth2.server.authorization.command.AuthorizationErrorResponseData
 import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
@@ -119,7 +124,29 @@ import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantA
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
+import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
+import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
+import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestArgs
+import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestCommand
+import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestArgs
+import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestCommand
+import com.sphereon.oauth2.server.authorization.command.par.HandlePushedAuthorizationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.par.HandlePushedAuthorizationRequestCommand
+import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestCommand
+import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs
+import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestCommand
+import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestArgs
+import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
+import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.JwksHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.OAuth2ServerMetadataHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.OpenidDiscoveryHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.introspection.IntrospectionHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.par.ParHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.revocation.RevocationHttpEndpointCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.http.command.token.TokenHttpEndpointCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapperImpl
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
@@ -153,7 +180,7 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 
 // ============================================================================
-// OID4VCI E2E tests through the OAuth2HttpAdapter
+// OID4VCI E2E tests through the OAuth2 AS HTTP adapters
 //
 // These tests exercise the full HTTP adapter: form parsing, routing, grant
 // verification, access-token issuance, and RFC-compliant response formatting.
@@ -166,7 +193,7 @@ import kotlin.time.Duration.Companion.minutes
 // ============================================================================
 
 /**
- * End-to-end tests for OID4VCI flows through the OAuth2HttpAdapter.
+ * End-to-end tests for OID4VCI flows through the OAuth2 AS HTTP adapter set.
  *
  * Each test:
  * 1. Seeds storage with test data (pre-auth codes, auth codes, client registrations)
@@ -175,7 +202,7 @@ import kotlin.time.Duration.Companion.minutes
  * 4. Asserts HTTP status, headers, and JSON response body
  */
 class Oid4vciE2ETest {
-    private lateinit var adapter: OAuth2HttpAdapter
+    private lateinit var adapter: HttpAdapter
     private lateinit var service: TestOid4vciAuthorizationServerService
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -187,7 +214,7 @@ class Oid4vciE2ETest {
                     mapOf(
                         "default" to
                             OAuth2ServerInstanceConfig(
-                                baseUrl = "https://auth.example.com",
+                                issuer = "https://auth.example.com",
                                 oidc = FeaturePolicy.SUPPORTED,
                                 introspection = FeaturePolicy.SUPPORTED,
                                 grantTypesEnabled =
@@ -223,16 +250,44 @@ class Oid4vciE2ETest {
         service = TestOid4vciAuthorizationServerService()
         service.registerClient(oid4vciClient)
 
-        adapter =
-            OAuth2HttpAdapter(
-                authorizationServerService = service,
-                configProvider = configProvider,
-                userAuthProvider = NoOpOid4vciUserAuthProvider(),
-                scopeClaimsMapper = OidcScopeClaimsMapperImpl(),
-                handleIaeInitialRequestCommand = NoOpOid4vciIaeInitialCommand(),
-                handleIaeFollowUpCommand = NoOpOid4vciIaeFollowUpCommand(),
-                preAuthorizedCodeStorage = NoOpOid4vciPreAuthorizedCodeStorage(),
+        val exec = TestSessionExecution()
+        val asResolver =
+            com.sphereon.oauth2.common.config
+                .DefaultOAuth2ServerInstanceResolver(configProvider)
+        val asIdProvider =
+            com.sphereon.oauth2.common.config
+                .DefaultOAuth2ServerInstanceIdProvider()
+
+        val tokenAdapter =
+            OAuth2TokenHttpAdapter(
+                execution = exec,
+                asInstanceResolver = asResolver,
+                asInstanceIdProvider = asIdProvider,
+                tokenEndpointCommand =
+                    TokenHttpEndpointCommandImpl(
+                        execution = exec,
+                        handleTokenRequestCommand = Oid4vciFakeHandleTokenRequestCommand(service, configProvider),
+                        configProvider = configProvider,
+                        dpopNonceManager = Oid4vciFakeNoOpDpopNonceManager,
+                        clientCertificateExtractor = Oid4vciFakeNoCertExtractor,
+                        auditEmitter = NoOpOAuth2AuditEmitter,
+                    ),
+                introspectionEndpointCommand = IntrospectionHttpEndpointCommandImpl(exec, Oid4vciFakeHandleIntrospectionRequestCommand(service), configProvider, NoOpOAuth2AuditEmitter),
+                revocationEndpointCommand = RevocationHttpEndpointCommandImpl(exec, Oid4vciFakeHandleRevocationRequestCommand(service), configProvider, NoOpOAuth2AuditEmitter),
+                parEndpointCommand = ParHttpEndpointCommandImpl(exec, Oid4vciFakeHandlePushedAuthorizationRequestCommand(service), configProvider),
             )
+        val discoveryHandler = Oid4vciFakeHandleDiscoveryRequestCommand(service)
+        val discoveryAdapter =
+            OAuth2DiscoveryHttpAdapter(
+                execution = exec,
+                asInstanceResolver = asResolver,
+                asInstanceIdProvider = asIdProvider,
+                oauth2ServerMetadataCommand = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, discoveryHandler, configProvider),
+                openidDiscoveryCommand = OpenidDiscoveryHttpEndpointCommandImpl(exec, discoveryHandler, configProvider),
+                jwksCommand = JwksHttpEndpointCommandImpl(exec, Oid4vciFakeHandleJwksRequestCommand(service)),
+            )
+
+        adapter = OAuth2DispatchHttpAdapter(listOf(tokenAdapter, discoveryAdapter))
     }
 
     // =========================================================================
@@ -606,10 +661,52 @@ class Oid4vciE2ETest {
  */
 private class TestOid4vciAuthorizationServerService : AuthorizationServerService {
     // Storage
-    private val clients = mutableMapOf<String, ClientRegistration>()
+    internal val clients = mutableMapOf<String, ClientRegistration>()
     private val preAuthCodes = mutableMapOf<String, PreAuthorizedCodeData>()
     private val authCodes = mutableMapOf<String, AuthorizationCodeData>()
     private var tokenCounter = 0
+
+    /** Exposes the internal [clients] map as a [com.sphereon.oauth2.server.authorization.storage.ClientRegistry] for adapter construction. */
+    val clientRegistry: com.sphereon.oauth2.server.authorization.storage.ClientRegistry =
+        object : com.sphereon.oauth2.server.authorization.storage.ClientRegistry {
+            override suspend fun getClient(clientId: String) =
+                com.sphereon.core.api
+                    .Ok(clients[clientId])
+
+            override suspend fun registerClient(registration: ClientRegistration) =
+                com.sphereon.core.api
+                    .Ok(registration)
+
+            override suspend fun updateClient(
+                clientId: String,
+                registration: ClientRegistration,
+            ) = com.sphereon.core.api
+                .Ok(registration)
+
+            override suspend fun deleteClient(clientId: String) =
+                com.sphereon.core.api
+                    .Ok(Unit)
+
+            override suspend fun listClients(
+                limit: Int,
+                offset: Int,
+            ) = com.sphereon.core.api
+                .Ok(clients.values.toList())
+
+            override suspend fun findClientsByName(name: String) =
+                com.sphereon.core.api
+                    .Ok(clients.values.filter { it.clientName == name })
+
+            override suspend fun clientExists(clientId: String) =
+                com.sphereon.core.api
+                    .Ok(clientId in clients)
+
+            override suspend fun verifyClientCredentials(
+                clientId: String,
+                clientSecret: String,
+            ) = com.sphereon.core.api
+                .Ok(clients[clientId]?.clientSecret == clientSecret)
+        }
 
     fun registerClient(client: ClientRegistration) {
         clients[client.clientId] = client
@@ -1140,8 +1237,12 @@ private class TestOid4vciConfigProvider(
         serverId: String,
         tenantId: String,
     ): String {
-        val server = config.getServer(serverId) ?: return "https://auth.example.com"
-        return server.issuer ?: server.issuerTemplate?.replace("{tenant-id}", tenantId) ?: server.baseUrl
+        val server =
+            config.getServer(serverId)
+                ?: error("OAuth2 server '$serverId' not found in configuration")
+        return server.issuer
+            ?: server.issuerTemplate?.replace("{tenant-id}", tenantId)
+            ?: error("OAuth2 server '$serverId' has no issuer or issuerTemplate")
     }
 }
 
@@ -1152,9 +1253,9 @@ private class NoOpOid4vciUserAuthProvider : UserAuthenticationProvider {
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
-    ): IdkResult<String, AuthenticationError> = Err(AuthenticationError.Generic(message = "Not implemented in test"))
+    ): IdkResult<String, AuthenticationError> = Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(message = "Not implemented in test"))
+    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)
 
@@ -1186,13 +1287,628 @@ private class NoOpOid4vciIaeFollowUpCommand : HandleIaeFollowUpCommand {
     override suspend fun supports(args: Any): Boolean = args is HandleIaeFollowUpArgs
 }
 
-private class NoOpOid4vciPreAuthorizedCodeStorage : PreAuthorizedCodeStorage {
-    override suspend fun storePreAuthorizedCode(
-        code: String,
-        data: PreAuthorizedCodeData,
-    ) = Err(AuthorizationServerError.StorageError(operation = "noop", details = "Not available in E2E test"))
+private class NoOpOid4vciPendingAuthorizationSessionStore : com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore {
+    private val map = mutableMapOf<String, com.sphereon.oauth2.server.authorization.model.AuthorizationSession>()
 
-    override suspend fun consumePreAuthorizedCode(code: String) = Err(AuthorizationServerError.StorageError(operation = "noop", details = "Not available in E2E test"))
+    override suspend fun create(session: com.sphereon.oauth2.server.authorization.model.AuthorizationSession) = Ok(session.also { map[it.sessionId] = it })
 
-    override suspend fun isCodeUsed(code: String) = Err(AuthorizationServerError.StorageError(operation = "noop", details = "Not available in E2E test"))
+    override suspend fun findById(sessionId: String) = Ok(map[sessionId])
+
+    override suspend fun remove(sessionId: String) = Ok(Unit.also { map.remove(sessionId) })
+}
+
+private class NoOpOid4vciHandleAuthorizeRequestCommand : com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestCommand {
+    override val commandId: String get() = "oauth2.authorization.noop-authorize-request"
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.AuthorizationRequestOutcome>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestArgs
+
+    override suspend fun execute(
+        args: com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestArgs
+    ): IdkResult<com.sphereon.oauth2.server.authorization.command.AuthorizationRequestOutcome, IdkError> = Err(IdkError.fromString(code = "noop", message = "Not available in E2E test"))
+}
+
+private class NoOpOid4vciHandleAuthorizeCallbackCommand : com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackCommand {
+    override val commandId: String get() = com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackCommand.COMMAND_ID
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.AuthorizationResponseData>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackArgs
+
+    override suspend fun execute(
+        args: com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackArgs
+    ): IdkResult<com.sphereon.oauth2.server.authorization.command.AuthorizationResponseData, IdkError> = Err(IdkError.fromString(code = "noop", message = "Not available in E2E test"))
+}
+
+private class NoOpOid4vciListEnabledFederationProvidersCommand : com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersCommand {
+    override val commandId: String get() = com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersCommand.COMMAND_ID
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.federation.EnabledFederationProviders>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersArgs
+
+    override suspend fun execute(
+        args: com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersArgs
+    ): IdkResult<com.sphereon.oauth2.server.authorization.command.federation.EnabledFederationProviders, com.sphereon.oauth2.server.authorization.provider.AuthenticationError> =
+        Ok(
+            com.sphereon.oauth2.server.authorization.command.federation
+                .EnabledFederationProviders(emptyList())
+        )
+}
+
+private class NoOpOid4vciRegisterPreAuthorizedCodeCommand : com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeCommand {
+    override val commandId: String get() = com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeCommand.COMMAND_ID
+    override val inputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs>()
+    override val outputTypeToken get() =
+        com.sphereon.core.api.binary
+            .typeToken<com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeResult>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs
+
+    override suspend fun execute(
+        args: com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs
+    ): IdkResult<com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeResult, IdkError> = Err(IdkError.fromString(code = "noop", message = "Not available in E2E test"))
+}
+
+private object Oid4vciNoOpFederationEndpoints {
+    val authorize: com.sphereon.oauth2.server.authorization.command.federation.FederationAuthorizeHttpEndpointCommand =
+        object : com.sphereon.oauth2.server.authorization.command.federation.FederationAuthorizeHttpEndpointCommand {
+            override val endpoint = com.sphereon.oauth2.server.authorization.command.federation.FederationAuthorizeHttpEndpointCommand.ENDPOINT
+            override val id: String get() = endpoint.commandId ?: "noop"
+            override val isEnabled: Boolean = true
+
+            override suspend fun execute(args: com.sphereon.core.api.http.GenericHttpRequest) =
+                Err(IdkError.fromString(code = "NOT_IMPLEMENTED", message = "Federation endpoint not exercised in OID4VCI test"))
+        }
+    val reconAuthorize: com.sphereon.oauth2.server.authorization.command.federation.ReconciliationAuthorizeHttpEndpointCommand =
+        object : com.sphereon.oauth2.server.authorization.command.federation.ReconciliationAuthorizeHttpEndpointCommand {
+            override val endpoint = com.sphereon.oauth2.server.authorization.command.federation.ReconciliationAuthorizeHttpEndpointCommand.ENDPOINT
+            override val id: String get() = endpoint.commandId ?: "noop"
+            override val isEnabled: Boolean = true
+
+            override suspend fun execute(args: com.sphereon.core.api.http.GenericHttpRequest) =
+                Err(IdkError.fromString(code = "NOT_IMPLEMENTED", message = "Reconciliation authorize not exercised in OID4VCI test"))
+        }
+    val callback: com.sphereon.oauth2.server.authorization.command.federation.FederationCallbackHttpEndpointCommand =
+        object : com.sphereon.oauth2.server.authorization.command.federation.FederationCallbackHttpEndpointCommand {
+            override val endpoint = com.sphereon.oauth2.server.authorization.command.federation.FederationCallbackHttpEndpointCommand.ENDPOINT
+            override val id: String get() = endpoint.commandId ?: "noop"
+            override val isEnabled: Boolean = true
+
+            override suspend fun execute(args: com.sphereon.core.api.http.GenericHttpRequest) =
+                Err(IdkError.fromString(code = "NOT_IMPLEMENTED", message = "Federation callback not exercised in OID4VCI test"))
+        }
+    val reconCallback: com.sphereon.oauth2.server.authorization.command.federation.ReconciliationCallbackHttpEndpointCommand =
+        object : com.sphereon.oauth2.server.authorization.command.federation.ReconciliationCallbackHttpEndpointCommand {
+            override val endpoint = com.sphereon.oauth2.server.authorization.command.federation.ReconciliationCallbackHttpEndpointCommand.ENDPOINT
+            override val id: String get() = endpoint.commandId ?: "noop"
+            override val isEnabled: Boolean = true
+
+            override suspend fun execute(args: com.sphereon.core.api.http.GenericHttpRequest) =
+                Err(IdkError.fromString(code = "NOT_IMPLEMENTED", message = "Reconciliation callback not exercised in OID4VCI test"))
+        }
+}
+
+// ============================================================================
+// Phase 3c-1 endpoint orchestration fakes for the OID4VCI E2E test.
+//
+// The token-endpoint fake reproduces the orchestration in
+// HandleTokenRequestCommandImpl (which itself was lifted verbatim from
+// OAuth2Handlers.handleTokenRequest) so the existing OID4VCI tests assert the
+// same behaviour without requiring a SessionExecution. The simpler endpoints
+// delegate straight through to the test service.
+// ============================================================================
+
+private class Oid4vciFakeHandleTokenRequestCommand(
+    private val authServerService: AuthorizationServerService,
+    private val configProvider: OAuth2ServersConfigProvider,
+    private val secureRandom: com.sphereon.core.api.random.SecureRandom = defaultSecureRandom(),
+    private val scopeClaimsMapper: com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapper? = OidcScopeClaimsMapperImpl(),
+) : HandleTokenRequestCommand {
+    override val commandId: String get() = HandleTokenRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandleTokenRequestArgs>()
+    override val outputTypeToken get() = typeToken<TokenResponse>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandleTokenRequestArgs
+
+    override suspend fun execute(args: HandleTokenRequestArgs): IdkResult<TokenResponse, IdkError> {
+        val commands = authServerService.commands
+        val tokenRequest =
+            commands.parseTokenRequest
+                .execute(ParseTokenRequestArgs(args.requestBody, args.requestHeaders))
+                .getOrElse { error -> return Err(error) }
+
+        commands.verifyClientAuthentication
+            .execute(
+                VerifyClientAuthenticationArgs(
+                    clientAuthentication = tokenRequest.clientAuthentication,
+                    clientId = tokenRequest.clientId,
+                    tokenEndpointUrl = args.httpUrl,
+                ),
+            ).getOrElse { error -> return Err(error) }
+
+        return when (val params = tokenRequest.grantParameters) {
+            is GrantParameters.AuthorizationCode -> {
+                val verified =
+                    commands.verifyAuthorizationCodeGrant
+                        .execute(
+                            VerifyAuthorizationCodeGrantArgs(
+                                code = params.code,
+                                redirectUri = params.redirectUri,
+                                clientId = tokenRequest.clientId,
+                                codeVerifier = params.codeVerifier,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val accessToken =
+                    commands.createAccessToken
+                        .execute(
+                            CreateAccessTokenArgs(
+                                subject = verified.subject,
+                                clientId = tokenRequest.clientId,
+                                scope = verified.scope,
+                                dpopJkt = verified.dpopJkt,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val refreshToken =
+                    commands.createRefreshToken
+                        .execute(
+                            CreateRefreshTokenArgs(
+                                subject = verified.subject,
+                                clientId = tokenRequest.clientId,
+                                scope = verified.scope,
+                                dpopJkt = verified.dpopJkt,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+
+                val grantedScopes = verified.scope?.split(" ")?.toSet() ?: emptySet()
+                val oidcEnabled = configProvider.serverConfig.oidc.isEnabled == true
+                val idToken =
+                    if (oidcEnabled && "openid" in grantedScopes) {
+                        val idTokenClaims =
+                            if (scopeClaimsMapper != null && verified.userClaims.isNotEmpty()) {
+                                val scopeFiltered = scopeClaimsMapper.filterClaims(verified.userClaims, grantedScopes)
+                                val standardClaimKeys = scopeClaimsMapper.allStandardClaimKeys()
+                                val customClaims = verified.userClaims.filterKeys { it !in standardClaimKeys }
+                                scopeFiltered + customClaims
+                            } else {
+                                verified.userClaims
+                            }
+                        commands.createIdToken
+                            .execute(
+                                CreateIdTokenArgs(
+                                    subject = verified.subject,
+                                    clientId = tokenRequest.clientId,
+                                    nonce = verified.codeData.nonce,
+                                    authTime = verified.codeData.authTime,
+                                    acr = verified.codeData.acr,
+                                    amr = verified.codeData.amr,
+                                    accessToken = accessToken.value,
+                                    authorizationCode = params.code,
+                                    userClaims = idTokenClaims,
+                                    sessionId = verified.codeData.sessionId,
+                                ),
+                            ).getOrElse { error -> return Err(error) }
+                            .value
+                    } else {
+                        null
+                    }
+
+                val authCodeAuthorizationDetails =
+                    run {
+                        val configIds =
+                            (verified.additionalData["credential_configuration_ids"] as? List<*>)
+                                ?.filterIsInstance<String>()
+                                ?.ifEmpty { null }
+                        configIds?.let { ids ->
+                            val idsWithSuffixes =
+                                ids.map { it to secureRandom.newToken(lengthBytes = 12, encoding = com.sphereon.core.api.Encoding.HEX) }
+                            JsonArray(
+                                idsWithSuffixes.map { (configId, suffix) ->
+                                    buildJsonObject {
+                                        put("type", JsonPrimitive("openid_credential"))
+                                        put("credential_configuration_id", JsonPrimitive(configId))
+                                        putJsonArray("credential_identifiers") {
+                                            add(JsonPrimitive("$configId-$suffix"))
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    }
+
+                commands.createTokenResponse.execute(
+                    CreateTokenResponseArgs(
+                        accessToken = accessToken.value,
+                        tokenType = if (verified.dpopJkt != null) "DPoP" else "Bearer",
+                        refreshToken = refreshToken.value,
+                        scope = verified.scope,
+                        idToken = idToken,
+                        authorizationDetails = authCodeAuthorizationDetails,
+                    ),
+                )
+            }
+
+            is GrantParameters.RefreshToken -> {
+                val verified =
+                    commands.verifyRefreshTokenGrant
+                        .execute(
+                            VerifyRefreshTokenGrantArgs(
+                                refreshToken = params.refreshToken,
+                                clientId = tokenRequest.clientId,
+                                requestedScope = params.scope,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val accessToken =
+                    commands.createAccessToken
+                        .execute(
+                            CreateAccessTokenArgs(
+                                subject = verified.subject,
+                                clientId = tokenRequest.clientId,
+                                scope = verified.scope,
+                                dpopJkt = verified.dpopJkt,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                commands.createTokenResponse.execute(
+                    CreateTokenResponseArgs(
+                        accessToken = accessToken.value,
+                        tokenType = if (verified.dpopJkt != null) "DPoP" else "Bearer",
+                        scope = verified.scope,
+                    ),
+                )
+            }
+
+            is GrantParameters.ClientCredentials -> {
+                val verified =
+                    commands.verifyClientCredentialsGrant
+                        .execute(
+                            VerifyClientCredentialsGrantArgs(
+                                clientId = tokenRequest.clientId,
+                                requestedScope = params.scope,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val accessToken =
+                    commands.createAccessToken
+                        .execute(
+                            CreateAccessTokenArgs(
+                                subject = verified.subject,
+                                clientId = tokenRequest.clientId,
+                                scope = verified.scope,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                commands.createTokenResponse.execute(
+                    CreateTokenResponseArgs(
+                        accessToken = accessToken.value,
+                        tokenType = "Bearer",
+                        scope = verified.scope,
+                    ),
+                )
+            }
+
+            is GrantParameters.TokenExchange -> {
+                val verified =
+                    commands.verifyTokenExchangeGrant
+                        .execute(
+                            VerifyTokenExchangeGrantArgs(
+                                subjectToken = params.subjectToken,
+                                subjectTokenType = params.subjectTokenType,
+                                actorToken = params.actorToken,
+                                actorTokenType = params.actorTokenType,
+                                resources = params.resources,
+                                audiences = params.audiences,
+                                scope = params.scope,
+                                requestedTokenType = params.requestedTokenType,
+                                clientId = tokenRequest.clientId,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val additionalClaims =
+                    buildMap<String, Any> {
+                        putAll(verified.additionalClaims)
+                        verified.actorClaim?.let { put("act", it) }
+                    }
+                val accessToken =
+                    commands.createAccessToken
+                        .execute(
+                            CreateAccessTokenArgs(
+                                subject = verified.subject,
+                                clientId = verified.clientId,
+                                scope = verified.scope,
+                                audience = verified.audience,
+                                additionalClaims = additionalClaims,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                commands.createTokenResponse.execute(
+                    CreateTokenResponseArgs(
+                        accessToken = accessToken.value,
+                        tokenType = "Bearer",
+                        scope = verified.scope,
+                        issuedTokenType = verified.issuedTokenType,
+                    ),
+                )
+            }
+
+            is GrantParameters.PreAuthorizedCode -> {
+                val verified =
+                    commands.verifyPreAuthorizedCodeGrant
+                        .execute(
+                            VerifyPreAuthCodeArgs(
+                                preAuthorizedCode = params.preAuthorizedCode,
+                                txCode = params.txCode,
+                                clientId = tokenRequest.clientId,
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val accessToken =
+                    commands.createAccessToken
+                        .execute(
+                            CreateAccessTokenArgs(
+                                subject = verified.subject ?: tokenRequest.clientId,
+                                clientId = tokenRequest.clientId,
+                                audience = listOfNotNull(verified.issuerIdentifier),
+                            ),
+                        ).getOrElse { error -> return Err(error) }
+                val authorizationDetails =
+                    if (verified.useCredentialIdentifiers && verified.credentialConfigurationIds.isNotEmpty()) {
+                        JsonArray(
+                            verified.credentialConfigurationIds.map { configId ->
+                                buildJsonObject {
+                                    put("type", JsonPrimitive("openid_credential"))
+                                    put("credential_configuration_id", JsonPrimitive(configId))
+                                    putJsonArray("credential_identifiers") {
+                                        add(JsonPrimitive(verified.sessionId))
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        null
+                    }
+                commands.createTokenResponse.execute(
+                    CreateTokenResponseArgs(
+                        accessToken = accessToken.value,
+                        tokenType = "Bearer",
+                        authorizationDetails = authorizationDetails,
+                    ),
+                )
+            }
+
+            is GrantParameters.DeviceCode -> {
+                Err(
+                    IdkError(
+                        code = "unsupported_grant_type",
+                        message =
+                            IdkError.Message(
+                                i18nKey = "oauth2.as.error.unsupported_grant_type",
+                                defaultMessage = "device_code grant not supported in this OID4VCI E2E fake",
+                            ),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+private class Oid4vciFakeHandlePushedAuthorizationRequestCommand(
+    private val authServerService: AuthorizationServerService,
+) : HandlePushedAuthorizationRequestCommand {
+    override val commandId: String get() = HandlePushedAuthorizationRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandlePushedAuthorizationRequestArgs>()
+    override val outputTypeToken get() = typeToken<PushedAuthorizationResponse>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandlePushedAuthorizationRequestArgs
+
+    override suspend fun execute(args: HandlePushedAuthorizationRequestArgs): IdkResult<PushedAuthorizationResponse, IdkError> {
+        // Test service does not exercise PAR; route the call through the parser/verifier so the
+        // existing test that hits POST /par returns whatever the test commands implement.
+        val singleValueBody = args.requestBody.mapValues { (_, values) -> values.first() }
+        val clientAuth = ClientAuthenticationConfig.None(clientId = singleValueBody["client_id"] ?: "")
+        val authRequest =
+            authServerService.commands.parsePushedAuthorizationRequest
+                .execute(ParsePushedAuthorizationRequestArgs(args.requestBody, clientAuth))
+                .getOrElse { error -> return Err(error) }
+        val verified =
+            authServerService.commands.verifyPushedAuthorizationRequest
+                .execute(VerifyPushedAuthorizationRequestArgs(authRequest, authRequest.clientId))
+                .getOrElse { error -> return Err(error) }
+        val requestUriData =
+            authServerService.commands.createRequestUri
+                .execute(verified)
+                .getOrElse { error -> return Err(error) }
+        return authServerService.commands.createPushedAuthorizationResponse.execute(
+            CreatePushedAuthorizationResponseArgs(requestUri = requestUriData.requestUri, expiresIn = requestUriData.expiresIn),
+        )
+    }
+}
+
+private class Oid4vciFakeHandleIntrospectionRequestCommand(
+    private val authServerService: AuthorizationServerService,
+) : HandleIntrospectionRequestCommand {
+    override val commandId: String get() = HandleIntrospectionRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandleIntrospectionRequestArgs>()
+    override val outputTypeToken get() = typeToken<TokenIntrospectionResponse>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandleIntrospectionRequestArgs
+
+    override suspend fun execute(args: HandleIntrospectionRequestArgs): IdkResult<TokenIntrospectionResponse, IdkError> {
+        // Mirror the production impl's auth flow using the impl-module's public extractor.
+        val extracted =
+            com.sphereon.oauth2.server.authorization.impl.command
+                .extractClientAuthentication(args.requestBody, args.requestHeaders)
+                .getOrElse { error -> return Err(IdkError.fromDTO(error)) }
+        val resolvedClientId =
+            extracted.clientId
+                ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "client authentication is required at /introspect"))
+        authServerService.commands.verifyClientAuthentication
+            .execute(
+                VerifyClientAuthenticationArgs(
+                    clientAuthentication = extracted.clientAuthentication,
+                    clientId = resolvedClientId,
+                    tokenEndpointUrl = args.httpUrl,
+                ),
+            ).getOrElse { error -> return Err(error) }
+        val introspectionRequest =
+            authServerService.commands.parseIntrospectionRequest
+                .execute(ParseIntrospectionRequestArgs(args.requestBody))
+                .getOrElse { error -> return Err(error) }
+        return authServerService.commands.introspectToken.execute(
+            IntrospectTokenArgs(
+                token = introspectionRequest.token,
+                tokenTypeHint = introspectionRequest.tokenTypeHint,
+                clientId = resolvedClientId,
+            ),
+        )
+    }
+}
+
+private class Oid4vciFakeHandleRevocationRequestCommand(
+    private val authServerService: AuthorizationServerService,
+) : HandleRevocationRequestCommand {
+    override val commandId: String get() = HandleRevocationRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandleRevocationRequestArgs>()
+    override val outputTypeToken get() = typeToken<Unit>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandleRevocationRequestArgs
+
+    override suspend fun execute(args: HandleRevocationRequestArgs): IdkResult<Unit, IdkError> {
+        val extracted =
+            com.sphereon.oauth2.server.authorization.impl.command
+                .extractClientAuthentication(args.requestBody, args.requestHeaders)
+                .getOrElse { error -> return Err(IdkError.fromDTO(error)) }
+        val resolvedClientId =
+            extracted.clientId
+                ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "client authentication is required at /revoke"))
+        authServerService.commands.verifyClientAuthentication
+            .execute(
+                VerifyClientAuthenticationArgs(
+                    clientAuthentication = extracted.clientAuthentication,
+                    clientId = resolvedClientId,
+                    tokenEndpointUrl = args.httpUrl,
+                ),
+            ).getOrElse { error -> return Err(error) }
+        val revocationRequest =
+            authServerService.commands.parseRevocationRequest
+                .execute(ParseRevocationRequestArgs(args.requestBody))
+                .getOrElse { error -> return Err(error) }
+        return authServerService.commands.revokeToken.execute(
+            RevokeTokenArgs(
+                token = revocationRequest.token,
+                tokenTypeHint = revocationRequest.tokenTypeHint,
+                clientId = resolvedClientId,
+            ),
+        )
+    }
+}
+
+private class Oid4vciFakeHandleDiscoveryRequestCommand(
+    private val authServerService: AuthorizationServerService,
+) : HandleDiscoveryRequestCommand {
+    override val commandId: String get() = HandleDiscoveryRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandleDiscoveryRequestArgs>()
+    override val outputTypeToken get() = typeToken<AuthorizationServerMetadata>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandleDiscoveryRequestArgs
+
+    override suspend fun execute(args: HandleDiscoveryRequestArgs): IdkResult<AuthorizationServerMetadata, IdkError> =
+        authServerService.commands.buildServerMetadata.execute(BuildServerMetadataArgs(serverId = args.serverId, baseUrlOverride = args.baseUrlOverride))
+}
+
+private class Oid4vciFakeHandleUserInfoRequestCommand(
+    private val authServerService: AuthorizationServerService,
+) : HandleUserInfoRequestCommand {
+    override val commandId: String get() = HandleUserInfoRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandleUserInfoRequestArgs>()
+    override val outputTypeToken get() = typeToken<UserInfoResponse>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandleUserInfoRequestArgs
+
+    override suspend fun execute(args: HandleUserInfoRequestArgs): IdkResult<UserInfoResponse, IdkError> =
+        authServerService.commands.getUserInfo.execute(GetUserInfoArgs(accessToken = args.accessToken))
+}
+
+private class Oid4vciFakeHandleJwksRequestCommand(
+    private val authServerService: AuthorizationServerService,
+) : HandleJwksRequestCommand {
+    override val commandId: String get() = HandleJwksRequestCommand.COMMAND_ID
+    override val inputTypeToken get() = typeToken<HandleJwksRequestArgs>()
+    override val outputTypeToken get() = typeToken<JwksResult>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is HandleJwksRequestArgs
+
+    override suspend fun execute(args: HandleJwksRequestArgs): IdkResult<JwksResult, IdkError> = authServerService.commands.getJwks.execute(GetJwksArgs())
+}
+
+/**
+ * Test-only [HttpAdapter] that fans a request out to the OAuth2 AS adapter set, returning the
+ * first response that is not 404. Mirrors the production dispatch path while letting the test
+ * keep the previous single-adapter shape.
+ */
+private class OAuth2DispatchHttpAdapter(
+    private val delegates: List<HttpAdapter>
+) : HttpAdapter {
+    override val id: String = "OAUTH2_AS_DISPATCH"
+
+    override fun describe(): com.sphereon.core.api.http.describe.HttpAdapterDescription =
+        com.sphereon.core.api.http.describe.HttpAdapterDescription(
+            id = id,
+            mount =
+                com.sphereon.core.api.http.describe
+                    .HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
+            endpoints = delegates.flatMap { it.describe().endpoints },
+        )
+
+    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
+        for (delegate in delegates) {
+            if (delegate is com.sphereon.core.api.http.RoutableHttpAdapter && !delegate.canHandle(request)) {
+                continue
+            }
+            val response = delegate.handleRequest(request)
+            if (response.statusCode != 404) {
+                return response
+            }
+        }
+        return GenericHttpResponse(statusCode = 404, headers = emptyMap(), body = "Not found")
+    }
+}
+
+/** Test stub: no-op nonce manager that returns fixed values for OID4VCI E2E. */
+private object Oid4vciFakeNoOpDpopNonceManager : com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager {
+    override suspend fun currentNonce(): String = "test-nonce-current"
+
+    override suspend fun rotate(): String = "test-nonce-rotated"
+
+    override suspend fun isValid(nonce: String): Boolean = true
+}
+
+/** Test stub: no-cert extractor for OID4VCI E2E flows that don't exercise mTLS. */
+private object Oid4vciFakeNoCertExtractor :
+    com.sphereon.oauth2.server.authorization.command.clientauth.ClientCertificateExtractor {
+    override suspend fun extractCertificate(
+        request: com.sphereon.core.api.http.GenericHttpRequest,
+    ): com.sphereon.core.api.IdkResult<ByteArray?, com.sphereon.oauth2.server.authorization.error.AuthorizationServerError> =
+        com.sphereon.core.api
+            .Ok(null)
 }

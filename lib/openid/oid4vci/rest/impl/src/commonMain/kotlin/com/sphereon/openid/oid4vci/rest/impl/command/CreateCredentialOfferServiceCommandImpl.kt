@@ -59,7 +59,7 @@ class CreateCredentialOfferServiceCommandImpl(
     private val configProvider: Oid4vciRestConfigProvider,
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
     private val sessionEventService: SessionEventService,
-) : TypedServiceCommandAdapter<CreateCredentialOfferInput, CreateCredentialOfferOutput>(
+) : TypedServiceCommandAdapter<CreateCredentialOfferInput, CreateCredentialOfferOutput, IdkError>(
         commandId = CreateCredentialOfferServiceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateCredentialOfferInput>(),
@@ -100,6 +100,7 @@ class CreateCredentialOfferServiceCommandImpl(
                 txCodeRequired = txCodeRequired,
                 preSeededAttributes = input.credentialSubjectData,
                 offerTtlSeconds = input.ttlSeconds ?: CredentialOfferSessionStore.DEFAULT_TTL_SECONDS,
+                scheme = input.scheme,
             )
 
         val created =

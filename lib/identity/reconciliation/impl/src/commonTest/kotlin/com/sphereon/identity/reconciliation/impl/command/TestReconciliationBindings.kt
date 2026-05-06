@@ -71,7 +71,7 @@ import kotlinx.serialization.json.JsonPrimitive
 @SingleIn(SessionScope::class)
 class TestExchangeTokenCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ExchangeTokenArgs, TokenResponse>(
+) : TypedServiceCommandAdapter<ExchangeTokenArgs, TokenResponse, IdkError>(
         commandId = ExchangeTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ExchangeTokenArgs>(),
@@ -124,7 +124,7 @@ class TestExchangeTokenCommandImpl(
 @SingleIn(SessionScope::class)
 class TestFetchUserInfoCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<FetchUserInfoArgs, FetchUserInfoResult>(
+) : TypedServiceCommandAdapter<FetchUserInfoArgs, FetchUserInfoResult, IdkError>(
         commandId = FetchUserInfoCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<FetchUserInfoArgs>(),
@@ -161,72 +161,72 @@ interface TestReconciliationCommandDescriptors {
     // Test overrides for reconciliation testing
     @Provides @IntoMap
     @StringKey(ExchangeTokenCommand.COMMAND_ID)
-    fun testExchangeToken(impl: TestExchangeTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun testExchangeToken(impl: TestExchangeTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(FetchUserInfoCommand.COMMAND_ID)
-    fun testFetchUserInfo(impl: TestFetchUserInfoCommandImpl): ServiceCommand<*, *> = impl
+    fun testFetchUserInfo(impl: TestFetchUserInfoCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Re-register non-overridden OAuth2 commands from OAuth2ClientCommandDescriptors
     @Provides @IntoMap
     @StringKey(VerifyPkceCommand.COMMAND_ID)
-    fun verifyPkce(impl: com.sphereon.oauth2.client.impl.pkce.VerifyPkceCommandImpl): ServiceCommand<*, *> = impl
+    fun verifyPkce(impl: com.sphereon.oauth2.client.impl.pkce.VerifyPkceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreatePkceCommand.COMMAND_ID)
-    fun createPkce(impl: com.sphereon.oauth2.client.impl.pkce.CreatePkceCommandImpl): ServiceCommand<*, *> = impl
+    fun createPkce(impl: com.sphereon.oauth2.client.impl.pkce.CreatePkceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateEncryptedJarCommand.COMMAND_ID)
-    fun createEncryptedJar(impl: com.sphereon.oauth2.client.impl.jar.CreateEncryptedJarCommandImpl): ServiceCommand<*, *> = impl
+    fun createEncryptedJar(impl: com.sphereon.oauth2.client.impl.jar.CreateEncryptedJarCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateSignedJarCommand.COMMAND_ID)
-    fun createSignedJar(impl: com.sphereon.oauth2.client.impl.jar.CreateSignedJarCommandImpl): ServiceCommand<*, *> = impl
+    fun createSignedJar(impl: com.sphereon.oauth2.client.impl.jar.CreateSignedJarCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(MergeRequestObjectCommand.COMMAND_ID)
-    fun mergeRequestObject(impl: com.sphereon.oauth2.client.impl.jar.MergeRequestObjectCommandImpl): ServiceCommand<*, *> = impl
+    fun mergeRequestObject(impl: com.sphereon.oauth2.client.impl.jar.MergeRequestObjectCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ParseJarCommand.COMMAND_ID)
-    fun parseJar(impl: com.sphereon.oauth2.client.impl.jar.ParseJarCommandImpl): ServiceCommand<*, *> = impl
+    fun parseJar(impl: com.sphereon.oauth2.client.impl.jar.ParseJarCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ParseAuthorizationResponseCommand.COMMAND_ID)
-    fun parseAuthorizationResponse(impl: com.sphereon.oauth2.client.impl.authorization.ParseAuthorizationResponseCommandImpl): ServiceCommand<*, *> = impl
+    fun parseAuthorizationResponse(impl: com.sphereon.oauth2.client.impl.authorization.ParseAuthorizationResponseCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateAuthorizationRequestUrlCommand.COMMAND_ID)
-    fun createAuthorizationRequestUrl(impl: com.sphereon.oauth2.client.impl.authorization.CreateAuthorizationRequestUrlCommandImpl): ServiceCommand<*, *> = impl
+    fun createAuthorizationRequestUrl(impl: com.sphereon.oauth2.client.impl.authorization.CreateAuthorizationRequestUrlCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(FetchJwksCommand.COMMAND_ID)
-    fun fetchJwks(impl: com.sphereon.oauth2.client.impl.metadata.FetchJwksCommandImpl): ServiceCommand<*, *> = impl
+    fun fetchJwks(impl: com.sphereon.oauth2.client.impl.metadata.FetchJwksCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(FetchAuthorizationServerMetadataCommand.COMMAND_ID)
-    fun fetchAuthorizationServerMetadata(impl: com.sphereon.oauth2.client.impl.metadata.FetchAuthorizationServerMetadataCommandImpl): ServiceCommand<*, *> = impl
+    fun fetchAuthorizationServerMetadata(impl: com.sphereon.oauth2.client.impl.metadata.FetchAuthorizationServerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(IntrospectTokenCommand.COMMAND_ID)
-    fun clientIntrospectToken(impl: com.sphereon.oauth2.client.impl.introspection.ClientIntrospectTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun clientIntrospectToken(impl: com.sphereon.oauth2.client.impl.introspection.ClientIntrospectTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ClientRevokeTokenCommand.COMMAND_ID)
-    fun clientRevokeToken(impl: com.sphereon.oauth2.client.impl.revocation.ClientRevokeTokenCommandImpl): ServiceCommand<*, *> = impl
+    fun clientRevokeToken(impl: com.sphereon.oauth2.client.impl.revocation.ClientRevokeTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(ApplyClientAuthenticationCommand.COMMAND_ID)
-    fun applyClientAuthentication(impl: com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl): ServiceCommand<*, *> = impl
+    fun applyClientAuthentication(impl: com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateDpopProofCommand.COMMAND_ID)
-    fun createDpopProof(impl: com.sphereon.oauth2.client.impl.dpop.CreateDpopProofCommandImpl): ServiceCommand<*, *> = impl
+    fun createDpopProof(impl: com.sphereon.oauth2.client.impl.dpop.CreateDpopProofCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyDpopProofCommand.COMMAND_ID)
-    fun clientVerifyDpopProof(impl: com.sphereon.oauth2.client.impl.dpop.ClientVerifyDpopProofCommandImpl): ServiceCommand<*, *> = impl
+    fun clientVerifyDpopProof(impl: com.sphereon.oauth2.client.impl.dpop.ClientVerifyDpopProofCommandImpl): ServiceCommand<*, *, *> = impl
 }
 
 /**
@@ -293,6 +293,11 @@ interface TestOAuth2ClientCommandBindings {
     fun fetchJwks(registry: SessionScopedCommandRegistry): FetchJwksCommand =
         registry.get(FetchJwksCommand.COMMAND_ID) as? FetchJwksCommand
             ?: error("No binding for ${FetchJwksCommand.COMMAND_ID}")
+
+    @Provides
+    fun completeOidcLogin(registry: SessionScopedCommandRegistry): com.sphereon.oauth2.client.command.CompleteOidcLoginCommand =
+        registry.get(com.sphereon.oauth2.client.command.CompleteOidcLoginCommand.COMMAND_ID) as? com.sphereon.oauth2.client.command.CompleteOidcLoginCommand
+            ?: error("No binding for ${com.sphereon.oauth2.client.command.CompleteOidcLoginCommand.COMMAND_ID}")
 }
 
 @ContributesTo(SessionScope::class)

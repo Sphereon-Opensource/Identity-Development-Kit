@@ -34,16 +34,22 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Command interface for fetching request objects by request_uri (POST).
  *
- * Used when `request_uri_method=post` is specified, allowing the wallet
- * to send wallet_metadata and wallet_nonce in the request body.
+ * Used when `request_uri_method=post` is specified, allowing the wallet to send
+ * `wallet_metadata` and `wallet_nonce` to the verifier before it returns the
+ * signed JAR.
+ *
+ * Per OID4VP 1.0 final §5.10.1 (verbatim, line 627-628):
+ *
+ *   "The request MUST use the HTTP POST method with the `https` scheme, and the
+ *    content type `application/x-www-form-urlencoded` and the `Accept` header
+ *    set to `application/oauth-authz-req+jwt`."
+ *
+ * Hence `consumes = ApplicationFormUrlEncoded`. The response Content-Type is
+ * the same JAR media type used by the GET path.
  */
 interface PostRequestObjectEndpointCommand : HttpEndpointCommand {
     companion object {
@@ -53,8 +59,8 @@ interface PostRequestObjectEndpointCommand : HttpEndpointCommand {
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
                 pathPattern = "/request-uri/{correlationId}",
-                consumes = setOf(MediaType.ApplicationJson),
-                produces = setOf(MediaType.Custom("application/oauth-authz-req+jwt"), MediaType.ApplicationJson),
+                consumes = setOf(MediaType.ApplicationFormUrlEncoded),
+                produces = setOf(MediaType.Custom("application/oauth-authz-req+jwt")),
                 operationId = "postRequestObjectByRequestUri",
                 tags = setOf("oid4vp", "request-uri"),
                 summary = "Fetch OID4VP request object by request_uri with wallet metadata",
@@ -82,8 +88,6 @@ class PostRequestObjectEndpointCommandImpl(
         endpoint = PostRequestObjectEndpointCommand.ENDPOINT,
     ),
     PostRequestObjectEndpointCommand {
-    private val json = Json { ignoreUnknownKeys = true }
-
     override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
@@ -92,7 +96,9 @@ class PostRequestObjectEndpointCommandImpl(
         val req = request.withExtractedParams("/request-uri/{correlationId}")
         val correlationId = req.requirePathParam("correlationId").getOrElse { return Err(it) }
 
-        val (walletMetadata, walletNonce) = parseRequestUriPostBody(request.body)
+        val params = parseFormBody(request.body)
+        val walletMetadata = params["wallet_metadata"]
+        val walletNonce = params["wallet_nonce"]
 
         // Build full path for handler (it expects the full path like /oid4vp/request-uri/{id})
         val fullPath = "/oid4vp/request-uri/$correlationId"
@@ -116,33 +122,45 @@ class PostRequestObjectEndpointCommandImpl(
     }
 
     /**
-     * Parse request_uri POST body.
-     *
-     * Both snake_case and camelCase field names are accepted:
-     * - `wallet_metadata` / `walletMetadata`
-     * - `wallet_nonce` / `walletNonce`
+     * Parse application/x-www-form-urlencoded body into a map. Per OID4VP §5.10.1 the wallet
+     * MUST send the request with this content type, so a body that fails to parse is treated
+     * as empty (not as a JSON shape).
      */
-    private fun parseRequestUriPostBody(body: String?): Pair<String?, String?> {
-        if (body.isNullOrBlank()) return null to null
-        val element =
-            try {
-                json.parseToJsonElement(body)
-            } catch (_: Exception) {
-                return null to null
-            }
-        val obj = (element as? JsonObject) ?: return null to null
-
-        fun JsonObject.optString(vararg keys: String): String? {
-            for (k in keys) {
-                val v: JsonElement = this[k] ?: continue
-                val p = v as? JsonPrimitive ?: continue
-                if (p.isString) return p.content
-            }
-            return null
-        }
-
-        val walletMetadata = obj.optString("wallet_metadata", "walletMetadata")
-        val walletNonce = obj.optString("wallet_nonce", "walletNonce")
-        return walletMetadata to walletNonce
+    private fun parseFormBody(body: String?): Map<String, String> {
+        if (body.isNullOrBlank()) return emptyMap()
+        return body
+            .split("&")
+            .mapNotNull { param ->
+                val parts = param.split("=", limit = 2)
+                if (parts.size == 2) {
+                    urlDecode(parts[0]) to urlDecode(parts[1])
+                } else {
+                    null
+                }
+            }.toMap()
     }
+
+    private fun urlDecode(value: String): String =
+        buildString {
+            var i = 0
+            while (i < value.length) {
+                when {
+                    value[i] == '%' && i + 2 < value.length -> {
+                        val hex = value.substring(i + 1, i + 3)
+                        append(hex.toInt(16).toChar())
+                        i += 3
+                    }
+
+                    value[i] == '+' -> {
+                        append(' ')
+                        i++
+                    }
+
+                    else -> {
+                        append(value[i])
+                        i++
+                    }
+                }
+            }
+        }
 }

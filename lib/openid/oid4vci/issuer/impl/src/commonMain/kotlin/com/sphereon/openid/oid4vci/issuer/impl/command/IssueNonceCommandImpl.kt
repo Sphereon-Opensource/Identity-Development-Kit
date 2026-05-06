@@ -37,7 +37,7 @@ import dev.zacsweers.metro.binding
 class IssueNonceCommandImpl(
     execution: SessionExecution,
     private val nonceManager: NonceManager,
-) : TypedServiceCommandAdapter<IssueNonceArgs, NonceResponse>(
+) : TypedServiceCommandAdapter<IssueNonceArgs, NonceResponse, IdkError>(
         commandId = IssueNonceCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<IssueNonceArgs>(),

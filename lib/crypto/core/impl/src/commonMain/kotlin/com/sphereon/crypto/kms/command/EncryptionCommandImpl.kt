@@ -60,7 +60,7 @@ import dev.zacsweers.metro.SingleIn
 class EncryptCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<EncryptArgs, EncryptResult>(
+) : TypedServiceCommandAdapter<EncryptArgs, EncryptResult, IdkError>(
         commandId = EncryptCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<EncryptArgs>(),
@@ -113,7 +113,7 @@ class EncryptCommandImpl(
 class DecryptCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<DecryptArgs, DecryptResult>(
+) : TypedServiceCommandAdapter<DecryptArgs, DecryptResult, IdkError>(
         commandId = DecryptCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<DecryptArgs>(),
@@ -164,7 +164,7 @@ class DecryptCommandImpl(
 class WrapKeyCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<WrapKeyArgs, WrapKeyResult>(
+) : TypedServiceCommandAdapter<WrapKeyArgs, WrapKeyResult, IdkError>(
         commandId = WrapKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<WrapKeyArgs>(),
@@ -212,7 +212,7 @@ class WrapKeyCommandImpl(
 class UnwrapKeyCommandImpl(
     execution: SessionExecution,
     private val providerRegistry: KmsProviderRegistry,
-) : TypedServiceCommandAdapter<UnwrapKeyArgs, UnwrapKeyResult>(
+) : TypedServiceCommandAdapter<UnwrapKeyArgs, UnwrapKeyResult, IdkError>(
         commandId = UnwrapKeyCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<UnwrapKeyArgs>(),
@@ -259,7 +259,7 @@ class UnwrapKeyCommandImpl(
 @SingleIn(SessionScope::class)
 class PerformKeyAgreementCommandImpl(
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<PerformKeyAgreementArgs, PerformKeyAgreementResult>(
+) : TypedServiceCommandAdapter<PerformKeyAgreementArgs, PerformKeyAgreementResult, IdkError>(
         commandId = PerformKeyAgreementCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<PerformKeyAgreementArgs>(),

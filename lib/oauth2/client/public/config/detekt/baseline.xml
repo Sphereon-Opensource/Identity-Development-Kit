@@ -4,6 +4,7 @@
   <CurrentIssues>
     <ID>ClassOrdering:IntrospectionService.kt$IntrospectionService$/** * Provides access to the underlying commands for advanced usage scenarios */ val commands: Commands</ID>
     <ID>ClassOrdering:JarService.kt$JarService$/** * Provides access to the underlying commands for advanced usage scenarios */ val commands: Commands</ID>
+    <ID>ClassOrdering:OAuth2Client.kt$OAuth2Client$/** * Façade grouping the OIDC login API (`initiate` + `complete`) so the secure path is the * obvious default for OIDC RPs. Raw OAuth2 methods (`initiateAuthorization`, * `exchangeAuthorizationCode`) remain on the root for non-OIDC callers. */ @JsExportIgnoreCompat val oidcLogin: OidcLoginApi</ID>
     <ID>ClassOrdering:PkceService.kt$PkceService$/** * Provides access to the underlying commands for advanced usage scenarios */ val commands: Commands</ID>
     <ID>ComplexInterface:OAuth2Client.kt$OAuth2Client</ID>
     <ID>ComplexInterface:OAuth2ClientCommandBindings.kt$OAuth2ClientCommandBindings</ID>
@@ -11,10 +12,16 @@
     <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientAuthentication: ClientAuthenticationConfig, preAuthorizedCode: String, txCode: String? = null, resource: List&lt;String>? = null, dpopContext: DpopContext? = null, )</ID>
     <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientAuthentication: ClientAuthenticationConfig, refreshToken: String, scope: String? = null, resource: List&lt;String>? = null, dpopContext: DpopContext? = null, )</ID>
     <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientId: String, redirectUri: String, scope: String? = null, state: String? = null, resource: List&lt;String>? = null, clientAuthentication: ClientAuthenticationConfig? = null, dpopContext: DpopContext? = null, additionalParameters: Map&lt;String, String> = emptyMap(), )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( authorizationServerMetadata: AuthorizationServerMetadata, clientId: String, redirectUri: String, scopes: Set&lt;String> = setOf("openid"), responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY, prompt: String? = null, loginHint: String? = null, tenantId: String? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OAuth2Client$( issuer: String, clientId: String, redirectUri: String, scopes: Set&lt;String> = setOf("openid"), responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY, prompt: String? = null, loginHint: String? = null, tenantId: String? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OidcLoginApi$( authorizationServerMetadata: AuthorizationServerMetadata, clientId: String, redirectUri: String, scopes: Set&lt;String> = setOf("openid"), responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY, prompt: String? = null, loginHint: String? = null, tenantId: String? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OidcLoginApi$( clientId: String, clientAuthentication: ClientAuthenticationConfig, callbackUrl: String, callbackFormBody: String? = null, responseSource: AuthorizationResponseSource = AuthorizationResponseSource.QUERY, tenantId: String? = null, )</ID>
+    <ID>LongParameterList:OAuth2Client.kt$OidcLoginApi$( issuer: String, clientId: String, redirectUri: String, scopes: Set&lt;String> = setOf("openid"), responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY, prompt: String? = null, loginHint: String? = null, tenantId: String? = null, )</ID>
     <ID>MagicNumber:AuthorizationRequestValidator.kt$8</ID>
     <ID>MagicNumber:PkceValidator.kt$128</ID>
     <ID>MagicNumber:PkceValidator.kt$43</ID>
     <ID>MagicNumber:TokenValidators.kt$128</ID>
     <ID>MagicNumber:TokenValidators.kt$43</ID>
+    <ID>StringLiteralDuplication:OAuth2Client.kt$OAuth2Client$"openid"</ID>
   </CurrentIssues>
 </SmellBaseline>

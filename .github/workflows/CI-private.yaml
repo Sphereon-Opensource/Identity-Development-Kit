@@ -22,11 +22,13 @@ jobs:
   jvm:
     name: JVM Build & Test
     if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private'
-    runs-on: ubuntu-latest
-#    runs-on: linux-x64
-    timeout-minutes: 20
+#    runs-on: ubuntu-latest
+    runs-on: linux-x64
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - run: chmod +x ./gradlew
 
       - uses: actions/setup-java@v4
@@ -41,6 +43,14 @@ jobs:
             caches
             notifications
             build-cache-1
+
+      # Generate TOML version catalogs from gradle-build-support source so the
+      # main settings.gradle.kts can resolve sphereonlib.* / sphereonplug.*
+      # accessors against current entries (e.g. com.doist.x:normalize) instead
+      # of falling back to the stale published library-bom artifact.
+      - name: Generate Sphereon TOML catalogs
+        working-directory: gradle-build-support
+        run: ./gradlew generateTomlCatalog --build-cache
 
       - name: Build & test (JVM only)
         run: >-

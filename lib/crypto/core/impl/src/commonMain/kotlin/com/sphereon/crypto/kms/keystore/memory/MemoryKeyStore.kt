@@ -128,8 +128,37 @@ class MemoryKeyStoreService(
     override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> {
         var managedKeyInfo = keyInfo
         if (managedKeyInfo.alias === null) {
+            // Lookup precedence: kid match first, then EC public-coordinate match. Two safety
+            // properties enforced here:
+            //   1. The EC-coordinate fallback is gated on both supplied AND stored keys having
+            //      non-null x/y. Non-EC keys (RSA, oct, OKP) return null for x/y, so a naive
+            //      `null == null` comparison would match every stored key of those families and
+            //      silently substitute an unrelated key, breaking authenticity guarantees of
+            //      every cryptographic operation downstream.
+            //   2. When the caller supplies key material along with a kid, a kid match is only
+            //      honoured if the stored key's public material matches the supplied material.
+            //      A bare kid collision (different RSA modulus, different EC point) MUST NOT
+            //      cause the stored key to override the caller's explicit choice, since the
+            //      caller has already declared which exact key to use.
+            val supplied = keyInfo.key
+            val suppliedX = supplied?.getXAsString()
+            val suppliedY = supplied?.getYAsString()
             val matchingKey =
-                keys.values.find { (keyInfo.kid !== null && it.kid == keyInfo.kid) || (keyInfo.key?.getXAsString() == it.key.getXAsString() && keyInfo.key?.getYAsString() == it.key.getYAsString()) }
+                keys.values.find { stored ->
+                    if (keyInfo.kid !== null && stored.kid == keyInfo.kid) {
+                        if (supplied === null) {
+                            return@find true
+                        }
+                        return@find isSameKeyMaterial(supplied, stored.key)
+                    }
+                    if (suppliedX === null || suppliedY === null) {
+                        return@find false
+                    }
+                    val storedKey = stored.key ?: return@find false
+                    val storedX = storedKey.getXAsString() ?: return@find false
+                    val storedY = storedKey.getYAsString() ?: return@find false
+                    storedX == suppliedX && storedY == suppliedY
+                }
             if (matchingKey != null) {
                 managedKeyInfo = matchingKey
             }
@@ -242,4 +271,38 @@ class MemoryKeyStoreService(
      * @return true if the certificate was found and deleted, false if not found
      */
     override suspend fun deleteCertificate(alias: String): Boolean = certificates.remove(alias) != null
+
+    /**
+     * Compares two key materials by their public-identifying fields. Used when a caller has
+     * supplied key material alongside a kid that collides with a stored key: substitution of the
+     * stored key for the supplied one is only safe when the public material matches.
+     *
+     * EC keys are compared on the (x, y) affine coordinates. RSA keys are compared on the
+     * modulus n. Symmetric (oct) keys are compared on the raw key bytes k. When neither side
+     * exposes any of those identifying fields, the comparison is conservative and returns false.
+     */
+    private fun isSameKeyMaterial(
+        supplied: com.sphereon.crypto.core.KeyType,
+        stored: com.sphereon.crypto.core.KeyType?,
+    ): Boolean {
+        if (stored === null) return false
+        val sx = supplied.getXAsString()
+        val sy = supplied.getYAsString()
+        if (sx !== null && sy !== null) {
+            return sx == stored.getXAsString() && sy == stored.getYAsString()
+        }
+        val suppliedJwk = supplied as? com.sphereon.crypto.core.jose.JwkType
+        val storedJwk = stored as? com.sphereon.crypto.core.jose.JwkType
+        if (suppliedJwk !== null && storedJwk !== null) {
+            val sn = suppliedJwk.n
+            if (sn !== null) {
+                return sn == storedJwk.n
+            }
+            val sk = suppliedJwk.k
+            if (sk !== null) {
+                return sk == storedJwk.k
+            }
+        }
+        return false
+    }
 }

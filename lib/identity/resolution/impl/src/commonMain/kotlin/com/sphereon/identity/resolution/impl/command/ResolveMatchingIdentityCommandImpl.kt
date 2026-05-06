@@ -49,7 +49,7 @@ class ResolveMatchingIdentityCommandImpl(
     execution: SessionExecution,
     private val lookupMatchCommand: LookupIdentityMatchCommand,
     private val generateMacCommand: GenerateMacCommand,
-) : TypedServiceCommandAdapter<ResolveMatchingIdentityArgs, IdentityResolutionResult>(
+) : TypedServiceCommandAdapter<ResolveMatchingIdentityArgs, IdentityResolutionResult, IdkError>(
         commandId = ResolveMatchingIdentityCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveMatchingIdentityArgs>(),

@@ -16,15 +16,36 @@
 
 package com.sphereon.oauth2.client.command
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
+import kotlin.jvm.JvmOverloads
+
+/**
+ * Order in which well-known discovery URLs are tried.
+ *
+ * - [OAUTH2_FIRST] — RFC 8414 (oauth-authorization-server) first, legacy path-prefixed variant
+ *   second, OIDC Discovery (openid-configuration) last. Backward-compatible default for plain
+ *   OAuth2 callers.
+ * - [OIDC_FIRST] — OIDC Discovery first, then RFC 8414, then legacy. Default for OIDC RPs
+ *   because OIDC servers commonly advertise the richer openid-configuration document, which
+ *   includes ID-token-signing-alg/userinfo/JWKS pointers that OAuth2-only metadata may omit.
+ */
+@JsExportCompat
+enum class DiscoveryMode {
+    OAUTH2_FIRST,
+    OIDC_FIRST,
+}
 
 @JsExportCompat
-data class FetchServerMetadataArgs(
-    val issuer: String,
-)
+data class FetchServerMetadataArgs
+    @JvmOverloads
+    constructor(
+        val issuer: String,
+        val discoveryMode: DiscoveryMode = DiscoveryMode.OAUTH2_FIRST,
+    )
 
 @JsExportCompat
 data class FetchJwksArgs(
@@ -43,7 +64,7 @@ data class FetchJwksArgs(
  * 3. {issuer}/.well-known/openid-configuration (OpenID Connect Discovery)
  */
 @JsExportCompat
-interface FetchAuthorizationServerMetadataCommand : ServiceCommand<FetchServerMetadataArgs, AuthorizationServerMetadata> {
+interface FetchAuthorizationServerMetadataCommand : ServiceCommand<FetchServerMetadataArgs, AuthorizationServerMetadata, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {
@@ -57,7 +78,7 @@ interface FetchAuthorizationServerMetadataCommand : ServiceCommand<FetchServerMe
  * Used to retrieve the authorization server's public keys for signature verification
  */
 @JsExportCompat
-interface FetchJwksCommand : ServiceCommand<FetchJwksArgs, JwkSet> {
+interface FetchJwksCommand : ServiceCommand<FetchJwksArgs, JwkSet, IdkError> {
     override val commandId: String get() = COMMAND_ID
 
     companion object {

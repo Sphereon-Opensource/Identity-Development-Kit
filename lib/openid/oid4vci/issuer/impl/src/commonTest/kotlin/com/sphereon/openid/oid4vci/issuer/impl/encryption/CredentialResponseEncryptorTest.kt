@@ -31,8 +31,14 @@ import com.sphereon.crypto.jose.jwe.JweJsonGeneral
 import com.sphereon.crypto.jose.jwe.JweService
 import com.sphereon.crypto.jose.jwe.PrepareJweArgs
 import com.sphereon.crypto.jose.jwe.PreparedJwe
+import com.sphereon.openid.oid4vc.common.DisplayProperties
+import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
+import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
+import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -45,9 +51,7 @@ import kotlin.test.assertTrue
 class CredentialResponseEncryptorTest {
     private val sampleResponse =
         CredentialResponse(
-            credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.test.signature"),
-            cNonce = "test-nonce-123",
-            cNonceExpiresIn = 86400,
+            credentials = listOf(CredentialResponseItem(credential = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.test.signature"))),
             notificationId = "notif-456",
         )
 
@@ -59,23 +63,38 @@ class CredentialResponseEncryptorTest {
             put("y", "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0")
         }
 
-    @Test
-    fun returnsResponseUnchangedWhenNoEncryptionRequested() =
-        runTest {
-            val encryptor = CredentialResponseEncryptor(jweService = FakeJweService())
+    private fun encryptor(
+        algValuesSupported: List<String> = listOf("ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"),
+        encValuesSupported: List<String> = listOf("A256GCM", "A128GCM"),
+        zipValuesSupported: List<String>? = listOf("DEF"),
+        encryptionRequired: Boolean = false,
+    ) = CredentialResponseEncryptor(
+        jweService = FakeJweService(),
+        configProvider =
+            FakeConfigProvider(
+                MetadataCredentialResponseEncryption(
+                    algValuesSupported = algValuesSupported,
+                    encValuesSupported = encValuesSupported,
+                    zipValuesSupported = zipValuesSupported,
+                    encryptionRequired = encryptionRequired,
+                ),
+            ),
+    )
 
-            val result = encryptor.encryptIfRequested(sampleResponse, encryption = null)
+    @Test
+    fun returnsPlainWhenNoEncryptionRequested() =
+        runTest {
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption = null)
 
             assertTrue(result.isOk)
-            val output = result.getOrThrow()
-            assertEquals(sampleResponse, output)
+            val output = result.value
+            assertTrue(output is MaybeEncryptedCredentialResponse.Plain)
+            assertEquals(sampleResponse, output.response)
         }
 
     @Test
-    fun returnsErrorForInvalidJwk() =
+    fun returnsInvalidEncryptionParametersForInvalidJwk() =
         runTest {
-            val encryptor = CredentialResponseEncryptor(jweService = FakeJweService())
-
             val invalidJwk =
                 buildJsonObject {
                     // Missing required "kty" field
@@ -89,16 +108,15 @@ class CredentialResponseEncryptorTest {
                     enc = "A256GCM",
                 )
 
-            val result = encryptor.encryptIfRequested(sampleResponse, encryption)
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption)
 
             assertTrue(result.isErr)
+            assertEquals(Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS, result.error.code)
         }
 
     @Test
-    fun returnsErrorWhenAlgMissingFromBothRequestAndJwk() =
+    fun returnsInvalidEncryptionParametersWhenAlgMissingFromBothRequestAndJwk() =
         runTest {
-            val encryptor = CredentialResponseEncryptor(jweService = FakeJweService())
-
             val encryption =
                 RequestedCredentialResponseEncryption(
                     jwk = sampleJwk,
@@ -107,16 +125,74 @@ class CredentialResponseEncryptorTest {
                 )
             // sampleJwk also has no "alg" field
 
-            val result = encryptor.encryptIfRequested(sampleResponse, encryption)
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption)
 
             assertTrue(result.isErr)
+            assertEquals(Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS, result.error.code)
         }
 
     @Test
-    fun encryptsResponseWhenEncryptionRequested() =
+    fun returnsInvalidEncryptionParametersForUnsupportedAlg() =
         runTest {
-            val fakeService = FakeJweService()
-            val encryptor = CredentialResponseEncryptor(jweService = fakeService)
+            val encryption =
+                RequestedCredentialResponseEncryption(
+                    jwk = sampleJwk,
+                    alg = "RSA-OAEP", // Not in default supported list (ECDH-ES family)
+                    enc = "A256GCM",
+                )
+
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption)
+
+            assertTrue(result.isErr)
+            assertEquals(Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS, result.error.code)
+            assertTrue("RSA-OAEP" in result.error.message.defaultMessage)
+        }
+
+    @Test
+    fun returnsInvalidEncryptionParametersForUnsupportedEnc() =
+        runTest {
+            val encryption =
+                RequestedCredentialResponseEncryption(
+                    jwk = sampleJwk,
+                    alg = "ECDH-ES+A128KW",
+                    enc = "A192GCM", // Not in default supported list (A256GCM, A128GCM)
+                )
+
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption)
+
+            assertTrue(result.isErr)
+            assertEquals(Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS, result.error.code)
+            assertTrue("A192GCM" in result.error.message.defaultMessage)
+        }
+
+    @Test
+    fun returnsInvalidEncryptionParametersForUnsupportedZip() =
+        runTest {
+            val encryption =
+                RequestedCredentialResponseEncryption(
+                    jwk = sampleJwk,
+                    alg = "ECDH-ES+A128KW",
+                    enc = "A256GCM",
+                    zip = "GZIP", // Not in default supported list (DEF)
+                )
+
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption)
+
+            assertTrue(result.isErr)
+            assertEquals(Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS, result.error.code)
+            assertTrue("GZIP" in result.error.message.defaultMessage)
+        }
+
+    @Test
+    fun returnsInvalidEncryptionParametersWhenIssuerHasNoEncryptionMetadata() =
+        runTest {
+            // Config provider with credentialResponseEncryption == null — issuer doesn't advertise
+            // encryption support at all. Any request asking for encryption must be rejected.
+            val encryptor =
+                CredentialResponseEncryptor(
+                    jweService = FakeJweService(),
+                    configProvider = FakeConfigProvider(metadata = null),
+                )
 
             val encryption =
                 RequestedCredentialResponseEncryption(
@@ -127,29 +203,45 @@ class CredentialResponseEncryptorTest {
 
             val result = encryptor.encryptIfRequested(sampleResponse, encryption)
 
-            assertTrue(result.isOk)
-            val output = result.getOrThrow()
-            assertNotNull(output.credential)
-            // The credential should be a JWE compact string (5 dot-separated parts)
-            val credentialString =
-                output.credential?.let {
-                    assertTrue(it is JsonPrimitive)
-                    (it as JsonPrimitive).content
-                }
-            assertNotNull(credentialString)
-            val parts = credentialString.split(".")
-            assertEquals(5, parts.size, "JWE compact serialization should have 5 parts")
-
-            // Other response fields should be absent in encrypted response
-            assertEquals(null, output.cNonce)
-            assertEquals(null, output.cNonceExpiresIn)
-            assertEquals(null, output.notificationId)
-            assertEquals(null, output.transactionId)
+            assertTrue(result.isErr)
+            assertEquals(Oid4vciErrors.INVALID_ENCRYPTION_PARAMETERS, result.error.code)
         }
 
+    @Test
+    fun encryptsResponseWhenEncryptionRequested() =
+        runTest {
+            val encryption =
+                RequestedCredentialResponseEncryption(
+                    jwk = sampleJwk,
+                    alg = "ECDH-ES+A128KW",
+                    enc = "A256GCM",
+                )
+
+            val result = encryptor().encryptIfRequested(sampleResponse, encryption)
+
+            assertTrue(result.isOk)
+            val output = result.value
+            assertTrue(output is MaybeEncryptedCredentialResponse.Encrypted)
+            assertNotNull(output.jweCompact)
+            // JWE compact serialization has 5 base64url-encoded parts separated by dots.
+            val parts = output.jweCompact.split(".")
+            assertEquals(5, parts.size, "JWE compact serialization should have 5 parts")
+        }
+
+    private class FakeConfigProvider(
+        private val metadata: MetadataCredentialResponseEncryption?,
+    ) : Oid4vciIssuerConfigProvider {
+        override val issuerIdentifier: String = "https://test.example/oid4vci"
+        override val credentialConfigurations: Map<String, CredentialConfigurationSupported> = emptyMap()
+        override val authorizationServers: List<String>? = null
+        override val display: List<DisplayProperties>? = null
+        override val credentialResponseEncryption: MetadataCredentialResponseEncryption? = metadata
+    }
+
     /**
-     * Fake JweService that produces deterministic JWE compact output for testing.
-     * The encrypted content is not real encryption but produces valid JWE structure.
+     * Fake JweService that produces deterministic JWE compact output for testing. The encrypted
+     * content is not real encryption but produces valid 5-segment JWE structure so the test can
+     * assert serialization-level behaviour without pulling a real KMS.
      */
     private class FakeJweService : JweService {
         override val commands: JweService.Commands

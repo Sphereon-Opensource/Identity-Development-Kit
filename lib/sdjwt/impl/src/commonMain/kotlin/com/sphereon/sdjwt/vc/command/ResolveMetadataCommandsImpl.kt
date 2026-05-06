@@ -44,7 +44,7 @@ import kotlin.native.ObjCName
 class ResolveTypeMetadataCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ResolveTypeMetadataArgs, TypeMetadataResolutionResult>(
+) : TypedServiceCommandAdapter<ResolveTypeMetadataArgs, TypeMetadataResolutionResult, IdkError>(
         commandId = ResolveTypeMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveTypeMetadataArgs>(),
@@ -72,7 +72,7 @@ class ResolveTypeMetadataCommandImpl(
 class ResolveIssuerMetadataCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     execution: SessionExecution,
-) : TypedServiceCommandAdapter<ResolveIssuerMetadataArgs, IssuerMetadataResolutionResult>(
+) : TypedServiceCommandAdapter<ResolveIssuerMetadataArgs, IssuerMetadataResolutionResult, IdkError>(
         commandId = ResolveIssuerMetadataCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<ResolveIssuerMetadataArgs>(),

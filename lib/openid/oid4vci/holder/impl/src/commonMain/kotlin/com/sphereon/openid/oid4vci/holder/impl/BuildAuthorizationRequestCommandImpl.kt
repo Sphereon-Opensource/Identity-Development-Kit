@@ -65,7 +65,7 @@ class BuildAuthorizationRequestCommandImpl(
     execution: SessionExecution,
     private val createPkceCommand: CreatePkceCommand,
     private val httpClientFactory: HttpClientFactory,
-) : TypedServiceCommandAdapter<BuildAuthorizationRequestArgs, AuthorizationRequestResult>(
+) : TypedServiceCommandAdapter<BuildAuthorizationRequestArgs, AuthorizationRequestResult, IdkError>(
         commandId = BuildAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<BuildAuthorizationRequestArgs>(),

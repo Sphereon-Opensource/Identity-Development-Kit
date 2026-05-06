@@ -32,7 +32,10 @@ import kotlinx.serialization.Serializable
 @JsExportCompat
 @Serializable
 data class DpopJwtHeader(
-    val typ: String = "dpop+jwt",
+    // RFC 9449 §4.1: `typ` MUST be `dpop+jwt`. Modelled as nullable so the verifier can
+    // distinguish a missing header (which the spec says MUST be rejected) from a wrong
+    // header — defaulting to `"dpop+jwt"` would silently accept a proof that omitted it.
+    val typ: String? = null,
     val alg: String,
     val jwk: Jwk,
 )

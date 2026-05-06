@@ -21,8 +21,8 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
@@ -36,11 +36,8 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
-
-private const val RANDOM_TOKEN_BYTES = 32
 
 /**
  * Implementation of CreateRefreshTokenCommand
@@ -72,7 +69,8 @@ class CreateRefreshTokenCommandImpl(
     execution: SessionExecution,
     private val tokenStorage: TokenStorage,
     private val configProvider: OAuth2ServersConfigProvider,
-) : TypedServiceCommandAdapter<CreateRefreshTokenArgs, StringResult>(
+    private val secureRandom: SecureRandom,
+) : TypedServiceCommandAdapter<CreateRefreshTokenArgs, StringResult, IdkError>(
         commandId = CreateRefreshTokenCommand.COMMAND_ID,
         execution = execution,
         inputTypeToken = typeToken<CreateRefreshTokenArgs>(),
@@ -88,42 +86,38 @@ class CreateRefreshTokenCommandImpl(
         applyDuring: (CreateRefreshTokenArgs) -> CreateRefreshTokenArgs,
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(
-            applied.subject,
-            applied.clientId,
-            applied.scope,
-            applied.expiresInSeconds,
-            applied.dpopJkt,
-        ).map { StringResult(it) }.mapError { IdkError.fromDTO(it) }
+        return executeInternal(applied)
+            .map { StringResult(it) }
+            .mapError { IdkError.fromDTO(it) }
     }
 
-    private suspend fun executeInternal(
-        subject: String,
-        clientId: String,
-        scope: String?,
-        expiresInSeconds: Int?,
-        dpopJkt: String?,
-    ): IdkResult<String, AuthorizationServerError> {
+    private suspend fun executeInternal(args: CreateRefreshTokenArgs): IdkResult<String, AuthorizationServerError> {
         val now = Clock.System.now()
-        val effectiveExpiresIn = expiresInSeconds ?: configProvider.serverConfig.refreshTokenLifetimeSeconds
+        val effectiveExpiresIn = args.expiresInSeconds ?: configProvider.serverConfig.refreshTokenLifetimeSeconds
         val expiresAt = now + effectiveExpiresIn.seconds
 
         // Generate cryptographically secure random refresh token
         // 256 bits = 32 bytes, encoded as base64url
         val refreshToken = generateSecureToken()
 
-        // Create token data
+        // Persist OIDC fields alongside the token so OIDC Core 1.0 §12 id_token reissue on
+        // refresh sees the original authentication context (auth_time/acr/amr/nonce/sid).
         val tokenData =
             RefreshTokenData(
                 refreshToken = refreshToken,
-                clientId = clientId,
-                subject = subject,
-                scope = scope,
+                clientId = args.clientId,
+                subject = args.subject,
+                scope = args.scope,
                 issuedAt = now,
                 expiresAt = expiresAt,
                 revoked = false,
                 used = false,
-                dpopJkt = dpopJkt,
+                dpopJkt = args.dpopJkt,
+                authTime = args.authTime,
+                acr = args.acr,
+                amr = args.amr,
+                nonce = args.nonce,
+                loginSessionId = args.loginSessionId,
                 additionalData = emptyMap(),
             )
 
@@ -141,11 +135,8 @@ class CreateRefreshTokenCommandImpl(
     }
 
     /**
-     * Generate a cryptographically secure random token
-     * 32 bytes (256 bits) of entropy, base64url encoded
+     * Generate a cryptographically secure random refresh token.
+     * 32 bytes (256 bits) of entropy, base64url encoded.
      */
-    private fun generateSecureToken(): String {
-        val randomBytes = Random.Default.nextBytes(RANDOM_TOKEN_BYTES)
-        return randomBytes.encodeToBase64Url()
-    }
+    private suspend fun generateSecureToken(): String = secureRandom.newToken()
 }

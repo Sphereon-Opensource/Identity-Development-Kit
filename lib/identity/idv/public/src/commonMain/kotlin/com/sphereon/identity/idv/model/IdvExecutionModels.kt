@@ -16,6 +16,8 @@
 
 package com.sphereon.identity.idv.model
 
+import com.sphereon.attribute.flow.AttributeBag
+import com.sphereon.attribute.flow.AttributePath
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.JwaAlgorithm
@@ -53,51 +55,6 @@ data class IdvExecutionContext(
     val workflowId: String? = null,
     val correlationId: String? = null,
 )
-
-@JsExportCompat
-@Serializable
-data class AttributeBag(
-    @JsExportIgnoreCompat
-    val attributes: Map<AttributePath, JsonElement> = emptyMap(),
-    @JsExportIgnoreCompat
-    val provenance: Map<AttributePath, IdvNodeId> = emptyMap(),
-) {
-    companion object {
-        fun empty(): AttributeBag = AttributeBag()
-    }
-
-    operator fun get(key: AttributePath): JsonElement? = attributes[key]
-
-    fun with(
-        key: AttributePath,
-        value: JsonElement,
-        source: IdvNodeId? = null,
-    ): AttributeBag =
-        AttributeBag(
-            attributes = attributes + (key to value),
-            provenance =
-                if (source != null) {
-                    provenance + (key to source)
-                } else {
-                    provenance
-                },
-        )
-
-    @JsExportIgnoreCompat
-    fun withAll(
-        values: Map<AttributePath, JsonElement>,
-        source: IdvNodeId? = null,
-    ): AttributeBag =
-        AttributeBag(
-            attributes = attributes + values,
-            provenance =
-                if (source != null) {
-                    provenance + values.keys.associateWith { source }
-                } else {
-                    provenance
-                },
-        )
-}
 
 @JsExportCompat
 @Serializable
