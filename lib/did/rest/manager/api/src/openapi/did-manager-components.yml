@@ -1,0 +1,837 @@
+openapi: 3.0.3
+info:
+  title: DID API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the DID API.
+paths: {}
+components:
+  parameters:
+    MethodId:
+      name: methodId
+      in: path
+      required: true
+      description: Verification method identifier as represented in the DID document.
+      schema:
+        type: string
+    ServiceId:
+      name: serviceId
+      in: path
+      required: true
+      description: DID service identifier as represented in the DID document.
+      schema:
+        type: string
+    MappingId:
+      name: mappingId
+      in: path
+      required: true
+      description: Unique identifier of the key mapping.
+      schema:
+        type: string
+    Did:
+      name: did
+      in: path
+      required: true
+      description: DID string, URL-encoded when needed by the HTTP client.
+      schema:
+        type: string
+    ControllerId:
+      name: controllerId
+      in: path
+      required: true
+      description: Unique identifier of the controller resource.
+      schema:
+        type: string
+    AkaId:
+      name: akaId
+      in: path
+      required: true
+      description: Unique identifier of the also-known-as resource.
+      schema:
+        type: string
+    EquivalentId:
+      name: equivalentId
+      in: path
+      required: true
+      description: Unique identifier of the equivalent-id resource.
+      schema:
+        type: string
+
+  schemas:
+    # ── Enums ──────────────────────────────────────────────────────────
+    DidRole:
+      type: string
+      enum:
+        - MANAGED
+        - EXTERNAL
+      description: |
+        Whether the DID is managed locally (keys held in KMS) or tracked
+        as an external reference.
+
+    # W3C DID Core §5.3–§5.7
+    VerificationPurpose:
+      type: string
+      enum:
+        - authentication
+        - assertionMethod
+        - keyAgreement
+        - capabilityInvocation
+        - capabilityDelegation
+      description: |
+        DID Core verification relationship purpose. Values use camelCase
+        matching the W3C DID Core wire format.
+
+    Curve:
+      type: string
+      description: |
+        Elliptic curve identifier using the registered wire-format value.
+        Casing is significant; for example, `secp256k1` is lowercase by
+        standard.
+      enum:
+        - P-256
+        - P-384
+        - P-521
+        - secp256k1
+        - Ed25519
+        - Ed448
+        - X25519
+        - X448
+      example: P-256
+
+    JwkUse:
+      type: string
+      description: Intended use of the key.
+      enum:
+        - sig
+        - enc
+      example: sig
+
+    JwkKeyType:
+      type: string
+      description: Supported JSON Web Key (JWK) key type parameter.
+      enum:
+        - EC
+        - RSA
+        - OKP
+      example: EC
+
+    KeyOperations:
+      type: string
+      description: Specific operations the key is intended for.
+      enum:
+        - sign
+        - verify
+        - encrypt
+        - decrypt
+        - wrapKey
+        - unwrapKey
+        - deriveKey
+        - deriveBits
+      example: sign
+
+    Jwk:
+      type: object
+      description: |
+        Represents a public JSON Web Key (JWK). This schema intentionally
+        models the common public members used by the DID API and does not
+        enforce every JOSE key-type-specific constraint.
+      required:
+        - kty
+      properties:
+        kty:
+          $ref: '#/components/schemas/JwkKeyType'
+        kid:
+          type: string
+          description: Key identifier used to uniquely identify the key.
+          example: "key-12345"
+        alg:
+          type: string
+          description: The algorithm intended for use with the key.
+          example: "ES256"
+        use:
+          $ref: '#/components/schemas/JwkUse'
+        key_ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyOperations'
+          description: The allowed cryptographic operations for the key.
+        crv:
+          $ref: '#/components/schemas/Curve'
+        x:
+          type: string
+          description: The x coordinate for elliptic curve keys (base64url-encoded).
+        y:
+          type: string
+          description: The y coordinate for elliptic curve keys (base64url-encoded).
+        n:
+          type: string
+          description: The modulus value for RSA keys (base64url-encoded).
+        e:
+          type: string
+          description: The public exponent for RSA keys (base64url-encoded).
+          example: "AQAB"
+        x5c:
+          type: array
+          items:
+            type: string
+          description: X.509 certificate chain as base64-encoded DER certificates.
+        x5t:
+          type: string
+          description: X.509 certificate SHA-1 thumbprint (base64url-encoded).
+        x5u:
+          type: string
+          format: uri
+          description: URL pointing to an X.509 certificate or certificate chain.
+        x5t#S256:
+          type: string
+          description: X.509 certificate SHA-256 thumbprint (base64url-encoded).
+
+    # ── Entity Schemas ─────────────────────────────────────────────────
+    # Aggregate root of the DID API model. Inline convenience arrays
+    # carry lightweight string values for display and filtering; more
+    # detailed objects are available via sub-resource endpoints or DidDetail.
+    Did:
+      type: object
+      description: Core DID resource representing a managed or external DID.
+      required:
+        - did
+        - method
+        - role
+        - createdAt
+        - updatedAt
+      properties:
+        did:
+          type: string
+          example: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+          description: The DID string.
+        method:
+          type: string
+          example: "key"
+          description: The DID method (e.g., key, web, ion, jwk).
+        alias:
+          type: string
+          nullable: true
+          description: Optional human-readable alias for this DID.
+        role:
+          $ref: '#/components/schemas/DidRole'
+        # `deactivated` and `controllers` are DID-document state and live on
+        # `DidDocument` / `DidDocumentMetadata`. Fetch the document to read
+        # them; use the `includeDeactivated` filter on list endpoints.
+        alsoKnownAs:
+          type: array
+          items:
+            type: string
+          description: Inline convenience view of also-known-as URIs.
+        # DID 1.1 / Controlled Identifiers v1.0
+        equivalentIds:
+          type: array
+          items:
+            type: string
+          description: Inline convenience view of equivalent DID strings.
+        canonicalId:
+          type: string
+          nullable: true
+          description: Canonical DID identifier if different from the primary DID.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete timestamp. Present only when the DID has been deleted.
+
+    KeyInfo:
+      type: object
+      description: |
+        Reference to a KMS-managed key, mirroring the platform `KeyInfo<KeyType>`
+        Kotlin type (`lib/crypto/core/.../Key.kt`). Used everywhere a wire DTO
+        needs to identify a key — request bodies (DID create, VM create,
+        key-mapping create), patch bodies (VM update), and read responses
+        (VM, KeyMapping). The wire shape carries metadata only — raw key
+        material is never transferred via this object; clients pass keys via
+        the dedicated `publicKeyJwk` field on creation requests where
+        applicable.
+
+        At least one of `providerId` plus `alias` or `kid` is required for
+        operations that need to resolve a key. Read responses populate
+        whichever fields the keyref-store entry supplied (typically
+        `providerId`/`alias`/`kid` plus the optional `keyType`/
+        `signatureAlgorithm`/`keyEncoding` triplet from the keyref record).
+      properties:
+        providerId:
+          type: string
+          nullable: true
+          description: KMS provider identifier.
+        alias:
+          type: string
+          nullable: true
+          description: Key alias in the KMS.
+        kid:
+          type: string
+          nullable: true
+          description: Key identifier.
+        keyType:
+          type: string
+          nullable: true
+          description: |
+            Canonical key-type identifier (e.g. `Ed25519`, `Secp256k1`,
+            `RSA-2048`). Resolved from the keyref-store entry on read; null
+            when the keyref-store binding is the no-op stub or the lookup
+            record carries no `keyType`.
+        signatureAlgorithm:
+          type: string
+          nullable: true
+          description: |
+            Default signature algorithm associated with the key
+            (e.g. `EdDSA`, `ES256K`). Resolved from the keyref-store entry
+            on read.
+        keyEncoding:
+          type: string
+          nullable: true
+          description: |
+            Encoding of the public key material in the keyref-store record
+            (e.g. `JWK`, `Multibase`). Resolved from the keyref-store entry
+            on read.
+
+    VerificationMethod:
+      type: object
+      description: |
+        A verification method associated with a DID. References the key
+        material via KMS (`keyInfo.providerId` + `keyInfo.alias`/`keyInfo.kid`).
+        For W3C-compliant key material representations, use the resolution
+        endpoint.
+
+        Both managed and external DIDs reference key material through the
+        KMS: managed keys are generated in-KMS, external public keys are
+        registered into the KMS first (see KMS register endpoint). The DID
+        manager never holds raw key bytes.
+      required:
+        - id
+        - type
+        - controller
+        - keyInfo
+      properties:
+        id:
+          type: string
+          description: |
+            Verification method identifier as represented in the DID document.
+            May be a fragment (for example `#key-1`) or an absolute DID URL.
+        type:
+          type: string
+          description: |
+            Verification method type. Known values include: JsonWebKey2020,
+            Ed25519VerificationKey2020, EcdsaSecp256k1VerificationKey2019,
+            X25519KeyAgreementKey2020, Multikey.
+        controller:
+          type: string
+          description: DID of the controller of this verification method.
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Expiration timestamp of the verification method (DID 1.1 / CID).
+            When present and in the past, the VM is no longer considered valid.
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Revocation timestamp of the verification method (DID 1.1 / CID).
+            Distinct from key revocation in the KMS — a VM may be revoked
+            within a DID document while the underlying KMS key remains usable
+            for other purposes, and vice versa.
+        valueVerificationRelation:
+          allOf:
+            - $ref: '#/components/schemas/VerificationPurpose'
+          nullable: true
+          description: |
+            If set, this verification method is embedded BY VALUE inside
+            this single verification relationship in the DID document
+            (e.g., embedded directly in `assertionMethod`). Per W3C
+            semantics a VM may be embedded by value in at most one
+            relationship — use `referenceVerificationRelations` for any
+            additional relationships. When null, the VM lives in the
+            top-level `verificationMethod` array of the DID document.
+        referenceVerificationRelations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationPurpose'
+          description: |
+            Verification relationships that REFERENCE this VM by DID URL.
+            The VM itself is rendered either in the top-level
+            `verificationMethod` array (when `valueVerificationRelation`
+            is null) or embedded by value inside the
+            `valueVerificationRelation` purpose; entries listed here
+            point to it via DID URL from their respective purpose arrays.
+        extensionProperties:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Bag of unknown/extension properties carried by the verification
+            method in the original DID document, preserved for lossless
+            round-tripping (DID 1.1 extensibility).
+        ordinal:
+          type: integer
+          description: Ordering position within the DID document.
+
+    VerificationRelationshipView:
+      type: object
+      description: |
+        Read-only per-purpose view of a verification relationship, derived
+        from the verification methods of the DID. The source of truth is
+        each `VerificationMethod`'s `valueVerificationRelation` (at most
+        one VM may be embedded by value per purpose) and
+        `referenceVerificationRelations`. To add or remove a VM from a
+        relationship, update the VM directly.
+      required:
+        - purpose
+        - referenceVerificationMethodIds
+      properties:
+        purpose:
+          $ref: '#/components/schemas/VerificationPurpose'
+        embeddedVerificationMethodId:
+          type: string
+          nullable: true
+          description: |
+            Identifier of the verification method embedded BY VALUE in
+            this relationship (the VM whose `valueVerificationRelation`
+            equals this purpose). Null if no VM is embedded by value.
+        referenceVerificationMethodIds:
+          type: array
+          items:
+            type: string
+          description: |
+            Identifiers of verification methods referenced from this
+            relationship by DID URL (i.e., VMs that list this purpose in
+            their `referenceVerificationRelations`). The referenced VMs
+            live either in the top-level `verificationMethod` array or
+            are embedded by value in another relationship.
+
+    KeyMapping:
+      type: object
+      description: |
+        Binds a DID verification method to a KMS-managed key reference.
+      required:
+        - id
+        - verificationMethod
+        - keyInfo
+        - purposes
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the key-mapping resource.
+        verificationMethod:
+          type: string
+          description: Verification method identifier this key reference belongs to.
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationPurpose'
+          description: Verification purposes this key mapping serves.
+
+    # W3C DID Core §5.1.2
+    Controller:
+      type: object
+      description: A controller resource for a DID.
+      required:
+        - id
+        - controllerDid
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the controller resource.
+        controllerDid:
+          type: string
+          description: The controller DID string.
+        ordinal:
+          type: integer
+          description: Ordering position.
+
+    # W3C DID Core §5.1.1
+    AlsoKnownAsEntry:
+      type: object
+      description: An also-known-as URI resource for a DID.
+      required:
+        - id
+        - akaUri
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the also-known-as resource.
+        akaUri:
+          type: string
+          description: The also-known-as URI.
+        ordinal:
+          type: integer
+          description: Ordering position.
+
+    # DID 1.1 / Controlled Identifiers v1.0
+    EquivalentIdEntry:
+      type: object
+      description: An equivalent-id resource for a DID.
+      required:
+        - id
+        - equivalentDid
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the equivalent-id resource.
+        equivalentDid:
+          type: string
+          description: The equivalent DID string.
+        ordinal:
+          type: integer
+          description: Ordering position.
+
+    DidDetail:
+      type: object
+      description: |
+        Full aggregate view of a DID with all related entities.
+        All relation arrays are always populated. For DIF-compatible
+        resolution results, use the resolve endpoint.
+      required:
+        - did
+      properties:
+        did:
+          $ref: '#/components/schemas/Did'
+        controllers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Controller'
+        alsoKnownAs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlsoKnownAsEntry'
+        equivalentIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/EquivalentIdEntry'
+        verificationMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationMethod'
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationRelationshipView'
+          description: |
+            Derived per-purpose view of verification relationships,
+            computed from the verification methods. Read-only.
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentService'
+        keyMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyMapping'
+
+    # ── DIF-compatible resolution schemas ──────────────────────────
+    # W3C DID Resolution + DIF Universal Resolver
+    DidDocumentContext:
+      description: DID document JSON or JSON-LD context value.
+      oneOf:
+        - type: string
+        - type: array
+          items:
+            oneOf:
+              - type: string
+              - type: object
+                additionalProperties: true
+
+    DidDocumentController:
+      description: DID document controller value.
+      oneOf:
+        - type: string
+        - type: array
+          items:
+            type: string
+
+    DidDocumentVerificationMethod:
+      type: object
+      description: |
+        Verification method as represented in a DID document, limited to the
+        verification material forms supported by this API.
+      oneOf:
+        - required: [publicKeyJwk]
+        - required: [publicKeyMultibase]
+        - required: [blockchainAccountId]
+      required:
+        - id
+        - type
+        - controller
+      properties:
+        id:
+          type: string
+          description: Verification method identifier in DID document form.
+        type:
+          type: string
+          description: Verification method type.
+        controller:
+          type: string
+          description: DID of the controller of this verification method.
+        publicKeyJwk:
+          $ref: '#/components/schemas/Jwk'
+        publicKeyMultibase:
+          type: string
+          description: Multibase-encoded public key.
+        blockchainAccountId:
+          type: string
+          description: CAIP-10 blockchain account identifier.
+      additionalProperties: true
+
+    DidDocumentVerificationMethodReference:
+      description: DID document verification relationship entry.
+      oneOf:
+        - type: string
+          description: DID URL reference to an existing verification method.
+        - $ref: '#/components/schemas/DidDocumentVerificationMethod'
+
+    DidDocumentService:
+      type: object
+      description: |
+        A service endpoint of a DID, represented as it appears in the
+        DID document `service` array. The `type` field matches DID Core
+        wire format (singular `type`, not `types`). Used both as the W3C
+        wire shape and as the public API resource for service CRUD.
+      required:
+        - id
+        - type
+        - serviceEndpoint
+      properties:
+        id:
+          type: string
+          description: |
+            Service identifier as represented in the DID document. May be a
+            fragment or an absolute DID URL.
+        type:
+          description: |
+            Service type. DID Core uses `type` (not `types`). May be a single
+            string or an array of strings per the W3C specification.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        serviceEndpoint:
+          description: |
+            Service endpoint. Polymorphic per W3C DID Core: may be a URI string,
+            an object, or an array of URIs/objects.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+            - type: array
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    additionalProperties: true
+      additionalProperties: true
+
+    DidDocument:
+      type: object
+      description: W3C DID document representation.
+      required:
+        - id
+      properties:
+        '@context':
+          $ref: '#/components/schemas/DidDocumentContext'
+        id:
+          type: string
+          description: DID subject identifier.
+        controller:
+          $ref: '#/components/schemas/DidDocumentController'
+        alsoKnownAs:
+          type: array
+          items:
+            type: string
+          description: Alternative URIs for the DID subject.
+        verificationMethod:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentVerificationMethod'
+        authentication:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentVerificationMethodReference'
+        assertionMethod:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentVerificationMethodReference'
+        keyAgreement:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentVerificationMethodReference'
+        capabilityInvocation:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentVerificationMethodReference'
+        capabilityDelegation:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentVerificationMethodReference'
+        service:
+          type: array
+          items:
+            $ref: '#/components/schemas/DidDocumentService'
+      additionalProperties: true
+
+    ResolutionResult:
+      type: object
+      description: |
+        DID resolution result. Contains the DID document alongside
+        resolution and document metadata. When resolution is unsuccessful,
+        `didDocument` may be `null`.
+      required:
+        - didDocument
+        - didResolutionMetadata
+        - didDocumentMetadata
+      properties:
+        didDocument:
+          allOf:
+            - $ref: '#/components/schemas/DidDocument'
+          nullable: true
+        didResolutionMetadata:
+          $ref: '#/components/schemas/DidResolutionMetadata'
+        didDocumentMetadata:
+          $ref: '#/components/schemas/DidDocumentMetadata'
+
+    DidResolutionMetadata:
+      type: object
+      description: Metadata about the DID resolution process.
+      properties:
+        contentType:
+          type: string
+          description: Media type of the DID document (e.g., application/did+ld+json).
+        error:
+          $ref: '#/components/schemas/ResolutionError'
+      additionalProperties: true
+
+    # W3C DID Resolution §4.1
+    DidDocumentMetadata:
+      type: object
+      description: Metadata about the DID document.
+      properties:
+        created:
+          type: string
+          format: date-time
+          description: When the DID was created.
+        updated:
+          type: string
+          format: date-time
+          description: When the DID document was last updated.
+        deactivated:
+          type: boolean
+          description: Whether the DID has been deactivated.
+        nextUpdate:
+          type: string
+          format: date-time
+          description: Expected next update time.
+        versionId:
+          type: string
+          description: Current version identifier.
+        nextVersionId:
+          type: string
+          description: Next version identifier.
+        equivalentId:
+          type: array
+          items:
+            type: string
+          description: Alternative identifiers for the same DID.
+        canonicalId:
+          type: string
+          description: Primary canonical identifier.
+      additionalProperties: true
+
+    DereferencingResult:
+      type: object
+      description: |
+        DID URL dereferencing result using the HTTP binding-style `content`
+        wrapper. The dereferenced content may be a DID document, a DID
+        document fragment, a URI list, another representation-specific
+        value, or `null` when dereferencing is unsuccessful.
+      required:
+        - content
+        - dereferencingMetadata
+        - contentMetadata
+      properties:
+        content:
+          nullable: true
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    additionalProperties: true
+            - type: string
+          description: |
+            The dereferenced resource. May be a DID document, verification
+            method, service endpoint, URI list, or other representation-
+            specific value.
+        dereferencingMetadata:
+          $ref: '#/components/schemas/DereferencingMetadata'
+        contentMetadata:
+          type: object
+          additionalProperties: true
+          description: Metadata about the dereferenced content.
+
+    DereferencingMetadata:
+      type: object
+      description: Metadata about the DID URL dereferencing process.
+      properties:
+        contentType:
+          type: string
+          description: Media type of the dereferenced content.
+        error:
+          $ref: '#/components/schemas/ResolutionError'
+      additionalProperties: true
+
+    ResolutionError:
+      type: string
+      description: DID resolution or dereferencing error code.
+      enum:
+        - invalidDid
+        - invalidDidUrl
+        - notFound
+        - representationNotSupported
+        - methodNotSupported
+        - invalidPublicKey
+        - invalidPublicKeyLength
+        - invalidPublicKeyType
+        - internalError
+
+    DidMethodCapabilities:
+      type: object
+      description: Capabilities snapshot for one DID method. Mirrors the SDK type.
+      required: [method]
+      properties:
+        method:
+          type: string
+        lifecycle:
+          type: object
+        keyManagement:
+          type: object
+        serviceManagement:
+          type: object
+        representations:
+          type: object
+        resolution:
+          type: object
+        recommendations:
+          type: object
+        metadata:
+          type: object
+      additionalProperties: true

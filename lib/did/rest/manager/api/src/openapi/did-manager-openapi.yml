@@ -1,0 +1,2107 @@
+openapi: 3.0.3
+info:
+  title: DID REST API
+  version: 0.1.0
+  description: |
+    REST API for Decentralized Identifiers (DIDs).
+    Provides CRUD operations for DIDs and their sub-resources:
+    verification methods, relationships, services, key mappings,
+    and document cache.
+  contact:
+    name: Sphereon International B.V.
+    email: support@sphereon.com
+    url: 'https://sphereon.com'
+
+security:
+  - bearer: []
+
+tags:
+  - name: Dids
+    description: CRUD operations for DIDs.
+  - name: VerificationMethods
+    description: Manage verification methods within a DID.
+  - name: VerificationRelationships
+    description: Manage verification relationships (purposes) within a DID.
+  - name: DidServices
+    description: Manage service endpoints within a DID.
+  - name: KeyMappings
+    description: Manage key mappings between verification methods and KMS keys.
+  - name: DocumentCache
+    description: |
+      Access and refresh cached DID documents. The document cache is a
+      read-only convenience layer — it is NOT the source of truth for
+      managed signing operations. For managed DIDs, the DID resource,
+      verification methods, and key mappings are authoritative;
+      the cached document reflects the last-known resolved state.
+  - name: Controllers
+    description: Manage controller entries for a DID.
+  - name: AlsoKnownAs
+    description: Manage also-known-as entries for a DID.
+  - name: EquivalentIds
+    description: Manage equivalent-id entries for a DID.
+  - name: Capabilities
+    description: Inspect DID method capabilities supported by the deployment.
+
+paths:
+  # ════════════════════════════════════════════════════════════════════
+  # DIDs
+  # ════════════════════════════════════════════════════════════════════
+  /dids:
+    post:
+      tags: [Dids]
+      summary: Create a new DID
+      operationId: createDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DidCreateRequest'
+      responses:
+        '201':
+          description: DID created successfully.
+          headers:
+            Location:
+              description: URI of the newly created DID.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/Did'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    get:
+      tags: [Dids]
+      summary: List DIDs
+      operationId: listDids
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+        - name: method
+          in: query
+          description: Filter by DID method (e.g., key, web, ion).
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Filter by DID role.
+          schema:
+            $ref: './did-manager-components.yml#/components/schemas/DidRole'
+        - name: alias
+          in: query
+          description: Filter by exact alias match.
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Case-insensitive contains search on DID string and alias.
+          schema:
+            type: string
+        - name: includeDeactivated
+          in: query
+          description: Include deactivated DIDs in results.
+          schema:
+            type: boolean
+            default: false
+        - name: includeDeleted
+          in: query
+          description: Include soft-deleted DIDs in results.
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          description: Page number (zero-based).
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          description: Sort field.
+          schema:
+            type: string
+            enum:
+              - createdAt
+              - updatedAt
+              - did
+              - method
+              - alias
+            default: createdAt
+        - name: sortDirection
+          in: query
+          description: Sort direction.
+          schema:
+            type: string
+            enum:
+              - ASC
+              - DESC
+            default: DESC
+      responses:
+        '200':
+          description: Paginated list of DIDs.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DidListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/import:
+    post:
+      tags: [Dids]
+      summary: Import an externally-managed DID
+      description: |
+        Registers a reference to an externally-managed DID for local tracking.
+        Only the DID string (and optional alias) is persisted; the resolver
+        fetches the document and the IDK CacheService holds it. The imported
+        DID always gets `role = EXTERNAL`. KMS key material is never bound to
+        external DIDs — keys belong to MANAGED DIDs created locally via
+        `POST /dids`.
+      operationId: importDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackExternalDidRequest'
+      responses:
+        '201':
+          description: External DID reference created successfully.
+          headers:
+            Location:
+              description: URI of the tracked DID.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/Did'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [Dids]
+      summary: Get DID detail
+      description: |
+        Returns the full DidDetail aggregate with all related entities
+        (verification methods, relationships, services, key mappings,
+        controllers, also-known-as, equivalent-ids, and cached document).
+      operationId: getDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+        - in: query
+          name: expand
+          required: false
+          schema:
+            type: string
+            enum: [all]
+          description: |
+            When `all`, the response includes the full aggregate (document with verification
+            methods/relationships/services, plus key mappings).
+      responses:
+        '200':
+          description: DID detail retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/DidDetail'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    patch:
+      tags: [Dids]
+      summary: Partially update a DID
+      description: |
+        Follows JSON Merge Patch semantics: absent fields are ignored, and
+        explicitly setting a field to null removes it.
+      operationId: updateDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DidUpdateRequest'
+      responses:
+        '200':
+          description: DID updated successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/Did'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    put:
+      tags: [Dids]
+      summary: Replace a DID
+      operationId: replaceDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DidReplaceRequest'
+      responses:
+        '200':
+          description: DID replaced successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/Did'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    delete:
+      tags: [Dids]
+      summary: Delete a DID
+      description: |
+        Soft-deletes the local DID resource (sets deletedAt timestamp).
+        Does NOT deactivate the DID on the network/ledger. The DID can be
+        recovered by querying with includeDeleted=true. To deactivate a DID
+        on the network, use the deactivate action instead.
+      operationId: deleteDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: DID deleted successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/actions/deactivate:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    post:
+      tags: [Dids]
+      summary: Deactivate a DID
+      description: |
+        Publishes a deactivation operation to the DID method's network or
+        ledger. This is irreversible for most DID methods. Sets the
+        deactivated flag to true on the local DID. This is fundamentally
+        different from DELETE, which only soft-deletes the local DID.
+      operationId: deactivateDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeactivateDidRequest'
+      responses:
+        '200':
+          description: DID deactivated successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/Did'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/resolve:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [Dids]
+      summary: Resolve a DID or dereference a DID URL
+      description: |
+        Resolves a locally managed DID or dereferences a DID URL.
+        When a plain DID is provided, returns a ResolutionResult containing
+        the DID document with resolution and document metadata.
+        When a DID URL with a fragment is provided (e.g.,
+        did:example:123#key-1), returns a DereferencingResult containing
+        the specific resource (verification method, service, etc.).
+
+        This performs a local DID lookup first. If the DID is not
+        locally managed, behavior depends on configuration (may fall
+        through to remote resolution).
+
+        For DIF Universal Resolver interop, use the separate endpoint
+        at /1.0/identifiers/{identifier}.
+      operationId: resolveDid
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+        - name: Accept
+          in: header
+          required: false
+          description: |
+            Content negotiation for response format.
+            Preferred W3C DID document representations for plain DID resolution:
+            - application/did+json — DID document JSON representation
+            - application/did+ld+json — DID document JSON-LD representation
+            Compatibility wrapper representations:
+            - application/did-resolution — Full ResolutionResult
+            - application/did-url-dereferencing — DereferencingResult
+            When absent, defaults to application/did-resolution for plain DIDs
+            and application/did-url-dereferencing for DID URLs with fragments.
+          schema:
+            type: string
+            enum:
+              - application/did+json
+              - application/did+ld+json
+              - application/did-resolution
+              - application/did-url-dereferencing
+        # versionId, versionTime, expandRelativeUrls, verificationRelationship were
+        # documented but not implemented (ResolveDidInput carries only `did` + `accept`).
+        # Removed from the spec until a follow-up extends the underlying service-command
+        # input — see review note for IDK-21 BLOCKER #5 / VDX-infra-cuy.
+      responses:
+        '200':
+          description: |
+            DID resolved or DID URL dereferenced successfully.
+            Response schema depends on Accept header:
+            - application/did-resolution: ResolutionResult
+            - application/did+json: DID document JSON representation
+            - application/did+ld+json: DID document JSON-LD representation
+            - application/did-url-dereferencing: DereferencingResult
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/did+json:
+              schema:
+                $ref: '#/components/schemas/DidDocument'
+            application/did+ld+json:
+              schema:
+                $ref: '#/components/schemas/DidDocument'
+            application/did-resolution:
+              schema:
+                $ref: '#/components/schemas/ResolutionResult'
+            application/did-url-dereferencing:
+              schema:
+                $ref: '#/components/schemas/DereferencingResult'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolutionResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '410':
+          description: DID has been deactivated.
+          content:
+            application/did-resolution:
+              schema:
+                $ref: '#/components/schemas/ResolutionResult'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolutionResult'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Verification Methods
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/verification-methods:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [VerificationMethods]
+      summary: List verification methods
+      operationId: listVerificationMethods
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of verification methods.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationMethodListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [VerificationMethods]
+      summary: Add a verification method
+      operationId: addVerificationMethod
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationMethodCreateRequest'
+      responses:
+        '201':
+          description: Verification method created successfully.
+          headers:
+            Location:
+              description: URI of the newly created verification method.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/VerificationMethod'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/verification-methods/{methodId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - $ref: './did-manager-components.yml#/components/parameters/MethodId'
+
+    get:
+      tags: [VerificationMethods]
+      summary: Get a verification method
+      operationId: getVerificationMethod
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Verification method retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/VerificationMethod'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    patch:
+      tags: [VerificationMethods]
+      summary: Update a verification method
+      description: |
+        Follows JSON Merge Patch semantics: absent fields are ignored, and
+        explicitly setting a field to null removes it.
+      operationId: updateVerificationMethod
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationMethodUpdateRequest'
+      responses:
+        '200':
+          description: Verification method updated successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/VerificationMethod'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    delete:
+      tags: [VerificationMethods]
+      summary: Remove a verification method
+      operationId: removeVerificationMethod
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Verification method deleted successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Verification Relationships
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/verification-relationships:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [VerificationRelationships]
+      summary: List verification relationships (derived view)
+      description: |
+        Returns the per-purpose view of verification relationships derived
+        from the DID's verification methods. Read-only — to add or remove
+        a VM from a relationship, update the VM's
+        `valueVerificationRelation` / `referenceVerificationRelations`.
+      operationId: listVerificationRelationships
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+        - name: purpose
+          in: query
+          description: Filter by verification purpose.
+          schema:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+      responses:
+        '200':
+          description: List of verification relationships.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationRelationshipListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [VerificationRelationships]
+      summary: Add a verification relationship
+      description: |
+        Bind an existing verification method to a verification relationship
+        purpose. As an alternative, you can update the VM directly using
+        `valueVerificationRelation` / `referenceVerificationRelations`.
+      operationId: addVerificationRelationship
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verificationMethodId, purpose]
+              properties:
+                verificationMethodId:
+                  type: string
+                  description: The verification method id (or fragment) to bind.
+                purpose:
+                  type: string
+                  description: One of authentication, assertionMethod, keyAgreement, capabilityInvocation, capabilityDelegation.
+      responses:
+        '201':
+          description: Verification relationship added successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/VerificationRelationshipView'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '422':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/verification-relationships/{relationshipId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - name: relationshipId
+        in: path
+        required: true
+        description: |
+          Identifier of the verification relationship binding to remove.
+          Implementations typically encode this as `<purpose>:<verificationMethodId>`.
+        schema:
+          type: string
+
+    delete:
+      tags: [VerificationRelationships]
+      summary: Remove a verification relationship
+      operationId: removeVerificationRelationship
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Verification relationship removed successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '422':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # DID Services
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/services:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [DidServices]
+      summary: List DID services
+      operationId: listDidServices
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of DID services.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DidServiceListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [DidServices]
+      summary: Add a DID service
+      operationId: addDidService
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DidServiceCreateRequest'
+      responses:
+        '201':
+          description: DID service created successfully.
+          headers:
+            Location:
+              description: URI of the newly created DID service.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/DidDocumentService'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/services/{serviceId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - $ref: './did-manager-components.yml#/components/parameters/ServiceId'
+
+    get:
+      tags: [DidServices]
+      summary: Get a DID service
+      operationId: getDidService
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: DID service retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/DidDocumentService'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    patch:
+      tags: [DidServices]
+      summary: Update a DID service
+      description: |
+        Follows JSON Merge Patch semantics: absent fields are ignored, and
+        explicitly setting a field to null removes it.
+      operationId: updateDidService
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DidServiceUpdateRequest'
+      responses:
+        '200':
+          description: DID service updated successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/DidDocumentService'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    delete:
+      tags: [DidServices]
+      summary: Remove a DID service
+      operationId: removeDidService
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: DID service deleted successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Key Mappings
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/key-mappings:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [KeyMappings]
+      summary: List key mappings
+      operationId: listKeyMappings
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of key mappings.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyMappingListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [KeyMappings]
+      summary: Add a key mapping
+      description: |
+        Add a key mapping binding a verification method to a KMS-managed
+        key reference (`keyInfo.providerId` + `keyInfo.alias`/`keyInfo.kid`).
+      operationId: addKeyMapping
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeyMappingCreateRequest'
+      responses:
+        '201':
+          description: Key mapping created successfully.
+          headers:
+            Location:
+              description: URI of the newly created key mapping.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/KeyMapping'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/key-mappings/{mappingId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - $ref: './did-manager-components.yml#/components/parameters/MappingId'
+
+    delete:
+      tags: [KeyMappings]
+      summary: Remove a key mapping
+      operationId: removeKeyMapping
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Key mapping deleted successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Document Cache
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/document:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [DocumentCache]
+      summary: Get the resolved DID document
+      description: |
+        Returns the DID document for the given DID. For MANAGED DIDs the document is
+        recomposed from the persisted graph; for EXTERNAL DIDs it is served from the IDK
+        CacheService and re-resolved on cache miss.
+      operationId: getDidDocument
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: DID document retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/DidDocument'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/document/cache:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    delete:
+      tags: [DocumentCache]
+      summary: Invalidate the cached DID document
+      description: |
+        Drops the cached DID document for the given DID, forcing the next
+        `GET /dids/{did}/document` to re-resolve it from the network/source.
+      operationId: invalidateDidDocument
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Cached document invalidated successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/document/refresh:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    post:
+      tags: [DocumentCache]
+      summary: Refresh cached DID document
+      description: |
+        Triggers a fresh resolution of an EXTERNAL DID's document, repopulates the IDK
+        CacheService entry, and returns the freshly resolved document.
+      operationId: refreshDidDocument
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: DID document refreshed successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/DidDocument'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Controllers
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/controllers:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [Controllers]
+      summary: List controllers
+      operationId: listControllers
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of controllers.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControllerListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [Controllers]
+      summary: Add a controller
+      operationId: addController
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ControllerCreateRequest'
+      responses:
+        '201':
+          description: Controller added successfully.
+          headers:
+            Location:
+              description: URI of the newly created controller resource.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/Controller'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/controllers/{controllerId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - $ref: './did-manager-components.yml#/components/parameters/ControllerId'
+
+    delete:
+      tags: [Controllers]
+      summary: Remove a controller
+      operationId: removeController
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Controller removed successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Also Known As
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/also-known-as:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [AlsoKnownAs]
+      summary: List also-known-as entries
+      operationId: listAlsoKnownAs
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of also-known-as entries.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlsoKnownAsListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [AlsoKnownAs]
+      summary: Add an also-known-as entry
+      operationId: addAlsoKnownAs
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlsoKnownAsCreateRequest'
+      responses:
+        '201':
+          description: Also-known-as entry added successfully.
+          headers:
+            Location:
+              description: URI of the newly created also-known-as resource.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/AlsoKnownAsEntry'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/also-known-as/{akaId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - $ref: './did-manager-components.yml#/components/parameters/AkaId'
+
+    delete:
+      tags: [AlsoKnownAs]
+      summary: Remove an also-known-as entry
+      operationId: removeAlsoKnownAs
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Also-known-as entry removed successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Equivalent IDs
+  # ════════════════════════════════════════════════════════════════════
+  /dids/{did}/equivalent-ids:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+
+    get:
+      tags: [EquivalentIds]
+      summary: List equivalent-id entries
+      operationId: listEquivalentIds
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of equivalent-id entries.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquivalentIdListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [EquivalentIds]
+      summary: Add an equivalent-id entry
+      operationId: addEquivalentId
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EquivalentIdCreateRequest'
+      responses:
+        '201':
+          description: Equivalent-id entry added successfully.
+          headers:
+            Location:
+              description: URI of the newly created equivalent-id resource.
+              schema:
+                type: string
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './did-manager-components.yml#/components/schemas/EquivalentIdEntry'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /dids/{did}/equivalent-ids/{equivalentId}:
+    parameters:
+      - $ref: './did-manager-components.yml#/components/parameters/Did'
+      - $ref: './did-manager-components.yml#/components/parameters/EquivalentId'
+
+    delete:
+      tags: [EquivalentIds]
+      summary: Remove an equivalent-id entry
+      operationId: removeEquivalentId
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Equivalent-id entry removed successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ════════════════════════════════════════════════════════════════════
+  # Method capabilities
+  # ════════════════════════════════════════════════════════════════════
+  /methods:
+    get:
+      tags: [Capabilities]
+      summary: List supported DID methods
+      description: |
+        Returns the capability snapshot for every DID method registered
+        with the deployment.
+      operationId: listSupportedMethods
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Supported methods retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MethodCapabilityListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /methods/{method}/capabilities:
+    parameters:
+      - name: method
+        in: path
+        required: true
+        description: DID method name (e.g., key, web, ion, jwk).
+        schema:
+          type: string
+
+    get:
+      tags: [Capabilities]
+      summary: Get capabilities for a DID method
+      operationId: getMethodCapabilities
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Method capabilities retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DidMethodCapabilities'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /methods/{method}/capabilities/summary:
+    parameters:
+      - name: method
+        in: path
+        required: true
+        description: DID method name (e.g., key, web, ion, jwk).
+        schema:
+          type: string
+
+    get:
+      tags: [Capabilities]
+      summary: Get the capability summary for a DID method
+      operationId: getMethodCapabilitySummary
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/UserId'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Method capability summary retrieved successfully.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MethodCapabilitySummary'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+# ══════════════════════════════════════════════════════════════════════
+# Local components (request schemas, list wrappers, parameters)
+# ══════════════════════════════════════════════════════════════════════
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  schemas:
+    # ── Re-exported entity schemas from did-manager-components.yml ──
+    Did:
+      $ref: './did-manager-components.yml#/components/schemas/Did'
+    VerificationMethod:
+      $ref: './did-manager-components.yml#/components/schemas/VerificationMethod'
+    VerificationRelationshipView:
+      $ref: './did-manager-components.yml#/components/schemas/VerificationRelationshipView'
+    DidDocumentService:
+      $ref: './did-manager-components.yml#/components/schemas/DidDocumentService'
+    KeyMapping:
+      $ref: './did-manager-components.yml#/components/schemas/KeyMapping'
+    Controller:
+      $ref: './did-manager-components.yml#/components/schemas/Controller'
+    AlsoKnownAsEntry:
+      $ref: './did-manager-components.yml#/components/schemas/AlsoKnownAsEntry'
+    EquivalentIdEntry:
+      $ref: './did-manager-components.yml#/components/schemas/EquivalentIdEntry'
+    DidDetail:
+      $ref: './did-manager-components.yml#/components/schemas/DidDetail'
+    DidRole:
+      $ref: './did-manager-components.yml#/components/schemas/DidRole'
+    VerificationPurpose:
+      $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+    Curve:
+      $ref: './did-manager-components.yml#/components/schemas/Curve'
+    JwkUse:
+      $ref: './did-manager-components.yml#/components/schemas/JwkUse'
+    JwkKeyType:
+      $ref: './did-manager-components.yml#/components/schemas/JwkKeyType'
+    KeyOperations:
+      $ref: './did-manager-components.yml#/components/schemas/KeyOperations'
+    Jwk:
+      $ref: './did-manager-components.yml#/components/schemas/Jwk'
+    KeyInfo:
+      $ref: './did-manager-components.yml#/components/schemas/KeyInfo'
+    DidDocument:
+      $ref: './did-manager-components.yml#/components/schemas/DidDocument'
+
+    # ── Request schemas ────────────────────────────────────────────
+    DidCreateRequest:
+      type: object
+      description: |
+        Request body for creating a new DID. References an existing
+        KMS-managed key for the initial verification method via `keyInfo`.
+        `keyInfo.providerId` and at least one of `keyInfo.alias` or
+        `keyInfo.kid` must be provided.
+      required:
+        - method
+        - keyInfo
+      properties:
+        method:
+          type: string
+          description: DID method to use (e.g., key, web, ion, jwk).
+          example: "key"
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        didAlias:
+          type: string
+          description: Optional human-readable alias for the DID.
+        controllers:
+          type: array
+          items:
+            type: string
+          description: Initial controller DID strings.
+        alsoKnownAs:
+          type: array
+          items:
+            type: string
+          description: Initial also-known-as URIs.
+        options:
+          type: object
+          additionalProperties: true
+          description: Method-specific creation options.
+
+    TrackExternalDidRequest:
+      type: object
+      description: |
+        Request body for tracking an externally-managed DID. Only the DID
+        string and an optional alias are accepted; the server resolves the
+        document and caches it via the IDK CacheService. KMS bindings,
+        inline document payloads, and key mappings are deliberately omitted —
+        external DIDs are tracked as the string only and never carry locally
+        managed key material.
+      required:
+        - did
+      properties:
+        did:
+          type: string
+          description: The external DID string to track.
+          example: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+        alias:
+          type: string
+          description: Optional human-readable alias.
+
+    DidUpdateRequest:
+      type: object
+      description: Request body for partially updating a DID.
+      properties:
+        alias:
+          type: string
+          nullable: true
+          description: Updated alias (null to clear).
+        canonicalId:
+          type: string
+          nullable: true
+          description: Updated canonical ID (null to clear).
+
+    DidReplaceRequest:
+      type: object
+      description: Request body for fully replacing a DID's mutable fields.
+      properties:
+        alias:
+          type: string
+          nullable: true
+        canonicalId:
+          type: string
+          nullable: true
+        controllers:
+          type: array
+          items:
+            type: string
+          description: Full replacement set of controller DID strings.
+        alsoKnownAs:
+          type: array
+          items:
+            type: string
+          description: Full replacement set of also-known-as URIs.
+        equivalentIds:
+          type: array
+          items:
+            type: string
+          description: Full replacement set of equivalent DID strings.
+
+    DeactivateDidRequest:
+      type: object
+      description: Optional request body for deactivation with method-specific options.
+      properties:
+        options:
+          type: object
+          additionalProperties: true
+          description: Method-specific deactivation options.
+
+    VerificationMethodCreateRequest:
+      type: object
+      description: |
+        Request body for creating a verification method. References an
+        existing KMS-managed key via `keyInfo`. `keyInfo.providerId` and at
+        least one of `keyInfo.alias` or `keyInfo.kid` must be provided.
+      required:
+        - type
+        - controller
+        - keyInfo
+      properties:
+        id:
+          type: string
+          description: |
+            Verification method identifier as it should appear in the DID
+            document. May be a fragment or an absolute DID URL. Auto-generated
+            if omitted.
+        type:
+          type: string
+          description: Verification method type (e.g., JsonWebKey2020, Ed25519VerificationKey2020, Multikey).
+        controller:
+          type: string
+          description: DID of the controller.
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        purposes:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+          description: Verification purposes to associate with this method.
+        valueVerificationRelation:
+          allOf:
+            - $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+          nullable: true
+          description: |
+            If set, embed the new VM by value inside this single
+            verification relationship in the DID document. At most one
+            per W3C semantics. When null, the VM is rendered only in the
+            top-level `verificationMethod` array.
+        referenceVerificationRelations:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+          description: |
+            Verification relationships that should reference the new VM
+            by DID URL (in addition to wherever the VM is rendered).
+        extensionProperties:
+          type: object
+          additionalProperties: true
+          description: |
+            Optional bag of extension properties to attach to the VM for
+            lossless DID 1.1 round-tripping.
+
+    VerificationMethodUpdateRequest:
+      type: object
+      description: |
+        Request body for updating a verification method. Follows JSON Merge
+        Patch semantics: omitted top-level fields preserve, present fields
+        replace. Within the optional nested `keyInfo` object the same
+        per-field merge semantics apply — omit `keyInfo` to preserve all
+        KMS-key fields, or supply `keyInfo` with only the sub-fields you
+        want to change.
+      properties:
+        controller:
+          type: string
+          description: Updated controller DID.
+        keyInfo:
+          allOf:
+            - $ref: '#/components/schemas/KeyInfo'
+          description: |
+            Optional KMS-key rebinding. When omitted, the existing
+            `providerId`/`alias`/`kid` are preserved. When supplied, each
+            sub-field independently follows merge-patch semantics.
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Updated expiration timestamp (null to clear).
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Set or clear the verification method revocation timestamp
+            (DID 1.1 / CID). Setting this revokes the VM within the DID
+            document; it does not revoke the underlying KMS key.
+        valueVerificationRelation:
+          allOf:
+            - $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+          nullable: true
+          description: |
+            Update the relationship into which this VM is embedded by
+            value (null ⇒ render in the top-level `verificationMethod`
+            array). At most one relationship per W3C semantics.
+        referenceVerificationRelations:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+          nullable: true
+          description: |
+            Replace the set of relationships that reference this VM by
+            DID URL (null or empty ⇒ no reference-style relationships).
+        extensionProperties:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Replace the verification method extension-property bag (null to
+            clear). Used to preserve unknown DID 1.1 properties for lossless
+            round-tripping.
+
+    DidServiceCreateRequest:
+      type: object
+      description: Request body for creating a DID service.
+      required:
+        - id
+        - type
+        - serviceEndpoint
+      properties:
+        id:
+          type: string
+          description: Service identifier as it should appear in the DID document.
+        type:
+          description: Service type (string or array of strings).
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        serviceEndpoint:
+          description: Service endpoint (URI string, object, or array).
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+            - type: array
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    additionalProperties: true
+
+    DidServiceUpdateRequest:
+      type: object
+      description: Request body for updating a DID service.
+      properties:
+        type:
+          description: Updated service type.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        serviceEndpoint:
+          description: Updated service endpoint.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+            - type: array
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    additionalProperties: true
+
+    KeyMappingCreateRequest:
+      type: object
+      description: |
+        Request body for creating a key mapping binding a verification
+        method to a KMS-managed key reference. `keyInfo.providerId` and at
+        least one of `keyInfo.alias` or `keyInfo.kid` must be provided.
+      required:
+        - verificationMethod
+        - keyInfo
+        - purposes
+      properties:
+        verificationMethod:
+          type: string
+          description: Associated verification method identifier.
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        purposes:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationPurpose'
+          description: Verification purposes this key mapping serves.
+
+    ControllerCreateRequest:
+      type: object
+      description: Request body for adding a controller.
+      required:
+        - controllerDid
+      properties:
+        controllerDid:
+          type: string
+          description: The controller DID string.
+
+    AlsoKnownAsCreateRequest:
+      type: object
+      description: Request body for adding an also-known-as resource.
+      required:
+        - akaUri
+      properties:
+        akaUri:
+          type: string
+          description: The also-known-as URI.
+
+    EquivalentIdCreateRequest:
+      type: object
+      description: Request body for adding an equivalent-id resource.
+      required:
+        - equivalentDid
+      properties:
+        equivalentDid:
+          type: string
+          description: The equivalent DID string.
+
+    # ── List response wrappers ─────────────────────────────────────
+    DidListResponse:
+      type: object
+      description: Paginated list of DIDs.
+      required:
+        - items
+        - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/Did'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    VerificationMethodListResponse:
+      type: object
+      description: List of verification methods.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationMethod'
+
+    VerificationRelationshipListResponse:
+      type: object
+      description: |
+        Derived per-purpose view of the DID's verification relationships.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/VerificationRelationshipView'
+
+    DidServiceListResponse:
+      type: object
+      description: List of DID services.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/DidDocumentService'
+
+    KeyMappingListResponse:
+      type: object
+      description: List of key mappings.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/KeyMapping'
+
+    ControllerListResponse:
+      type: object
+      description: List of controllers.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/Controller'
+
+    AlsoKnownAsListResponse:
+      type: object
+      description: List of also-known-as entries.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/AlsoKnownAsEntry'
+
+    EquivalentIdListResponse:
+      type: object
+      description: List of equivalent-id entries.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/EquivalentIdEntry'
+
+    DidMethodCapabilities:
+      $ref: './did-manager-components.yml#/components/schemas/DidMethodCapabilities'
+
+    MethodCapabilityListResponse:
+      type: object
+      description: List of DID method capability snapshots.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './did-manager-components.yml#/components/schemas/DidMethodCapabilities'
+
+    MethodCapabilitySummary:
+      type: object
+      description: |
+        Coarse-grained boolean snapshot of what a DID method can do, suitable
+        for client-side feature gating.
+      required:
+        - method
+        - canCreate
+        - canUpdate
+        - canDeactivate
+        - canDelete
+        - isImmutable
+        - isMutable
+        - supportsKeyManagement
+        - supportsServiceManagement
+        - allowsCaching
+      properties:
+        method:
+          type: string
+        canCreate:
+          type: boolean
+        canUpdate:
+          type: boolean
+        canDeactivate:
+          type: boolean
+        canDelete:
+          type: boolean
+        isImmutable:
+          type: boolean
+        isMutable:
+          type: boolean
+        supportsKeyManagement:
+          type: boolean
+        supportsServiceManagement:
+          type: boolean
+        allowsCaching:
+          type: boolean
+
+    # ── DIF-compatible resolution schemas (from did-manager-components.yml) ──
+    ResolutionResult:
+      $ref: './did-manager-components.yml#/components/schemas/ResolutionResult'
+    DidResolutionMetadata:
+      $ref: './did-manager-components.yml#/components/schemas/DidResolutionMetadata'
+    DidDocumentMetadata:
+      $ref: './did-manager-components.yml#/components/schemas/DidDocumentMetadata'
+    DereferencingResult:
+      $ref: './did-manager-components.yml#/components/schemas/DereferencingResult'
+    DereferencingMetadata:
+      $ref: './did-manager-components.yml#/components/schemas/DereferencingMetadata'
+    ResolutionError:
+      $ref: './did-manager-components.yml#/components/schemas/ResolutionError'
