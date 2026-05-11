@@ -162,6 +162,23 @@ paths:
               - ASC
               - DESC
             default: DESC
+        - in: query
+          name: expand
+          required: false
+          description: |
+            Comma-separated list of optional projections to include inline on
+            each returned `Did`. The default response carries only the
+            lightweight summary fields per item — keep this default for
+            cheap pagination over large tenants. `all` is shorthand for every
+            supported projection. Adding new values is backward-compatible.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [document, keys, all]
+          style: form
+          explode: false
+          example: document
       responses:
         '200':
           description: Paginated list of DIDs.
@@ -179,18 +196,18 @@ paths:
         '500':
           $ref: './common-components.yml#/components/responses/Error'
 
-  /dids/import:
+  /dids/external:
     post:
       tags: [Dids]
-      summary: Import an externally-managed DID
+      summary: Track an externally-managed DID
       description: |
         Registers a reference to an externally-managed DID for local tracking.
         Only the DID string (and optional alias) is persisted; the resolver
-        fetches the document and the IDK CacheService holds it. The imported
+        fetches the document and the IDK CacheService holds it. The tracked
         DID always gets `role = EXTERNAL`. KMS key material is never bound to
         external DIDs — keys belong to MANAGED DIDs created locally via
         `POST /dids`.
-      operationId: importDid
+      operationId: trackExternalDid
       parameters:
         - $ref: './common-components.yml#/components/parameters/TenantId'
         - $ref: './common-components.yml#/components/parameters/UserId'
@@ -232,11 +249,18 @@ paths:
 
     get:
       tags: [Dids]
-      summary: Get DID detail
+      summary: Get DID
       description: |
-        Returns the full DidDetail aggregate with all related entities
-        (verification methods, relationships, services, key mappings,
-        controllers, also-known-as, equivalent-ids, and cached document).
+        Returns a single DID. The default response is the lightweight `Did`
+        summary — same shape as items in `GET /dids`. Use `?expand=document,keys`
+        (or `?expand=all`) to include the resolved DID document and KMS key
+        mappings inline on the returned object.
+
+        Sub-resource collections (controllers, also-known-as, equivalent-ids,
+        verification methods, verification relationships, services) are
+        deliberately not folded into this response; fetch them via their
+        dedicated sub-resource endpoints (`/dids/{did}/controllers`,
+        `/dids/{did}/verification-methods`, etc.).
       operationId: getDid
       parameters:
         - $ref: './common-components.yml#/components/parameters/TenantId'
@@ -245,15 +269,24 @@ paths:
         - in: query
           name: expand
           required: false
-          schema:
-            type: string
-            enum: [all]
           description: |
-            When `all`, the response includes the full aggregate (document with verification
-            methods/relationships/services, plus key mappings).
+            Comma-separated list of optional projections to include inline on the
+            returned `Did`. The default response carries only the lightweight
+            summary fields. `all` is shorthand for every supported projection.
+
+            Adding new values is backward-compatible; clients should ignore
+            unknown values per forward-compatibility conventions.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [document, keys, all]
+          style: form
+          explode: false
+          example: document,keys
       responses:
         '200':
-          description: DID detail retrieved successfully.
+          description: DID retrieved successfully.
           headers:
             X-Correlation-ID:
               $ref: './common-components.yml#/components/headers/CorrelationId'
@@ -1590,6 +1623,8 @@ components:
     # ── Re-exported entity schemas from did-manager-components.yml ──
     Did:
       $ref: './did-manager-components.yml#/components/schemas/Did'
+    DidDetail:
+      $ref: './did-manager-components.yml#/components/schemas/DidDetail'
     VerificationMethod:
       $ref: './did-manager-components.yml#/components/schemas/VerificationMethod'
     VerificationRelationshipView:
@@ -1604,8 +1639,6 @@ components:
       $ref: './did-manager-components.yml#/components/schemas/AlsoKnownAsEntry'
     EquivalentIdEntry:
       $ref: './did-manager-components.yml#/components/schemas/EquivalentIdEntry'
-    DidDetail:
-      $ref: './did-manager-components.yml#/components/schemas/DidDetail'
     DidRole:
       $ref: './did-manager-components.yml#/components/schemas/DidRole'
     VerificationPurpose:
@@ -1633,6 +1666,12 @@ components:
         KMS-managed key for the initial verification method via `keyInfo`.
         `keyInfo.providerId` and at least one of `keyInfo.alias` or
         `keyInfo.kid` must be provided.
+
+        For DID methods that encode the public key into the DID identifier
+        (did:key, did:jwk), the public JWK is resolved server-side from KMS
+        using `keyInfo` — the caller does NOT supply key material. The KMS
+        must hold the key before this request is issued (use the KMS API to
+        generate or store the key first).
       required:
         - method
         - keyInfo
@@ -1958,7 +1997,7 @@ components:
         items:
           type: array
           items:
-            $ref: './did-manager-components.yml#/components/schemas/Did'
+            $ref: './did-manager-components.yml#/components/schemas/DidDetail'
         page:
           $ref: './common-components.yml#/components/schemas/PagingMeta'
 

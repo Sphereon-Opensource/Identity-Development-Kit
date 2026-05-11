@@ -47,3 +47,6 @@ replay_pid*.log
 
 # Local agent tooling (skills, plans, cache) — not part of the SDK
 .claude/
+
+# Generated Postman collection — regenerate locally if needed, not committed
+lib/did/rest/manager/api/src/openapi/did-manager.postman_collection.json

@@ -187,8 +187,18 @@ components:
 
     # ── Entity Schemas ─────────────────────────────────────────────────
     # Aggregate root of the DID API model. Inline convenience arrays
-    # carry lightweight string values for display and filtering; more
-    # detailed objects are available via sub-resource endpoints or DidDetail.
+    # carry lightweight string values for display and filtering; richer
+    # objects (controllers, verification methods, services, etc.) live on
+    # their dedicated sub-resource endpoints.
+    #
+    # Two response shapes:
+    #   - `Did`        — lightweight summary. Used by every endpoint that
+    #                    does not accept `?expand=` (POST create, PATCH
+    #                    update, PUT replace, deactivate, track external).
+    #   - `DidDetail`  — extends `Did` with the optional `document` and
+    #                    `keys` projections. Used only by endpoints that
+    #                    actually accept `?expand=document,keys` — currently
+    #                    GET /dids and GET /dids/{did}.
     Did:
       type: object
       description: Core DID resource representing a managed or external DID.
@@ -242,6 +252,35 @@ components:
           format: date-time
           nullable: true
           description: Soft-delete timestamp. Present only when the DID has been deleted.
+
+    DidDetail:
+      description: |
+        `Did` plus the optional `document` and `keys` projections. Used as the
+        response shape for endpoints that accept `?expand=document,keys` —
+        currently GET /dids and GET /dids/{did}. Both projection fields are
+        present only when the caller opted in via `?expand=`; otherwise the
+        response is shape-equivalent to `Did`.
+      allOf:
+        - $ref: '#/components/schemas/Did'
+        - type: object
+          properties:
+            document:
+              $ref: '#/components/schemas/DidDocument'
+              nullable: true
+              description: |
+                Resolved DID document. Present only when the request used
+                `?expand=document` (or `?expand=all`). Absent on the default
+                lightweight response.
+            keys:
+              type: array
+              nullable: true
+              items:
+                $ref: '#/components/schemas/KeyMapping'
+              description: |
+                Inline list of KMS key mappings for this DID's managed
+                verification methods. Present only when the request used
+                `?expand=keys` (or `?expand=all`). Absent on the default
+                lightweight response.
 
     KeyInfo:
       type: object
@@ -491,49 +530,6 @@ components:
         ordinal:
           type: integer
           description: Ordering position.
-
-    DidDetail:
-      type: object
-      description: |
-        Full aggregate view of a DID with all related entities.
-        All relation arrays are always populated. For DIF-compatible
-        resolution results, use the resolve endpoint.
-      required:
-        - did
-      properties:
-        did:
-          $ref: '#/components/schemas/Did'
-        controllers:
-          type: array
-          items:
-            $ref: '#/components/schemas/Controller'
-        alsoKnownAs:
-          type: array
-          items:
-            $ref: '#/components/schemas/AlsoKnownAsEntry'
-        equivalentIds:
-          type: array
-          items:
-            $ref: '#/components/schemas/EquivalentIdEntry'
-        verificationMethods:
-          type: array
-          items:
-            $ref: '#/components/schemas/VerificationMethod'
-        relationships:
-          type: array
-          items:
-            $ref: '#/components/schemas/VerificationRelationshipView'
-          description: |
-            Derived per-purpose view of verification relationships,
-            computed from the verification methods. Read-only.
-        services:
-          type: array
-          items:
-            $ref: '#/components/schemas/DidDocumentService'
-        keyMappings:
-          type: array
-          items:
-            $ref: '#/components/schemas/KeyMapping'
 
     # ── DIF-compatible resolution schemas ──────────────────────────
     # W3C DID Resolution + DIF Universal Resolver
