@@ -36,8 +36,8 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
-import com.sphereon.core.api.http.errorResponse
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.errorResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.log.AsyncLogService
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.SessionLogManager

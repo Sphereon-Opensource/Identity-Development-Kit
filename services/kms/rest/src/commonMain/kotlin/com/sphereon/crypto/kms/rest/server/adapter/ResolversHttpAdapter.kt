@@ -25,8 +25,8 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.httpRoutes
-import com.sphereon.core.api.http.errorResponse
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.errorResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import com.sphereon.crypto.kms.rest.api.generated.models.ListResolversResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ResolvePublicKey

@@ -23,7 +23,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
-import com.sphereon.core.api.http.errorResponse
+import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 

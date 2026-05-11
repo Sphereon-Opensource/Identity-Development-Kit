@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.OpenApiHints
+import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.compat.JsExportCompat
 
 private const val HTTP_NOT_FOUND = 404

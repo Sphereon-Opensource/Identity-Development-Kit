@@ -23,7 +23,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.TenantPathMode
 import com.sphereon.core.api.http.describe.TenantResolutionPriority
-import com.sphereon.core.api.http.errorResponse
+import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.di.Order
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding

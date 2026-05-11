@@ -25,7 +25,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.httpRoutes
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.UserContextLogManager
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString

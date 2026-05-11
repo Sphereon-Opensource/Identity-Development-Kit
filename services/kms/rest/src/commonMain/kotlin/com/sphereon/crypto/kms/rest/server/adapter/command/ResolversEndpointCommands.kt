@@ -30,7 +30,7 @@ import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import com.sphereon.crypto.kms.rest.api.generated.models.ListResolversResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ResolvePublicKey

@@ -29,7 +29,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.di.session.SessionContext
 import kotlinx.coroutines.test.TestScope

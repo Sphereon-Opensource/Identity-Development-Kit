@@ -31,7 +31,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.core.api.http.error.DefaultRestErrorRenderer
 import com.sphereon.core.api.http.error.HttpErrorRenderer
-import com.sphereon.core.api.http.errorResponse
+import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.api.session.Command
 import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
 import com.sphereon.core.api.session.ICommandExecutionExtension

@@ -28,7 +28,7 @@ import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOpts

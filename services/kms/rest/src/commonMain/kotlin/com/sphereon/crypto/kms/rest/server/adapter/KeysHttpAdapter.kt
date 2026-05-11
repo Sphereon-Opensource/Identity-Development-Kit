@@ -21,13 +21,13 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.RoutedHttpAdapter
-import com.sphereon.core.api.http.createdResponse
+import com.sphereon.core.api.http.response.createdResponse
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.httpRoutes
-import com.sphereon.core.api.http.errorResponse
-import com.sphereon.core.api.http.jsonResponse
-import com.sphereon.core.api.http.noContentResponse
+import com.sphereon.core.api.http.response.errorResponse
+import com.sphereon.core.api.http.response.jsonResponse
+import com.sphereon.core.api.http.response.noContentResponse
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JoseKeyOperations

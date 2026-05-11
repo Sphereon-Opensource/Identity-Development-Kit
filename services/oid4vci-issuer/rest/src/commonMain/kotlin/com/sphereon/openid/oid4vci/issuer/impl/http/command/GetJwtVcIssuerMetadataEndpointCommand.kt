@@ -29,7 +29,7 @@ import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
-import com.sphereon.core.api.http.jsonResponse
+import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode

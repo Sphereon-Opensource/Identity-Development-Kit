@@ -19,6 +19,8 @@
 
 package com.sphereon.data.store.party.filter
 
+import com.sphereon.core.api.pagination.PageRequest
+import com.sphereon.core.api.pagination.SortDirection
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.IdentifierType
 import kotlinx.serialization.SerialName

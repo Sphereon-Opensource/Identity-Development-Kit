@@ -15,7 +15,7 @@
  *
  */
 
-package com.sphereon.data.store.party.filter
+package com.sphereon.core.api.pagination
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.SerialName
