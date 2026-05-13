@@ -57,27 +57,88 @@ import kotlinx.serialization.json.encodeToJsonElement
 /**
  * Endpoint command for OID4VCI Issuer Metadata discovery.
  *
- * GET /.well-known/openid-credential-issuer
+ * The set of URLs the issuer is reachable at depends on the path component of the
+ * configured `oid4vci.issuer.identifier`:
+ *
+ * - **Bare-host issuer** (`https://host`) — served at `/.well-known/openid-credential-issuer`.
+ * - **Path-bearing issuer** (`https://host/<issuer-path>`) — served at BOTH
+ *   `/.well-known/openid-credential-issuer/<issuer-path>` (RFC 8414 §3 / RFC 8615
+ *   well-known suffix form) and `/<issuer-path>/.well-known/openid-credential-issuer`
+ *   (legacy issuer-path-prefix form). The bare URL is intentionally NOT served when
+ *   the issuer carries a path: it would advertise discovery for an issuer
+ *   identifier (`https://host`) that doesn't exist.
+ *
+ * The runtime-built descriptor lists every URL via [HttpEndpointDescriptor.pathPatterns],
+ * so a single command instance routes under all alias URLs without parallel handler
+ * wiring. The companion's [ENDPOINT] retains the bare descriptor for back-compat with
+ * direct embedders (tests, external IDK consumers wiring the command without a
+ * descriptor provider).
  */
 interface GetIssuerMetadataEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oid4vci.protocol.metadata"
 
+        /** Well-known segment without any issuer-path expansion. */
+        const val BARE_PATH = "/.well-known/openid-credential-issuer"
+
+        private val producesMedia =
+            setOf(
+                MediaType.ApplicationJson,
+                MediaType.Custom(ACCEPT_JWT),
+                MediaType.Custom(ACCEPT_ISSUER_METADATA_JWT),
+            )
+
+        /** Pre-built bare descriptor — for back-compat embedders. */
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/.well-known/openid-credential-issuer",
-                produces =
-                    setOf(
-                        MediaType.ApplicationJson,
-                        MediaType.Custom(ACCEPT_JWT),
-                        MediaType.Custom(ACCEPT_ISSUER_METADATA_JWT),
-                    ),
+                pathPattern = BARE_PATH,
+                produces = producesMedia,
                 operationId = "getIssuerMetadata",
                 commandId = COMMAND_ID,
                 tags = setOf("oid4vci-issuer", "metadata"),
                 summary = "Get OID4VCI credential issuer metadata",
             )
+
+        /**
+         * Path component of the issuer identifier, normalised to either an empty
+         * string (bare-host issuer) or a single leading `/` followed by the path.
+         * Trailing slashes are stripped so concatenation with [BARE_PATH] never
+         * produces a double slash.
+         */
+        fun extractIssuerPath(issuerIdentifier: String): String {
+            val normalised = issuerIdentifier.trimEnd('/')
+            val schemeEnd = normalised.indexOf("://").takeIf { it >= 0 }?.plus(SCHEME_SEPARATOR_LENGTH) ?: 0
+            val pathStart = normalised.indexOf('/', schemeEnd)
+            return if (pathStart < 0) "" else normalised.substring(pathStart)
+        }
+
+        /**
+         * Build the descriptor that exposes this command at the right URLs for the
+         * configured issuer identifier. Path-bearing issuers get a single descriptor
+         * with two path patterns (spec form first, legacy second) so the dispatcher
+         * routes both URLs through the same handler instance.
+         */
+        fun descriptorFor(issuerIdentifier: String): HttpEndpointDescriptor {
+            val issuerPath = extractIssuerPath(issuerIdentifier)
+            val patterns =
+                if (issuerPath.isBlank()) {
+                    listOf(BARE_PATH)
+                } else {
+                    listOf("$BARE_PATH$issuerPath", "$issuerPath$BARE_PATH")
+                }
+            return HttpEndpointDescriptor(
+                method = HttpMethod.GET,
+                pathPatterns = patterns,
+                produces = producesMedia,
+                operationId = "getIssuerMetadata",
+                commandId = COMMAND_ID,
+                tags = setOf("oid4vci-issuer", "metadata"),
+                summary = "Get OID4VCI credential issuer metadata",
+            )
+        }
+
+        private const val SCHEME_SEPARATOR_LENGTH = 3
     }
 }
 
@@ -94,7 +155,7 @@ class GetIssuerMetadataEndpointCommandImpl(
 ) : HttpEndpointCommandAdapter(
         id = GetIssuerMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
-        endpoint = GetIssuerMetadataEndpointCommand.ENDPOINT,
+        endpoint = GetIssuerMetadataEndpointCommand.descriptorFor(configProvider.issuerIdentifier),
     ),
     GetIssuerMetadataEndpointCommand {
     override suspend fun doExecute(

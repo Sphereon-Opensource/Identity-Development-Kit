@@ -115,6 +115,10 @@ kotlin {
                 implementation(projects.libCborImpl)
                 implementation(projects.libTrustX509)
                 implementation(projects.libTrustCoreImpl)
+                // JsonLd validators are reached transitively through verifier-impl
+                // with implementation scope; the test app graph needs them on the
+                // compile classpath so Metro can discover their @Inject constructors.
+                implementation(projects.libJsonldLoader)
                 implementation(sphereonlib.io.ktor.client.mock)
             }
         }

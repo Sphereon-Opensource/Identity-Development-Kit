@@ -430,6 +430,16 @@ class SoftwareKmsProviderImpl(
         certificateOptions: CertificateOptions?,
     ): ManagedKeyPair {
         val keyUse = use ?: JwkUse.sig
+        // For `use=enc` with no signature algorithm specified, mint a 256-bit
+        // symmetric AES key. This is the natural shape for AES-KW key wrapping
+        // (RFC 3394) and AES-GCM content encryption — the SignatureAlgorithm enum
+        // (intentionally) doesn't carry an AES variant, so callers asking for a
+        // "default encryption key" need this branch instead of being silently
+        // upgraded to ECDSA_SHA256 (which then fails with
+        // "Wrapping key must have raw bytes for AES-KW" downstream).
+        if (keyUse == JwkUse.enc && alg == null) {
+            return generateSymmetricEncKey(alias, keyOperations)
+        }
         val algMapping = alg ?: SignatureAlgorithm.ECDSA_SHA256
         val curve = algMapping.curve
         val keyType =
@@ -1018,11 +1028,115 @@ class SoftwareKmsProviderImpl(
         if (keyInfo.key != null) {
             return keyInfo
         }
-        val keyId =
-            keyInfo.alias ?: keyInfo.kid
-                ?: throw IllegalArgumentException("KeyInfo has no key material and no alias/kid to resolve from keystore")
-        val managedKey = keyStore.getKey(KeyInfo<Jwk>(kid = keyId))
-        return managedKey
+        // Preserve which lookup mode the caller used. Aliases (operator-assigned
+        // labels like `invitation-hmac-kek-default`) and kids (canonical key
+        // identifiers, often JWK thumbprints) are NOT interchangeable: a stored
+        // key with a thumbprint kid won't match an alias passed as kid, and
+        // vice-versa. Forward the original `KeyInfo` so the keystore performs
+        // the lookup against the same field the caller populated.
+        val lookup =
+            when {
+                keyInfo.alias != null -> KeyInfo<Jwk>(alias = keyInfo.alias)
+
+                keyInfo.kid != null -> KeyInfo<Jwk>(kid = keyInfo.kid)
+
+                else -> throw IllegalArgumentException(
+                    "KeyInfo has no key material and no alias/kid to resolve from keystore",
+                )
+            }
+        return keyStore.getKey(lookup)
+    }
+
+    /**
+     * Mints a 256-bit symmetric AES key suitable for AES-KW key wrapping (RFC 3394)
+     * and AES-GCM content encryption. Persists it as an `oct` JWK with the `k`
+     * parameter holding the raw bytes — the same shape `extractRawKeyBytes` in
+     * `NativeEncryption` expects.
+     *
+     * Used when [generateKeyAsync] is called with `use=enc` and no `alg`. The
+     * `SignatureAlgorithm` enum has no AES variant by design (AES isn't a
+     * signature algorithm), so callers asking for a generic encryption key get
+     * routed here instead of being silently upgraded to ECDSA, which would fail
+     * later in the wrap path with "Wrapping key must have raw bytes for AES-KW".
+     */
+    private suspend fun generateSymmetricEncKey(
+        alias: String?,
+        keyOperations: Array<out KeyOperations>?,
+    ): ManagedKeyPair {
+        // 256 bits = 32 bytes. Matches NativeEncryption.AES_256_KEY_SIZE
+        // (private const, inlined here to avoid widening its visibility).
+        val keyBytes =
+            dev.whyoleg.cryptography.random.CryptographyRandom
+                .nextBytes(32)
+        val kValue = keyBytes.encodeToBase64Url()
+        val kid = alias ?: "key-${kotlin.random.Random.nextLong()}"
+        // A symmetric KEK serves both wrap/unwrap (RFC 3394) and direct content
+        // encryption (AES-GCM). Default to that full op set; honour caller
+        // overrides verbatim so a deployment that wants e.g. wrap-only keys can
+        // pin them.
+        val keyOpsMapping =
+            keyOperations ?: arrayOf(
+                KeyOperations.WRAP_KEY,
+                KeyOperations.UNWRAP_KEY,
+                KeyOperations.ENCRYPT,
+                KeyOperations.DECRYPT,
+            )
+        val joseKeyOps = keyOpsMapping.map { it.jose }.toTypedArray()
+        val privateJwk =
+            Jwk(
+                kty = JwaKeyType.oct,
+                k = kValue,
+                // No `alg` — JWK `alg` is single-valued, but an oct key minted as a generic
+                // KEK is used by both wrap (A256KW) and content encrypt (A256GCM) paths.
+                // Leaving `alg` unset keeps the JWK valid for either use.
+                alg = null,
+                use = JwkUse.enc.value,
+                key_ops = joseKeyOps,
+                kid = kid,
+                generateKid = false,
+            )
+        val publicJwk = privateJwk.copy(k = null)
+        val publicCoseKey = CoseJoseKeyMappingService.toCoseKey(publicJwk)
+        val managedKeyPair =
+            ManagedKeyPair(
+                providerId = id,
+                kid = kid,
+                alias = alias ?: kid,
+                jose =
+                    JoseKeyPair(
+                        if (config.exposePrivateKeysDuringGeneration) privateJwk else null,
+                        publicJwk,
+                    ),
+                cose =
+                    CoseKeyPair(
+                        if (config.exposePrivateKeysDuringGeneration) {
+                            CoseJoseKeyMappingService.toCoseKey(privateJwk)
+                        } else {
+                            null
+                        },
+                        publicCoseKey,
+                    ),
+            )
+
+        if (config.persistKeysDuringGeneration) {
+            log.debug("Persisting symmetric AES key ${managedKeyPair.alias} to key store")
+            val keyInfo =
+                ResolvedKeyInfo<Jwk>(
+                    key = privateJwk,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    keyType = KeyTypeMapping.Symmetric,
+                    alias = managedKeyPair.alias,
+                    providerId = id,
+                    kid = kid,
+                    signatureAlgorithm = null,
+                )
+            keyStore.storeKey(
+                keyInfo,
+                alias = managedKeyPair.alias,
+                providerId = managedKeyPair.providerId,
+            )
+        }
+        return managedKeyPair
     }
 
     private suspend fun resolveHmacKeyBytes(keyId: String): ByteArray {

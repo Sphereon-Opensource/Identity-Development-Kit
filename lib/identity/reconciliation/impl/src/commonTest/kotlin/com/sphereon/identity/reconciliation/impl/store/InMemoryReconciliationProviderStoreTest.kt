@@ -16,7 +16,7 @@
 
 package com.sphereon.identity.reconciliation.impl.store
 
-import com.sphereon.identity.reconciliation.model.ReconciliationAttributeMapping
+import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.identity.reconciliation.model.ReconciliationProvider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -36,7 +36,7 @@ class InMemoryReconciliationProviderStoreTest {
         id = id,
         name = name,
         oidcClientId = oidcClientId,
-        attributeMappings = listOf(ReconciliationAttributeMapping(source = "sub", target = "externalId")),
+        attributeMappings = listOf(AttributeMapping(source = "sub", target = "externalId")),
         identifierAttributeName = "sub",
     )
 
@@ -118,7 +118,7 @@ class InMemoryReconciliationProviderStoreTest {
             store.save(provider)
 
             val found = store.findById("provider-1")!!
-            assertEquals(listOf(ReconciliationAttributeMapping(source = "sub", target = "externalId")), found.attributeMappings)
+            assertEquals(listOf(AttributeMapping(source = "sub", target = "externalId")), found.attributeMappings)
             assertEquals("sub", found.identifierAttributeName)
             assertEquals("client-123", found.oidcClientId)
             assertTrue(found.enabled)

@@ -38,6 +38,14 @@ class Oid4vciTestContext(
             "${com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default.mode",
             "HOSTED",
         )
+        // The OID4VCI Issuer adapter's `descriptorFor(configProvider.issuerIdentifier)` is
+        // evaluated during DI graph construction (constructor arg of HttpEndpointCommandAdapter),
+        // so the identifier MUST be present before any session graph touches the issuer
+        // metadata command — otherwise graph construction throws.
+        DefaultPrincipalMapPropertySource.addProperty(
+            "oid4vci.issuer.identifier",
+            OID4VCI_TEST_ISSUER_URL,
+        )
     }
 
     val app: AppGraph = createOid4vciTestAppGraph(application = testInstance)

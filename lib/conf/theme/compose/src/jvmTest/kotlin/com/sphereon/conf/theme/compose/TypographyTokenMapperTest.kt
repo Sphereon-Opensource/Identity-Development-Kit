@@ -41,10 +41,12 @@ class TypographyTokenMapperTest {
         val tokens = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         val typography = TypographyTokenMapper.toTypography(resolvedTheme(tokens))
 
-        assertEquals(57.sp, typography.displayLarge.fontSize)
-        assertEquals(FontWeight.Normal, typography.displayLarge.fontWeight)
+        // Wallet display = 46sp / SemiBold (mobile-first hero scale, replaces M3's 57sp).
+        assertEquals(46.sp, typography.displayLarge.fontSize)
+        assertEquals(FontWeight.SemiBold, typography.displayLarge.fontWeight)
+        // Wallet labelLarge = 14sp / SemiBold (subtitle-style emphasis weight).
         assertEquals(14.sp, typography.labelLarge.fontSize)
-        assertEquals(FontWeight.Medium, typography.labelLarge.fontWeight)
+        assertEquals(FontWeight.SemiBold, typography.labelLarge.fontWeight)
     }
 
     @Test

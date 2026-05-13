@@ -48,6 +48,9 @@ interface SessionGraph {
     @get:Named("sessionId")
     val sessionId: String
 
+    @get:Named("correlationId")
+    val correlationId: String
+
     val sessionContext: SessionContext
     val sessionExecution: SessionExecution
     val logManager: SessionLogManager
@@ -59,6 +62,8 @@ interface SessionGraph {
         fun createSessionGraph(
             @Provides @Named("sessionId")
             sessionId: String,
+            @Provides @Named("correlationId")
+            correlationId: String = sessionId,
         ): SessionGraph
     }
 

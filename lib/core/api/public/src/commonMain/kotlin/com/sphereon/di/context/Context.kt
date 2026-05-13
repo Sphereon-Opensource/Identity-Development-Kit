@@ -104,12 +104,16 @@ object AnonymousContext : UserContext {
     override fun toString(): String = "AnonymousUserContext(id='$id', tenant=$tenant, principal=$principal"
 }
 
-fun createAnonymousSessionContext(sessionId: String): SessionContext =
+fun createAnonymousSessionContext(
+    sessionId: String,
+    correlationId: String,
+): SessionContext =
     object : SessionContext {
         override val context: UserContext = AnonymousContext
         override val sessionId: String = sessionId
+        override val correlationId: String = correlationId
 
-        override fun toString(): String = "AnonymousSessionContext(sessionId='$sessionId', userContext=$context)"
+        override fun toString(): String = "AnonymousSessionContext(sessionId='$sessionId', userContext=$context, correlationId='$correlationId')"
 
         override fun equals(other: Any?): Boolean {
             if (this === other) {
@@ -139,12 +143,17 @@ fun createAnonymousSessionContext(sessionId: String): SessionContext =
  *
  * Mainly useful for logging, which depends on a SessionContext in appScope (NoOpSessionContext), userScope (this function) and session scope (injection)
  */
-fun UserContext.toSessionContext(sessionId: String = "_from_user_context"): SessionContext {
+fun UserContext.toSessionContext(
+    sessionId: String = "_from_user_context",
+    correlationId: String,
+): SessionContext {
+    val capturedCorrelationId = correlationId
     return object : SessionContext {
         override val context: UserContext = this@toSessionContext
         override val sessionId: String = sessionId
+        override val correlationId: String = capturedCorrelationId
 
-        override fun toString(): String = "UserToSessionContext(sessionId='$sessionId', userContext=$context)"
+        override fun toString(): String = "UserToSessionContext(sessionId='$sessionId', userContext=$context, correlationId='$correlationId')"
 
         override fun equals(other: Any?): Boolean {
             if (this === other) {
@@ -170,8 +179,14 @@ fun UserContext.toSessionContext(sessionId: String = "_from_user_context"): Sess
     }
 }
 
-fun UserContextInstance.toSessionContext(sessionId: String = "_from_user_context") = context.toSessionContext(sessionId)
+fun UserContextInstance.toSessionContext(
+    sessionId: String = "_from_user_context",
+    correlationId: String,
+) = context.toSessionContext(sessionId, correlationId)
 
-object NoOpSessionContext : SessionContext by createAnonymousSessionContext(IdentityConstants.ANONYMOUS_SESSION_ID) {
-    override fun toString(): String = "AnonymousSessionContext(sessionId='$sessionId', context=$context)"
+object NoOpSessionContext : SessionContext by createAnonymousSessionContext(
+    sessionId = IdentityConstants.ANONYMOUS_SESSION_ID,
+    correlationId = IdentityConstants.ANONYMOUS_ID,
+) {
+    override fun toString(): String = "AnonymousSessionContext(sessionId='$sessionId', context=$context, correlationId='$correlationId')"
 }

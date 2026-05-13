@@ -93,7 +93,7 @@ kotlin {
     // iOS targets for XCFramework — gated by kmp.targets
     val iosTargets = run {
         val enabledTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
-        if ("all" in enabledTargets || "ios" in enabledTargets) listOf(iosX64(), iosArm64(), iosSimulatorArm64())
+        if ("all" in enabledTargets || "ios" in enabledTargets) listOf(iosArm64(), iosSimulatorArm64())
         else emptyList()
     }
     iosTargets.forEach { iosTarget ->

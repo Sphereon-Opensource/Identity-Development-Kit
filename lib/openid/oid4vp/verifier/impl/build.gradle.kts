@@ -78,6 +78,12 @@ kotlin {
                 // SD-JWT verification
                 api(projects.libSdjwtPublic)
 
+                // JSON-LD context + schema validation for VCDM 2.0
+                // (vc+ld+json+jwt) presentations. Mirrors the wiring on the
+                // issuer side in lib-openid-oid4vci-issuer-impl.
+                api(projects.libJsonldPublic)
+                implementation(projects.libJsonldLoader)
+
                 // mDoc verification (Fix V-P0-11): MdocValidations + DeviceAuthValidation +
                 // SessionTranscriptCborCodec + DeviceResponseCborCodec for OID4VP iso_mdl path.
                 api(projects.libMdocCorePublic)

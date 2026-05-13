@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.impl.command
 
+import com.sphereon.attribute.mapping.applyAttributeMappings
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -33,7 +34,6 @@ import com.sphereon.identity.reconciliation.command.CompleteReconciliationComman
 import com.sphereon.identity.reconciliation.error.ReconciliationError
 import com.sphereon.identity.reconciliation.model.CompleteReconciliationArgs
 import com.sphereon.identity.reconciliation.model.CompleteReconciliationResult
-import com.sphereon.identity.reconciliation.model.ReconciliationAttributeMapping
 import com.sphereon.identity.reconciliation.model.ReconciliationSessionStatus
 import com.sphereon.identity.reconciliation.model.ResolvedIdentity
 import com.sphereon.identity.reconciliation.store.ReconciliationProviderStore
@@ -305,40 +305,5 @@ class CompleteReconciliationCommandImpl(
             )
 
         return Ok(CompleteReconciliationResult(session = updatedSession, match = match))
-    }
-
-    private fun applyAttributeMappings(
-        claims: Map<String, JsonElement>,
-        mappings: List<ReconciliationAttributeMapping>,
-    ): IdkResult<Map<String, JsonElement>, IdkError> {
-        if (mappings.isEmpty()) {
-            return Ok(claims)
-        }
-
-        val missingRequired = mutableListOf<String>()
-        val result =
-            buildMap {
-                putAll(claims)
-                for (mapping in mappings) {
-                    val value = claims[mapping.source]
-                    if (value != null) {
-                        put(mapping.target, value)
-                    } else if (mapping.required) {
-                        missingRequired.add("${mapping.source} -> ${mapping.target}")
-                    }
-                }
-            }
-
-        if (missingRequired.isNotEmpty()) {
-            return Err(
-                IdkError.fromDTO(
-                    ReconciliationError.RequiredAttributesMissing(
-                        missingAttributes = missingRequired,
-                    ),
-                ),
-            )
-        }
-
-        return Ok(result)
     }
 }

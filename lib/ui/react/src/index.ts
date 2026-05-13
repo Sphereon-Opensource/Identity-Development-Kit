@@ -27,3 +27,17 @@ export { ToastProvider, Toast } from './components/toast'
 export type { ToastProviderProps } from './components/toast'
 export { BlobExplorer } from './components/blob-explorer'
 export type { BlobExplorerProps } from './components/blob-explorer'
+export { QrClaimPanel, CredentialMiniCard, SuccessIcon, ErrorIcon, PendingIcon, ScanningIcon, isTerminalClaimState, TERMINAL_CLAIM_STATES } from './components/qr-claim-panel'
+export type {
+  QrClaimPanelProps,
+  CredentialMiniCardProps,
+  StatusIconProps,
+  QRValueResult,
+  ClaimPollingState,
+  ClaimPollingResult,
+  StatusPoller,
+  CredentialPreviewItem,
+  QrRendering,
+  QrClaimLabels,
+  QrClaimStatusLabels,
+} from './components/qr-claim-panel'

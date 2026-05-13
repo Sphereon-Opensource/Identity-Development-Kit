@@ -58,7 +58,7 @@ class CompositeRevocationCheckerTest {
 
     private fun createTestExecution(): SessionExecution =
         TestSessionExecution(
-            createAnonymousSessionContext("revocation-test"),
+            createAnonymousSessionContext("revocation-test", "revocation-test-correlation"),
         )
 
     @Test

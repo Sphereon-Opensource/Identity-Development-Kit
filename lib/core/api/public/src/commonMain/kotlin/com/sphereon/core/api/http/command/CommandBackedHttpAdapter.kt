@@ -200,13 +200,16 @@ abstract class CommandBackedHttpAdapter(
                     // Prepend adapter base path for catalog/dispatcher matching.
                     // Endpoint commands define patterns relative to the adapter's base path,
                     // but the dispatcher expects full paths for candidate selection.
-                    val fullPathPattern =
-                        if (mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/") {
-                            endpoint.endpoint.pathPattern
-                        } else {
-                            mount.adapterBasePath + endpoint.endpoint.pathPattern
+                    // Multi-pattern descriptors prepend the base to every pattern.
+                    val fullPathPatterns =
+                        endpoint.endpoint.pathPatterns.map { pattern ->
+                            if (mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/") {
+                                pattern
+                            } else {
+                                mount.adapterBasePath + pattern
+                            }
                         }
-                    endpoint.endpoint.copy(pathPattern = fullPathPattern)
+                    endpoint.endpoint.copy(pathPatterns = fullPathPatterns)
                 },
             openApiHints = openApiHints,
         )
@@ -235,14 +238,20 @@ abstract class CommandBackedHttpAdapter(
                 .split('/')
                 .firstOrNull() ?: ""
         return enabledEndpoints.any { endpoint ->
-            val patternFirstSegment =
-                endpoint.endpoint.pathPattern
-                    .trimStart('/')
-                    .split('/')
-                    .firstOrNull() ?: ""
-            endpoint.endpoint.method.name
-                .equals(request.method, ignoreCase = true) &&
-                (patternFirstSegment.startsWith("{") || patternFirstSegment == requestFirstSegment)
+            if (!endpoint.endpoint.method.name
+                    .equals(request.method, ignoreCase = true)
+            ) {
+                return@any false
+            }
+            // Multi-pattern descriptors: any pattern's first segment can claim the route.
+            endpoint.endpoint.pathPatterns.any { pattern ->
+                val patternFirstSegment =
+                    pattern
+                        .trimStart('/')
+                        .split('/')
+                        .firstOrNull() ?: ""
+                patternFirstSegment.startsWith("{") || patternFirstSegment == requestFirstSegment
+            }
         }
     }
 
@@ -284,16 +293,13 @@ abstract class CommandBackedHttpAdapter(
             ) {
                 return@any false
             }
-            val patternSegments =
-                endpoint.endpoint.pathPattern
-                    .split('/')
-                    .filter { it.isNotEmpty() }
             // Peel up to `maxDepth` from the front: synthesize candidate paths and
-            // try to match.
+            // try to match against any pattern this descriptor exposes.
             (1..minOf(maxDepth, reqSegments.size)).any { peel ->
                 val remaining = "/" + reqSegments.drop(peel).joinToString("/")
-                request.copy(path = remaining).let { peeled ->
-                    peeled.matches(endpoint.endpoint.method.name, endpoint.endpoint.pathPattern)
+                val peeled = request.copy(path = remaining)
+                endpoint.endpoint.pathPatterns.any { pattern ->
+                    peeled.matches(endpoint.endpoint.method.name, pattern)
                 }
             }
         }
@@ -313,8 +319,9 @@ abstract class CommandBackedHttpAdapter(
             (1..minOf(maxDepth, reqSegments.size)).any { peel ->
                 val remaining =
                     if (reqSegments.size - peel <= 0) "/" else "/" + reqSegments.dropLast(peel).joinToString("/")
-                request.copy(path = remaining).let { peeled ->
-                    peeled.matches(endpoint.endpoint.method.name, endpoint.endpoint.pathPattern)
+                val peeled = request.copy(path = remaining)
+                endpoint.endpoint.pathPatterns.any { pattern ->
+                    peeled.matches(endpoint.endpoint.method.name, pattern)
                 }
             }
         }
@@ -376,7 +383,12 @@ abstract class CommandBackedHttpAdapter(
         val winner =
             candidates.maxWithOrNull(
                 compareBy<PeelCandidate> { it.peelDepth }
-                    .thenBy { CompiledPathPattern.compile(it.endpoint.endpoint.pathPattern).specificity },
+                    .thenBy { candidate ->
+                        // Multi-pattern descriptors compete on their best (most specific)
+                        // alias — whichever URL the request actually hit.
+                        candidate.endpoint.endpoint.pathPatterns
+                            .maxOf { CompiledPathPattern.compile(it).specificity }
+                    },
             )!!
 
         // Advance the session-scope tenant for the duration of this dispatch when a

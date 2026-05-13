@@ -91,7 +91,7 @@ class ServiceCommandSessionContextSafetyTest {
     }
 
     private class NoOpSessionLogService(
-        override val sessionContext: SessionContext = createAnonymousSessionContext("test-log-session"),
+        override val sessionContext: SessionContext = createAnonymousSessionContext("test-log-session", "test-log-session-correlation"),
     ) : SessionLogService {
         override val id: String = "test-log"
         override val isEnabled: Boolean = false
@@ -115,7 +115,7 @@ class ServiceCommandSessionContextSafetyTest {
     }
 
     private class TestSessionExecution(
-        override val sessionContext: SessionContext = createAnonymousSessionContext("test-session-execution"),
+        override val sessionContext: SessionContext = createAnonymousSessionContext("test-session-execution", "test-session-execution-correlation"),
     ) : SessionExecution {
         override val sessionContextManager: SessionContextManager
             get() = throw NotImplementedError("Not needed for test")
@@ -217,7 +217,7 @@ class ServiceCommandSessionContextSafetyTest {
     fun dualTransportAdapterUsesExecutionSessionContext() =
         runTest {
             // Given: a command with execution-scoped session context "session-A"
-            val executionContext = createAnonymousSessionContext("session-A")
+            val executionContext = createAnonymousSessionContext("session-A", "session-A-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestDualTransportCommand(execution)
 
@@ -234,8 +234,8 @@ class ServiceCommandSessionContextSafetyTest {
     fun dualTransportAdapterIgnoresForgedSessionContext() =
         runTest {
             // Given: a command with execution-scoped session context "session-A"
-            val executionContext = createAnonymousSessionContext("session-A")
-            val forgedContext = createAnonymousSessionContext("session-FORGED")
+            val executionContext = createAnonymousSessionContext("session-A", "session-A-correlation")
+            val forgedContext = createAnonymousSessionContext("session-FORGED", "session-FORGED-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestDualTransportCommand(execution)
 
@@ -257,7 +257,7 @@ class ServiceCommandSessionContextSafetyTest {
     fun typedAdapterUsesExecutionSessionContext() =
         runTest {
             // Given: a typed command with execution-scoped session context "session-B"
-            val executionContext = createAnonymousSessionContext("session-B")
+            val executionContext = createAnonymousSessionContext("session-B", "session-B-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestTypedCommand(execution)
 
@@ -273,8 +273,8 @@ class ServiceCommandSessionContextSafetyTest {
     fun typedAdapterIgnoresForgedSessionContext() =
         runTest {
             // Given: a typed command with execution-scoped session context "session-B"
-            val executionContext = createAnonymousSessionContext("session-B")
-            val forgedContext = createAnonymousSessionContext("session-EVIL")
+            val executionContext = createAnonymousSessionContext("session-B", "session-B-correlation")
+            val forgedContext = createAnonymousSessionContext("session-EVIL", "session-EVIL-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestTypedCommand(execution)
 
@@ -291,8 +291,8 @@ class ServiceCommandSessionContextSafetyTest {
     @Test
     fun executionScopedAdapterIgnoresForgedSessionContext() =
         runTest {
-            val executionContext = createAnonymousSessionContext("session-C")
-            val forgedContext = createAnonymousSessionContext("session-FORGED-C")
+            val executionContext = createAnonymousSessionContext("session-C", "session-C-correlation")
+            val forgedContext = createAnonymousSessionContext("session-FORGED-C", "session-FORGED-C-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestExecutionScopedCommand(execution)
 
@@ -307,7 +307,7 @@ class ServiceCommandSessionContextSafetyTest {
     @Test
     fun executionScopedAdapterSupportsUsesExecutionSession() =
         runTest {
-            val executionContext = createAnonymousSessionContext("session-D")
+            val executionContext = createAnonymousSessionContext("session-D", "session-D-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestExecutionScopedCommand(execution)
 
@@ -320,7 +320,7 @@ class ServiceCommandSessionContextSafetyTest {
     @Test
     fun keyInfoIdentifierResolutionSupportsIsStableAcrossCalls() =
         runTest {
-            val executionContext = createAnonymousSessionContext("session-keyinfo-supports")
+            val executionContext = createAnonymousSessionContext("session-keyinfo-supports", "session-keyinfo-supports-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val service = KeyInfoIdentifierResolutionServiceImpl(execution = execution, kms = TestKmsMock())
             val args = ManagedOptsKeyInfo(identifier = KeyInfo<KeyType>(alias = "alias-only"))
@@ -335,7 +335,7 @@ class ServiceCommandSessionContextSafetyTest {
     @Test
     fun keyInfoIdentifierResolutionSupportsCannotBypassUnsupportedArgs() =
         runTest {
-            val executionContext = createAnonymousSessionContext("session-keyinfo-supports-unsupported")
+            val executionContext = createAnonymousSessionContext("session-keyinfo-supports-unsupported", "session-keyinfo-supports-unsupported-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val service = KeyInfoIdentifierResolutionServiceImpl(execution = execution, kms = TestKmsMock())
             val unsupportedArgs: Any = "unsupported-raw-identifier"
@@ -350,8 +350,8 @@ class ServiceCommandSessionContextSafetyTest {
     @Test
     fun keyInfoIdentifierResolutionExecuteWorksWhenCallerContextIsForged() =
         runTest {
-            val executionContext = createAnonymousSessionContext("session-keyinfo-exec")
-            val forgedContext = createAnonymousSessionContext("session-keyinfo-forged-exec")
+            val executionContext = createAnonymousSessionContext("session-keyinfo-exec", "session-keyinfo-exec-correlation")
+            val forgedContext = createAnonymousSessionContext("session-keyinfo-forged-exec", "session-keyinfo-forged-exec-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val kms = TestKmsMock()
             val service = KeyInfoIdentifierResolutionServiceImpl(execution = execution, kms = kms)
@@ -555,7 +555,7 @@ class ServiceCommandSessionContextSafetyTest {
     fun serviceCommandCanExecuteViaCommandInterface() =
         runTest {
             // Given: a ServiceCommand cast to Command interface
-            val executionContext = createAnonymousSessionContext("compat-test")
+            val executionContext = createAnonymousSessionContext("compat-test", "compat-test-correlation")
             val execution = TestSessionExecution(sessionContext = executionContext)
             val command = TestDualTransportCommand(execution)
             val asCommand: Command<TestInput, TestOutput, IdkError> = command

@@ -85,7 +85,10 @@ interface HttpEndpointCommand : Command<GenericHttpRequest, GenericHttpResponse,
      */
     override suspend fun supports(args: Any): Boolean =
         if (args is GenericHttpRequest) {
-            args.matches(endpoint.method.name, endpoint.pathPattern)
+            // Iterate every pattern this descriptor exposes — multi-pattern descriptors
+            // (e.g. metadata served at both spec-suffix and legacy-prefix URLs) MUST
+            // match a request hitting any of them.
+            endpoint.pathPatterns.any { args.matches(endpoint.method.name, it) }
         } else {
             false
         }

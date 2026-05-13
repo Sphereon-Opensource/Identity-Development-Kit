@@ -125,15 +125,21 @@ class SessionContextManagerImpl(
     override fun createOrGetFromCallbacks(sessionContextProvider: () -> SessionContext): SessionInstance {
         val runtimeSessionContext = sessionContextProvider()
         val sessionId = runtimeSessionContext.sessionId
-        return getOrCreateSessionInternal(sessionId, runtimeSessionContext, makeActive = true).instance
+        return getOrCreateSessionInternal(
+            sessionId = sessionId,
+            sessionContext = runtimeSessionContext,
+            correlationId = runtimeSessionContext.correlationId,
+            makeActive = true,
+        ).instance
     }
 
     override fun createOrGetFromId(
         sessionId: String,
+        correlationId: String,
         makeActive: Boolean,
     ): SessionInstance {
         requireNotNull(sessionId) { "sessionId must not be null" }
-        return getOrCreateSessionInternal(sessionId, null, makeActive).instance
+        return getOrCreateSessionInternal(sessionId, null, correlationId, makeActive).instance
     }
 
     // Session cleanup
@@ -200,8 +206,9 @@ class SessionContextManagerImpl(
                 return existing
             }
 
-            val anonymousSessionContext = createAnonymousSessionContext(ANONYMOUS_SESSION_ID)
-            val sessionGraph = sessionGraphFactory.createSessionGraph(ANONYMOUS_SESSION_ID)
+            val backgroundCorrelationId = IdentityConstants.ANONYMOUS_ID
+            val anonymousSessionContext = createAnonymousSessionContext(ANONYMOUS_SESSION_ID, backgroundCorrelationId)
+            val sessionGraph = sessionGraphFactory.createSessionGraph(ANONYMOUS_SESSION_ID, backgroundCorrelationId)
 
             val scope =
                 backgroundScope.buildChild("session:$ANONYMOUS_SESSION_ID") {
@@ -264,8 +271,9 @@ class SessionContextManagerImpl(
                 return existing
             }
 
-            val anonymousSessionContext = createAnonymousSessionContext(ANONYMOUS_SESSION_ID)
-            val sessionGraph = sessionGraphFactory.createSessionGraph(ANONYMOUS_SESSION_ID)
+            val anonymousCorrelationId = IdentityConstants.ANONYMOUS_ID
+            val anonymousSessionContext = createAnonymousSessionContext(ANONYMOUS_SESSION_ID, anonymousCorrelationId)
+            val sessionGraph = sessionGraphFactory.createSessionGraph(ANONYMOUS_SESSION_ID, anonymousCorrelationId)
 
             val scope =
                 anonymousScope.buildChild("session:$ANONYMOUS_SESSION_ID") {
@@ -296,6 +304,7 @@ class SessionContextManagerImpl(
     private fun getOrCreateSessionInternal(
         sessionId: String,
         sessionContext: SessionContext?,
+        correlationId: String,
         makeActive: Boolean,
     ): SessionGraph {
         // Fast-path: lock-free read if already created
@@ -332,13 +341,17 @@ class SessionContextManagerImpl(
             // Create the session context
             val actualSessionContext =
                 sessionContext ?: if (sessionId == ANONYMOUS_SESSION_ID) {
-                    createAnonymousSessionContext(sessionId)
+                    createAnonymousSessionContext(sessionId, correlationId)
                 } else {
-                    SessionContextImpl(context = userContextManager.getActive().context, sessionId = sessionId)
+                    SessionContextImpl(
+                        context = userContextManager.getActive().context,
+                        sessionId = sessionId,
+                        correlationId = correlationId,
+                    )
                 }
 
             // Create the session graph and scope
-            val sessionGraph = sessionGraphFactory.createSessionGraph(sessionId)
+            val sessionGraph = sessionGraphFactory.createSessionGraph(sessionId, actualSessionContext.correlationId)
             val scope =
                 contextScope.buildChild("session:$sessionId") {
                     addMetroDependencyGraph(sessionGraph)

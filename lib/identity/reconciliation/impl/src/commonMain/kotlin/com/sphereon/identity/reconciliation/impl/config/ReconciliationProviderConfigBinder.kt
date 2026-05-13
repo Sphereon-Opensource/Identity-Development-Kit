@@ -16,12 +16,12 @@
 
 package com.sphereon.identity.reconciliation.impl.config
 
+import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.identity.idv.model.ConfigReference
 import com.sphereon.identity.idv.model.SecretReference
 import com.sphereon.identity.reconciliation.model.MappingMode
 import com.sphereon.identity.reconciliation.model.OidcClientConfig
-import com.sphereon.identity.reconciliation.model.ReconciliationAttributeMapping
 import com.sphereon.identity.reconciliation.model.ReconciliationProvider
 
 /**
@@ -114,8 +114,8 @@ class ReconciliationProviderConfigBinder(
     fun readAttributeMappings(
         providerPrefix: String,
         mappingSuffix: String,
-    ): List<ReconciliationAttributeMapping> {
-        val mappings = mutableListOf<ReconciliationAttributeMapping>()
+    ): List<AttributeMapping> {
+        val mappings = mutableListOf<AttributeMapping>()
 
         // Try indexed format first
         var index = 0
@@ -127,10 +127,9 @@ class ReconciliationProviderConfigBinder(
                 configService.getPropertyAsString("$providerPrefix.$mappingSuffix[$index].target", null)
                     ?: break
             mappings.add(
-                ReconciliationAttributeMapping(
+                AttributeMapping(
                     source = source,
                     target = target,
-                    identifierType = configService.getPropertyAsString("$providerPrefix.$mappingSuffix[$index].identifier-type", null),
                     required = configService.getPropertyAsString("$providerPrefix.$mappingSuffix[$index].required", "false")?.toBoolean() == true,
                 ),
             )
@@ -155,10 +154,9 @@ class ReconciliationProviderConfigBinder(
             val source = configService.getPropertyAsString("$entryPrefix.source", null) ?: continue
             val target = configService.getPropertyAsString("$entryPrefix.target", null) ?: continue
             mappings.add(
-                ReconciliationAttributeMapping(
+                AttributeMapping(
                     source = source,
                     target = target,
-                    identifierType = configService.getPropertyAsString("$entryPrefix.identifier-type", null),
                     required = configService.getPropertyAsString("$entryPrefix.required", "false")?.toBoolean() == true,
                 ),
             )

@@ -130,12 +130,19 @@ private fun candidatesFor(
         val normalizedPath = "/" + remainingSegments.joinToString("/")
         val normalizedReqForMatching = request.copy(path = normalizedPath)
 
+        // Multi-pattern descriptors expose the same handler at multiple URLs;
+        // collect every (descriptor, matchedPattern) pair so the specificity score
+        // reflects the actual pattern that matched the incoming request, not just
+        // the descriptor's primary pattern.
         val matchingEndpoints =
             description.endpoints
                 .asSequence()
                 .filter { it.method.name.equals(request.method, ignoreCase = true) }
-                .filter { normalizedReqForMatching.matches(request.method, it.pathPattern) }
-                .toList()
+                .flatMap { endpoint ->
+                    endpoint.pathPatterns
+                        .asSequence()
+                        .filter { normalizedReqForMatching.matches(request.method, it) }
+                }.toList()
 
         if (matchingEndpoints.isEmpty()) {
             return@mapNotNull null
@@ -143,7 +150,7 @@ private fun candidatesFor(
 
         val bestEndpointScore =
             matchingEndpoints
-                .map { endpointSpecificity(it.pathPattern) }
+                .map { endpointSpecificity(it) }
                 .maxWith(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second })
 
         Candidate(

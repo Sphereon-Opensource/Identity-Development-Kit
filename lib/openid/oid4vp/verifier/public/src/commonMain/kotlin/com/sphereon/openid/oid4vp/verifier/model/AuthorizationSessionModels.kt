@@ -138,6 +138,22 @@ data class AuthorizationSession(
      */
     val jarmEncryptionKeyAlias: String? = null,
     val jarmEncryptionKeyProviderId: String? = null,
+    /**
+     * Optional one-time invitation token bound to this verifier session at create
+     * time. Carried forward into [com.sphereon.openid.oid4vp.verifier.hook.PostPresentationHookArgs.boundInvitationToken]
+     * so a downstream subscriber (e.g. VDX's `VerifierPresentationConsumeHookCommand`)
+     * can correlate a successful presentation back to the originating invitation
+     * and call `invitationService.redeem(...)`. Mirrors
+     * `IssuanceSession.boundUsageToken` on the OID4VCI side.
+     */
+    val boundInvitationToken: String? = null,
+    /**
+     * Optional per-session allow list of post-presentation hook command IDs. The
+     * dispatcher intersects the deployment-resolved hook set with this list before
+     * invocation; null means "all deployment-registered hooks may fire". Mirrors
+     * `IssuanceSession.postIssuanceHookAllowList` on the OID4VCI side.
+     */
+    val postPresentationHookAllowList: List<String>? = null,
     val createdAt: Long,
     val updatedAt: Long,
     val expiresAt: Long,

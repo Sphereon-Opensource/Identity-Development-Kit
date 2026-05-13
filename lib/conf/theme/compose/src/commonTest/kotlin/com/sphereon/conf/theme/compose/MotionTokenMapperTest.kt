@@ -113,7 +113,8 @@ class MotionTokenMapperTest {
         assertEquals(50, motion.durationShort1)
         assertEquals(300, motion.durationMedium2)
         assertEquals(600, motion.durationLong4)
-        assertEquals(500, motion.themeTransitionDuration)
+        // Wallet uses a tighter 300ms theme transition (vs M3's 500ms).
+        assertEquals(300, motion.themeTransitionDuration)
         assertEquals(EasingSpec(0.2f, 0.0f, 0f, 1.0f), motion.easingStandard)
         assertEquals(EasingSpec(0f, 0f, 1f, 1f), motion.easingLinear)
     }

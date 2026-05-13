@@ -447,10 +447,11 @@ class TokenProcessingParityTest {
     fun semanticShadowReferencesResolveCorrectly() {
         val tokens = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         val resolved = TokenReferenceResolver.resolve(tokens)
-        // shadow.subtle references {shadow.elevation.xs}
+        // Wallet shadow alias map: subtle=xs, raised=sm, floating=md, overlay=lg
         assertEquals(resolved[TokenKeyConstants.SHADOW_ELEVATION_XS], resolved[TokenKeyConstants.SHADOW_SUBTLE])
-        // shadow.floating references {shadow.elevation.lg}
-        assertEquals(resolved[TokenKeyConstants.SHADOW_ELEVATION_LG], resolved[TokenKeyConstants.SHADOW_FLOATING])
+        assertEquals(resolved[TokenKeyConstants.SHADOW_ELEVATION_SM], resolved[TokenKeyConstants.SHADOW_RAISED])
+        assertEquals(resolved[TokenKeyConstants.SHADOW_ELEVATION_MD], resolved[TokenKeyConstants.SHADOW_FLOATING])
+        assertEquals(resolved[TokenKeyConstants.SHADOW_ELEVATION_LG], resolved[TokenKeyConstants.SHADOW_OVERLAY])
     }
 
     @Test
@@ -481,12 +482,20 @@ class TokenProcessingParityTest {
 
     @Test
     fun darkShadowsHaveHigherOpacity() {
+        // Wallet's dark theme overrides shadow opacities (0.4–0.6) so shadows
+        // remain visible on the dark blue panel ramp. Light-theme shadows
+        // (0.05–0.16) would disappear on dark.
         val light = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         val dark = TokenFlattener.merge(listOf(SystemDefaults.baselineDark))
-        // Dark shadows should differ from light (higher opacity)
         assertTrue(
             light[TokenKeyConstants.SHADOW_ELEVATION_SM] != dark[TokenKeyConstants.SHADOW_ELEVATION_SM],
-            "Dark theme shadows should have different opacity than light",
+            "Dark theme shadows must override light values",
         )
+        assertTrue(
+            dark[TokenKeyConstants.SHADOW_ELEVATION_SM]!!.contains("0.5"),
+            "Dark shadow.elevation.sm should use higher opacity (0.5)",
+        )
+        // Focus ring is wallet-constant across themes (uses pending blue 0.5).
+        assertEquals(light[TokenKeyConstants.SHADOW_STATE_FOCUS], dark[TokenKeyConstants.SHADOW_STATE_FOCUS])
     }
 }

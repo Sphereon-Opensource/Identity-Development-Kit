@@ -30,6 +30,8 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * App-scoped command executor that supports cross-tenant execution.
@@ -44,20 +46,29 @@ interface AppCommandInvoker : CommandInvoker {
      * Execute a command with explicit tenant/principal context.
      *
      * Creates or gets the user context for the given tenant/principal,
-     * then delegates to the session-scoped executor within that context.
+     * then opens a fresh session-scoped executor for this execution. Each
+     * call gets its own [com.sphereon.core.api.context.SessionExecution],
+     * isolating per-execution state (notably `correlationId`) between
+     * concurrent dispatch-side callers that share a (tenant, principal).
+     *
+     * @param correlationId Cross-cutting trace key for this execution. Pass
+     *   `null` to fall back to the freshly-generated session id. Supply
+     *   explicitly when replaying a durable row, dispatching a scheduled
+     *   job, or continuing a correlation chain from a parent execution.
      */
     suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
         tenantInput: TenantInput,
         principalInput: PrincipalInput,
         command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
+        correlationId: String? = null,
     ): IdkResult<TOutput, TError>
 }
 
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class, binding = binding<AppCommandInvoker>())
-@OptIn(ExperimentalObjCName::class)
+@OptIn(ExperimentalObjCName::class, ExperimentalUuidApi::class)
 @ObjCName("AppCommandInvokerImpl", exact = true)
 class AppCommandInvokerImpl(
     val userContextManager: UserContextManager,
@@ -80,9 +91,20 @@ class AppCommandInvokerImpl(
         principalInput: PrincipalInput,
         command: ServiceCommand<TInput, TOutput, TError>,
         input: TInput,
+        correlationId: String?,
     ): IdkResult<TOutput, TError> {
         val activeContext = userContextManager.createOrGetFromInputs(tenantInput, principalInput)
-        val executor = activeContext.asCoreApiContextGraph().commandInvoker
-        return executor.execute(command, input)
+        val sessionId = Uuid.random().toString()
+        val resolvedCorrelationId = correlationId ?: sessionId
+        val sessionContextManager = activeContext.asCoreApiContextGraph().sessionContextManager
+        val sessionInstance =
+            sessionContextManager
+                .createOrGetFromId(sessionId = sessionId, correlationId = resolvedCorrelationId, makeActive = false)
+        val executor = (sessionInstance.graph as CommandInvokerGraph).commandInvoker
+        return try {
+            executor.execute(command, input)
+        } finally {
+            sessionContextManager.destroyById(sessionId)
+        }
     }
 }

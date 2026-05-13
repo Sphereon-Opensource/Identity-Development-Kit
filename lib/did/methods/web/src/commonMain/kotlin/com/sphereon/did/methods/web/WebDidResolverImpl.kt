@@ -20,6 +20,7 @@ package com.sphereon.did.methods.web
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.capabilities.DidMethodCapabilities
@@ -32,12 +33,14 @@ import com.sphereon.did.resolver.DidResolutionMetadata
 import com.sphereon.did.resolver.DidResolutionOptions
 import com.sphereon.did.resolver.DidResolutionResult
 import com.sphereon.did.resolver.DidResolver
+import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.did.utils.ParsedDid
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import io.ktor.client.request.get
@@ -66,6 +69,11 @@ import kotlinx.serialization.json.Json
 @ContributesBinding(SessionScope::class, binding = binding<WebDidResolver>())
 class WebDidResolverImpl(
     private val httpClientFactory: HttpClientFactory,
+    private val configService: PrincipalConfigService,
+    // Lazy provider breaks the DI cycle: the registry holds this resolver in
+    // its `Set<DidResolver>`, and this resolver consults the registry to
+    // optionally upgrade did:web → did:webvh.
+    private val resolverRegistryProvider: Provider<DidResolverRegistry>,
 ) : WebDidResolver {
     private val json =
         Json {
@@ -148,7 +156,7 @@ class WebDidResolverImpl(
         // Build verification methods by purpose map
         val vmByPurpose = didDocument.getVerificationMethodsByPurpose()
 
-        return Ok(
+        val baseResult =
             DidResolutionResult(
                 didDocument = didDocument,
                 didResolutionMetadata =
@@ -157,9 +165,55 @@ class WebDidResolverImpl(
                     ),
                 didDocumentMetadata = DidDocumentMetadata(),
                 verificationMethodsByPurpose = vmByPurpose,
-            ),
-        )
+            )
+        return Ok(maybeUpgradeToWebvh(baseResult, options))
     }
+
+    /**
+     * Per webvh v1.0 §"Publishing a Parallel did:web DID": when a `did:web`
+     * document carries `alsoKnownAs: ["did:webvh:..."]`, the verifiable
+     * webvh log is the authoritative source. Upgrade the resolution by
+     * delegating to a registered `webvh` resolver (if any) and returning
+     * its result instead of the static `did.json`.
+     *
+     * Asymmetric, web-only optimisation:
+     * - The webvh module does not need to know this exists.
+     * - When no `webvh` resolver is registered (verifier-only build that
+     *   doesn't include `did:webvh`), the upgrade is a no-op.
+     * - On upgrade failure (network error, log replay rejected) we fall
+     *   back to the plain `did:web` result rather than failing the whole
+     *   resolution; the static document is still useful and the caller can
+     *   pursue trust validation separately.
+     *
+     * Disabled by setting `did.web.upgrade-to-webvh.enabled=false` in
+     * principal config.
+     */
+    private suspend fun maybeUpgradeToWebvh(
+        baseResult: DidResolutionResult,
+        options: DidResolutionOptions,
+    ): DidResolutionResult {
+        if (!isUpgradeEnabled()) {
+            return baseResult
+        }
+        val webvhAka =
+            baseResult.didDocument
+                ?.alsoKnownAs
+                ?.firstOrNull { it.startsWith(DID_WEBVH_PREFIX) }
+                ?: return baseResult
+        val webvhResolver = resolverRegistryProvider().getResolver(WEBVH_METHOD) ?: return baseResult
+        val upgraded = webvhResolver.resolve(webvhAka, options)
+        if (upgraded.isErr) {
+            return baseResult
+        }
+        return upgraded.value
+    }
+
+    private fun isUpgradeEnabled(): Boolean =
+        configService.getProperty(
+            key = CONFIG_KEY_UPGRADE_TO_WEBVH,
+            targetType = Boolean::class,
+            defaultValue = true,
+        ) ?: true
 
     override suspend fun dereference(
         didUrl: String,
@@ -286,5 +340,11 @@ class WebDidResolverImpl(
         } finally {
             client.close()
         }
+    }
+
+    companion object {
+        const val CONFIG_KEY_UPGRADE_TO_WEBVH: String = "did.web.upgrade-to-webvh.enabled"
+        private const val DID_WEBVH_PREFIX: String = "did:webvh:"
+        private const val WEBVH_METHOD: String = "webvh"
     }
 }

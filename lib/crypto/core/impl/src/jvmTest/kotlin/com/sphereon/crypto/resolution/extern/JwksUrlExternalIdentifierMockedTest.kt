@@ -42,7 +42,7 @@ import kotlin.test.assertTrue
  * to cover error path branches that are hard to reach with integration tests.
  */
 class JwksUrlExternalIdentifierMockedTest {
-    private val mockSessionContext = createAnonymousSessionContext("mock-jwks-url-test")
+    private val mockSessionContext = createAnonymousSessionContext("mock-jwks-url-test", "mock-jwks-url-test-correlation")
 
     // ========================================================================
     // Branch Coverage Tests for HTTP Client Creation Failure

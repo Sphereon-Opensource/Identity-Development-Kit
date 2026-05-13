@@ -684,6 +684,7 @@ class RestApiE2ETest {
         val sessionContext =
             object : SessionContext {
                 override val sessionId: String = sessionId
+                override val correlationId: String = "$sessionId-correlation"
                 override val context: com.sphereon.di.context.UserContext = userContext
 
                 override fun isAnonymous(): Boolean = false
@@ -714,6 +715,7 @@ class RestApiE2ETest {
 
                 override fun createOrGetFromId(
                     sessionId: String,
+                    correlationId: String,
                     makeActive: Boolean,
                 ) = throw NotImplementedError()
 

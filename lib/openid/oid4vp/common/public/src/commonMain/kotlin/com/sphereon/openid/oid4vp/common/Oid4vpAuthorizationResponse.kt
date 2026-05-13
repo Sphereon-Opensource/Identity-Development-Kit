@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.common
 
+import com.sphereon.core.api.http.response.ResponseBuilder
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationResponse

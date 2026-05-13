@@ -44,8 +44,9 @@ import kotlin.native.ObjCName
 class SessionContextImpl(
     override val context: UserContext,
     @Named("sessionId") override val sessionId: String,
+    @Named("correlationId") override val correlationId: String,
 ) : SessionContext {
-    override fun toString(): String = "SessionContext(sessionId='$sessionId', context=$context)"
+    override fun toString(): String = "SessionContext(sessionId='$sessionId', context=$context, correlationId='$correlationId')"
 
     override fun equals(other: Any?): Boolean {
         if (this === other) {

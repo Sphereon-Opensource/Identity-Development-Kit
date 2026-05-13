@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.federation.ExchangeCodeAndExtractClaimsArgs

@@ -17,6 +17,7 @@
 
 package com.sphereon.ktor.server.jwt
 
+import com.sphereon.core.api.auth.AuthHeaders
 import com.sphereon.di.context.IdentityResolutionInput
 import com.sphereon.di.session.SessionContext
 import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
@@ -139,7 +140,8 @@ val JwtAuthentication =
             val resolution = config.identityResolutionPipeline(call).resolve(input)
 
             val sessionId = Uuid.random().toString()
-            val sessionContext = config.sessionContextFactory(call).create(sessionId, resolution, emptyMap())
+            val correlationId = call.request.header(AuthHeaders.X_CORRELATION_ID) ?: Uuid.random().toString()
+            val sessionContext = config.sessionContextFactory(call).create(sessionId, correlationId, resolution, emptyMap())
             call.attributes.put(SessionContextAttributeKey, sessionContext)
         }
     }
@@ -160,7 +162,8 @@ private suspend fun bindAnonymousSession(
             ),
         )
     val sessionId = Uuid.random().toString()
-    call.attributes.put(SessionContextAttributeKey, factory.create(sessionId, resolution, emptyMap()))
+    val correlationId = call.request.header(AuthHeaders.X_CORRELATION_ID) ?: Uuid.random().toString()
+    call.attributes.put(SessionContextAttributeKey, factory.create(sessionId, correlationId, resolution, emptyMap()))
 }
 
 private fun collectHeaders(call: ApplicationCall): Map<String, String> {

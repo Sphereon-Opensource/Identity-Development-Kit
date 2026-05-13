@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.command.federation
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.oauth2.server.authorization.config.FederationProviderConfig
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser

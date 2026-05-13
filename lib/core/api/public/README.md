@@ -96,7 +96,6 @@ lib-core-api-public/
 │       │   ├── ChainedCommand.kt       # Sequential chaining
 │       │   ├── PipeBuilder.kt          # Pipeline builder
 │       │   ├── ChainOfResponsibility.kt
-│       │   ├── SagaCommand.kt          # Compensatable transactions
 │       │   ├── CommandComposition.kt   # Functional composition
 │       │   ├── CommandAuthorization.kt # Authorization interfaces
 │       │   ├── PatternCommandAuthorizer.kt

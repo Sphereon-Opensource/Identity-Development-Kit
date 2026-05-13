@@ -31,8 +31,10 @@ import kotlinx.coroutines.launch
  * Default implementation of EventHub.
  *
  * Uses Kotlin SharedFlow for event broadcasting with:
- * - No replay (late subscribers don't receive past events)
- * - Buffer capacity of 1000 events
+ * - Replay buffer of 64 events so late subscribers (and projection consumers)
+ *   catch the most recent state without polling. Bounded so the hub does not
+ *   accumulate unbounded history.
+ * - Extra buffer capacity of 1000 events for in-flight broadcasts
  * - DROP_OLDEST overflow policy (prevents backpressure issues)
  *
  * This is an AppScope singleton shared across all scope levels.
@@ -43,7 +45,7 @@ import kotlinx.coroutines.launch
 class EventHubImpl : EventHub {
     private val _events =
         MutableSharedFlow<Event>(
-            replay = 0,
+            replay = 64,
             extraBufferCapacity = 1000,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )

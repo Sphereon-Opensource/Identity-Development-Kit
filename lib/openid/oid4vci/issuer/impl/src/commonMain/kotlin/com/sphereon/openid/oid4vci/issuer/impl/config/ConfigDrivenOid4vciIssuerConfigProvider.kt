@@ -114,7 +114,14 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
     override val issuerIdentifier: String
-        get() = configService.getPropertyAsString("$NAMESPACE.identifier") ?: ""
+        get() {
+            val value = configService.getPropertyAsString("$NAMESPACE.identifier")
+            require(!value.isNullOrBlank()) {
+                "$NAMESPACE.identifier is required: every OID4VCI issuer surface (metadata, credential offers, " +
+                    "issuance) needs an absolute http(s) URL identifying this issuer per OID4VCI 1.0 §11.2.2"
+            }
+            return value
+        }
 
     override val authorizationServers: List<String>?
         get() =

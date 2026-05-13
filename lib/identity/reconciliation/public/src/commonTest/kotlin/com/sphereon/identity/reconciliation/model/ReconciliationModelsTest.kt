@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.identity.matching.model.IdentifierType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -90,7 +91,7 @@ class ReconciliationModelsTest {
                 enabled = true,
                 attributeMappings =
                     listOf(
-                        ReconciliationAttributeMapping(source = "sub", target = "eduid", identifierType = "SUBJECT_ID", required = true),
+                        AttributeMapping(source = "sub", target = "eduid", required = true),
                     ),
             )
 

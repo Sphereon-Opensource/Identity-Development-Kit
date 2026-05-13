@@ -280,7 +280,7 @@ class UserContextInstanceTest {
                     DefaultPrincipalInputString("test-user"),
                 )
 
-            val session = instance.createSession("my-session", false)
+            val session = instance.createSession("my-session", makeActive = false)
             assertNotNull(session)
             assertEquals("my-session", session.sessionId)
         } finally {
@@ -298,7 +298,7 @@ class UserContextInstanceTest {
                     DefaultPrincipalInputString("test-user"),
                 )
 
-            val session = instance.createSession("active-session", true)
+            val session = instance.createSession("active-session", makeActive = true)
             assertTrue(session.isCurrentlyActive())
         } finally {
             appGraph.destroy()

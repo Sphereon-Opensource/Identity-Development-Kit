@@ -62,7 +62,7 @@ class Oid4vciRestDescriptorProvider : HttpAdapterDescriptorProvider {
                     GetCredentialOfferStatusEndpointCommand.ENDPOINT,
                     DeleteCredentialOfferEndpointCommand.ENDPOINT,
                 ).map { endpoint ->
-                    endpoint.copy(pathPattern = basePath + endpoint.pathPattern)
+                    endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },
         )
 }

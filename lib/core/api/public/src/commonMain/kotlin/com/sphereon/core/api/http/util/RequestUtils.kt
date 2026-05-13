@@ -17,6 +17,7 @@
 package com.sphereon.core.api.http.util
 
 import com.sphereon.core.api.auth.AuthHeaders
+import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 
 /**
  * Framework-agnostic HTTP request utilities.
@@ -48,11 +49,18 @@ object RequestUtils {
     }
 
     /**
-     * Extract tenant ID from headers.
-     * Uses the canonical [AuthHeaders.X_TENANT_ID] header with case-insensitive fallback.
+     * Extract the resolved base tenant ID from request headers.
+     *
+     * Reads `__sphereon_internal_base_tenant__` (the in-process header stamped
+     * by the Layer 1 tenant-resolution pipeline). `X-Tenant-Id` from the wire
+     * is **never** consulted here — it is information-only and must never
+     * influence auth/tenant decisions. The Layer 1 pipeline resolves tenant
+     * exclusively from the validated JWT, the Host header, or the configured
+     * fallback; the result is propagated as the internal header by the
+     * REST adapter when it builds the [GenericHttpRequest].
      */
     fun extractTenantId(headers: Map<String, String>): String? =
-        extractHeaderValue(headers, AuthHeaders.X_TENANT_ID)
+        extractHeaderValue(headers, CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER)
             ?.trim()
             ?.takeIf { it.isNotBlank() }
 

@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.api
 
+import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.identity.reconciliation.model.CanonicalAttributeRule
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode.MERGE_ALL
@@ -23,7 +24,6 @@ import com.sphereon.identity.reconciliation.model.CanonicalMergeMode.OIDC_ONLY
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode.OIDC_WINS
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode.WALLET_ONLY
 import com.sphereon.identity.reconciliation.model.CanonicalMergeMode.WALLET_WINS
-import com.sphereon.identity.reconciliation.model.ReconciliationAttributeMapping
 
 /**
  * Derives attribute mappings from canonical attribute rules for a specific provider.
@@ -54,11 +54,11 @@ object AttributeMappingDeriver {
         rules: List<CanonicalAttributeRule>,
         providerId: String,
         allowedModes: Set<CanonicalMergeMode>,
-    ): List<ReconciliationAttributeMapping> =
+    ): List<AttributeMapping> =
         rules
             .filter { it.mergeMode in allowedModes }
             .map { rule ->
-                ReconciliationAttributeMapping(
+                AttributeMapping(
                     source = rule.sourceAliases[providerId] ?: rule.canonicalName,
                     target = rule.canonicalName,
                     required = rule.required,

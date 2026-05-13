@@ -662,6 +662,7 @@ class RestApiWebsiteE2ETest {
 
                 override fun createOrGetFromId(
                     sessionId: String,
+                    correlationId: String,
                     makeActive: Boolean,
                 ) = throw NotImplementedError()
 

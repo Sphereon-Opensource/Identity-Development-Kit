@@ -43,7 +43,7 @@ import kotlin.test.assertTrue
  * to cover edge case branches that are hard to reach with integration tests.
  */
 class CnfExternalIdentifierMockedTest {
-    private val mockSessionContext = createAnonymousSessionContext("mock-cnf-external-test")
+    private val mockSessionContext = createAnonymousSessionContext("mock-cnf-external-test", "mock-cnf-external-test-correlation")
 
     private val testJwk =
         Jwk(

@@ -197,7 +197,7 @@ class KmsQueryFunctionalityTest {
         runTest {
             val args = QueryProviderArgs(query = null)
             val executionContext = session.sessionExecution.sessionContext
-            val forgedContext = createAnonymousSessionContext("kms-query-provider-null-query-forged")
+            val forgedContext = createAnonymousSessionContext("kms-query-provider-null-query-forged", "kms-query-provider-null-query-forged-correlation")
 
             val resultWithExecutionContext = queryProviderCommand.execute(args)
             val resultWithForgedContext = queryProviderCommand.execute(args)
@@ -213,7 +213,7 @@ class KmsQueryFunctionalityTest {
             val validArgs = QueryProviderArgs(query = kmsQuery { })
             val invalidArgs = QueryProviderArgs(query = null)
             val otherObject = "not QueryProviderArgs"
-            val forgedContext = createAnonymousSessionContext("kms-query-provider-supports-forged")
+            val forgedContext = createAnonymousSessionContext("kms-query-provider-supports-forged", "kms-query-provider-supports-forged-correlation")
 
             assertTrue(queryProviderCommand.supports(validArgs), "Should support valid args")
             assertTrue(queryProviderCommand.supports(validArgs), "Context-bearing supports should delegate to supports")
@@ -233,7 +233,7 @@ class KmsQueryFunctionalityTest {
                             signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256
                         },
                 )
-            val forgedContext = createAnonymousSessionContext("kms-query-provider-exec-forged")
+            val forgedContext = createAnonymousSessionContext("kms-query-provider-exec-forged", "kms-query-provider-exec-forged-correlation")
 
             val result = queryProviderCommand.execute(args)
 
@@ -278,7 +278,7 @@ class KmsQueryFunctionalityTest {
         runTest {
             val args = QueryProvidersArgs(query = null)
             val executionContext = session.sessionExecution.sessionContext
-            val forgedContext = createAnonymousSessionContext("kms-query-providers-null-query-forged")
+            val forgedContext = createAnonymousSessionContext("kms-query-providers-null-query-forged", "kms-query-providers-null-query-forged-correlation")
 
             val resultWithExecutionContext = queryProvidersCommand.execute(args)
             val resultWithForgedContext = queryProvidersCommand.execute(args)
@@ -294,7 +294,7 @@ class KmsQueryFunctionalityTest {
             val validArgs = QueryProvidersArgs(query = kmsQuery { })
             val invalidArgs = QueryProvidersArgs(query = null)
             val otherObject = "not QueryProvidersArgs"
-            val forgedContext = createAnonymousSessionContext("kms-query-providers-supports-forged")
+            val forgedContext = createAnonymousSessionContext("kms-query-providers-supports-forged", "kms-query-providers-supports-forged-correlation")
 
             assertTrue(queryProvidersCommand.supports(validArgs), "Should support valid args")
             assertTrue(queryProvidersCommand.supports(validArgs), "Context-bearing supports should delegate to supports")
@@ -337,7 +337,7 @@ class KmsQueryFunctionalityTest {
         runTest {
             val validArgs = GetAllCapabilitiesArgs()
             val otherObject = "not GetAllCapabilitiesArgs"
-            val forgedContext = createAnonymousSessionContext("kms-query-capabilities-supports-forged")
+            val forgedContext = createAnonymousSessionContext("kms-query-capabilities-supports-forged", "kms-query-capabilities-supports-forged-correlation")
 
             assertTrue(getAllCapabilitiesCommand.supports(validArgs), "Should support valid args")
             assertTrue(getAllCapabilitiesCommand.supports(validArgs), "Context-bearing supports should delegate to supports")

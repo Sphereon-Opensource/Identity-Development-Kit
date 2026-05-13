@@ -650,7 +650,7 @@ class FidesIntegrationTest {
 
     private suspend fun createX509ValidationService(): X509ETSIValidationIdentifierResolutionServiceImpl =
         X509ETSIValidationIdentifierResolutionServiceImpl(
-            execution = TestSessionExecution(createAnonymousSessionContext("fides-x509-test")),
+            execution = TestSessionExecution(createAnonymousSessionContext("fides-x509-test", "fides-x509-test-correlation")),
             trustListResolvers = setOf(FidesTrustListResolver()),
             trustListParser = parser,
             x509VerifyService = PermissiveX509VerifyService(),
@@ -658,7 +658,7 @@ class FidesIntegrationTest {
 
     private suspend fun createRoleVerificationService(): LoTERoleVerificationServiceImpl =
         LoTERoleVerificationServiceImpl(
-            execution = TestSessionExecution(createAnonymousSessionContext("fides-role-test")),
+            execution = TestSessionExecution(createAnonymousSessionContext("fides-role-test", "fides-role-test-correlation")),
             trustListResolvers = setOf(FidesTrustListResolver()),
             trustListParser = parser,
         )

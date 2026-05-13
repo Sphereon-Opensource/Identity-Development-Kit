@@ -135,9 +135,9 @@ describe('resolveDesignSystemPalette', () => {
       const lightTokens = resolveDesignSystemPalette(config, 'light')
       const darkTokens = resolveDesignSystemPalette(config, 'dark')
 
-      // Light: color.primary = brand.500, Dark: color.primary = brand.200
+      // Light: brand.500; Dark: brand.300 (lighter for AA on dark surfaces).
       expect(lightTokens['color.primary']).toBe('#7C40E8')
-      expect(darkTokens['color.primary']).toBe('#C7ADF5')
+      expect(darkTokens['color.primary']).toBe('#AE89F1')
     })
   })
 

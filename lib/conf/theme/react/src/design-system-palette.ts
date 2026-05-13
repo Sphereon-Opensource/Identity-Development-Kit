@@ -284,9 +284,10 @@ export const DEFAULT_PALETTE_MAPPING: PaletteMapping = {
     'color.interactive.focus': { scale: 'brand', stop: 500 },
   },
   dark: {
-    'color.primary': { scale: 'brand', stop: 400 },
-    'color.onPrimary': { scale: 'brand', stop: 50 },
-    'color.primaryContainer': { scale: 'brand', stop: 700 },
+    // Wallet dark mapping: lighter brand stops for AA on dark surfaces.
+    'color.primary': { scale: 'brand', stop: 300 },
+    'color.onPrimary': { scale: 'brand', stop: 900 },
+    'color.primaryContainer': { scale: 'brand', stop: 800 },
     'color.onPrimaryContainer': { scale: 'brand', stop: 100 },
     'color.secondary': { scale: 'secondary', stop: 300 },
     'color.onSecondary': { scale: 'secondary', stop: 50 },

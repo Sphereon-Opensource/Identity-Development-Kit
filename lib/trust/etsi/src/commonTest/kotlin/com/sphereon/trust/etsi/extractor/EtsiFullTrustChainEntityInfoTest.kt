@@ -144,7 +144,7 @@ class EtsiFullTrustChainEntityInfoTest {
 
     private suspend fun createValidationService(): X509ETSIValidationIdentifierResolutionServiceImpl =
         X509ETSIValidationIdentifierResolutionServiceImpl(
-            execution = TestSessionExecution(createAnonymousSessionContext("full-chain-test")),
+            execution = TestSessionExecution(createAnonymousSessionContext("full-chain-test", "full-chain-test-correlation")),
             trustListResolvers = setOf(FidesTrustListResolver()),
             trustListParser = parser,
             x509VerifyService = PermissiveX509VerifyService(),

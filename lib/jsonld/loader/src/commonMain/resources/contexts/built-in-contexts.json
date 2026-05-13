@@ -1,0 +1,42 @@
+{
+  "_comment": "Pinned bundle of canonical JSON-LD @context documents shipped with IDK. Generator (DefaultBuiltInContextRegistry) reads this manifest at build time and emits a Kotlin Map<iri, jsonContent>. Hashes are SHA-256 over the exact file bytes in this directory; regenerate after any update via 'sha256sum *.jsonld' in this directory.",
+  "_generatedAt": "2026-05-08",
+  "entries": [
+    {
+      "iri": "https://www.w3.org/ns/credentials/v2",
+      "file": "vc-2.0.jsonld",
+      "sha256": "59955ced6697d61e03f2b2556febe5308ab16842846f5b586d7f1f7adec92734",
+      "source": "https://www.w3.org/ns/credentials/v2",
+      "license": "W3C Document License (https://www.w3.org/Consortium/Legal/2015/doc-license)",
+      "fetchedAt": "2026-05-08",
+      "description": "W3C Verifiable Credentials Data Model v2.0 context"
+    },
+    {
+      "iri": "https://w3id.org/security/data-integrity/v1",
+      "file": "data-integrity-v1.jsonld",
+      "sha256": "b5d829bd09aa7c42abc6efa0c8ed7635313b5487f37ccfce3ecd149ca9418554",
+      "source": "https://w3id.org/security/data-integrity/v1",
+      "license": "W3C Document License (https://www.w3.org/Consortium/Legal/2015/doc-license)",
+      "fetchedAt": "2026-05-08",
+      "description": "W3C Verifiable Credential Data Integrity 1.0 context"
+    },
+    {
+      "iri": "https://w3id.org/security/data-integrity/v2",
+      "file": "data-integrity-v2.jsonld",
+      "sha256": "67f21e6e33a6c14e5ccfd2fc7865f7474fb71a04af7e94136cb399dfac8ae8f4",
+      "source": "https://w3id.org/security/data-integrity/v2",
+      "license": "W3C Document License (https://www.w3.org/Consortium/Legal/2015/doc-license)",
+      "fetchedAt": "2026-05-08",
+      "description": "W3C Verifiable Credential Data Integrity 1.1+ context"
+    },
+    {
+      "iri": "https://vocabulary.uncefact.org/untp/",
+      "file": "untp.jsonld",
+      "sha256": "752060cc15c6c77bfcea8b170f173239a705e9da389314c1cb2dacc8a69d93bc",
+      "source": "https://vocabulary.uncefact.org/untp/",
+      "license": "UN/CEFACT publication terms (publicly published vocabulary, redistribution permitted for implementer use)",
+      "fetchedAt": "2026-05-08",
+      "description": "UN/CEFACT Transparency Protocol 0.7.0 vocabulary; shared @context across DPP, DCC, DTE, DFR, DIA credential types"
+    }
+  ]
+}

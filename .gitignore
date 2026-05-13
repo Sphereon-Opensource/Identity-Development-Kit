@@ -44,6 +44,7 @@ replay_pid*.log
 /examples/oid4vc/webapp/frontend/dist/assets/index-DzSUIBra.css
 /examples/oid4vc/webapp/frontend/dist/assets/index-Bxn_qgMY.js
 /examples/oid4vc/services/jars/
+/lib/conf/theme/web/previews/
 
 # Local agent tooling (skills, plans, cache) — not part of the SDK
 .claude/

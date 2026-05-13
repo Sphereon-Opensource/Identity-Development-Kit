@@ -17,6 +17,7 @@
 package com.sphereon.core.api.http.describe
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.jvm.JvmStatic
 
 /**
@@ -161,7 +162,17 @@ data class HttpAdapterMount(
 @JsExportCompat
 data class HttpEndpointDescriptor(
     val method: HttpMethod,
-    val pathPattern: String,
+    /**
+     * One or more URL patterns this endpoint serves. Multiple entries let a single
+     * handler answer at several spec-defined URLs without needing parallel command
+     * instances — e.g. a metadata endpoint that exposes both the RFC 8414 §3
+     * well-known suffix form and a legacy issuer-path-prefix form.
+     *
+     * Most descriptors carry a single pattern; for that case use the
+     * [pathPattern]-named secondary constructor or the [pathPattern] back-compat
+     * accessor. The list is non-empty by construction.
+     */
+    val pathPatterns: List<String>,
     val consumes: Set<MediaType> = emptySet(),
     val produces: Set<MediaType> = emptySet(),
     val operationId: String? = null,
@@ -169,7 +180,50 @@ data class HttpEndpointDescriptor(
     val commandId: String? = null,
     val tags: Set<String> = emptySet(),
     val summary: String? = null,
-)
+) {
+    init {
+        require(pathPatterns.isNotEmpty()) {
+            "HttpEndpointDescriptor requires at least one path pattern"
+        }
+    }
+
+    /**
+     * The first (primary) URL pattern. Most descriptors only carry one entry, so
+     * this is what consumers reading "the path" want for display, OpenAPI
+     * generation, audit metadata, etc. Routing decisions MUST iterate
+     * [pathPatterns] instead of using this accessor so multi-pattern descriptors
+     * route correctly under all their alias URLs.
+     */
+    val pathPattern: String get() = pathPatterns.first()
+
+    /**
+     * Convenience constructor for the common single-pattern descriptor — keeps
+     * existing call sites (`HttpEndpointDescriptor(method, pathPattern = "...")`)
+     * source-compatible. Excluded from JS export because Kotlin/JS rejects
+     * unnamed secondary constructors on @JsExport classes; JS callers use the
+     * primary constructor with `pathPatterns = listOf("/path")`.
+     */
+    @JsExportIgnoreCompat
+    constructor(
+        method: HttpMethod,
+        pathPattern: String,
+        consumes: Set<MediaType> = emptySet(),
+        produces: Set<MediaType> = emptySet(),
+        operationId: String? = null,
+        commandId: String? = null,
+        tags: Set<String> = emptySet(),
+        summary: String? = null,
+    ) : this(
+        method = method,
+        pathPatterns = listOf(pathPattern),
+        consumes = consumes,
+        produces = produces,
+        operationId = operationId,
+        commandId = commandId,
+        tags = tags,
+        summary = summary,
+    )
+}
 
 /**
  * Lightweight hints for OpenAPI tooling. The open-source IDK must not depend on OpenAPI libraries; EDK provides the

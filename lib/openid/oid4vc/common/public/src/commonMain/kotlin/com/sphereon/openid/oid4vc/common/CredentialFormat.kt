@@ -80,6 +80,19 @@ enum class CredentialFormat(
      */
     @SerialName("jwt_vp_json")
     JWT_VP_JSON("jwt_vp_json"),
+
+    /**
+     * VCDM 2.0 enveloped via JOSE (W3C VC JOSE/COSE §3.1.1).
+     *
+     * The credential body is a JSON-LD VCDM 2.0 document; the entire body is
+     * carried as the JWT payload (no `vc` wrapper claim) and signed with JWS.
+     * This is the format UNTP 0.7.0 mandates for issued credentials.
+     *
+     * Structure: header.payload.signature where payload is the VCDM 2.0 JSON-LD
+     * document with `iss`/`iat`/`exp` JWT registered claims merged at the root.
+     */
+    @SerialName("vc+ld+json+jwt")
+    VC_LD_JSON_JWT("vc+ld+json+jwt"),
     ;
 
     /**

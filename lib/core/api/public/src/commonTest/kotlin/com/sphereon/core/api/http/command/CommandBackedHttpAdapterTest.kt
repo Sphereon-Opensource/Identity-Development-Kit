@@ -522,13 +522,15 @@ private abstract class TestCommandBackedAdapterBase(
             endpoints =
                 enabledEndpoints.map { endpoint ->
                     // Cover the empty basePath branch
-                    val fullPathPattern =
-                        if (mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/") {
-                            endpoint.endpoint.pathPattern
-                        } else {
-                            mount.adapterBasePath + endpoint.endpoint.pathPattern
+                    val fullPathPatterns =
+                        endpoint.endpoint.pathPatterns.map { pattern ->
+                            if (mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/") {
+                                pattern
+                            } else {
+                                mount.adapterBasePath + pattern
+                            }
                         }
-                    endpoint.endpoint.copy(pathPattern = fullPathPattern)
+                    endpoint.endpoint.copy(pathPatterns = fullPathPatterns)
                 },
             openApiHints = null,
         )

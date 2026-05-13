@@ -65,5 +65,6 @@ interface CoreApiContextExtensionGraph {
     fun createExecutionContextGraph(
         context: UserContext,
         sessionId: String,
-    ): SessionInstance = sessionContextManager.createOrGetFromId(sessionId = sessionId)
+        correlationId: String = sessionId,
+    ): SessionInstance = sessionContextManager.createOrGetFromId(sessionId = sessionId, correlationId = correlationId)
 }

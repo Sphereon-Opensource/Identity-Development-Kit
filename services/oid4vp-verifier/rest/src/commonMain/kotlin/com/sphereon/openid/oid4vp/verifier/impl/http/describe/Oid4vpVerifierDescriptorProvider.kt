@@ -65,7 +65,7 @@ class Oid4vpVerifierDescriptorProvider : HttpAdapterDescriptorProvider {
                     DirectPostResponseEndpointCommand.ENDPOINT,
                     ReadyEndpointCommand.ENDPOINT,
                 ).map { endpoint ->
-                    endpoint.copy(pathPattern = basePath + endpoint.pathPattern)
+                    endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },
         )
 }

@@ -470,6 +470,78 @@ object TokenKeyConstants {
     const val PALETTE_PENDING_800 = "palette.pending.800"
     const val PALETTE_PENDING_900 = "palette.pending.900"
 
+    // Gray palette (canonical neutral ramp)
+    const val PALETTE_GRAY_50 = "palette.gray.50"
+    const val PALETTE_GRAY_100 = "palette.gray.100"
+    const val PALETTE_GRAY_200 = "palette.gray.200"
+    const val PALETTE_GRAY_300 = "palette.gray.300"
+    const val PALETTE_GRAY_400 = "palette.gray.400"
+    const val PALETTE_GRAY_500 = "palette.gray.500"
+    const val PALETTE_GRAY_600 = "palette.gray.600"
+    const val PALETTE_GRAY_700 = "palette.gray.700"
+    const val PALETTE_GRAY_800 = "palette.gray.800"
+    const val PALETTE_GRAY_900 = "palette.gray.900"
+
+    // Blue palette (foundation backgrounds, dark surfaces)
+    const val PALETTE_BLUE_50 = "palette.blue.50"
+    const val PALETTE_BLUE_100 = "palette.blue.100"
+    const val PALETTE_BLUE_200 = "palette.blue.200"
+    const val PALETTE_BLUE_300 = "palette.blue.300"
+    const val PALETTE_BLUE_400 = "palette.blue.400"
+    const val PALETTE_BLUE_500 = "palette.blue.500"
+    const val PALETTE_BLUE_600 = "palette.blue.600"
+    const val PALETTE_BLUE_700 = "palette.blue.700"
+    const val PALETTE_BLUE_800 = "palette.blue.800"
+    const val PALETTE_BLUE_900 = "palette.blue.900"
+
+    // Aqua palette (category accent)
+    const val PALETTE_AQUA_50 = "palette.aqua.50"
+    const val PALETTE_AQUA_100 = "palette.aqua.100"
+    const val PALETTE_AQUA_200 = "palette.aqua.200"
+    const val PALETTE_AQUA_300 = "palette.aqua.300"
+    const val PALETTE_AQUA_400 = "palette.aqua.400"
+    const val PALETTE_AQUA_500 = "palette.aqua.500"
+    const val PALETTE_AQUA_600 = "palette.aqua.600"
+    const val PALETTE_AQUA_700 = "palette.aqua.700"
+    const val PALETTE_AQUA_800 = "palette.aqua.800"
+    const val PALETTE_AQUA_900 = "palette.aqua.900"
+
+    // Selenas palette (category accent)
+    const val PALETTE_SELENAS_50 = "palette.selenas.50"
+    const val PALETTE_SELENAS_100 = "palette.selenas.100"
+    const val PALETTE_SELENAS_200 = "palette.selenas.200"
+    const val PALETTE_SELENAS_300 = "palette.selenas.300"
+    const val PALETTE_SELENAS_400 = "palette.selenas.400"
+    const val PALETTE_SELENAS_500 = "palette.selenas.500"
+    const val PALETTE_SELENAS_600 = "palette.selenas.600"
+    const val PALETTE_SELENAS_700 = "palette.selenas.700"
+    const val PALETTE_SELENAS_800 = "palette.selenas.800"
+    const val PALETTE_SELENAS_900 = "palette.selenas.900"
+
+    // Magenta palette (category accent)
+    const val PALETTE_MAGENTA_50 = "palette.magenta.50"
+    const val PALETTE_MAGENTA_100 = "palette.magenta.100"
+    const val PALETTE_MAGENTA_200 = "palette.magenta.200"
+    const val PALETTE_MAGENTA_300 = "palette.magenta.300"
+    const val PALETTE_MAGENTA_400 = "palette.magenta.400"
+    const val PALETTE_MAGENTA_500 = "palette.magenta.500"
+    const val PALETTE_MAGENTA_600 = "palette.magenta.600"
+    const val PALETTE_MAGENTA_700 = "palette.magenta.700"
+    const val PALETTE_MAGENTA_800 = "palette.magenta.800"
+    const val PALETTE_MAGENTA_900 = "palette.magenta.900"
+
+    // Purple palette (illustration accent, distinct from brand)
+    const val PALETTE_PURPLE_50 = "palette.purple.50"
+    const val PALETTE_PURPLE_100 = "palette.purple.100"
+    const val PALETTE_PURPLE_200 = "palette.purple.200"
+    const val PALETTE_PURPLE_300 = "palette.purple.300"
+    const val PALETTE_PURPLE_400 = "palette.purple.400"
+    const val PALETTE_PURPLE_500 = "palette.purple.500"
+    const val PALETTE_PURPLE_600 = "palette.purple.600"
+    const val PALETTE_PURPLE_700 = "palette.purple.700"
+    const val PALETTE_PURPLE_800 = "palette.purple.800"
+    const val PALETTE_PURPLE_900 = "palette.purple.900"
+
     // ── Graph token namespace (Tier 3) ──────────────────────────
     // Defined in IDK model for validation; populated by EDK presets.
     // These keys are recognized by the validator but NOT populated in SystemDefaults.
@@ -627,4 +699,204 @@ object TokenKeyConstants {
     // Blob Explorer — empty state
     const val COMP_BLOB_EXPLORER_EMPTY_FOREGROUND = "comp.blobExplorer.empty.foreground"
     const val COMP_BLOB_EXPLORER_EMPTY_ICON_COLOR = "comp.blobExplorer.empty.iconColor"
+
+    // ── Button — extended state + size keys ───────────────────────────
+    const val COMP_BUTTON_PRIMARY_BACKGROUND_HOVER = "comp.button.primary.backgroundHover"
+    const val COMP_BUTTON_PRIMARY_BACKGROUND_ACTIVE = "comp.button.primary.backgroundActive"
+    const val COMP_BUTTON_PRIMARY_HEIGHT = "comp.button.primary.height"
+    const val COMP_BUTTON_SECONDARY_BACKGROUND_HOVER = "comp.button.secondary.backgroundHover"
+    const val COMP_BUTTON_SECONDARY_BACKGROUND_ACTIVE = "comp.button.secondary.backgroundActive"
+    const val COMP_BUTTON_SECONDARY_HEIGHT = "comp.button.secondary.height"
+    const val COMP_BUTTON_GHOST_BACKGROUND_HOVER = "comp.button.ghost.backgroundHover"
+    const val COMP_BUTTON_GHOST_RADIUS = "comp.button.ghost.radius"
+    const val COMP_BUTTON_GHOST_HEIGHT = "comp.button.ghost.height"
+
+    // Input — error border + min height
+    const val COMP_INPUT_BORDER_ERROR = "comp.input.borderError"
+    const val COMP_INPUT_MIN_HEIGHT = "comp.input.minHeight"
+
+    // Chip
+    const val COMP_CHIP_BACKGROUND = "comp.chip.background"
+    const val COMP_CHIP_BACKGROUND_ACTIVE = "comp.chip.backgroundActive"
+    const val COMP_CHIP_FOREGROUND = "comp.chip.foreground"
+    const val COMP_CHIP_FOREGROUND_ACTIVE = "comp.chip.foregroundActive"
+    const val COMP_CHIP_BORDER = "comp.chip.border"
+    const val COMP_CHIP_RADIUS = "comp.chip.radius"
+
+    // Avatar
+    const val COMP_AVATAR_BACKGROUND = "comp.avatar.background"
+    const val COMP_AVATAR_FOREGROUND = "comp.avatar.foreground"
+    const val COMP_AVATAR_RADIUS = "comp.avatar.radius"
+    const val COMP_AVATAR_BORDER = "comp.avatar.border"
+    const val COMP_AVATAR_BORDER_WIDTH = "comp.avatar.borderWidth"
+    const val COMP_AVATAR_SIZE_XS = "comp.avatar.size.xs"
+    const val COMP_AVATAR_SIZE_SM = "comp.avatar.size.sm"
+    const val COMP_AVATAR_SIZE_MD = "comp.avatar.size.md"
+    const val COMP_AVATAR_SIZE_LG = "comp.avatar.size.lg"
+    const val COMP_AVATAR_SIZE_XL = "comp.avatar.size.xl"
+
+    // Progress (linear + circular)
+    const val COMP_PROGRESS_TRACK = "comp.progress.track"
+    const val COMP_PROGRESS_INDICATOR = "comp.progress.indicator"
+    const val COMP_PROGRESS_SUCCESS = "comp.progress.success"
+    const val COMP_PROGRESS_ERROR = "comp.progress.error"
+    const val COMP_PROGRESS_TRACK_HEIGHT = "comp.progress.trackHeight"
+    const val COMP_PROGRESS_RADIUS = "comp.progress.radius"
+
+    // Navigation — side / top / bottom
+    const val COMP_NAV_SIDE_BACKGROUND = "comp.nav.side.background"
+    const val COMP_NAV_SIDE_FOREGROUND = "comp.nav.side.foreground"
+    const val COMP_NAV_SIDE_ACTIVE_BACKGROUND = "comp.nav.side.active.background"
+    const val COMP_NAV_SIDE_ACTIVE_FOREGROUND = "comp.nav.side.active.foreground"
+    const val COMP_NAV_SIDE_SECTION_LABEL = "comp.nav.side.sectionLabel"
+    const val COMP_NAV_SIDE_DIVIDER = "comp.nav.side.divider"
+    const val COMP_NAV_SIDE_WIDTH = "comp.nav.side.width"
+    const val COMP_NAV_SIDE_ITEM_HEIGHT = "comp.nav.side.itemHeight"
+    const val COMP_NAV_TOP_BACKGROUND = "comp.nav.top.background"
+    const val COMP_NAV_TOP_FOREGROUND = "comp.nav.top.foreground"
+    const val COMP_NAV_TOP_HEIGHT = "comp.nav.top.height"
+    const val COMP_NAV_TOP_DIVIDER = "comp.nav.top.divider"
+    const val COMP_NAV_BOTTOM_BACKGROUND = "comp.nav.bottom.background"
+    const val COMP_NAV_BOTTOM_FOREGROUND = "comp.nav.bottom.foreground"
+    const val COMP_NAV_BOTTOM_ACTIVE = "comp.nav.bottom.active"
+    const val COMP_NAV_BOTTOM_DIVIDER = "comp.nav.bottom.divider"
+    const val COMP_NAV_BOTTOM_HEIGHT = "comp.nav.bottom.height"
+    const val COMP_NAV_BOTTOM_TARGET = "comp.nav.bottom.target"
+
+    // Snackbar (distinct from toast — sits at the bottom edge of the surface)
+    const val COMP_SNACKBAR_BACKGROUND = "comp.snackbar.background"
+    const val COMP_SNACKBAR_FOREGROUND = "comp.snackbar.foreground"
+    const val COMP_SNACKBAR_RADIUS = "comp.snackbar.radius"
+    const val COMP_SNACKBAR_SHADOW = "comp.snackbar.shadow"
+    const val COMP_SNACKBAR_PADDING = "comp.snackbar.padding"
+
+    // List item
+    const val COMP_LIST_ITEM_BACKGROUND = "comp.list.item.background"
+    const val COMP_LIST_ITEM_BACKGROUND_HOVER = "comp.list.item.backgroundHover"
+    const val COMP_LIST_ITEM_FOREGROUND = "comp.list.item.foreground"
+    const val COMP_LIST_ITEM_FOREGROUND_SECONDARY = "comp.list.item.foregroundSecondary"
+    const val COMP_LIST_ITEM_DIVIDER = "comp.list.item.divider"
+    const val COMP_LIST_ITEM_PADDING_X = "comp.list.item.paddingX"
+    const val COMP_LIST_ITEM_PADDING_Y = "comp.list.item.paddingY"
+    const val COMP_LIST_ITEM_RADIUS = "comp.list.item.radius"
+
+    // Live preview (issuer-side credential preview frame)
+    const val COMP_LIVE_PREVIEW_BACKGROUND = "comp.livePreview.background"
+    const val COMP_LIVE_PREVIEW_BORDER = "comp.livePreview.border"
+    const val COMP_LIVE_PREVIEW_BORDER_WIDTH = "comp.livePreview.borderWidth"
+    const val COMP_LIVE_PREVIEW_RADIUS = "comp.livePreview.radius"
+    const val COMP_LIVE_PREVIEW_PADDING = "comp.livePreview.padding"
+
+    // ── Shape — numeric Figma stops (Tier 1 mirror of M3 aliases) ─────
+    // Designers write these by Figma name; Tier 2 aliases (sm/md/lg/...) reference them.
+    const val SHAPE_RADIUS_0 = "shape.radius.0"
+    const val SHAPE_RADIUS_1 = "shape.radius.1"
+    const val SHAPE_RADIUS_2 = "shape.radius.2"
+    const val SHAPE_RADIUS_3 = "shape.radius.3"
+    const val SHAPE_RADIUS_4 = "shape.radius.4"
+    const val SHAPE_RADIUS_6 = "shape.radius.6"
+    const val SHAPE_RADIUS_8 = "shape.radius.8"
+    const val SHAPE_RADIUS_12 = "shape.radius.12"
+
+    // ── Spacing — half-stops + extended high stops ────────────────────
+    const val SPACING_0_5 = "spacing.0_5"
+    const val SPACING_1_5 = "spacing.1_5"
+    const val SPACING_2_5 = "spacing.2_5"
+    const val SPACING_3_5 = "spacing.3_5"
+    const val SPACING_7 = "spacing.7"
+    const val SPACING_9 = "spacing.9"
+    const val SPACING_11 = "spacing.11"
+    const val SPACING_28 = "spacing.28"
+    const val SPACING_36 = "spacing.36"
+    const val SPACING_44 = "spacing.44"
+    const val SPACING_52 = "spacing.52"
+    const val SPACING_56 = "spacing.56"
+    const val SPACING_60 = "spacing.60"
+    const val SPACING_64 = "spacing.64"
+    const val SPACING_72 = "spacing.72"
+    const val SPACING_80 = "spacing.80"
+    const val SPACING_96 = "spacing.96"
+
+    // ── Shadow — numeric tier mirror (designers reference these by Figma name) ─
+    const val SHADOW_100 = "shadow.100"
+    const val SHADOW_200 = "shadow.200"
+    const val SHADOW_300 = "shadow.300"
+    const val SHADOW_400 = "shadow.400"
+
+    // ── Text — wallet mobile role tokens ──────────────────────────────
+    // Parallel to M3 typography keys; consume via shorter, design-named roles.
+    const val TEXT_FAMILY_SANS = "text.family.sans"
+    const val TEXT_FAMILY_SECONDARY = "text.family.secondary"
+    const val TEXT_FAMILY_META = "text.family.meta"
+    const val TEXT_FAMILY_MONO = "text.family.mono"
+
+    const val TEXT_STYLE_XL_FONT_FAMILY = "text.style.xl.fontFamily"
+    const val TEXT_STYLE_XL_FONT_SIZE = "text.style.xl.fontSize"
+    const val TEXT_STYLE_XL_FONT_WEIGHT = "text.style.xl.fontWeight"
+    const val TEXT_STYLE_XL_LINE_HEIGHT = "text.style.xl.lineHeight"
+
+    const val TEXT_STYLE_H1_FONT_FAMILY = "text.style.h1.fontFamily"
+    const val TEXT_STYLE_H1_FONT_SIZE = "text.style.h1.fontSize"
+    const val TEXT_STYLE_H1_FONT_WEIGHT = "text.style.h1.fontWeight"
+    const val TEXT_STYLE_H1_LINE_HEIGHT = "text.style.h1.lineHeight"
+
+    const val TEXT_STYLE_H2_FONT_FAMILY = "text.style.h2.fontFamily"
+    const val TEXT_STYLE_H2_FONT_SIZE = "text.style.h2.fontSize"
+    const val TEXT_STYLE_H2_FONT_WEIGHT = "text.style.h2.fontWeight"
+    const val TEXT_STYLE_H2_LINE_HEIGHT = "text.style.h2.lineHeight"
+
+    const val TEXT_STYLE_H3_FONT_FAMILY = "text.style.h3.fontFamily"
+    const val TEXT_STYLE_H3_FONT_SIZE = "text.style.h3.fontSize"
+    const val TEXT_STYLE_H3_FONT_WEIGHT = "text.style.h3.fontWeight"
+    const val TEXT_STYLE_H3_LINE_HEIGHT = "text.style.h3.lineHeight"
+
+    const val TEXT_STYLE_SUBTITLE1_FONT_FAMILY = "text.style.subtitle1.fontFamily"
+    const val TEXT_STYLE_SUBTITLE1_FONT_SIZE = "text.style.subtitle1.fontSize"
+    const val TEXT_STYLE_SUBTITLE1_FONT_WEIGHT = "text.style.subtitle1.fontWeight"
+    const val TEXT_STYLE_SUBTITLE1_LINE_HEIGHT = "text.style.subtitle1.lineHeight"
+
+    const val TEXT_STYLE_SUBTITLE2_FONT_FAMILY = "text.style.subtitle2.fontFamily"
+    const val TEXT_STYLE_SUBTITLE2_FONT_SIZE = "text.style.subtitle2.fontSize"
+    const val TEXT_STYLE_SUBTITLE2_FONT_WEIGHT = "text.style.subtitle2.fontWeight"
+    const val TEXT_STYLE_SUBTITLE2_LINE_HEIGHT = "text.style.subtitle2.lineHeight"
+
+    const val TEXT_STYLE_BODY1_FONT_FAMILY = "text.style.body1.fontFamily"
+    const val TEXT_STYLE_BODY1_FONT_SIZE = "text.style.body1.fontSize"
+    const val TEXT_STYLE_BODY1_FONT_WEIGHT = "text.style.body1.fontWeight"
+    const val TEXT_STYLE_BODY1_LINE_HEIGHT = "text.style.body1.lineHeight"
+
+    const val TEXT_STYLE_MICRO1_FONT_FAMILY = "text.style.micro1.fontFamily"
+    const val TEXT_STYLE_MICRO1_FONT_SIZE = "text.style.micro1.fontSize"
+    const val TEXT_STYLE_MICRO1_FONT_WEIGHT = "text.style.micro1.fontWeight"
+    const val TEXT_STYLE_MICRO1_LINE_HEIGHT = "text.style.micro1.lineHeight"
+
+    const val TEXT_STYLE_MICRO2_FONT_FAMILY = "text.style.micro2.fontFamily"
+    const val TEXT_STYLE_MICRO2_FONT_SIZE = "text.style.micro2.fontSize"
+    const val TEXT_STYLE_MICRO2_FONT_WEIGHT = "text.style.micro2.fontWeight"
+    const val TEXT_STYLE_MICRO2_LINE_HEIGHT = "text.style.micro2.lineHeight"
+
+    // ── Text — desktop overrides (mobile is the unsuffixed default) ───
+    // Web reads these via `@media (min-width: 768px)`; Compose reads them
+    // for `WindowWidthSizeClass.Medium / Expanded`.
+    const val TEXT_STYLE_XL_DESKTOP_FONT_SIZE = "text.style.xl.desktop.fontSize"
+    const val TEXT_STYLE_XL_DESKTOP_LINE_HEIGHT = "text.style.xl.desktop.lineHeight"
+    const val TEXT_STYLE_H1_DESKTOP_FONT_SIZE = "text.style.h1.desktop.fontSize"
+    const val TEXT_STYLE_H1_DESKTOP_LINE_HEIGHT = "text.style.h1.desktop.lineHeight"
+    const val TEXT_STYLE_H2_DESKTOP_FONT_SIZE = "text.style.h2.desktop.fontSize"
+    const val TEXT_STYLE_H2_DESKTOP_LINE_HEIGHT = "text.style.h2.desktop.lineHeight"
+    const val TEXT_STYLE_H3_DESKTOP_FONT_SIZE = "text.style.h3.desktop.fontSize"
+    const val TEXT_STYLE_H3_DESKTOP_LINE_HEIGHT = "text.style.h3.desktop.lineHeight"
+    const val TEXT_STYLE_SUBTITLE1_DESKTOP_FONT_SIZE = "text.style.subtitle1.desktop.fontSize"
+    const val TEXT_STYLE_SUBTITLE1_DESKTOP_LINE_HEIGHT = "text.style.subtitle1.desktop.lineHeight"
+    const val TEXT_STYLE_SUBTITLE2_DESKTOP_FONT_SIZE = "text.style.subtitle2.desktop.fontSize"
+    const val TEXT_STYLE_SUBTITLE2_DESKTOP_LINE_HEIGHT = "text.style.subtitle2.desktop.lineHeight"
+    const val TEXT_STYLE_BODY1_DESKTOP_FONT_SIZE = "text.style.body1.desktop.fontSize"
+    const val TEXT_STYLE_BODY1_DESKTOP_LINE_HEIGHT = "text.style.body1.desktop.lineHeight"
+    const val TEXT_STYLE_MICRO1_DESKTOP_FONT_SIZE = "text.style.micro1.desktop.fontSize"
+    const val TEXT_STYLE_MICRO1_DESKTOP_LINE_HEIGHT = "text.style.micro1.desktop.lineHeight"
+    const val TEXT_STYLE_MICRO2_DESKTOP_FONT_SIZE = "text.style.micro2.desktop.fontSize"
+    const val TEXT_STYLE_MICRO2_DESKTOP_LINE_HEIGHT = "text.style.micro2.desktop.lineHeight"
+
+    // ── Accessibility ─────────────────────────────────────────────────
+    const val A11Y_TARGET_SIZE_MIN = "a11y.targetSizeMin"
 }

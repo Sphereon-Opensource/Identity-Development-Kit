@@ -1,0 +1,32 @@
+.icon {
+  width: var(--spacing-5, 20px);
+  height: var(--spacing-5, 20px);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.success {
+  color: var(--comp-qr-status-success);
+}
+
+.error {
+  color: var(--comp-qr-status-failed);
+}
+
+.pending {
+  color: var(--comp-qr-status-pending);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}

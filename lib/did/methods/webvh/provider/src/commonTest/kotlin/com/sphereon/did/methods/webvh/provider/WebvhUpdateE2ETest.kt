@@ -163,6 +163,20 @@ class WebvhUpdateE2ETest {
             val replay = replayResult.value
             assertEquals(newEntry.versionId, replay.selectedEntry.versionId, "replay LATEST must select the version-2 entry")
             assertEquals(listOf(multikeyB), replay.activeParameters.updateKeys, "active updateKeys after replay must be [B]")
+
+            // 6. did:web companion is populated by default on Update too,
+            //    rewriting the rotated state document to did:web and binding
+            //    back to the webvh DID via alsoKnownAs.
+            assertNotNull(updateResult.value.didWebDocument, "update did:web companion must be populated by default")
+            assertNotNull(updateResult.value.didWebJson, "update did:web companion JSON must be populated by default")
+            assertEquals(
+                "did:web:example.com",
+                updateResult.value.didWebDocument!!.id,
+                "update companion id must strip the SCID",
+            )
+            val updateAka = updateResult.value.didWebDocument!!.alsoKnownAs
+            assertNotNull(updateAka, "update companion must declare alsoKnownAs")
+            assertTrue(genesis.did in updateAka, "update companion must alsoKnownAs the webvh DID")
         }
 
     @Test

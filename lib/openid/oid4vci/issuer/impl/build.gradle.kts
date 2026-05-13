@@ -54,6 +54,13 @@ kotlin {
                 api(projects.libSdjwtPublic)
                 api(projects.libSdjwtImpl)
 
+                // JSON-LD context + schema validation for VCDM 2.0 enveloped issuance
+                // (vc+ld+json+jwt). The public module supplies command contracts;
+                // loader supplies the @ContributesBinding implementations + the
+                // bundled W3C/UNTP @context registry.
+                api(projects.libJsonldPublic)
+                implementation(projects.libJsonldLoader)
+
                 // Crypto (JWT/JWE, managed identifiers)
                 api(projects.libCryptoCoreImpl)
 

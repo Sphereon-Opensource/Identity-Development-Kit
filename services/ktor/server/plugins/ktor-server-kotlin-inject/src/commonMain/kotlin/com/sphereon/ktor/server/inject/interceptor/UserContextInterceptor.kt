@@ -24,6 +24,7 @@ import com.sphereon.ktor.server.inject.context.RequestScopedContext
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.header
 import io.ktor.util.AttributeKey
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -93,11 +94,16 @@ class UserContextInterceptor(
             // Generate a unique session ID for this request (multiplatform compatible)
             // In production, you might want to use a session cookie or similar
             val sessionId = generateSessionId()
+            // Honour the inbound X-Correlation-Id header if present so audit /
+            // log lines from this request thread back to the calling system;
+            // otherwise the session id is its own natural correlation anchor.
+            val correlationId = call.request.header("X-Correlation-Id") ?: sessionId
 
             // Create or get session (using generated session ID)
             val sessionInstance =
                 contextInstance.sessionContextManager.createOrGetFromId(
                     sessionId = sessionId,
+                    correlationId = correlationId,
                     makeActive = false, // ID-based resolution, no global active state
                 )
 

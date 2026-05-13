@@ -47,7 +47,7 @@ import kotlin.test.assertTrue
  * to cover edge case branches that are hard to reach with integration tests.
  */
 class MultiIdentifierResolutionMockedTest {
-    private val mockSessionContext = createAnonymousSessionContext("mock-multi-identifier-test")
+    private val mockSessionContext = createAnonymousSessionContext("mock-multi-identifier-test", "mock-multi-identifier-test-correlation")
 
     private val testJwk =
         Jwk(
@@ -143,7 +143,7 @@ class MultiIdentifierResolutionMockedTest {
                 )
 
             val supported = service.supports("unsupported-identifier")
-            val forgedContext = createAnonymousSessionContext("multi-identifier-forged-supports")
+            val forgedContext = createAnonymousSessionContext("multi-identifier-forged-supports", "multi-identifier-forged-supports-correlation")
             val supportedWithContext = service.supports("unsupported-identifier")
             assertFalse(supported, "Should not support unsupported identifier")
             assertEquals(supported, supportedWithContext, "Context-bearing supports should not bypass unsupported results")
@@ -170,7 +170,7 @@ class MultiIdentifierResolutionMockedTest {
                     externalMulti = mockExternalMulti,
                 )
 
-            val forgedContext = createAnonymousSessionContext("multi-identifier-forged-context")
+            val forgedContext = createAnonymousSessionContext("multi-identifier-forged-context", "multi-identifier-forged-context-correlation")
             val contextFree = service.supports("delegated-support")
             val withContext = service.supports("delegated-support")
 

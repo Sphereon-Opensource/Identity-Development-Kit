@@ -20,11 +20,14 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
+import com.sphereon.core.api.service.ServiceCommandRegistry
+import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
@@ -36,6 +39,8 @@ import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
+import com.sphereon.openid.oid4vp.verifier.hook.PostPresentationHookArgs
+import com.sphereon.openid.oid4vp.verifier.impl.hook.PostPresentationHookDispatcher
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
 import dev.zacsweers.metro.Inject
@@ -43,6 +48,7 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlin.time.Clock
 
 private const val BYTE_MASK = 0xFF
 private const val HEX_RADIX = 16
@@ -80,6 +86,21 @@ class HandleDirectPostResponseCommandImpl(
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val responseCodeStore: ResponseCodeStore,
     private val eventService: SessionEventService? = null,
+    /**
+     * Optional service-command registry for post-presentation hook dispatch.
+     * Mirrors [HandleCredentialRequestCommandImpl] on the OID4VCI side: when
+     * null (pure-IDK deployment that didn't wire the command-framework registry)
+     * no hooks fire — the verifier is a zero-cost no-op at the dispatch site.
+     */
+    private val serviceCommandRegistry: ServiceCommandRegistry? = null,
+    private val sessionScopedCommandRegistry: SessionScopedCommandRegistry? = null,
+    /**
+     * Optional property resolver so operators can configure which hook
+     * command IDs fire at the `oid4vp.after-presentation-validated` extension
+     * point. When null the default pattern `hook.post-presentation.**` applies.
+     */
+    private val propertyResolver: PropertyResolver? = null,
+    private val clock: Clock = Clock.System,
 ) : TypedServiceCommandAdapter<HandleDirectPostResponseArgs, DirectPostHandledResponse, IdkError>(
         commandId = HandleDirectPostResponseCommand.COMMAND_ID,
         execution = execution,
@@ -100,7 +121,61 @@ class HandleDirectPostResponseCommandImpl(
     ): IdkResult<DirectPostHandledResponse, IdkError> {
         val result = doExecuteInternal(args, applyDuring)
         emitOutcome(result)
+        if (result.isOk) {
+            dispatchPostPresentationHooks(args, result.value)
+        }
         return result
+    }
+
+    /**
+     * Post-presentation hook fan-out. Mirrors [HandleCredentialRequestCommandImpl.dispatchPostIssuanceHooks]:
+     * resolves registered `hook.post-presentation.**` commands and invokes each
+     * one whose `supports` returns true. Per-hook failures are isolated.
+     *
+     * Pure-IDK deployments that didn't wire `serviceCommandRegistry` /
+     * `sessionScopedCommandRegistry` get a zero-cost no-op. EDK / VDX
+     * deployments with a registered `hook.post-presentation.*` subscriber
+     * (e.g. VDX's `VerifierPresentationConsumeHookCommand` for invitation
+     * redemption) see it invoked automatically.
+     */
+    private suspend fun dispatchPostPresentationHooks(
+        args: HandleDirectPostResponseArgs,
+        response: DirectPostHandledResponse,
+    ) {
+        val discovery = serviceCommandRegistry ?: return
+        val resolver = sessionScopedCommandRegistry ?: return
+        val tenantId = runCatching { execution.sessionContext.context.tenant.tenantId }.getOrNull() ?: return
+
+        // Pull the verifier session by state for the boundInvitationToken etc.
+        val correlationId = args.originalRequest.state
+        val session =
+            if (!correlationId.isNullOrBlank()) {
+                authorizationSessionStore.get(correlationId).fold(success = { it }, failure = { null })
+            } else {
+                null
+            }
+
+        val hookArgs =
+            PostPresentationHookArgs(
+                tenantId = tenantId,
+                authorizationSessionId = session?.sessionId ?: correlationId,
+                transactionId = response.responseCode,
+                state = correlationId,
+                nonce = args.originalRequest.nonce,
+                verifierClientId = args.originalRequest.clientId,
+                matchedCredentialsCount = session?.validationResult?.matchedCredentials?.size ?: 0,
+                occurredAt = clock.now(),
+                boundInvitationToken = session?.boundInvitationToken,
+            )
+
+        PostPresentationHookDispatcher(
+            resolver = discovery,
+            sessionCommands = resolver,
+            propertyResolver = propertyResolver,
+        ).dispatch(
+            args = hookArgs,
+            sessionAllowList = session?.postPresentationHookAllowList,
+        )
     }
 
     private suspend fun emitOutcome(result: IdkResult<DirectPostHandledResponse, IdkError>,) {

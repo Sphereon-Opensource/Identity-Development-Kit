@@ -111,12 +111,33 @@ class HandleTokenRequestCommandImpl(
         val proofJktResult = verifyDpopProofIfPresent(applied.httpUrl, tokenRequest.dpopProof, tokenRequest.httpMethod)
         val proofJkt = proofJktResult.getOrElse { error -> return Err(error) }
 
+        // Per OID4VCI 1.0 §6.1: when the AS advertises
+        // `pre-authorized_grant_anonymous_access_supported=true`, the wallet MAY
+        // include `client_id` in the pre-authorized-code token request as a bare
+        // identifier — it is NOT subject to RFC 6749 client authentication and
+        // need not be registered. The parser sees `client_id` without secret/cert
+        // and classifies it as `ClientAuthenticationConfig.None(clientId)`, which
+        // would otherwise trigger a registry lookup and reject unregistered
+        // wallets with `invalid_client`. Downgrade to Anonymous here so the
+        // verify command treats the request as unauthenticated, matching spec.
+        val effectiveAuth =
+            if (tokenRequest.grantType == com.sphereon.oauth2.common.model.GrantType.PRE_AUTHORIZED_CODE &&
+                serversConfigProvider.serverConfig.grantTypesEnabled.contains(
+                    com.sphereon.oauth2.common.model.GrantType.PRE_AUTHORIZED_CODE.value,
+                ) &&
+                tokenRequest.clientAuthentication is com.sphereon.oauth2.common.model.ClientAuthenticationConfig.None
+            ) {
+                com.sphereon.oauth2.common.model.ClientAuthenticationConfig.Anonymous
+            } else {
+                tokenRequest.clientAuthentication
+            }
+
         // Verify client authentication
         val verifiedAuth =
             commands.verifyClientAuthentication
                 .execute(
                     VerifyClientAuthenticationArgs(
-                        clientAuthentication = tokenRequest.clientAuthentication,
+                        clientAuthentication = effectiveAuth,
                         clientId = tokenRequest.clientId,
                         tokenEndpointUrl = applied.httpUrl,
                     ),

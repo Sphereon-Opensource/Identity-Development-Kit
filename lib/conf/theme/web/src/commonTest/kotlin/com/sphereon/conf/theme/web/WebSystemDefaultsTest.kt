@@ -30,14 +30,16 @@ class WebSystemDefaultsTest {
         assertNotNull(tokens["color.onPrimary"])
         assertNotNull(tokens["color.surface"])
         assertNotNull(tokens["color.background"])
-        assertEquals("#6750A4", tokens["color.primary"])
+        // Wallet brand purple, palette.brand.500
+        assertEquals("#7C40E8", tokens["color.primary"])
     }
 
     @Test
     fun darkDefaultsContainAllColorTokens() {
         val tokens = WebSystemDefaults.dark
         assertNotNull(tokens["color.primary"])
-        assertEquals("#D0BCFF", tokens["color.primary"])
+        // Wallet dark primary, palette.brand.300 (lighter for AA on dark)
+        assertEquals("#AE89F1", tokens["color.primary"])
     }
 
     @Test

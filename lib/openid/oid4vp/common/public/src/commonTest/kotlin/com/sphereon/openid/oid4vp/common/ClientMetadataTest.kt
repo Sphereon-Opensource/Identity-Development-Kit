@@ -69,7 +69,7 @@ class ClientMetadataSerializationTest {
     }
 
     @Test
-    fun `vp_formats_supported uses the OID4VP final wire name (not vp_formats)`() {
+    fun vpFormatsSupportedUsesOid4vpFinalWireNameNotVpFormats() {
         val metadata =
             ClientMetadata(
                 vpFormatsSupported =
@@ -195,7 +195,7 @@ class ClientMetadataSerializationTest {
 
 class ClientMetadataValidationTest {
     @Test
-    fun `empty ClientMetadata is valid (every field optional in isolation)`() {
+    fun emptyClientMetadataIsValidEveryFieldOptionalInIsolation() {
         val result = validateClientMetadata(ClientMetadata())
         assertTrue(result.isValid, "Empty metadata should be valid in isolation. Errors: ${result.errors}")
     }

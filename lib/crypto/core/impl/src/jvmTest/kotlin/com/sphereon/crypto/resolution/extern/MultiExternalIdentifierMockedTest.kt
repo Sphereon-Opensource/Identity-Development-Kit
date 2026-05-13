@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  * to cover edge case branches that are hard to reach with integration tests.
  */
 class MultiExternalIdentifierMockedTest {
-    private val mockSessionContext = createAnonymousSessionContext("mock-multi-external-test")
+    private val mockSessionContext = createAnonymousSessionContext("mock-multi-external-test", "mock-multi-external-test-correlation")
 
     // ========================================================================
     // Branch Coverage Tests for doExecute Error Path

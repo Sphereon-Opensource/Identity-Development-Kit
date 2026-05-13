@@ -1,0 +1,50 @@
+{
+  "_comment": "Pinned bundle of UN/CEFACT UNTP 0.7.0 JSON Schemas. Each entry's `credentialType` matches the Verifiable Credential `type` array's primary (non-VerifiableCredential) entry. Generator (DefaultJsonLdSchemaRegistry) reads this manifest at build time and emits Kotlin string constants. SHA-256 hashes are over the exact file bytes in this directory; regenerate after any update via 'sha256sum *.json' in this directory. The user has confirmed (2026-05-08) that publicly-published spec schemas are okay to redistribute under Apache-2.0; per that decision, only the schema files are bundled — no other content from the upstream GPL-3.0 source tree.",
+  "_generatedAt": "2026-05-08",
+  "_specVersion": "UNTP 0.7.0",
+  "_sourceBase": "https://untp.unece.org/artefacts/schema/v0.7.0/",
+  "entries": [
+    {
+      "credentialType": "DigitalProductPassport",
+      "file": "DigitalProductPassport.json",
+      "sha256": "42c51943ab23547d5287899fd12b214b19b006c28d105a70ff390f8551b12653",
+      "schemaUri": "https://untp.unece.org/artefacts/schema/v0.7.0/dpp/DigitalProductPassport.json",
+      "fetchedAt": "2026-05-08"
+    },
+    {
+      "credentialType": "DigitalConformityCredential",
+      "file": "ConformityCredential.json",
+      "sha256": "3fef068faece5975daa799c8f2d1db675c902f9a4e2c6d3c5fb6833799a73af1",
+      "schemaUri": "https://untp.unece.org/artefacts/schema/v0.7.0/dcc/ConformityCredential.json",
+      "fetchedAt": "2026-05-08"
+    },
+    {
+      "credentialType": "DigitalTraceabilityEvent",
+      "file": "DigitalTraceabilityEvent.json",
+      "sha256": "a1fa17b743d729e5cb7d1e7db689b87cc0bc655395a625b7ae6f9d195ecc84f9",
+      "schemaUri": "https://untp.unece.org/artefacts/schema/v0.7.0/dte/DigitalTraceabilityEvent.json",
+      "fetchedAt": "2026-05-08"
+    },
+    {
+      "credentialType": "DigitalFacilityRecord",
+      "file": "DigitalFacilityRecord.json",
+      "sha256": "a887dd1bd50e01d5aff6c7fb62b92d90b355f34378f2ff4cae2fdd1b032a614e",
+      "schemaUri": "https://untp.unece.org/artefacts/schema/v0.7.0/dfr/DigitalFacilityRecord.json",
+      "fetchedAt": "2026-05-08"
+    },
+    {
+      "credentialType": "DigitalIdentityAnchor",
+      "file": "DigitalIdentityAnchor.json",
+      "sha256": "e26ec4543b29b353e720b345671ccf4926d472c2c5e1c65ecb6f5e9dd6e2a71d",
+      "schemaUri": "https://untp.unece.org/artefacts/schema/v0.7.0/dia/DigitalIdentityAnchor.json",
+      "fetchedAt": "2026-05-08"
+    },
+    {
+      "credentialType": "RegisteredIdentity",
+      "file": "RegisteredIdentity.json",
+      "sha256": "155c422d240a3dd954e3d3663ac23c1c687bcefc35a6819d11412f5610f8d329",
+      "schemaUri": "https://untp.unece.org/artefacts/schema/v0.7.0/dia/RegisteredIdentity.json",
+      "fetchedAt": "2026-05-08"
+    }
+  ]
+}

@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.VpToken
@@ -447,12 +448,149 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertEquals("any_format_cred", validation.matchedCredentials[0].credentialQueryId)
         }
 
-    private fun createTestCommand(): ValidateAuthorizationResponseCommandImpl =
-        ValidateAuthorizationResponseCommandImpl(
+    @Test
+    fun testValidateResponseRejectsVcLdJsonJwtPresentationContainingVocab() =
+        runTest {
+            // VCDM 2.0 JWT body whose @context contains an embedded @vocab. The
+            // validator catches this without any remote resolution: @vocab in any
+            // embedded context object is forbidden by UNTP 0.7.0 VCP. The JWT is
+            // unsigned for test purposes; AlwaysValidHolderBindingCommand stands
+            // in for cryptographic verification.
+            val jwt =
+                unsignedVcLdJwt(
+                    atVocab = "https://example.com/poison/",
+                    primaryType = "DigitalProductPassport",
+                )
+
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials =
+                        listOf(
+                            DcqlCredentialQuery(id = "dpp", format = "vc+ld+json+jwt"),
+                        ),
+                )
+            val parsedResponse =
+                ParsedAuthorizationResponse(
+                    vpToken = vpTokenOf("dpp", jwt),
+                    state = "state123",
+                    rawVpToken = """{"dpp":"$jwt"}""",
+                )
+            val originalRequest =
+                AuthorizationRequest(
+                    clientId = "https://verifier.example.com",
+                    redirectUri = "https://verifier.example.com/callback",
+                    state = "state123",
+                )
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse = parsedResponse,
+                    originalRequest = originalRequest,
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce123",
+                )
+
+            val result = command.validateAuthorizationResponse(args)
+            assertIs<Ok<*>>(result)
+            val validation = result.value
+
+            assertFalse(validation.valid, "presentation with @vocab must fail validation")
+            assertTrue(
+                validation.errors.any { it.contains("JSONLD_INVALID_VOCAB_MAPPING") },
+                "expected JSONLD_INVALID_VOCAB_MAPPING in errors: ${validation.errors}",
+            )
+        }
+
+    @Test
+    fun `test validate response accepts non-vc_ld_json_jwt presentation unchanged`() =
+        runTest {
+            // SD-JWT presentation: the new VCDM 2.0 validator path must skip it
+            // entirely (referencesVcdm2Context returns false because there is no
+            // @context at the JWT body root) and the SD-JWT path goes through as
+            // before. This is the regression-guard for the older 8 tests.
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials =
+                        listOf(
+                            DcqlCredentialQuery(id = "id", format = "dc+sd-jwt"),
+                        ),
+                )
+            val parsedResponse =
+                ParsedAuthorizationResponse(
+                    vpToken = vpTokenOf("id", sdJwt),
+                    state = "s",
+                    rawVpToken = """{"id":"$sdJwt"}""",
+                )
+            val originalRequest =
+                AuthorizationRequest(
+                    clientId = "https://v.example.com",
+                    redirectUri = "https://v.example.com/cb",
+                    state = "s",
+                )
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse = parsedResponse,
+                    originalRequest = originalRequest,
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "n",
+                )
+            val result = command.validateAuthorizationResponse(args)
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid)
+            assertEquals(1, result.value.matchedCredentials.size)
+        }
+
+    /**
+     * Build an unsigned JWT-shaped string with a VCDM 2.0 + JSON-LD body whose
+     * @context contains the supplied @vocab keyword. Suitable for testing the
+     * validator path; AlwaysValidHolderBindingCommand stubs out the signature
+     * check.
+     */
+    private fun unsignedVcLdJwt(
+        atVocab: String,
+        primaryType: String
+    ): String {
+        val payload =
+            """
+            {
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                  {"@vocab": "$atVocab"}
+                ],
+                "type": ["VerifiableCredential", "$primaryType"],
+                "issuer": "https://issuer.example.com",
+                "validFrom": "2026-01-01T00:00:00Z",
+                "credentialSubject": {"id": "did:example:holder"}
+            }
+            """.trimIndent()
+        val header = """{"alg":"none","typ":"vc+ld+json+jwt"}"""
+        return "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
+    }
+
+    private fun createTestCommand(): ValidateAuthorizationResponseCommandImpl {
+        // Validators wired through the built-in W3C/UNTP @context bundle so
+        // VCDM 2.0 references resolve from the JAR (no network). For
+        // non-VCDM-2.0 presentations the validator path is skipped entirely
+        // (referencesVcdm2Context returns false).
+        val builtInLoader =
+            com.sphereon.jsonld.loader.BuiltInContextLinkedDataDocumentLoader(
+                com.sphereon.jsonld.loader
+                    .DefaultBuiltInContextRegistry(),
+            )
+        return ValidateAuthorizationResponseCommandImpl(
             execution = testContext.execution,
             authorizationSessionStore = TestAuthorizationSessionStore(),
             verifyHolderBindingCommand = AlwaysValidHolderBindingCommand,
+            jsonLdContextValidator =
+                com.sphereon.jsonld.command
+                    .JsonLdContextValidator(builtInLoader),
+            jsonLdSchemaValidator =
+                com.sphereon.jsonld.command.JsonLdSchemaValidator(
+                    com.sphereon.jsonld.command
+                        .MapBackedJsonLdSchemaRegistry(emptyMap()),
+                ),
         )
+    }
 }
 
 /**

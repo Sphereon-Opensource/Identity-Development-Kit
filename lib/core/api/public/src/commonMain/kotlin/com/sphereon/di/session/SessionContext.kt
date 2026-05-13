@@ -28,6 +28,19 @@ import kotlin.native.ObjCName
 interface SessionContext : ContextAware {
     val sessionId: String
 
+    /**
+     * Optional business / trace key for the operation this session belongs
+     * to. Callers may set it explicitly (HTTP `X-Correlation-Id`, parent
+     * execution, durable-row replay, caller-chosen identifier); when not
+     * set it defaults to [sessionId] so every session always has a
+     * non-null correlation key. Constant for the session's lifetime;
+     * nested command invocations within the session inherit it
+     * automatically, and every call-site that receives a correlationId
+     * should propagate it onto downstream sessions.
+     */
+    val correlationId: String
+        get() = sessionId
+
     fun isAnonymous(): Boolean =
         (
             this.sessionId == IdentityConstants.ANONYMOUS_SESSION_ID && this.context.tenant.tenantId == IdentityConstants.ANONYMOUS_TENANT_ID &&

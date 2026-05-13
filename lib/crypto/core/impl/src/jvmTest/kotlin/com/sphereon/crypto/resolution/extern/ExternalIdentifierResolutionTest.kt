@@ -373,7 +373,7 @@ class ExternalIdentifierResolutionTest {
             val jwk = keyPair.jose.publicJwk
             val jwkOpts = ExternalIdentifierJwkOpts(identifier = jwk)
             val impl = jwkResolutionService as JwkExternalIdentifierResolutionServiceImpl
-            val forgedContext = createAnonymousSessionContext("external-identifier-forged-supports")
+            val forgedContext = createAnonymousSessionContext("external-identifier-forged-supports", "external-identifier-forged-supports-correlation")
 
             val contextFree = impl.supports(jwkOpts)
             val withContext = impl.supports(jwkOpts)
@@ -386,7 +386,7 @@ class ExternalIdentifierResolutionTest {
         runTest {
             val impl = jwkResolutionService as JwkExternalIdentifierResolutionServiceImpl
             val unsupported = ExternalIdentifierDidOpts(identifier = "did:example:unsupported")
-            val forgedContext = createAnonymousSessionContext("external-identifier-forged-unsupported")
+            val forgedContext = createAnonymousSessionContext("external-identifier-forged-unsupported", "external-identifier-forged-unsupported-correlation")
 
             val contextFree = impl.supports(unsupported)
             val withContext = impl.supports(unsupported)

@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.asOkResult
 import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserScope
@@ -75,7 +76,7 @@ class AppConsoleLogServiceImpl : AbstractConsoleLogService(id = SERVICE_ID) {
 @ContributesIntoSet(UserScope::class, binding = binding<Logger>())
 class UserContextConsoleLogServiceImpl(
     userContextInstance: UserContextInstance,
-) : AbstractConsoleLogService(userContextInstance.toSessionContext(), SERVICE_ID),
+) : AbstractConsoleLogService(userContextInstance.toSessionContext(correlationId = IdentityConstants.ANONYMOUS_ID), SERVICE_ID),
     LogService {
     override val scope: IdkScope = IdkScope.USER
 

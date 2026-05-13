@@ -55,7 +55,7 @@ import kotlin.test.assertTrue
  * difficult to trigger with integration tests alone.
  */
 class JweMockedErrorPathsTest {
-    private val mockSessionContext = createAnonymousSessionContext("mock-test-session")
+    private val mockSessionContext = createAnonymousSessionContext("mock-test-session", "mock-test-session-correlation")
 
     // ========================================================================
     // PrepareJweCommandImpl Error Path Tests

@@ -29,6 +29,10 @@ kotlin {
                 // OID4VCI issuer (offer creation, metadata, credential issuance models)
                 implementation(projects.libOpenidOid4vciIssuerPublic)
                 implementation(projects.libOpenidOid4vciIssuerImpl)
+                // JsonLd validators are reached transitively through issuer-impl
+                // with implementation scope; the test app graph needs them on
+                // the compile classpath so Metro can discover their @Inject ctors.
+                implementation(projects.libJsonldLoader)
 
                 // OID4VCI holder (offer parsing, token exchange, credential request models)
                 implementation(projects.libOpenidOid4vciHolderPublic)

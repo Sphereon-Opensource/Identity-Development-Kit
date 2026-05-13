@@ -354,7 +354,7 @@ class SessionExecutionTest {
         // Create anonymous session using createAnonymousSessionContext
         val anonymousSession =
             com.sphereon.di.context
-                .createAnonymousSessionContext("<anonymous>")
+                .createAnonymousSessionContext("<anonymous>", com.sphereon.di.context.IdentityConstants.ANONYMOUS_ID)
         val sessionExecution = TestSessionExecution(anonymousSession)
 
         assertEquals(true, sessionExecution.isAnonymous())
@@ -452,6 +452,7 @@ class CoreApiContextExtensionFunctionsTest {
 
         override fun createSession(
             sessionId: String,
+            correlationId: String,
             makeActive: Boolean,
         ): com.sphereon.di.session.SessionInstance = throw NotImplementedError("Not needed for this test")
 

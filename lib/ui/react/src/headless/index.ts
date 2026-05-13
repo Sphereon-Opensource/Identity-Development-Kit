@@ -31,3 +31,5 @@ export type {
   SortDirection,
   BreadcrumbSegment,
 } from '../components/blob-explorer/blob-types'
+export { useQrClaimPolling } from './useQrClaimPolling'
+export type { UseQrClaimPollingArgs, UseQrClaimPollingReturn } from './useQrClaimPolling'

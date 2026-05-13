@@ -24,6 +24,7 @@ kotlin {
 
                 // Core dependencies
                 api(projects.libCoreApiPublic)
+                api(projects.libAttributeMappingPublic)
                 api(projects.libIdentityMatchingPublic)
                 api(projects.libIdvPublic)
                 api(libs.bundles.app.platform.di)

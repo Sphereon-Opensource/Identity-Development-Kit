@@ -32,6 +32,14 @@ kotlin {
                 implementation(projects.libOpenidOid4vciIssuerImpl)
                 implementation(projects.libOpenidOid4vciCommonPublic)
 
+                // JSON-LD validation bindings — `VcLdJsonJwtFormatHandler` (in
+                // libOpenidOid4vciIssuerImpl) injects ValidateJsonLdContextServiceCommand
+                // and ValidateJsonLdSchemaServiceCommand. The standalone Ktor server's
+                // AppGraph in this module composes the full DI graph, so the binding
+                // impls from lib-jsonld-loader must be on the runtime classpath.
+                implementation(projects.libJsonldPublic)
+                implementation(projects.libJsonldLoader)
+
                 // Shared OID4VC types + QR code service
                 implementation(projects.libOpenidOid4vcCommonPublic)
                 implementation(projects.libOpenidOid4vcCommonImpl)

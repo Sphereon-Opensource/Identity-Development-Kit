@@ -18,6 +18,7 @@ package com.sphereon.oauth2.server.resource.error
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.api.error.Retryability
 import com.sphereon.oauth2.common.model.AuthenticationScheme
 
 /**
@@ -457,5 +458,7 @@ sealed interface ResourceServerError : IdkErrorType {
         override val exception: Throwable? = null,
         override val causes: List<IdkErrorType> = emptyList(),
         override val meta: Map<String, Any?> = mapOf("details" to details),
-    ) : ResourceServerError
+    ) : ResourceServerError {
+        override val retryability: Retryability get() = Retryability.TRANSIENT
+    }
 }

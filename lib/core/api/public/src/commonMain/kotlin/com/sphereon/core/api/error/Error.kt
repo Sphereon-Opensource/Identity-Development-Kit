@@ -28,6 +28,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
+import kotlin.time.Duration
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("IdkErrorType", exact = true)
@@ -41,6 +42,26 @@ interface IdkErrorType {
     val exception: Throwable?
     val causes: List<IdkErrorType>
     val meta: Map<String, Any?>
+
+    /**
+     * Whether re-attempting the operation that produced this error is likely to
+     * succeed. The retry middleware combines this with the command's
+     * [com.sphereon.core.api.service.contract.ExecutionTraits.isIdempotent] to decide.
+     *
+     * Default [Retryability.NONE] is conservative: only errors that explicitly
+     * declare themselves [Retryability.TRANSIENT] or [Retryability.CONDITIONAL]
+     * become retry candidates.
+     */
+    val retryability: Retryability
+        get() = Retryability.NONE
+
+    /**
+     * Suggested minimum delay before re-attempting. When null, the retry
+     * middleware uses its configured backoff schedule. Honoured only when
+     * [retryability] is non-[Retryability.NONE].
+     */
+    val retryAfter: Duration?
+        get() = null
 }
 
 @JsExportCompat
@@ -64,6 +85,17 @@ open class IdkError(
      */
     val source: IdkErrorType? = null,
 ) : IdkErrorType {
+    /**
+     * Forwarded from [source] when this [IdkError] wraps a typed [IdkErrorType]
+     * (e.g. via [fromDTO]); falls back to the interface default otherwise.
+     * This keeps retry classification intact across DTO conversion.
+     */
+    override val retryability: Retryability
+        get() = source?.retryability ?: Retryability.NONE
+
+    override val retryAfter: Duration?
+        get() = source?.retryAfter
+
     fun hasException(): Boolean = exception != null
 
     fun hasCauses(): Boolean = causes.isNotEmpty()
@@ -407,6 +439,54 @@ open class IdkError(
             category = ErrorCategory.CONFLICT,
             causes = causes,
             exception = throwable,
+        )
+
+        @JvmStatic
+        @JsStatic
+        fun TIMEOUT_ERROR(
+            timeout: Duration? = null,
+            severity: Severity = Severity.ERROR,
+            causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
+            message: String = "Operation timed out${timeout?.let { " after $it" } ?: ""}",
+            throwable: Throwable? = null,
+        ): IdkError =
+            object : IdkError(
+                code = "TIMEOUT",
+                message =
+                    Message(
+                        i18nKey = "com.sphereon.core.error.timeout",
+                        defaultMessage = message,
+                    ),
+                severity = severity,
+                category = ErrorCategory.UNAVAILABLE,
+                causes = causes,
+                exception = throwable,
+                meta = timeout?.let { mapOf("timeout" to it.toString()) } ?: emptyMap(),
+            ) {
+                override val retryability: Retryability get() = Retryability.TRANSIENT
+            }
+
+        @JvmStatic
+        @JsStatic
+        fun UNSUPPORTED_OPERATION_ERROR(
+            operation: String,
+            reason: String? = null,
+            severity: Severity = Severity.ERROR,
+            causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
+            throwable: Throwable? = null,
+        ) = IdkError(
+            code = "UNSUPPORTED_OPERATION",
+            message =
+                Message(
+                    i18nKey = "com.sphereon.core.error.unsupported-operation",
+                    i18nParams = mapOf("operation" to operation, "reason" to (reason ?: "")),
+                    defaultMessage = "Operation '$operation' is not supported${reason?.let { ": $it" } ?: ""}",
+                ),
+            severity = severity,
+            category = ErrorCategory.PROTOCOL,
+            causes = causes,
+            exception = throwable,
+            meta = mapOf("operation" to operation, "reason" to reason),
         )
     }
 }

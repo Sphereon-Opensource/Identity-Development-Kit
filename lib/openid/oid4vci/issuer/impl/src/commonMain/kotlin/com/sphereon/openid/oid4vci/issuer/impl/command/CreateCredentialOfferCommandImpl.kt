@@ -25,6 +25,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
+import com.sphereon.core.api.http.query.percentEncodeQueryComponent
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
@@ -186,7 +187,16 @@ class CreateCredentialOfferCommandImpl(
                             credentialConfigurationIds = applied.credentialConfigurationIds,
                             txCodeRequired = applied.txCodeRequired,
                             issuerIdentifier = applied.issuerId,
-                            useCredentialIdentifiers = false,
+                            // OID4VCI 1.0 §5.1.2 / §8.2.1.1: when the AS includes
+                            // `credential_identifiers` in the token's authorization_details,
+                            // the wallet MUST send one in the credential request, so the
+                            // issuer can resolve the IssuanceSession by stable identifier
+                            // rather than falling back to a single configId→sessionId
+                            // index in the session store. The fallback breaks under multi-
+                            // recipient batch issuance (each new mint for the same
+                            // credential_configuration_id overwrites the previous mapping,
+                            // so only the last-minted holder gets the right credential).
+                            useCredentialIdentifiers = true,
                         ),
                     ).getOrElse { return Err(it) }
 
@@ -248,7 +258,16 @@ class CreateCredentialOfferCommandImpl(
         // Identifier. The /credentials/offers endpoint is mounted on the protocol adapter whose
         // base path is relative to the issuer identifier (so issuerId is expected to be the
         // full identifier URL, e.g. "${BASE}/oid4vci" when hosted under a sub-path).
+        //
+        // OID4VCI 1.0 §4.1.3 requires `credential_offer_uri` to be an absolute HTTPS URL the
+        // wallet can dereference; relative paths produce QR codes wallets silently fail on.
+        // Fail loud on missing/relative issuerId rather than emit a broken offer URI.
         val issuerBase = applied.issuerId.trimEnd('/')
+        require(issuerBase.startsWith("http://") || issuerBase.startsWith("https://")) {
+            "Issuer identifier must be an absolute http(s) URL to produce a dereferenceable " +
+                "credential_offer_uri (OID4VCI 1.0 §4.1.3); got '${applied.issuerId}'. " +
+                "Configure 'oid4vci.issuer.identifier' (or the equivalent tenant-scoped key)."
+        }
         // Outer deeplink prefix the wallet listens on (OID4VCI 1.0 §4.1.1). Caller-supplied
         // `scheme` lets the demo / production deployment switch between bare-scheme deeplinks
         // (`openid-credential-offer://`, `haip://`) and full universal-link / app-link URLs
@@ -257,7 +276,13 @@ class CreateCredentialOfferCommandImpl(
         // so the resulting URI stays parseable.
         val scheme = applied.scheme?.takeIf { it.isNotBlank() } ?: "openid-credential-offer://"
         val separator = if (scheme.contains("?")) "&" else "?"
-        val offerUri = "$scheme${separator}credential_offer_uri=$issuerBase/credentials/offers/$offerId"
+        // Per RFC 3986 §3.4, query-component values must percent-encode reserved characters.
+        // The full URL `https://issuer.example/credentials/offers/<uuid>` carries `:` and `/`
+        // (reserved per §2.2) and the bare `?` `&` separators below would otherwise corrupt
+        // any wallet that strictly tokenises by `&`. Encode the value, never the surrounding
+        // `key=` pair.
+        val offerEndpoint = "$issuerBase/credentials/offers/$offerId"
+        val offerUri = "$scheme${separator}credential_offer_uri=${percentEncodeQueryComponent(offerEndpoint)}"
 
         return Ok(
             CreatedCredentialOffer(

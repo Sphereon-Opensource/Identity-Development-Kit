@@ -57,6 +57,7 @@ import dev.zacsweers.metro.binding
 class DefaultSessionContextFactory : SessionContextFactory {
     override fun create(
         sessionId: String,
+        correlationId: String,
         resolution: IdentityResolutionResult,
         metadata: Map<String, Any>,
     ): SessionContext {
@@ -73,6 +74,7 @@ class DefaultSessionContextFactory : SessionContextFactory {
         return DefaultSessionContext(
             sessionId = sessionId,
             context = userContext,
+            correlationId = correlationId,
         )
     }
 }
@@ -91,4 +93,5 @@ internal data class DefaultUserContext(
 internal data class DefaultSessionContext(
     override val sessionId: String,
     override val context: UserContext,
+    override val correlationId: String,
 ) : SessionContext

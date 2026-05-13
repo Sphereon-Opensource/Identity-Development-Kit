@@ -65,10 +65,11 @@ class Oid4vpAuthHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                     GetOid4vpIdvStatusCommand.ENDPOINT,
                     CompleteReconciliationWithClaimsCommand.ENDPOINT,
                 ).map { endpoint ->
-                    // Prepend adapter base path for dispatcher matching.
-                    // Endpoint commands define patterns relative to the adapter's base path,
-                    // but the dispatcher expects full paths for candidate selection.
-                    endpoint.copy(pathPattern = basePath + endpoint.pathPattern)
+                    // Prepend adapter base path for dispatcher matching. Endpoint
+                    // commands define patterns relative to the adapter's base path,
+                    // but the dispatcher expects full paths; multi-pattern descriptors
+                    // need the prefix on every entry.
+                    endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },
         )
 }

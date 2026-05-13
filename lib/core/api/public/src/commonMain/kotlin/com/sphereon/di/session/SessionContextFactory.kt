@@ -46,6 +46,12 @@ interface SessionContextFactory {
      *
      * @param sessionId Caller-supplied session identifier. The factory does
      *   not generate one; callers that want a random id should pass it in.
+     * @param correlationId Cross-cutting trace key for the business
+     *   operation this session belongs to. Callers must supply one — typical
+     *   sources are HTTP `X-Correlation-Id`, a parent execution's
+     *   correlationId, the stored correlationId on a durable row being
+     *   replayed, or the session id itself when no business correlation
+     *   applies.
      * @param resolution The resolved tenant, principal, and metadata.
      * @param metadata Free-form metadata the caller wants attached to the
      *   resulting context. The default IDK implementation ignores this;
@@ -54,6 +60,7 @@ interface SessionContextFactory {
      */
     fun create(
         sessionId: String,
+        correlationId: String = sessionId,
         resolution: IdentityResolutionResult,
         metadata: Map<String, Any> = emptyMap(),
     ): SessionContext

@@ -16,11 +16,11 @@
 
 package com.sphereon.identity.reconciliation.impl.command
 
+import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.identity.matching.model.IdentifierType
 import com.sphereon.identity.reconciliation.impl.testutil.ReconciliationTestContext
 import com.sphereon.identity.reconciliation.model.CompleteReconciliationArgs
 import com.sphereon.identity.reconciliation.model.CreateReconciliationSessionArgs
-import com.sphereon.identity.reconciliation.model.ReconciliationAttributeMapping
 import com.sphereon.identity.reconciliation.model.ReconciliationProvider
 import com.sphereon.identity.reconciliation.model.ReconciliationSessionStatus
 import com.sphereon.identity.reconciliation.model.ResolvedIdentity
@@ -145,8 +145,8 @@ class CompleteReconciliationCommandTest {
                     id = "mapped-provider",
                     attributeMappings =
                         listOf(
-                            ReconciliationAttributeMapping(source = "email", target = "email_address"),
-                            ReconciliationAttributeMapping(source = "name", target = "display_name"),
+                            AttributeMapping(source = "email", target = "email_address"),
+                            AttributeMapping(source = "name", target = "display_name"),
                         ),
                 )
             ctx.providerStore.save(mappedProvider)

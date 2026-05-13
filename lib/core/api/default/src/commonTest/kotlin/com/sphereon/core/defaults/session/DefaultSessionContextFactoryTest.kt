@@ -39,9 +39,10 @@ class DefaultSessionContextFactoryTest {
                 metadata = IdentityMetadata(),
             )
 
-        val sessionContext = factory.create(sessionId = "s1", resolution = resolution)
+        val sessionContext = factory.create(sessionId = "s1", correlationId = "corr-s1", resolution = resolution)
 
         assertEquals("s1", sessionContext.sessionId)
+        assertEquals("corr-s1", sessionContext.correlationId)
         assertEquals("t1", sessionContext.context.tenant.tenantId)
         assertEquals("p1", sessionContext.context.principal)
         assertEquals("t1:p1:default", sessionContext.context.id)
@@ -58,7 +59,7 @@ class DefaultSessionContextFactoryTest {
                 metadata = IdentityMetadata(),
             )
 
-        val sessionContext = factory.create(sessionId = "s-anon", resolution = resolution)
+        val sessionContext = factory.create(sessionId = "s-anon", correlationId = IdentityConstants.ANONYMOUS_ID, resolution = resolution)
 
         assertEquals("s-anon", sessionContext.sessionId)
         assertEquals(IdentityConstants.ANONYMOUS_TENANT_ID, sessionContext.context.tenant.tenantId)

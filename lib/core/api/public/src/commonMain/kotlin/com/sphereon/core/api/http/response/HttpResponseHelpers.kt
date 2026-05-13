@@ -19,6 +19,7 @@ package com.sphereon.core.api.http.response
 
 import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.http.response.ResponseBuilder
 
 /**
  * Top-level helpers to create HTTP responses with less boilerplate.

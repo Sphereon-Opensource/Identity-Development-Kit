@@ -84,6 +84,7 @@ class ConfigEnvironmentTest {
 
             override fun createSession(
                 sessionId: String,
+                correlationId: String,
                 makeActive: Boolean,
             ): SessionInstance = throw NotImplementedError("Not needed for config tests")
 

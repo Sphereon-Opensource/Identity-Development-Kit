@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.http.describe
 
+import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
@@ -30,29 +31,43 @@ import dev.zacsweers.metro.binding
 /**
  * AppScope descriptor provider for [Oid4vciIssuerMetadataHttpAdapter].
  *
- * Provides metadata about the issuer metadata endpoint so the
- * HttpAdapterCatalog can route incoming requests to this adapter.
+ * Reads `oid4vci.issuer.identifier` from app config at boot and emits a single
+ * descriptor whose [com.sphereon.core.api.http.describe.HttpEndpointDescriptor.pathPatterns]
+ * covers every URL the metadata endpoint should answer at:
  *
- * Endpoint:
- * - GET /.well-known/openid-credential-issuer
+ * - **Bare-host issuer** (`https://host`) — `/.well-known/openid-credential-issuer`.
+ * - **Path-bearing issuer** (`https://host/<issuer-path>`) — both
+ *   `/.well-known/openid-credential-issuer/<issuer-path>` (RFC 8414 §3 spec form)
+ *   and `/<issuer-path>/.well-known/openid-credential-issuer` (legacy prefix), with
+ *   the bare URL deliberately omitted so the catalog never advertises a discovery
+ *   URL for an issuer identifier that doesn't actually exist at that host root.
+ *
+ * Both this provider and [Oid4vciIssuerMetadataHttpAdapter] resolve the URL set
+ * via [GetIssuerMetadataEndpointCommand.descriptorFor]; the helper keeps the
+ * runtime endpoint and the catalog descriptor in lockstep.
  */
 @Inject
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<HttpAdapterDescriptorProvider>())
-class Oid4vciIssuerMetadataDescriptorProvider : HttpAdapterDescriptorProvider {
+class Oid4vciIssuerMetadataDescriptorProvider(
+    private val appConfig: AppConfigService,
+) : HttpAdapterDescriptorProvider {
     override val id: String = Oid4vciIssuerMetadataHttpAdapter.ID
 
-    override fun describe(): HttpAdapterDescription =
-        HttpAdapterDescription(
+    override fun describe(): HttpAdapterDescription {
+        val issuerIdentifier = appConfig.getPropertyAsString(ISSUER_IDENTIFIER_KEY).orEmpty()
+        return HttpAdapterDescription(
             id = id,
             mount =
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = "",
                 ),
-            endpoints =
-                listOf(
-                    GetIssuerMetadataEndpointCommand.ENDPOINT,
-                ),
+            endpoints = listOf(GetIssuerMetadataEndpointCommand.descriptorFor(issuerIdentifier)),
         )
+    }
+
+    private companion object {
+        const val ISSUER_IDENTIFIER_KEY = "oid4vci.issuer.identifier"
+    }
 }

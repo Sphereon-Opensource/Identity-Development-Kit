@@ -32,7 +32,7 @@ data class HttpRoute(
     val endpoint: HttpEndpointDescriptor,
     val handler: suspend (GenericHttpRequest) -> GenericHttpResponse,
 ) {
-    fun matches(request: GenericHttpRequest): Boolean = request.matches(endpoint.method.name, endpoint.pathPattern)
+    fun matches(request: GenericHttpRequest): Boolean = endpoint.pathPatterns.any { request.matches(endpoint.method.name, it) }
 }
 
 /**

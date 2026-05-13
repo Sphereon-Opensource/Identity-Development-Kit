@@ -89,6 +89,29 @@ data class CreateAuthorizationRequestArgs(
      * omitted entirely, in which case the wallet defaults to GET per RFC 9101.
      */
     val requestUriMethod: String? = null,
+    /**
+     * Optional one-time invitation token bound to this verifier session. Stored on the
+     * resulting [com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession.boundInvitationToken]
+     * and surfaced again on
+     * [com.sphereon.openid.oid4vp.verifier.hook.PostPresentationHookArgs.boundInvitationToken]
+     * after a successful presentation, so a downstream subscriber can correlate the
+     * presentation back to the originating invitation. Mirrors
+     * [com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs.boundUsageToken]
+     * on the OID4VCI side.
+     */
+    val boundInvitationToken: String? = null,
+    /**
+     * Optional per-session allow list of post-presentation hook command IDs. When non-null,
+     * the dispatcher intersects the deployment-resolved hook set (everything matching
+     * `hook.post-presentation.**`) with this list before invocation, so only the hooks
+     * the caller explicitly authorised for THIS verifier session fire. Null means "all
+     * deployment-registered hooks fire" (subject to each hook's own `supports()` check).
+     *
+     * Mirrors [com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs.postIssuanceHookAllowList]
+     * on the OID4VCI side. Use when a deployment registers multiple hooks (audit,
+     * analytics, redemption) and a specific flow / tenant wants to opt in to only some.
+     */
+    val postPresentationHookAllowList: List<String>? = null,
 )
 
 /**

@@ -50,8 +50,17 @@ interface SessionContextManager {
     // Session creation (returns instances)
     fun createOrGetFromCallbacks(sessionContextProvider: () -> SessionContext): SessionInstance
 
+    /**
+     * Open a session by id, optionally supplying a correlationId. When
+     * omitted the session uses its own [sessionId] as the correlation
+     * anchor — natural when there is no upstream caller-supplied
+     * correlation to inherit. If a session with the given id already
+     * exists it is returned as-is and the supplied `correlationId` is
+     * ignored (the session's correlationId was fixed at first creation).
+     */
     fun createOrGetFromId(
         @Named("sessionId") sessionId: String,
+        @Named("correlationId") correlationId: String = sessionId,
         makeActive: Boolean = true,
     ): SessionInstance
 

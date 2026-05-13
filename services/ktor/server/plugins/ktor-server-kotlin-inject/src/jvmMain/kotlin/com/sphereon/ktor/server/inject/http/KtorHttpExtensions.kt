@@ -23,6 +23,7 @@ import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.LazyMap
+import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -35,6 +36,33 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
+import io.ktor.util.AttributeKey
+
+/**
+ * Per-call attribute holding the Layer 1 resolved base tenant id.
+ *
+ * Set by a tenant-resolution Ktor intercept (typically driven by the validated
+ * JWT, the Host header, or the configured fallback). Read by
+ * [toGenericHttpRequest] which copies the value into the in-process request
+ * headers under [CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER] so
+ * Layer 2 dispatch and downstream commands (e.g. `requireTenantId()`) can read
+ * the resolved tenant without consulting `X-Tenant-Id` from the wire.
+ *
+ * Defined here rather than under a specific plugin so VDX-transport-server-ktor
+ * can stamp it from a lightweight intercept and the IDK request conversion
+ * code can read it, without either module needing to depend on a particular
+ * tenant-resolution plugin implementation.
+ */
+val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.baseTenantId")
+
+/**
+ * Stamp the resolved base tenant id onto the call. Idempotent — calling it
+ * multiple times with the same value is fine; a different value overwrites
+ * the previous one.
+ */
+fun ApplicationCall.setBaseTenantId(tenantId: String) {
+    attributes.put(BaseTenantIdAttribute, tenantId)
+}
 
 /**
  * Convert Ktor ApplicationRequest to framework-agnostic GenericHttpRequest.
@@ -73,6 +101,13 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
             null
         }
 
+    // Layer 1 resolved tenant id, stamped on the call by the tenant-resolution
+    // intercept. Propagated into the in-process request headers under the
+    // internal header name so downstream code (CommandBackedHttpAdapter path
+    // peeling, `requireTenantId()`, etc.) reads the validated tenant rather
+    // than trusting `X-Tenant-Id` from the wire.
+    val resolvedBaseTenantId: String? = call.attributes.getOrNull(BaseTenantIdAttribute)
+
     return GenericHttpRequest(
         method = method,
         path = path,
@@ -89,6 +124,9 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
                         } else {
                             values.joinToString(",")
                         }
+                }
+                if (resolvedBaseTenantId != null) {
+                    headerMap[CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER] = resolvedBaseTenantId
                 }
                 headerMap
             },

@@ -205,7 +205,7 @@ class TrustConfigProviderTest {
         val appConfig = MapBackedAppConfigService(properties)
         val execution =
             TestSessionExecution(
-                createAnonymousSessionContext("config-test"),
+                createAnonymousSessionContext("config-test", "config-test-correlation"),
                 appConfig,
             )
         return DefaultTrustConfigProvider(execution)

@@ -59,7 +59,6 @@ kotlin {
     run {
         val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
         if ("all" in kmpTargets || "ios" in kmpTargets) {
-            iosX64 { binaries.all { linkerOpts("-framework", "Security") } }
             iosArm64 { binaries.all { linkerOpts("-framework", "Security") } }
             iosSimulatorArm64 { binaries.all { linkerOpts("-framework", "Security") } }
         }
@@ -133,13 +132,6 @@ kotlin {
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)
             }
         }*/
-
-        findByName("iosX64Test")?.dependencies {
-            implementation(libs.bundles.app.platform.di)
-            implementation(projects.libCoreApiDefault)
-            implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
-            implementation(sphereonlib.software.amazon.app.platform.metro.impl)
-        }
 
         findByName("iosSimulatorArm64Test")?.dependencies {
             implementation(libs.bundles.app.platform.di)

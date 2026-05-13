@@ -20,6 +20,7 @@ package com.sphereon.core.log.mobile
 import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.Logger
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserScope
 import com.sphereon.di.context.toSessionContext
@@ -39,7 +40,7 @@ import dev.zacsweers.metro.binding
 class UserContextMobileLogService(
     userContextInstance: UserContextInstance,
     private val repository: MobileLogRepository,
-) : AbstractMobileLogService(userContextInstance.toSessionContext(), SERVICE_ID, repository) {
+) : AbstractMobileLogService(userContextInstance.toSessionContext(correlationId = IdentityConstants.ANONYMOUS_ID), SERVICE_ID, repository) {
     override val scope = IdkScope.USER
 
     companion object {

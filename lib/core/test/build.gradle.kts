@@ -57,8 +57,8 @@ kotlin {
             dependencies {
                 implementation(projects.libCoreApiDefault)
                 implementation(projects.libCoreApiPublic)
-//                implementation("software.amazon.app.platform:di-common-public-js:0.0.10-SNAPSHOT")
-//                implementation("software.amazon.app.platform:kotlin-inject-impl-js:0.0.10-SNAPSHOT")
+//                implementation("software.amazon.app.platform:di-common-public-js:0.0.12SPH-SNAPSHOT")
+//                implementation("software.amazon.app.platform:kotlin-inject-impl-js:0.0.12SPH-SNAPSHOT")
             }
         }*/
 

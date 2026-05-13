@@ -18,6 +18,10 @@
 package com.sphereon.core.api.http
 
 import com.sphereon.core.api.error.NotFoundException
+import com.sphereon.core.api.http.response.createdResponse
+import com.sphereon.core.api.http.response.errorResponse
+import com.sphereon.core.api.http.response.jsonResponse
+import com.sphereon.core.api.http.response.noContentResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -164,8 +168,10 @@ class ErrorResponseFromStatusCodeTest {
     }
 
     @Test
-    fun bodyIncludesStatusCode() {
+    fun bodyIncludesStatusCodeLabel() {
+        // Body envelope carries the symbolic label derived from the status code,
+        // not the numeric value (per the no-httpStatus-on-error-body policy).
         val response = errorResponse(statusCode = 403, message = "forbidden")
-        assertTrue(response.body?.contains("403") == true)
+        assertTrue(response.body?.contains("FORBIDDEN") == true)
     }
 }

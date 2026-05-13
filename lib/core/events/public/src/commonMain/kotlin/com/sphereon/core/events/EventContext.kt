@@ -140,12 +140,14 @@ data class EventContext
          * Note: This creates a minimal SessionContext for lookup/processing purposes.
          * For full context restoration, use the original SessionContext if available.
          */
-        fun toSessionContext(): SessionContext =
-            if (sessionId != null) {
-                createAnonymousSessionContext(sessionId)
+        fun toSessionContext(): SessionContext {
+            val resolvedCorrelationId = correlationId ?: IdentityConstants.ANONYMOUS_ID
+            return if (sessionId != null) {
+                createAnonymousSessionContext(sessionId, resolvedCorrelationId)
             } else {
-                createAnonymousSessionContext("_from_event_context")
+                createAnonymousSessionContext("_from_event_context", resolvedCorrelationId)
             }
+        }
 
         /**
          * Check if this context is effectively anonymous (no real identifiers).

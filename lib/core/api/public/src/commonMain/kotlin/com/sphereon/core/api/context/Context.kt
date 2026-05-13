@@ -54,15 +54,27 @@ interface SessionExecution : HasProvenance {
     override val tenantId: String
         get() = sessionContext.context.tenant.tenantId
 
+    override val correlationId: String
+        get() = sessionContext.correlationId
+
     @ContributesTo(SessionScope::class)
     interface Graph {
         val sessionExecution: SessionExecution
     }
 }
 
+/**
+ * Identity triplet that travels with every execution: the *who* (`principalId`),
+ * the *where* (`tenantId`), and the *trace* (`correlationId`). `correlationId`
+ * is the cross-cutting key that ties a business operation together across
+ * commands, nested invocations, durable submissions, and workflow steps. It is
+ * established when a session is created (either supplied by the caller or
+ * defaulted to the session id) and stays constant for the session's lifetime.
+ */
 interface HasProvenance {
     val principalId: String
     val tenantId: String
+    val correlationId: String
 }
 
 @JsExportCompat

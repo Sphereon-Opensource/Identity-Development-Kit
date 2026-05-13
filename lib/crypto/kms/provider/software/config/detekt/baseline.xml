@@ -2,6 +2,10 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>MatchingDeclarationName:SoftwareProviderWasmJsTestAppGraph.wasmJs.kt$SoftwareProviderWasmJsTestAppGraph : AbstractAppGraph</ID>
+    <ID>StringLiteralDuplication:SoftwareKeyStoreTest.kt$SoftwareKeyStoreTest$"test-alias"</ID>
+    <ID>SwallowedException:SoftwareKeyStoreTest.kt$SoftwareKeyStoreTest$e: com.sphereon.crypto.core.PKIException</ID>
+    <ID>TooManyFunctions:SoftwareKeyStoreTest.kt$SoftwareKeyStoreTest</ID>
+    <ID>UnusedPrivateProperty:SoftwareKeyStoreTest.kt$SoftwareKeyStoreTest$val deleted = softwareStoreService.deleteCertificate(alias)</ID>
+    <ID>UnusedPrivateProperty:SoftwareKeyStoreTest.kt$SoftwareKeyStoreTest$val deleted = softwareStoreService.deleteCertificateChain(alias)</ID>
   </CurrentIssues>
 </SmellBaseline>

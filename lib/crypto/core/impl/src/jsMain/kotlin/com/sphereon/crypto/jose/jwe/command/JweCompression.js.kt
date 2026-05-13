@@ -52,10 +52,10 @@ private fun runCompressionPipeline(
 ): Promise<dynamic> =
     js(
         """
-        (function(arr, ctorName){
-            var Ctor = (typeof globalThis !== 'undefined' && globalThis[ctorName]) || (typeof self !== 'undefined' && self[ctorName]) || (typeof window !== 'undefined' && window[ctorName]);
+        (function(arr, ctor){
+            var Ctor = (typeof globalThis !== 'undefined' && globalThis[ctor]) || (typeof self !== 'undefined' && self[ctor]) || (typeof window !== 'undefined' && window[ctor]);
             if (typeof Ctor !== 'function') {
-                return Promise.reject(new Error('WHATWG ' + ctorName + ' is not available in this JS runtime'));
+                return Promise.reject(new Error('WHATWG ' + ctor + ' is not available in this JS runtime'));
             }
             var bytes = new Uint8Array(arr.length);
             for (var i = 0; i < arr.length; i++) bytes[i] = arr[i] & 0xFF;

@@ -17,6 +17,7 @@
 package com.sphereon.di.session
 
 import com.sphereon.di.context.AnonymousContext
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantContextData
@@ -43,13 +44,13 @@ class SessionContextIsAnonymousTest {
 
     @Test
     fun anonymousSessionContextIsAnonymous() {
-        val ctx = createAnonymousSessionContext("<anonymous>")
+        val ctx = createAnonymousSessionContext("<anonymous>", IdentityConstants.ANONYMOUS_ID)
         assertTrue(ctx.isAnonymous())
     }
 
     @Test
     fun sessionContextWithNonAnonymousSessionIdIsNotAnonymous() {
-        val ctx = createAnonymousSessionContext("non-anonymous-session")
+        val ctx = createAnonymousSessionContext("non-anonymous-session", "non-anonymous-session-correlation")
         assertFalse(ctx.isAnonymous())
     }
 
@@ -69,6 +70,7 @@ class SessionContextIsAnonymousTest {
             object : SessionContext {
                 override val context = userContext
                 override val sessionId = "<anonymous>"
+                override val correlationId: String = IdentityConstants.ANONYMOUS_ID
             }
         assertFalse(ctx.isAnonymous())
     }
@@ -89,6 +91,7 @@ class SessionContextIsAnonymousTest {
             object : SessionContext {
                 override val context = userContext
                 override val sessionId = "<anonymous>"
+                override val correlationId: String = IdentityConstants.ANONYMOUS_ID
             }
         assertFalse(ctx.isAnonymous())
     }
@@ -109,6 +112,7 @@ class SessionContextIsAnonymousTest {
             object : SessionContext {
                 override val context = userContext
                 override val sessionId = "<anonymous>"
+                override val correlationId: String = IdentityConstants.ANONYMOUS_ID
             }
         assertTrue(ctx.isAnonymous())
     }
@@ -128,6 +132,7 @@ class SessionContextInterfaceTest {
             object : SessionContext {
                 override val context = AnonymousContext
                 override val sessionId = "test-session-123"
+                override val correlationId: String = "test-session-123-correlation"
             }
         kotlin.test.assertEquals("test-session-123", ctx.sessionId)
     }
@@ -138,13 +143,14 @@ class SessionContextInterfaceTest {
             object : SessionContext {
                 override val context = AnonymousContext
                 override val sessionId = "test"
+                override val correlationId: String = "test-correlation"
             }
         kotlin.test.assertEquals(AnonymousContext, ctx.context)
     }
 
     @Test
     fun sessionContextImplementsContextAware() {
-        val ctx: SessionContext = createAnonymousSessionContext("test")
+        val ctx: SessionContext = createAnonymousSessionContext("test", "test-correlation")
         // SessionContext extends ContextAware, so it has .context
         kotlin.test.assertNotNull(ctx.context)
     }
@@ -153,7 +159,7 @@ class SessionContextInterfaceTest {
 class ISessionContextAwareInterfaceTest {
     @Test
     fun sessionContextAwareExposesSessionContext() {
-        val sessionCtx = createAnonymousSessionContext("test-session")
+        val sessionCtx = createAnonymousSessionContext("test-session", "test-session-correlation")
         val aware =
             object : ISessionContextAware {
                 override val sessionContext = sessionCtx
@@ -193,7 +199,8 @@ class SessionGraphProviderTest {
      */
     private class StubSessionGraph : SessionGraph {
         override val sessionId: String = "stub-session"
-        override val sessionContext: SessionContext = createAnonymousSessionContext(sessionId)
+        override val correlationId: String = "stub-session-correlation"
+        override val sessionContext: SessionContext = createAnonymousSessionContext(sessionId, "$sessionId-correlation")
         override val sessionExecution: com.sphereon.core.api.context.SessionExecution
             get() = throw NotImplementedError("Not needed for this test")
         override val logManager: com.sphereon.core.api.log.SessionLogManager

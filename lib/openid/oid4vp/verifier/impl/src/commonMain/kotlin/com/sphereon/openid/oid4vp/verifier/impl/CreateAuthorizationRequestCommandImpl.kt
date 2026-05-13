@@ -270,6 +270,8 @@ class CreateAuthorizationRequestCommandImpl(
                 callback = null,
                 jarmEncryptionKeyAlias = processedArgs.jarmEncryptionKeyAlias,
                 jarmEncryptionKeyProviderId = processedArgs.jarmEncryptionKeyProviderId,
+                boundInvitationToken = processedArgs.boundInvitationToken,
+                postPresentationHookAllowList = processedArgs.postPresentationHookAllowList,
                 createdAt = now,
                 updatedAt = now,
                 expiresAt = now + (ttlSeconds * 1000),

@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "type": {
+      "type": "array",
+      "readOnly": true,
+      "default": [
+        "RegisteredIdentity"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "RegisteredIdentity",
+            "minContains": 1
+          }
+        }
+      ]
+    },
+    "id": {
+      "example": "did:web:samplecompany.com/123456789",
+      "type": "string",
+      "format": "uri",
+      "description": "The DID that is controlled by the registered member and is linked to the registeredID through this Identity Anchor credential"
+    },
+    "registeredName": {
+      "example": "Sample business Ltd",
+      "type": "string",
+      "description": "The registered name of the entity within the identifier scheme.  Examples: product - EV battery 300Ah, Party - Sample Company Pty Ltd,  Facility - Green Acres battery factory "
+    },
+    "registeredId": {
+      "example": 123456789,
+      "type": "string",
+      "description": "The registration number (alphanumeric) of the entity within the register. Unique within the register."
+    },
+    "registeredDate": {
+      "type": "string",
+      "format": "date",
+      "description": "The date on which this identity was first registered with the registrar."
+    },
+    "publicInformation": {
+      "type": "string",
+      "format": "uri",
+      "description": "A link to further information about the registered entity on the authoritative registrar site."
+    },
+    "idScheme": {
+      "$ref": "#/$defs/IdentifierScheme",
+      "description": "The identifier scheme operated by the registrar"
+    },
+    "registrar": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "array",
+          "readOnly": true,
+          "default": [
+            "Party"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "Party",
+                "minContains": 1
+              }
+            }
+          ]
+        },
+        "id": {
+          "example": "https://sample-business-register.gov/123456789",
+          "type": "string",
+          "format": "uri",
+          "description": "Globally unique identifier of this party. Typically represented as a URI identifierScheme/Identifier URI"
+        },
+        "name": {
+          "example": "Sample Company Ltd",
+          "type": "string",
+          "description": "Legal registered name of this party."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "description": "The registrar party that operates the register."
+    },
+    "registerType": {
+      "type": "string",
+      "enum": [
+        "product",
+        "facility",
+        "business",
+        "trademark",
+        "land",
+        "accreditation"
+      ],
+      "example": "product",
+      "description": "The thematic purpose of the register - organisations, facilities, products, trademarks, etc"
+    },
+    "registrationScope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      },
+      "description": "List of URIs that represent the roles or scopes of membership. For example [\"https://abr.business.gov.au/Help/EntityTypeDescription?Id=19\"]"
+    }
+  },
+  "description": "The identity anchor is a mapping between a registry member identity and one or more decentralised identifiers owned by the member. It may also list a set of membership scopes.",
+  "required": [
+    "id",
+    "registeredName",
+    "registeredId",
+    "registeredDate",
+    "idScheme",
+    "registerType"
+  ],
+  "$defs": {
+    "IdentifierScheme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "array",
+          "readOnly": true,
+          "default": [
+            "IdentifierScheme"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "IdentifierScheme",
+                "minContains": 1
+              }
+            }
+          ]
+        },
+        "id": {
+          "type": "string",
+          "format": "uri",
+          "description": "The URI of this identifier scheme"
+        },
+        "name": {
+          "example": "Global Identifier Scheme Name",
+          "type": "string",
+          "description": "The name of the identifier scheme. "
+        }
+      },
+      "description": "An identifier registration scheme for products, facilities, or organisations. Typically operated by a state, national or global authority.",
+      "required": [
+        "id",
+        "name"
+      ]
+    }
+  }
+}

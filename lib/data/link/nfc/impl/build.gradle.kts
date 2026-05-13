@@ -45,7 +45,6 @@ kotlin {
     // Configure iOS framework for Xcode integration
 
     /*listOf(
-        iosX64(),
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->

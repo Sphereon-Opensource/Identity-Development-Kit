@@ -151,7 +151,7 @@ class KeysHttpAdapterIntegrationTest {
                 "Expected 400 or 404, got ${response.status}",
             )
             val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-            assertNotNull(body["message"], "Error response should have message")
+            assertNotNull(body["error"]?.jsonObject?.get("message"), "Error response should have message")
         }
 
     @Test
@@ -228,7 +228,7 @@ class KeysHttpAdapterIntegrationTest {
                 }
             assertEquals(HttpStatusCode.BadRequest, response.status)
             val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-            assertNotNull(body["message"], "Error response should have message")
+            assertNotNull(body["error"]?.jsonObject?.get("message"), "Error response should have message")
         }
 
     @Test
@@ -254,7 +254,7 @@ class KeysHttpAdapterIntegrationTest {
                 }
             assertEquals(HttpStatusCode.NotFound, response.status)
             val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-            assertNotNull(body["message"], "Error response should have message")
+            assertNotNull(body["error"]?.jsonObject?.get("message"), "Error response should have message")
         }
 
     companion object {

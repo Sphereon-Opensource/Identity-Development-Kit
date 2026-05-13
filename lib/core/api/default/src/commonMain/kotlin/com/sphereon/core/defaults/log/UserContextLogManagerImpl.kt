@@ -20,6 +20,7 @@ import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.log.AbstractLogManager
 import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.UserContextLogManager
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserScope
 import com.sphereon.di.context.toSessionContext
@@ -38,5 +39,5 @@ import kotlin.native.ObjCName
 class UserContextLogManagerImpl(
     loggers: Set<LogService>,
     userContextInstance: UserContextInstance,
-) : AbstractLogManager(scope = IdkScope.USER, loggers = loggers, runtimeSessionContext = userContextInstance.toSessionContext()),
+) : AbstractLogManager(scope = IdkScope.USER, loggers = loggers, runtimeSessionContext = userContextInstance.toSessionContext(correlationId = IdentityConstants.ANONYMOUS_ID)),
     UserContextLogManager

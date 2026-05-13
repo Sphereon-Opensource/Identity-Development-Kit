@@ -1,18 +1,83 @@
 /**
- * System default token maps — M3 baseline light and dark themes.
+ * System default token maps — wallet-aligned light, dark, and high-contrast themes.
  *
- * These are identical to IDK's SystemDefaults.kt and are the root of the
- * resolution chain: every resolved theme starts from these values.
+ * These mirror IDK's `SystemDefaults.kt`. Three-tier structure:
+ *   Tier 1 — palette primitives (`palette.brand.*`, `palette.gray.*`, ...)
+ *   Tier 2 — semantic roles (`color.primary`, `shape.radius.md`, ...)
+ *   Tier 3 — component defaults (`comp.button.primary.*`, ...)
  *
- * In future, when the Kotlin/JS packages are published, this can be replaced
- * with a re-export from @sphereon/theme-web. For now, it's a standalone
- * TypeScript implementation to avoid the Kotlin/JS bundle cost.
+ * Components MUST consume Tier 2 / Tier 3 only. Tier 1 is internal.
  */
 
 import type { ThemeTokenMap, ThemeVariant } from './types'
 
+const palettes: ThemeTokenMap = {
+  // Brand
+  'palette.brand.50': '#ECE4FC', 'palette.brand.100': '#E0D2FA', 'palette.brand.200': '#C7ADF5',
+  'palette.brand.300': '#AE89F1', 'palette.brand.400': '#9564EC', 'palette.brand.500': '#7C40E8',
+  'palette.brand.600': '#5D1AD6', 'palette.brand.700': '#4714A4', 'palette.brand.800': '#320E72',
+  'palette.brand.900': '#1C0840',
+  // Gray
+  'palette.gray.50': '#FBFBFB', 'palette.gray.100': '#F2F2F2', 'palette.gray.200': '#E3E3E3',
+  'palette.gray.300': '#C4C4C4', 'palette.gray.400': '#969696', 'palette.gray.500': '#585858',
+  'palette.gray.600': '#727272', 'palette.gray.700': '#4E4E4E', 'palette.gray.800': '#303030',
+  'palette.gray.900': '#0A0D12',
+  // Blue
+  'palette.blue.50': '#D8DDEB', 'palette.blue.100': '#CBD1E4', 'palette.blue.200': '#B0B9D6',
+  'palette.blue.300': '#96A1C8', 'palette.blue.400': '#6071AC', 'palette.blue.500': '#4E5E95',
+  'palette.blue.600': '#404D7A', 'palette.blue.700': '#2D3655', 'palette.blue.800': '#2C334B',
+  'palette.blue.900': '#202537',
+  // Error
+  'palette.error.50': '#FFF6F3', 'palette.error.100': '#FFEAE3', 'palette.error.200': '#FFD0C0',
+  'palette.error.300': '#F2A091', 'palette.error.400': '#DB7759', 'palette.error.500': '#D14500',
+  'palette.error.600': '#B53A00', 'palette.error.700': '#8E2D06', 'palette.error.800': '#531B6C',
+  'palette.error.900': '#7A271A',
+  // Warning
+  'palette.warning.50': '#FFFAEB', 'palette.warning.100': '#FEEDC7', 'palette.warning.200': '#FEDFB9',
+  'palette.warning.300': '#FECB4B', 'palette.warning.400': '#FDB922', 'palette.warning.500': '#E0B910',
+  'palette.warning.600': '#DC9A02', 'palette.warning.700': '#985A0B', 'palette.warning.800': '#5F4D3E',
+  'palette.warning.900': '#44E108',
+  // Success
+  'palette.success.50': '#CCFFDF', 'palette.success.100': '#B8FFD3', 'palette.success.200': '#8BFFB9',
+  'palette.success.300': '#66BFA0', 'palette.success.400': '#15FF5D', 'palette.success.500': '#00E963',
+  'palette.success.600': '#00C249', 'palette.success.700': '#006B34', 'palette.success.800': '#005C2F',
+  'palette.success.900': '#003516',
+  // Pending
+  'palette.pending.50': '#D7EAFF', 'palette.pending.100': '#AED5FF', 'palette.pending.200': '#85C0FF',
+  'palette.pending.300': '#5DABFF', 'palette.pending.400': '#3496FF', 'palette.pending.500': '#0B81FF',
+  'palette.pending.600': '#0066D2', 'palette.pending.700': '#004A9A', 'palette.pending.800': '#002F62',
+  'palette.pending.900': '#002246',
+  // Aqua
+  'palette.aqua.50': '#E3F9F7', 'palette.aqua.100': '#C1F3EE', 'palette.aqua.200': '#9FECE5',
+  'palette.aqua.300': '#7DE5DB', 'palette.aqua.400': '#5BDED2', 'palette.aqua.500': '#2CD5C5',
+  'palette.aqua.600': '#22A79B', 'palette.aqua.700': '#187870', 'palette.aqua.800': '#0F4A44',
+  'palette.aqua.900': '#0A322F',
+  // Selenas
+  'palette.selenas.50': '#F4E3F9', 'palette.selenas.100': '#E6C1F3', 'palette.selenas.200': '#D89FEC',
+  'palette.selenas.300': '#CA7DE5', 'palette.selenas.400': '#BC5BDE', 'palette.selenas.500': '#A92CD5',
+  'palette.selenas.600': '#8522A7', 'palette.selenas.700': '#5F1878', 'palette.selenas.800': '#3A0F4A',
+  'palette.selenas.900': '#280A32',
+  // Magenta
+  'palette.magenta.50': '#FFD0DB', 'palette.magenta.100': '#FFA7BC', 'palette.magenta.200': '#FF7F9D',
+  'palette.magenta.300': '#FF567E', 'palette.magenta.400': '#FF2D5F', 'palette.magenta.500': '#F4003A',
+  'palette.magenta.600': '#BC002D', 'palette.magenta.700': '#84001F', 'palette.magenta.800': '#4C0012',
+  'palette.magenta.900': '#30000B',
+  // Purple
+  'palette.purple.50': '#E7DEFB', 'palette.purple.100': '#CBBAF6', 'palette.purple.200': '#B096F2',
+  'palette.purple.300': '#9571ED', 'palette.purple.400': '#7A4DE9', 'palette.purple.500': '#551CE2',
+  'palette.purple.600': '#4216B0', 'palette.purple.700': '#2F107E', 'palette.purple.800': '#1D094C',
+  'palette.purple.900': '#130633',
+}
+
+const sansFamily = "Poppins, 'Plus Jakarta Sans', system-ui, sans-serif"
+const secondaryFamily = "'Plus Jakarta Sans', Poppins, system-ui, sans-serif"
+const metaFamily = 'Inter, system-ui, sans-serif'
+const monoFamily = "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace"
+
 const sharedTokens: ThemeTokenMap = {
-  // Elevation
+  ...palettes,
+
+  // Elevation (legacy namespace, retained for Compose interop)
   'elevation.none': '0dp',
   'elevation.xs': '1dp',
   'elevation.sm': '3dp',
@@ -20,128 +85,95 @@ const sharedTokens: ThemeTokenMap = {
   'elevation.lg': '8dp',
   'elevation.xl': '12dp',
 
-  // Typography — generic
-  'typography.fontFamily': 'Roboto',
-  'typography.fontFamilyMono': 'Roboto Mono',
+  // Typography — wallet families
+  'text.family.sans': sansFamily,
+  'text.family.secondary': secondaryFamily,
+  'text.family.meta': metaFamily,
+  'text.family.mono': monoFamily,
 
-  // Typography — Display
-  'typography.displayLarge.fontFamily': 'Roboto',
-  'typography.displayLarge.fontSize': '57sp',
-  'typography.displayLarge.fontWeight': '400',
-  'typography.displayLarge.lineHeight': '64sp',
-  'typography.displayLarge.letterSpacing': '-0.25sp',
-  'typography.displayMedium.fontFamily': 'Roboto',
-  'typography.displayMedium.fontSize': '45sp',
-  'typography.displayMedium.fontWeight': '400',
-  'typography.displayMedium.lineHeight': '52sp',
-  'typography.displayMedium.letterSpacing': '0sp',
-  'typography.displaySmall.fontFamily': 'Roboto',
-  'typography.displaySmall.fontSize': '36sp',
-  'typography.displaySmall.fontWeight': '400',
-  'typography.displaySmall.lineHeight': '44sp',
-  'typography.displaySmall.letterSpacing': '0sp',
+  // Typography — wallet mobile role tokens
+  'text.style.xl.fontFamily': sansFamily, 'text.style.xl.fontSize': '46sp', 'text.style.xl.fontWeight': '600', 'text.style.xl.lineHeight': '54sp',
+  'text.style.h1.fontFamily': sansFamily, 'text.style.h1.fontSize': '24sp', 'text.style.h1.fontWeight': '600', 'text.style.h1.lineHeight': '36sp',
+  'text.style.h2.fontFamily': sansFamily, 'text.style.h2.fontSize': '16sp', 'text.style.h2.fontWeight': '600', 'text.style.h2.lineHeight': '24sp',
+  'text.style.h3.fontFamily': sansFamily, 'text.style.h3.fontSize': '16sp', 'text.style.h3.fontWeight': '400', 'text.style.h3.lineHeight': '24sp',
+  'text.style.subtitle1.fontFamily': sansFamily, 'text.style.subtitle1.fontSize': '14sp', 'text.style.subtitle1.fontWeight': '600', 'text.style.subtitle1.lineHeight': '21sp',
+  'text.style.subtitle2.fontFamily': sansFamily, 'text.style.subtitle2.fontSize': '11sp', 'text.style.subtitle2.fontWeight': '600', 'text.style.subtitle2.lineHeight': '17sp',
+  'text.style.body1.fontFamily': sansFamily, 'text.style.body1.fontSize': '12sp', 'text.style.body1.fontWeight': '400', 'text.style.body1.lineHeight': '21sp',
+  'text.style.micro1.fontFamily': sansFamily, 'text.style.micro1.fontSize': '10sp', 'text.style.micro1.fontWeight': '400', 'text.style.micro1.lineHeight': '15sp',
+  'text.style.micro2.fontFamily': sansFamily, 'text.style.micro2.fontSize': '9sp', 'text.style.micro2.fontWeight': '400', 'text.style.micro2.lineHeight': '15sp',
 
-  // Typography — Headline
-  'typography.headlineLarge.fontFamily': 'Roboto',
-  'typography.headlineLarge.fontSize': '32sp',
-  'typography.headlineLarge.fontWeight': '400',
-  'typography.headlineLarge.lineHeight': '40sp',
-  'typography.headlineLarge.letterSpacing': '0sp',
-  'typography.headlineMedium.fontFamily': 'Roboto',
-  'typography.headlineMedium.fontSize': '28sp',
-  'typography.headlineMedium.fontWeight': '400',
-  'typography.headlineMedium.lineHeight': '36sp',
-  'typography.headlineMedium.letterSpacing': '0sp',
-  'typography.headlineSmall.fontFamily': 'Roboto',
-  'typography.headlineSmall.fontSize': '24sp',
-  'typography.headlineSmall.fontWeight': '400',
-  'typography.headlineSmall.lineHeight': '32sp',
-  'typography.headlineSmall.letterSpacing': '0sp',
+  // Desktop overrides (web reads via @media (min-width: 768px), Compose at WindowWidthSizeClass.Medium / Expanded)
+  'text.style.xl.desktop.fontSize': '56sp', 'text.style.xl.desktop.lineHeight': '64sp',
+  'text.style.h1.desktop.fontSize': '32sp', 'text.style.h1.desktop.lineHeight': '40sp',
+  'text.style.h2.desktop.fontSize': '20sp', 'text.style.h2.desktop.lineHeight': '28sp',
+  'text.style.h3.desktop.fontSize': '18sp', 'text.style.h3.desktop.lineHeight': '26sp',
+  'text.style.subtitle1.desktop.fontSize': '16sp', 'text.style.subtitle1.desktop.lineHeight': '24sp',
+  'text.style.subtitle2.desktop.fontSize': '14sp', 'text.style.subtitle2.desktop.lineHeight': '20sp',
+  'text.style.body1.desktop.fontSize': '14sp', 'text.style.body1.desktop.lineHeight': '22sp',
+  'text.style.micro1.desktop.fontSize': '12sp', 'text.style.micro1.desktop.lineHeight': '18sp',
+  'text.style.micro2.desktop.fontSize': '11sp', 'text.style.micro2.desktop.lineHeight': '16sp',
 
-  // Typography — Title
-  'typography.titleLarge.fontFamily': 'Roboto',
-  'typography.titleLarge.fontSize': '22sp',
-  'typography.titleLarge.fontWeight': '400',
-  'typography.titleLarge.lineHeight': '28sp',
-  'typography.titleLarge.letterSpacing': '0sp',
-  'typography.titleMedium.fontFamily': 'Roboto',
-  'typography.titleMedium.fontSize': '16sp',
-  'typography.titleMedium.fontWeight': '500',
-  'typography.titleMedium.lineHeight': '24sp',
-  'typography.titleMedium.letterSpacing': '0.15sp',
-  'typography.titleSmall.fontFamily': 'Roboto',
-  'typography.titleSmall.fontSize': '14sp',
-  'typography.titleSmall.fontWeight': '500',
-  'typography.titleSmall.lineHeight': '20sp',
-  'typography.titleSmall.letterSpacing': '0.1sp',
+  // Typography — generic family aliases
+  'typography.fontFamily': sansFamily,
+  'typography.fontFamilyMono': monoFamily,
 
-  // Typography — Body
-  'typography.bodyLarge.fontFamily': 'Roboto',
-  'typography.bodyLarge.fontSize': '16sp',
-  'typography.bodyLarge.fontWeight': '400',
-  'typography.bodyLarge.lineHeight': '24sp',
-  'typography.bodyLarge.letterSpacing': '0.5sp',
-  'typography.bodyMedium.fontFamily': 'Roboto',
-  'typography.bodyMedium.fontSize': '14sp',
-  'typography.bodyMedium.fontWeight': '400',
-  'typography.bodyMedium.lineHeight': '20sp',
-  'typography.bodyMedium.letterSpacing': '0.25sp',
-  'typography.bodySmall.fontFamily': 'Roboto',
-  'typography.bodySmall.fontSize': '12sp',
-  'typography.bodySmall.fontWeight': '400',
-  'typography.bodySmall.lineHeight': '16sp',
-  'typography.bodySmall.letterSpacing': '0.4sp',
+  // M3 Typography — mapped onto wallet's compact mobile scale
+  'typography.displayExtraLarge.fontFamily': sansFamily, 'typography.displayExtraLarge.fontSize': '46sp', 'typography.displayExtraLarge.fontWeight': '600', 'typography.displayExtraLarge.lineHeight': '54sp', 'typography.displayExtraLarge.letterSpacing': '0sp',
+  'typography.displayLarge.fontFamily': sansFamily, 'typography.displayLarge.fontSize': '46sp', 'typography.displayLarge.fontWeight': '600', 'typography.displayLarge.lineHeight': '54sp', 'typography.displayLarge.letterSpacing': '0sp',
+  'typography.displayMedium.fontFamily': sansFamily, 'typography.displayMedium.fontSize': '32sp', 'typography.displayMedium.fontWeight': '600', 'typography.displayMedium.lineHeight': '40sp', 'typography.displayMedium.letterSpacing': '0sp',
+  'typography.displaySmall.fontFamily': sansFamily, 'typography.displaySmall.fontSize': '24sp', 'typography.displaySmall.fontWeight': '600', 'typography.displaySmall.lineHeight': '36sp', 'typography.displaySmall.letterSpacing': '0sp',
+  'typography.headlineLarge.fontFamily': sansFamily, 'typography.headlineLarge.fontSize': '24sp', 'typography.headlineLarge.fontWeight': '600', 'typography.headlineLarge.lineHeight': '36sp', 'typography.headlineLarge.letterSpacing': '0sp',
+  'typography.headlineMedium.fontFamily': sansFamily, 'typography.headlineMedium.fontSize': '20sp', 'typography.headlineMedium.fontWeight': '600', 'typography.headlineMedium.lineHeight': '30sp', 'typography.headlineMedium.letterSpacing': '0sp',
+  'typography.headlineSmall.fontFamily': sansFamily, 'typography.headlineSmall.fontSize': '18sp', 'typography.headlineSmall.fontWeight': '600', 'typography.headlineSmall.lineHeight': '27sp', 'typography.headlineSmall.letterSpacing': '0sp',
+  'typography.titleLarge.fontFamily': sansFamily, 'typography.titleLarge.fontSize': '16sp', 'typography.titleLarge.fontWeight': '600', 'typography.titleLarge.lineHeight': '24sp', 'typography.titleLarge.letterSpacing': '0sp',
+  'typography.titleMedium.fontFamily': sansFamily, 'typography.titleMedium.fontSize': '16sp', 'typography.titleMedium.fontWeight': '400', 'typography.titleMedium.lineHeight': '24sp', 'typography.titleMedium.letterSpacing': '0sp',
+  'typography.titleSmall.fontFamily': sansFamily, 'typography.titleSmall.fontSize': '14sp', 'typography.titleSmall.fontWeight': '600', 'typography.titleSmall.lineHeight': '21sp', 'typography.titleSmall.letterSpacing': '0sp',
+  'typography.bodyLarge.fontFamily': sansFamily, 'typography.bodyLarge.fontSize': '14sp', 'typography.bodyLarge.fontWeight': '400', 'typography.bodyLarge.lineHeight': '21sp', 'typography.bodyLarge.letterSpacing': '0sp',
+  'typography.bodyMedium.fontFamily': sansFamily, 'typography.bodyMedium.fontSize': '12sp', 'typography.bodyMedium.fontWeight': '400', 'typography.bodyMedium.lineHeight': '21sp', 'typography.bodyMedium.letterSpacing': '0sp',
+  'typography.bodySmall.fontFamily': sansFamily, 'typography.bodySmall.fontSize': '10sp', 'typography.bodySmall.fontWeight': '400', 'typography.bodySmall.lineHeight': '15sp', 'typography.bodySmall.letterSpacing': '0sp',
+  'typography.bodyExtraSmall.fontFamily': sansFamily, 'typography.bodyExtraSmall.fontSize': '9sp', 'typography.bodyExtraSmall.fontWeight': '400', 'typography.bodyExtraSmall.lineHeight': '15sp', 'typography.bodyExtraSmall.letterSpacing': '0sp',
+  'typography.labelLarge.fontFamily': sansFamily, 'typography.labelLarge.fontSize': '14sp', 'typography.labelLarge.fontWeight': '600', 'typography.labelLarge.lineHeight': '21sp', 'typography.labelLarge.letterSpacing': '0sp',
+  'typography.labelMedium.fontFamily': sansFamily, 'typography.labelMedium.fontSize': '12sp', 'typography.labelMedium.fontWeight': '500', 'typography.labelMedium.lineHeight': '21sp', 'typography.labelMedium.letterSpacing': '0sp',
+  'typography.labelSmall.fontFamily': sansFamily, 'typography.labelSmall.fontSize': '11sp', 'typography.labelSmall.fontWeight': '600', 'typography.labelSmall.lineHeight': '17sp', 'typography.labelSmall.letterSpacing': '0sp',
 
-  // Typography — Label
-  'typography.labelLarge.fontFamily': 'Roboto',
-  'typography.labelLarge.fontSize': '14sp',
-  'typography.labelLarge.fontWeight': '500',
-  'typography.labelLarge.lineHeight': '20sp',
-  'typography.labelLarge.letterSpacing': '0.1sp',
-  'typography.labelMedium.fontFamily': 'Roboto',
-  'typography.labelMedium.fontSize': '12sp',
-  'typography.labelMedium.fontWeight': '500',
-  'typography.labelMedium.lineHeight': '16sp',
-  'typography.labelMedium.letterSpacing': '0.5sp',
-  'typography.labelSmall.fontFamily': 'Roboto',
-  'typography.labelSmall.fontSize': '11sp',
-  'typography.labelSmall.fontWeight': '500',
-  'typography.labelSmall.lineHeight': '16sp',
-  'typography.labelSmall.letterSpacing': '0.5sp',
-
-  // Shape
-  'shape.cornerExtraSmall': '4dp',
-  'shape.cornerSmall': '8dp',
-  'shape.cornerMedium': '12dp',
-  'shape.cornerLarge': '16dp',
-  'shape.cornerExtraLarge': '28dp',
+  // Shape — numeric Figma stops
+  'shape.radius.0': '0dp', 'shape.radius.1': '2dp', 'shape.radius.2': '4dp', 'shape.radius.3': '6dp',
+  'shape.radius.4': '8dp', 'shape.radius.6': '12dp', 'shape.radius.8': '16dp', 'shape.radius.12': '24dp',
+  // Shape — semantic aliases
+  'shape.radius.none': '0dp',
+  'shape.radius.xs': '2dp', 'shape.radius.sm': '4dp', 'shape.radius.md': '8dp',
+  'shape.radius.lg': '12dp', 'shape.radius.xl': '16dp', 'shape.radius.xxl': '20dp',
+  'shape.radius.xxxl': '24dp', 'shape.radius.full': '9999dp',
+  // Shape — legacy M3 aliases
+  'shape.cornerExtraSmall': '4dp', 'shape.cornerSmall': '8dp', 'shape.cornerMedium': '12dp',
+  'shape.cornerLarge': '16dp', 'shape.cornerExtraLarge': '24dp',
 
   // Motion — durations
-  'motion.duration.short1': '50ms',
-  'motion.duration.short2': '100ms',
-  'motion.duration.short3': '150ms',
-  'motion.duration.short4': '200ms',
-  'motion.duration.medium1': '250ms',
-  'motion.duration.medium2': '300ms',
-  'motion.duration.medium3': '350ms',
-  'motion.duration.medium4': '400ms',
-  'motion.duration.long1': '450ms',
-  'motion.duration.long2': '500ms',
-  'motion.duration.long3': '550ms',
-  'motion.duration.long4': '600ms',
+  'motion.duration.short1': '50ms', 'motion.duration.short2': '100ms',
+  'motion.duration.short3': '150ms', 'motion.duration.short4': '200ms',
+  'motion.duration.medium1': '250ms', 'motion.duration.medium2': '300ms',
+  'motion.duration.medium3': '350ms', 'motion.duration.medium4': '400ms',
+  'motion.duration.long1': '450ms', 'motion.duration.long2': '500ms',
+  'motion.duration.long3': '550ms', 'motion.duration.long4': '600ms',
+  'motion.duration.instant': '0ms',
+  'motion.duration.fast': '150ms',
+  'motion.duration.normal': '200ms',
+  'motion.duration.slow': '300ms',
+  'motion.duration.slower': '600ms',
+  'motion.delay.none': '0ms',
+  'motion.delay.short': '100ms',
 
-  // Motion — easing
-  'motion.easing.standard': 'cubic-bezier(0.2, 0.0, 0, 1.0)',
-  'motion.easing.standardDecelerate': 'cubic-bezier(0, 0, 0, 1.0)',
+  // Motion — easings
+  'motion.easing.standard': 'cubic-bezier(0.2, 0, 0, 1)',
+  'motion.easing.standardDecelerate': 'cubic-bezier(0, 0, 0, 1)',
   'motion.easing.standardAccelerate': 'cubic-bezier(0.3, 0, 1, 1)',
-  'motion.easing.emphasized': 'cubic-bezier(0.2, 0.0, 0, 1.0)',
-  'motion.easing.emphasizedDecelerate': 'cubic-bezier(0.05, 0.7, 0.1, 1.0)',
-  'motion.easing.emphasizedAccelerate': 'cubic-bezier(0.3, 0.0, 0.8, 0.15)',
+  'motion.easing.emphasized': 'cubic-bezier(0.2, 0, 0, 1)',
+  'motion.easing.emphasizedDecelerate': 'cubic-bezier(0.05, 0.7, 0.1, 1)',
+  'motion.easing.emphasizedAccelerate': 'cubic-bezier(0.3, 0, 0.8, 0.15)',
   'motion.easing.linear': 'cubic-bezier(0, 0, 1, 1)',
-
-  // Motion — theme transition
-  'motion.themeTransition.duration': '500ms',
-  'motion.themeTransition.easing': 'cubic-bezier(0.2, 0.0, 0, 1.0)',
+  'motion.easing.bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+  'motion.themeTransition.duration': '300ms',
+  'motion.themeTransition.easing': 'cubic-bezier(0.2, 0, 0, 1)',
 
   // Responsive — typography scale factors
   'responsive.scale.medium.display': '1.10',
@@ -150,41 +182,27 @@ const sharedTokens: ThemeTokenMap = {
   'responsive.scale.expanded.headline': '1.10',
   'responsive.scale.expanded.title': '1.05',
 
-  // Spacing (4px grid, 17 stops)
-  'spacing.0': '0px',
-  'spacing.1': '4px',
-  'spacing.2': '8px',
-  'spacing.3': '12px',
+  // Spacing — full Figma scale + half-stops + axis aliases
+  'spacing.0': '0px',     'spacing.0_5': '2px',
+  'spacing.1': '4px',     'spacing.1_5': '6px',
+  'spacing.2': '8px',     'spacing.2_5': '10px',
+  'spacing.3': '12px',    'spacing.3_5': '14px',
   'spacing.4': '16px',
-  'spacing.5': '20px',
-  'spacing.6': '24px',
-  'spacing.8': '32px',
-  'spacing.10': '40px',
-  'spacing.12': '48px',
-  'spacing.14': '56px',
-  'spacing.16': '64px',
-  'spacing.20': '80px',
-  'spacing.24': '96px',
-  'spacing.32': '128px',
-  'spacing.40': '160px',
-  'spacing.48': '192px',
-
-  // Spacing — semantic (Tier 2)
-  'spacing.inline.xs': '4px',
-  'spacing.inline.sm': '8px',
-  'spacing.inline.md': '16px',
-  'spacing.inline.lg': '24px',
-  'spacing.inline.xl': '32px',
-  'spacing.stack.xs': '4px',
-  'spacing.stack.sm': '8px',
-  'spacing.stack.md': '16px',
-  'spacing.stack.lg': '24px',
-  'spacing.stack.xl': '32px',
-  'spacing.inset.xs': '4px',
-  'spacing.inset.sm': '8px',
-  'spacing.inset.md': '16px',
-  'spacing.inset.lg': '24px',
-  'spacing.inset.xl': '32px',
+  'spacing.5': '20px',    'spacing.6': '24px',    'spacing.7': '28px',
+  'spacing.8': '32px',    'spacing.9': '36px',    'spacing.10': '40px',
+  'spacing.11': '44px',   'spacing.12': '48px',   'spacing.14': '56px',
+  'spacing.16': '64px',   'spacing.20': '80px',   'spacing.24': '96px',
+  'spacing.28': '112px',  'spacing.32': '128px',  'spacing.36': '144px',
+  'spacing.40': '160px',  'spacing.44': '176px',  'spacing.48': '192px',
+  'spacing.52': '208px',  'spacing.56': '224px',  'spacing.60': '240px',
+  'spacing.64': '256px',  'spacing.72': '288px',  'spacing.80': '320px',
+  'spacing.96': '384px',
+  'spacing.inline.xs': '4px', 'spacing.inline.sm': '8px', 'spacing.inline.md': '16px',
+  'spacing.inline.lg': '24px', 'spacing.inline.xl': '32px',
+  'spacing.stack.xs': '4px', 'spacing.stack.sm': '8px', 'spacing.stack.md': '16px',
+  'spacing.stack.lg': '24px', 'spacing.stack.xl': '32px',
+  'spacing.inset.xs': '8px', 'spacing.inset.sm': '12px', 'spacing.inset.md': '16px',
+  'spacing.inset.lg': '24px', 'spacing.inset.xl': '32px',
 
   // Border Width
   'borderWidth.none': '0px',
@@ -192,207 +210,199 @@ const sharedTokens: ThemeTokenMap = {
   'borderWidth.medium': '2px',
   'borderWidth.thick': '4px',
 
-  // Shape / Border Radius (new 9-stop scale)
-  'shape.radius.none': '0dp',
-  'shape.radius.xs': '2dp',
-  'shape.radius.sm': '4dp',
-  'shape.radius.md': '8dp',
-  'shape.radius.lg': '12dp',
-  'shape.radius.xl': '16dp',
-  'shape.radius.xxl': '24dp',
-  'shape.radius.xxxl': '28dp',
-  'shape.radius.full': '9999dp',
+  // Shadow — numeric Figma tier
+  'shadow.100': '0 1px 2px rgba(10,13,18,0.05)',
+  'shadow.200': '0 2px 4px rgba(0,0,0,0.10)',
+  'shadow.300': '0 4px 8px rgba(0,0,0,0.12)',
+  'shadow.400': '0 12px 24px rgba(10,13,18,0.16)',
+  // Shadow — M3 elevation scale
+  'shadow.elevation.none': 'none',
+  'shadow.elevation.xs': '0 1px 2px rgba(10,13,18,0.05)',
+  'shadow.elevation.sm': '0 2px 4px rgba(0,0,0,0.10)',
+  'shadow.elevation.md': '0 4px 8px rgba(0,0,0,0.12)',
+  'shadow.elevation.lg': '0 12px 24px rgba(10,13,18,0.16)',
+  'shadow.elevation.xl': '0 24px 48px rgba(10,13,18,0.20)',
+  'shadow.elevation.xxl': '0 25px 50px -12px rgba(0,0,0,0.25)',
+  // Shadow — semantic aliases
+  'shadow.subtle': '0 1px 2px rgba(10,13,18,0.05)',
+  'shadow.raised': '0 2px 4px rgba(0,0,0,0.10)',
+  'shadow.floating': '0 4px 8px rgba(0,0,0,0.12)',
+  'shadow.overlay': '0 12px 24px rgba(10,13,18,0.16)',
+  'shadow.dramatic': '0 25px 50px -12px rgba(0,0,0,0.25)',
+  // Shadow — state (variant-independent)
+  'shadow.state.focus': '0 0 0 3px rgba(11,129,255,0.5)',
+  'shadow.state.error': '0 0 0 3px rgba(181,58,0,0.5)',
+  'shadow.state.active': 'inset 0 2px 4px rgba(0,0,0,0.16)',
+  'shadow.state.selected': '0 0 0 2px rgba(124,64,232,0.3)',
 
-  // Typography — extended styles
-  'typography.displayExtraLarge.fontFamily': 'Roboto',
-  'typography.displayExtraLarge.fontSize': '72sp',
-  'typography.displayExtraLarge.fontWeight': '400',
-  'typography.displayExtraLarge.lineHeight': '80sp',
-  'typography.displayExtraLarge.letterSpacing': '-0.5sp',
-  'typography.bodyExtraSmall.fontFamily': 'Roboto',
-  'typography.bodyExtraSmall.fontSize': '10sp',
-  'typography.bodyExtraSmall.fontWeight': '400',
-  'typography.bodyExtraSmall.lineHeight': '14sp',
-  'typography.bodyExtraSmall.letterSpacing': '0.4sp',
-
-  // Motion — semantic durations
-  'motion.duration.instant': '0ms',
-  'motion.duration.fast': '100ms',
-  'motion.duration.normal': '250ms',
-  'motion.duration.slow': '400ms',
-  'motion.duration.slower': '600ms',
-
-  // Motion — delays
-  'motion.delay.none': '0ms',
-  'motion.delay.short': '100ms',
-
-  // Motion — additional easings
-  'motion.easing.bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+  // Accessibility
+  'a11y.targetSizeMin': '44px',
 }
 
 const lightColors: ThemeTokenMap = {
-  'color.primary': '#6750A4',
-  'color.onPrimary': '#FFFFFF',
-  'color.primaryContainer': '#EADDFF',
-  'color.onPrimaryContainer': '#21005D',
-  'color.secondary': '#625B71',
+  // Primary
+  'color.primary': '#7C40E8',
+  'color.onPrimary': '#FBFBFB',
+  'color.primaryContainer': '#ECE4FC',
+  'color.onPrimaryContainer': '#320E72',
+  // Secondary
+  'color.secondary': '#4E5E95',
   'color.onSecondary': '#FFFFFF',
-  'color.secondaryContainer': '#E8DEF8',
-  'color.onSecondaryContainer': '#1D192B',
-  'color.tertiary': '#7D5260',
-  'color.onTertiary': '#FFFFFF',
-  'color.tertiaryContainer': '#FFD8E4',
-  'color.onTertiaryContainer': '#31111D',
-  'color.error': '#B3261E',
+  'color.secondaryContainer': '#D8DDEB',
+  'color.onSecondaryContainer': '#2C334B',
+  // Tertiary — selenas (magenta-purple), brand-adjacent category accent
+  'color.tertiary': '#A92CD5',
+  'color.onTertiary': '#FBFBFB',
+  'color.tertiaryContainer': '#F4E3F9',
+  'color.onTertiaryContainer': '#3A0F4A',
+  // Error
+  'color.error': '#B53A00',
   'color.onError': '#FFFFFF',
-  'color.errorContainer': '#F9DEDC',
-  'color.onErrorContainer': '#410E0B',
-  'color.surface': '#FEF7FF',
-  'color.onSurface': '#1D1B20',
-  'color.surfaceVariant': '#E7E0EC',
-  'color.onSurfaceVariant': '#49454F',
-  'color.surfaceContainer': '#F3EDF7',
-  'color.surfaceContainerHigh': '#ECE6F0',
-  'color.surfaceContainerHighest': '#E6E0E9',
-  'color.surfaceContainerLow': '#F7F2FA',
+  'color.errorContainer': '#FFF6F3',
+  'color.onErrorContainer': '#8E2D06',
+  // Surface
+  'color.surface': '#FFFFFF',
+  'color.onSurface': '#0A0D12',
+  'color.surfaceVariant': '#F2F2F2',
+  'color.onSurfaceVariant': '#4E4E4E',
+  'color.surfaceContainer': '#F2F2F2',
+  'color.surfaceContainerHigh': '#E3E3E3',
+  'color.surfaceContainerHighest': '#C4C4C4',
+  'color.surfaceContainerLow': '#FBFBFB',
   'color.surfaceContainerLowest': '#FFFFFF',
-  'color.background': '#FEF7FF',
-  'color.onBackground': '#1D1B20',
-  'color.outline': '#79747E',
-  'color.outlineVariant': '#CAC4D0',
-  'color.inverseSurface': '#322F35',
-  'color.inverseOnSurface': '#F5EFF7',
-  'color.inversePrimary': '#D0BCFF',
-  'color.scrim': '#000000',
-  'color.shadow': '#000000',
+  // Background
+  'color.background': '#FBFBFB',
+  'color.onBackground': '#0A0D12',
+  // Other
+  'color.outline': '#C4C4C4',
+  'color.outlineVariant': '#E3E3E3',
+  'color.inverseSurface': '#202537',
+  'color.inverseOnSurface': '#FBFBFB',
+  'color.inversePrimary': '#AE89F1',
+  'color.scrim': 'rgba(10,13,18,0.5)',
+  'color.shadow': 'rgba(10,13,18,0.16)',
 
-  // Shadow — light theme
-  'shadow.elevation.none': 'none',
-  'shadow.elevation.xs': '0 1px 2px 0 rgba(0,0,0,0.05)',
-  'shadow.elevation.sm': '0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1)',
-  'shadow.elevation.md': '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)',
-  'shadow.elevation.lg': '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
-  'shadow.elevation.xl': '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-  'shadow.elevation.xxl': '0 25px 50px -12px rgba(0,0,0,0.25)',
-  'shadow.subtle': '0 1px 2px 0 rgba(0,0,0,0.05)',
-  'shadow.raised': '0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1)',
-  'shadow.floating': '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
-  'shadow.overlay': '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-  'shadow.dramatic': '0 25px 50px -12px rgba(0,0,0,0.25)',
-  'shadow.state.focus': '0 0 0 3px rgba(103,80,164,0.4)',
-  'shadow.state.error': '0 0 0 3px rgba(179,38,30,0.4)',
-  'shadow.state.active': '0 0 0 2px rgba(103,80,164,0.3)',
-  'shadow.state.selected': '0 0 0 2px rgba(103,80,164,0.2)',
+  // Interactive
+  'color.interactive.hover': '#F2F2F2',
+  'color.interactive.pressed': '#E3E3E3',
+  'color.interactive.disabled': '#E3E3E3',
+  'color.interactive.focus': '#7C40E8',
 
-  // Color — Tier 2 semantic (light)
-  'color.interactive.hover': '#5B4399',
-  'color.interactive.pressed': '#4F378B',
-  'color.interactive.disabled': '#1D1B2014',
-  'color.interactive.focus': '#6750A4',
-  'color.feedback.success': '#1B6D30',
-  'color.feedback.successContainer': '#A8F5AC',
+  // Feedback
+  'color.feedback.success': '#00C249',
+  'color.feedback.successContainer': '#CCFFDF',
   'color.feedback.onSuccess': '#FFFFFF',
-  'color.feedback.onSuccessContainer': '#002107',
-  'color.feedback.warning': '#7C5800',
-  'color.feedback.warningContainer': '#FFDEA1',
-  'color.feedback.onWarning': '#FFFFFF',
-  'color.feedback.onWarningContainer': '#271900',
-  'color.feedback.info': '#0061A4',
-  'color.feedback.infoContainer': '#D1E4FF',
+  'color.feedback.onSuccessContainer': '#003516',
+  'color.feedback.warning': '#DC9A02',
+  'color.feedback.warningContainer': '#FFFAEB',
+  'color.feedback.onWarning': '#0A0D12',
+  'color.feedback.onWarningContainer': '#985A0B',
+  'color.feedback.info': '#0B81FF',
+  'color.feedback.infoContainer': '#D7EAFF',
   'color.feedback.onInfo': '#FFFFFF',
-  'color.feedback.onInfoContainer': '#001D36',
-  'color.text.primary': '#1D1B20',
-  'color.text.secondary': '#49454F',
-  'color.text.disabled': '#1D1B2061',
-  'color.text.inverse': '#F5EFF7',
-  'color.border.default': '#79747E',
-  'color.border.strong': '#1D1B20',
-  'color.border.subtle': '#CAC4D0',
-  'color.border.disabled': '#1D1B2029',
+  'color.feedback.onInfoContainer': '#002246',
+
+  // Text
+  'color.text.primary': '#0A0D12',
+  'color.text.secondary': '#4E4E4E',
+  'color.text.disabled': '#969696',
+  'color.text.inverse': '#FBFBFB',
+
+  // Border
+  'color.border.default': '#C4C4C4',
+  'color.border.strong': '#4E4E4E',
+  'color.border.subtle': '#E3E3E3',
+  'color.border.disabled': '#E3E3E3',
 }
 
 const darkColors: ThemeTokenMap = {
-  'color.primary': '#D0BCFF',
-  'color.onPrimary': '#381E72',
-  'color.primaryContainer': '#4F378B',
-  'color.onPrimaryContainer': '#EADDFF',
-  'color.secondary': '#CCC2DC',
-  'color.onSecondary': '#332D41',
-  'color.secondaryContainer': '#4A4458',
-  'color.onSecondaryContainer': '#E8DEF8',
-  'color.tertiary': '#EFB8C8',
-  'color.onTertiary': '#492532',
-  'color.tertiaryContainer': '#633B48',
-  'color.onTertiaryContainer': '#FFD8E4',
-  'color.error': '#F2B8B5',
-  'color.onError': '#601410',
-  'color.errorContainer': '#8C1D18',
-  'color.onErrorContainer': '#F9DEDC',
-  'color.surface': '#141218',
-  'color.onSurface': '#E6E0E9',
-  'color.surfaceVariant': '#49454F',
-  'color.onSurfaceVariant': '#CAC4D0',
-  'color.surfaceContainer': '#211F26',
-  'color.surfaceContainerHigh': '#2B2930',
-  'color.surfaceContainerHighest': '#36343B',
-  'color.surfaceContainerLow': '#1D1B20',
-  'color.surfaceContainerLowest': '#0F0D13',
-  'color.background': '#141218',
-  'color.onBackground': '#E6E0E9',
-  'color.outline': '#938F99',
-  'color.outlineVariant': '#49454F',
-  'color.inverseSurface': '#E6E0E9',
-  'color.inverseOnSurface': '#322F35',
-  'color.inversePrimary': '#6750A4',
-  'color.scrim': '#000000',
-  'color.shadow': '#000000',
+  // Primary
+  'color.primary': '#AE89F1',
+  'color.onPrimary': '#1C0840',
+  'color.primaryContainer': '#320E72',
+  'color.onPrimaryContainer': '#E0D2FA',
+  // Secondary
+  'color.secondary': '#B0B9D6',
+  'color.onSecondary': '#202537',
+  'color.secondaryContainer': '#2D3655',
+  'color.onSecondaryContainer': '#CBD1E4',
+  // Tertiary — selenas, lifted for AA on dark
+  'color.tertiary': '#CA7DE5',
+  'color.onTertiary': '#280A32',
+  'color.tertiaryContainer': '#3A0F4A',
+  'color.onTertiaryContainer': '#E6C1F3',
+  // Error — lift 300 for contrast on dark
+  'color.error': '#F2A091',
+  'color.onError': '#7A271A',
+  'color.errorContainer': '#531B6C',
+  'color.onErrorContainer': '#FFEAE3',
+  // Surface — wallet's blue dark-panel ramp (Figma blue.900/800/700)
+  'color.surface': '#2C334B',
+  'color.onSurface': '#FBFBFB',
+  'color.surfaceVariant': '#2D3655',
+  'color.onSurfaceVariant': '#E3E3E3',
+  'color.surfaceContainer': '#202537',
+  'color.surfaceContainerHigh': '#2D3655',
+  'color.surfaceContainerHighest': '#404D7A',
+  'color.surfaceContainerLow': '#2C334B',
+  'color.surfaceContainerLowest': '#202537',
+  // Background
+  'color.background': '#202537',
+  'color.onBackground': '#FBFBFB',
+  // Inverse — toast/snackbar gets a light surface on dark page
+  'color.inverseSurface': '#FBFBFB',
+  'color.inverseOnSurface': '#0A0D12',
+  'color.inversePrimary': '#7C40E8',
+  // Outlines & scrim
+  'color.outline': '#404D7A',
+  'color.outlineVariant': '#2D3655',
+  'color.scrim': 'rgba(0,0,0,0.7)',
+  'color.shadow': 'rgba(0,0,0,0.5)',
 
-  // Shadow — dark theme (higher opacity)
-  'shadow.elevation.none': 'none',
-  'shadow.elevation.xs': '0 1px 2px 0 rgba(0,0,0,0.3)',
-  'shadow.elevation.sm': '0 1px 3px 0 rgba(0,0,0,0.4), 0 1px 2px -1px rgba(0,0,0,0.3)',
-  'shadow.elevation.md': '0 4px 6px -1px rgba(0,0,0,0.4), 0 2px 4px -2px rgba(0,0,0,0.3)',
-  'shadow.elevation.lg': '0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -4px rgba(0,0,0,0.3)',
-  'shadow.elevation.xl': '0 20px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3)',
-  'shadow.elevation.xxl': '0 25px 50px -12px rgba(0,0,0,0.6)',
-  'shadow.subtle': '0 1px 2px 0 rgba(0,0,0,0.3)',
-  'shadow.raised': '0 1px 3px 0 rgba(0,0,0,0.4), 0 1px 2px -1px rgba(0,0,0,0.3)',
-  'shadow.floating': '0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -4px rgba(0,0,0,0.3)',
-  'shadow.overlay': '0 20px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3)',
-  'shadow.dramatic': '0 25px 50px -12px rgba(0,0,0,0.6)',
-  'shadow.state.focus': '0 0 0 3px rgba(208,188,255,0.4)',
-  'shadow.state.error': '0 0 0 3px rgba(242,184,181,0.4)',
-  'shadow.state.active': '0 0 0 2px rgba(208,188,255,0.3)',
-  'shadow.state.selected': '0 0 0 2px rgba(208,188,255,0.2)',
+  // Interactive
+  'color.interactive.hover': 'rgba(255,255,255,0.06)',
+  'color.interactive.pressed': 'rgba(255,255,255,0.10)',
+  'color.interactive.disabled': 'rgba(255,255,255,0.12)',
+  'color.interactive.focus': '#AE89F1',
 
-  // Color — Tier 2 semantic (dark)
-  'color.interactive.hover': '#E0D0FF',
-  'color.interactive.pressed': '#EADDFF',
-  'color.interactive.disabled': '#E6E0E914',
-  'color.interactive.focus': '#D0BCFF',
-  'color.feedback.success': '#6EDB75',
-  'color.feedback.successContainer': '#005313',
-  'color.feedback.onSuccess': '#003909',
-  'color.feedback.onSuccessContainer': '#A8F5AC',
-  'color.feedback.warning': '#F5C63D',
-  'color.feedback.warningContainer': '#5C4000',
-  'color.feedback.onWarning': '#412D00',
-  'color.feedback.onWarningContainer': '#FFDEA1',
-  'color.feedback.info': '#9ECAFF',
-  'color.feedback.infoContainer': '#003258',
-  'color.feedback.onInfo': '#003258',
-  'color.feedback.onInfoContainer': '#D1E4FF',
-  'color.text.primary': '#E6E0E9',
-  'color.text.secondary': '#CAC4D0',
-  'color.text.disabled': '#E6E0E961',
-  'color.text.inverse': '#322F35',
-  'color.border.default': '#938F99',
-  'color.border.strong': '#E6E0E9',
-  'color.border.subtle': '#49454F',
-  'color.border.disabled': '#E6E0E929',
+  // Feedback — wallet dark stops
+  'color.feedback.success': '#15FF5D',
+  'color.feedback.successContainer': '#005C2F',
+  'color.feedback.onSuccess': '#003516',
+  'color.feedback.onSuccessContainer': '#B8FFD3',
+  'color.feedback.warning': '#FECB4B',
+  'color.feedback.warningContainer': '#985A0B',
+  'color.feedback.onWarning': '#44E108',
+  'color.feedback.onWarningContainer': '#FEEDC7',
+  'color.feedback.info': '#5DABFF',
+  'color.feedback.infoContainer': '#002F62',
+  'color.feedback.onInfo': '#002246',
+  'color.feedback.onInfoContainer': '#AED5FF',
+
+  // Text
+  'color.text.primary': '#FBFBFB',
+  'color.text.secondary': '#E3E3E3',
+  'color.text.disabled': '#585858',
+  'color.text.inverse': '#0A0D12',
+
+  // Border
+  'color.border.default': '#404D7A',
+  'color.border.strong': '#E3E3E3',
+  'color.border.subtle': '#2D3655',
+  'color.border.disabled': '#2D3655',
+
+  // Dark-mode shadow overrides — higher opacity to read on dark surfaces
+  'shadow.elevation.xs': '0 1px 2px rgba(0,0,0,0.4)',
+  'shadow.elevation.sm': '0 2px 4px rgba(0,0,0,0.5)',
+  'shadow.elevation.md': '0 4px 8px rgba(0,0,0,0.55)',
+  'shadow.elevation.lg': '0 12px 24px rgba(0,0,0,0.6)',
+  'shadow.subtle': '0 1px 2px rgba(0,0,0,0.4)',
+  'shadow.raised': '0 2px 4px rgba(0,0,0,0.5)',
+  'shadow.floating': '0 4px 8px rgba(0,0,0,0.55)',
+  'shadow.overlay': '0 12px 24px rgba(0,0,0,0.6)',
 }
 
-/** Get the full M3 baseline token set for a given variant */
+/** Get the full wallet baseline token set for a given variant. */
 export function getSystemDefaults(variant: ThemeVariant): ThemeTokenMap {
   const colors = variant === 'dark' ? darkColors : lightColors
   return { ...sharedTokens, ...colors }

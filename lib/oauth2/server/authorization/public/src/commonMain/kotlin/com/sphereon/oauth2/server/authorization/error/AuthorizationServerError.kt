@@ -18,6 +18,8 @@ package com.sphereon.oauth2.server.authorization.error
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.api.error.Retryability
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Authorization Server errors
@@ -241,14 +243,16 @@ sealed interface AuthorizationServerError : IdkErrorType {
         override val severity: IdkError.Severity = IdkError.Severity.ERROR,
         override val causes: List<IdkErrorType> = emptyList(),
         override val meta: Map<String, Any?> = emptyMap(),
-    ) : AuthorizationServerError
+    ) : AuthorizationServerError {
+        override val retryability: Retryability get() = Retryability.TRANSIENT
+    }
 
     /**
      * The authorization server is currently unable to handle the request due to
      * a temporary overloading or maintenance of the server.
      */
     data class TemporarilyUnavailable(
-        val retryAfter: Int? = null,
+        val retryAfterSeconds: Int? = null,
         override val code: String = "temporarily_unavailable",
         override val message: IdkError.Message =
             IdkError.Message(
@@ -258,8 +262,11 @@ sealed interface AuthorizationServerError : IdkErrorType {
         override val severity: IdkError.Severity = IdkError.Severity.WARNING,
         override val exception: Throwable? = null,
         override val causes: List<IdkErrorType> = emptyList(),
-        override val meta: Map<String, Any?> = mapOf("retry_after" to retryAfter),
-    ) : AuthorizationServerError
+        override val meta: Map<String, Any?> = mapOf("retry_after" to retryAfterSeconds),
+    ) : AuthorizationServerError {
+        override val retryability: Retryability get() = Retryability.TRANSIENT
+        override val retryAfter: kotlin.time.Duration? get() = retryAfterSeconds?.seconds
+    }
 
     // ============================================================================
     // Token Endpoint Errors (RFC 6749 Section 5.2)

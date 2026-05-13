@@ -80,21 +80,33 @@ abstract class RoutedHttpAdapter : RoutableHttpAdapter {
         return "$basePathPrefix$pattern".replace("//", "/")
     }
 
+    private fun routePatternMatches(
+        route: HttpRoute,
+        request: GenericHttpRequest,
+    ): Boolean =
+        route.endpoint.pathPatterns.any { pattern ->
+            request.matches(route.endpoint.method.name, fullPath(pattern))
+        }
+
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
             mount = mount,
             endpoints =
                 routes.map { route ->
-                    route.endpoint.copy(pathPattern = fullPath(route.endpoint.pathPattern))
+                    // Prepend base path to every pattern this descriptor exposes so
+                    // catalog matching sees the absolute URLs.
+                    route.endpoint.copy(
+                        pathPatterns = route.endpoint.pathPatterns.map { fullPath(it) },
+                    )
                 },
             openApiHints = openApiHints,
         )
 
-    override fun canHandle(request: GenericHttpRequest): Boolean = routes.any { request.matches(it.endpoint.method.name, fullPath(it.endpoint.pathPattern)) }
+    override fun canHandle(request: GenericHttpRequest): Boolean = routes.any { routePatternMatches(it, request) }
 
     override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
-        val matches = routes.filter { request.matches(it.endpoint.method.name, fullPath(it.endpoint.pathPattern)) }
+        val matches = routes.filter { routePatternMatches(it, request) }
         return when (matches.size) {
             0 -> {
                 errorResponse(HTTP_NOT_FOUND, "Not found: ${request.method} ${request.path}")
@@ -109,7 +121,12 @@ abstract class RoutedHttpAdapter : RoutableHttpAdapter {
             }
 
             else -> {
-                val best = matches.maxByOrNull { CompiledPathPattern.compile(fullPath(it.endpoint.pathPattern)).specificity }!!
+                // For multi-pattern routes, compete on the most specific pattern.
+                val best =
+                    matches.maxByOrNull { route ->
+                        route.endpoint.pathPatterns
+                            .maxOf { CompiledPathPattern.compile(fullPath(it)).specificity }
+                    }!!
                 try {
                     best.handler(request)
                 } catch (expected: Exception) {

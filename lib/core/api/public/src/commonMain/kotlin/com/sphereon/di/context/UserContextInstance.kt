@@ -58,6 +58,7 @@ interface UserContextInstance {
 
     fun createSession(
         sessionId: String,
+        correlationId: String = sessionId,
         makeActive: Boolean = true,
     ): SessionInstance
 

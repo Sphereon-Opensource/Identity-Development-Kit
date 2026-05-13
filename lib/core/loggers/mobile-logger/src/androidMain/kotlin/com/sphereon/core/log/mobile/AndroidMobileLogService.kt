@@ -25,6 +25,7 @@ import com.sphereon.core.api.log.LogLevel
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.LoggerConfig
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserScope
@@ -66,7 +67,7 @@ class AndroidAppMobileLogService(
 class AndroidUserContextMobileLogService(
     userContextInstance: UserContextInstance,
     repository: MobileLogRepository,
-) : AbstractAndroidMobileLogService(userContextInstance.toSessionContext(), SERVICE_ID, repository) {
+) : AbstractAndroidMobileLogService(userContextInstance.toSessionContext(correlationId = IdentityConstants.ANONYMOUS_ID), SERVICE_ID, repository) {
     override val scope = IdkScope.USER
 
     companion object {

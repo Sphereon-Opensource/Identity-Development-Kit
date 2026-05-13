@@ -81,10 +81,10 @@ class AdaptiveTokenResolverTest {
         val theme = ResolvedTheme(tokens = tokens, resolvedAt = Clock.System.now())
 
         val result = AdaptiveTokenResolver.resolve(theme, WindowWidthSizeClass.Medium)
-        // Display large fontSize "57sp" * 1.50 = 85.5sp
-        assertEquals("85.5sp", result.tokens["typography.displayLarge.fontSize"])
-        // Headline large fontSize "32sp" * 1.25 = 40sp
-        assertEquals("40sp", result.tokens["typography.headlineLarge.fontSize"])
+        // Wallet displayLarge = 46sp * 1.50 = 69sp
+        assertEquals("69sp", result.tokens["typography.displayLarge.fontSize"])
+        // Wallet headlineLarge = 24sp * 1.25 = 30sp
+        assertEquals("30sp", result.tokens["typography.headlineLarge.fontSize"])
     }
 
     @Test

@@ -206,8 +206,12 @@ interface ServiceCommand<TInput : Any, TOutput : Any, TError : IdkErrorType> :
  *     // ...
  * }
  * ```
+ *
+ * **Note:** Intentionally NOT `@JsExportCompat`. With `@JsExport`, the abstract `serviceId`
+ * forces raw-name property access at every call site, but the default getter on sub-interfaces
+ * (e.g. `SecureRandom.serviceId get() = SERVICE_ID`) is only bridged onto implementing classes
+ * under the mangled name — so `instance.serviceId` reads null in JS.
  */
-@JsExportCompat
 interface ServiceFacade {
     /**
      * The service identifier.

@@ -50,8 +50,7 @@ import kotlinx.serialization.json.putJsonObject
  * ```
  */
 object ResponseBuilder {
-    @PublishedApi
-    internal val json: Json =
+    val json: Json =
         Json {
             prettyPrint = false
             ignoreUnknownKeys = true

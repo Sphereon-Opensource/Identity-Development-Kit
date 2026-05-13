@@ -169,22 +169,6 @@ sealed interface ReconciliationError : IdkErrorType {
             override val meta: Map<String, Any?> = emptyMap(),
         ) : ReconciliationError
 
-    data class RequiredAttributesMissing
-        @JvmOverloads
-        constructor(
-            val missingAttributes: List<String>,
-            override val code: String = "identity_reconciliation.required_attributes_missing",
-            override val message: IdkError.Message =
-                IdkError.Message(
-                    i18nKey = "identity.reconciliation.error.required_attributes_missing",
-                    defaultMessage = "Required attributes missing after mapping: ${missingAttributes.joinToString(", ")}",
-                ),
-            override val severity: IdkError.Severity = IdkError.Severity.ERROR,
-            override val exception: Throwable? = null,
-            override val causes: List<IdkErrorType> = emptyList(),
-            override val meta: Map<String, Any?> = emptyMap(),
-        ) : ReconciliationError
-
     data class IdentifierAttributeMissing
         @JvmOverloads
         constructor(

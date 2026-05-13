@@ -18,6 +18,7 @@ package com.sphereon.oauth2.common.error
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.api.error.Retryability
 import com.sphereon.core.api.validation.ValidationErrorDetail
 
 /**
@@ -141,7 +142,9 @@ sealed interface Oauth2Error : IdkErrorType {
         override val severity: IdkError.Severity = IdkError.Severity.ERROR,
         override val causes: List<IdkErrorType> = emptyList(),
         override val meta: Map<String, Any?> = emptyMap(),
-    ) : Oauth2Error
+    ) : Oauth2Error {
+        override val retryability: Retryability get() = Retryability.TRANSIENT
+    }
 
     /**
      * Network error
@@ -157,7 +160,9 @@ sealed interface Oauth2Error : IdkErrorType {
         override val severity: IdkError.Severity = IdkError.Severity.ERROR,
         override val causes: List<IdkErrorType> = emptyList(),
         override val meta: Map<String, Any?> = emptyMap(),
-    ) : Oauth2Error
+    ) : Oauth2Error {
+        override val retryability: Retryability get() = Retryability.TRANSIENT
+    }
 
     /**
      * Invalid DPoP proof (RFC 9449)
@@ -229,6 +234,7 @@ sealed interface Oauth2Error : IdkErrorType {
                 i18nKey = "oauth2.error.fetch_failed",
                 defaultMessage = failureMessage,
             )
+        override val retryability: Retryability get() = Retryability.TRANSIENT
     }
 
     /**
@@ -518,6 +524,7 @@ sealed interface IntrospectionError : Oauth2Error {
                 i18nKey = "oauth2.introspection.request_failed",
                 defaultMessage = "Token introspection request failed: $reason",
             )
+        override val retryability: Retryability get() = Retryability.TRANSIENT
     }
 
     /**
@@ -559,7 +566,9 @@ sealed interface MetadataError : Oauth2Error {
         override val severity: IdkError.Severity = IdkError.Severity.ERROR,
         override val causes: List<IdkErrorType> = emptyList(),
         override val meta: Map<String, Any?> = mapOf("url" to url),
-    ) : MetadataError
+    ) : MetadataError {
+        override val retryability: Retryability get() = Retryability.TRANSIENT
+    }
 
     /**
      * Metadata validation failed

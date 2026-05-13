@@ -122,65 +122,65 @@ class AnonymousContextTest {
 class CreateAnonymousSessionContextTest {
     @Test
     fun createdContextHasCorrectSessionId() {
-        val ctx = createAnonymousSessionContext("test-session")
+        val ctx = createAnonymousSessionContext("test-session", "test-session-correlation")
         assertEquals("test-session", ctx.sessionId)
     }
 
     @Test
     fun createdContextHasAnonymousUserContext() {
-        val ctx = createAnonymousSessionContext("test-session")
+        val ctx = createAnonymousSessionContext("test-session", "test-session-correlation")
         assertEquals(AnonymousContext, ctx.context)
     }
 
     @Test
     fun toStringContainsSessionId() {
-        val ctx = createAnonymousSessionContext("my-session")
+        val ctx = createAnonymousSessionContext("my-session", "my-session-correlation")
         assertTrue(ctx.toString().contains("my-session"))
     }
 
     @Test
     fun toStringContainsAnonymous() {
-        val ctx = createAnonymousSessionContext("test")
+        val ctx = createAnonymousSessionContext("test", "test-correlation")
         assertTrue(ctx.toString().contains("Anonymous"))
     }
 
     @Test
     fun equalsReturnsTrueForSameSessionIdAndContext() {
-        val ctx1 = createAnonymousSessionContext("session-1")
-        val ctx2 = createAnonymousSessionContext("session-1")
+        val ctx1 = createAnonymousSessionContext("session-1", "session-1-correlation")
+        val ctx2 = createAnonymousSessionContext("session-1", "session-1-correlation")
         assertEquals(ctx1, ctx2)
     }
 
     @Test
     fun equalsReturnsFalseForDifferentSessionId() {
-        val ctx1 = createAnonymousSessionContext("session-1")
-        val ctx2 = createAnonymousSessionContext("session-2")
+        val ctx1 = createAnonymousSessionContext("session-1", "session-1-correlation")
+        val ctx2 = createAnonymousSessionContext("session-2", "session-2-correlation")
         assertNotEquals(ctx1, ctx2)
     }
 
     @Test
     fun equalsReturnsTrueForSameInstance() {
-        val ctx = createAnonymousSessionContext("test")
+        val ctx = createAnonymousSessionContext("test", "test-correlation")
         assertTrue(ctx.equals(ctx))
     }
 
     @Test
     fun equalsReturnsFalseForNonSessionContext() {
-        val ctx = createAnonymousSessionContext("test")
+        val ctx = createAnonymousSessionContext("test", "test-correlation")
         assertFalse(ctx.equals("not a session context"))
     }
 
     @Test
     fun hashCodeIsConsistentWithEquals() {
-        val ctx1 = createAnonymousSessionContext("session-1")
-        val ctx2 = createAnonymousSessionContext("session-1")
+        val ctx1 = createAnonymousSessionContext("session-1", "session-1-correlation")
+        val ctx2 = createAnonymousSessionContext("session-1", "session-1-correlation")
         assertEquals(ctx1.hashCode(), ctx2.hashCode())
     }
 
     @Test
     fun hashCodeDiffersForDifferentSessions() {
-        val ctx1 = createAnonymousSessionContext("session-1")
-        val ctx2 = createAnonymousSessionContext("session-2")
+        val ctx1 = createAnonymousSessionContext("session-1", "session-1-correlation")
+        val ctx2 = createAnonymousSessionContext("session-2", "session-2-correlation")
         assertNotEquals(ctx1.hashCode(), ctx2.hashCode())
     }
 }
@@ -188,58 +188,58 @@ class CreateAnonymousSessionContextTest {
 class UserContextToSessionContextTest {
     @Test
     fun toSessionContextUsesDefaultSessionIdWhenNotProvided() {
-        val sessionCtx = AnonymousContext.toSessionContext()
+        val sessionCtx = AnonymousContext.toSessionContext(correlationId = "default-correlation")
         assertEquals("_from_user_context", sessionCtx.sessionId)
     }
 
     @Test
     fun toSessionContextUsesProvidedSessionId() {
-        val sessionCtx = AnonymousContext.toSessionContext("custom-session")
+        val sessionCtx = AnonymousContext.toSessionContext("custom-session", "custom-session-correlation")
         assertEquals("custom-session", sessionCtx.sessionId)
     }
 
     @Test
     fun toSessionContextPreservesUserContext() {
-        val sessionCtx = AnonymousContext.toSessionContext()
+        val sessionCtx = AnonymousContext.toSessionContext(correlationId = "default-correlation")
         assertEquals(AnonymousContext, sessionCtx.context)
     }
 
     @Test
     fun toStringContainsUserToSessionContext() {
-        val sessionCtx = AnonymousContext.toSessionContext("test")
+        val sessionCtx = AnonymousContext.toSessionContext("test", "test-correlation")
         assertTrue(sessionCtx.toString().contains("UserToSessionContext"))
     }
 
     @Test
     fun equalsReturnsTrueForMatchingContexts() {
-        val ctx1 = AnonymousContext.toSessionContext("test")
-        val ctx2 = AnonymousContext.toSessionContext("test")
+        val ctx1 = AnonymousContext.toSessionContext("test", "test-correlation")
+        val ctx2 = AnonymousContext.toSessionContext("test", "test-correlation")
         assertEquals(ctx1, ctx2)
     }
 
     @Test
     fun equalsReturnsFalseForDifferentSessionIds() {
-        val ctx1 = AnonymousContext.toSessionContext("test-1")
-        val ctx2 = AnonymousContext.toSessionContext("test-2")
+        val ctx1 = AnonymousContext.toSessionContext("test-1", "test-1-correlation")
+        val ctx2 = AnonymousContext.toSessionContext("test-2", "test-2-correlation")
         assertNotEquals(ctx1, ctx2)
     }
 
     @Test
     fun equalsReturnsTrueForSameInstance() {
-        val ctx = AnonymousContext.toSessionContext()
+        val ctx = AnonymousContext.toSessionContext(correlationId = "default-correlation")
         assertTrue(ctx.equals(ctx))
     }
 
     @Test
     fun equalsReturnsFalseForNonSessionContext() {
-        val ctx = AnonymousContext.toSessionContext()
+        val ctx = AnonymousContext.toSessionContext(correlationId = "default-correlation")
         assertFalse(ctx.equals("not a context"))
     }
 
     @Test
     fun hashCodeIsConsistentWithEquals() {
-        val ctx1 = AnonymousContext.toSessionContext("test")
-        val ctx2 = AnonymousContext.toSessionContext("test")
+        val ctx1 = AnonymousContext.toSessionContext("test", "test-correlation")
+        val ctx2 = AnonymousContext.toSessionContext("test", "test-correlation")
         assertEquals(ctx1.hashCode(), ctx2.hashCode())
     }
 }
@@ -328,7 +328,7 @@ class PrincipalResolverCompareToTest {
 
 class ContextSessionPairTest {
     private val testContext = AnonymousContext
-    private val testSession = createAnonymousSessionContext("test-session")
+    private val testSession = createAnonymousSessionContext("test-session", "test-session-correlation")
 
     @Test
     fun contextIdIsAccessible() {

@@ -16,6 +16,7 @@
 
 package com.sphereon.ktor.http.client.provider
 
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.session.CommandId
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.config.HttpClientConfigResolver
@@ -41,7 +42,7 @@ import kotlin.native.ObjCName
  * class MyCommandImpl(
  *     execution: SessionExecution,
  *     private val httpClients: HttpClientProvider
- * ) : TypedServiceCommandAdapter<...>(...) {
+ * ) : TypedServiceCommandAdapter<..., IdkError>(...) {
  *
  *     override suspend fun doExecute(args, applyDuring) {
  *         httpClients.withClient(commandId) { client ->

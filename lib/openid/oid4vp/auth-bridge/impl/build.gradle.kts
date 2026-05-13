@@ -84,6 +84,11 @@ kotlin {
                 implementation(projects.libDidMethodsKey)
                 implementation(projects.libDidMethodsJwk)
                 implementation(projects.libDidPersistenceMemory)
+                // Metro needs to discover JsonLdContextValidator / JsonLdSchemaValidator
+                // @Inject constructors at test-graph composition time. The validators
+                // are reached transitively through oid4vp-verifier-impl but with
+                // implementation-scope and so don't reach the test compile classpath.
+                implementation(projects.libJsonldLoader)
                 implementation(projects.libIdentityMatchingImpl)
 
                 // OAuth2 client and common for verifier dependencies

@@ -22,6 +22,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope

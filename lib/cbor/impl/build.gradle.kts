@@ -46,6 +46,11 @@ kotlin {
             dependencies {
                 // Re-export public module
                 api(projects.libCborPublic)
+                // Metro runtime — the `metro` plugin emits FIR checkers that
+                // resolve `createGraph` and friends; without these artifacts
+                // on the classpath the checker crashes with "List is empty"
+                // on the first FunctionCall it visits.
+                implementation(libs.bundles.app.platform.di)
             }
         }
         val commonTest by getting {

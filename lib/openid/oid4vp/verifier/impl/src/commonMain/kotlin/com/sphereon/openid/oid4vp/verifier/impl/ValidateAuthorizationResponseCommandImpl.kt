@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
@@ -27,6 +28,13 @@ import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
+import com.sphereon.jsonld.JsonLdError
+import com.sphereon.jsonld.WellKnownContexts
+import com.sphereon.jsonld.WellKnownCredentialTypes
+import com.sphereon.jsonld.command.JsonLdContextValidator
+import com.sphereon.jsonld.command.JsonLdSchemaValidator
+import com.sphereon.jsonld.command.ValidateJsonLdContextInput
+import com.sphereon.jsonld.command.ValidateJsonLdSchemaInput
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
@@ -40,6 +48,9 @@ import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.sdjwt.SdJwtCodec
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -69,6 +80,8 @@ class ValidateAuthorizationResponseCommandImpl(
     execution: SessionExecution,
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val verifyHolderBindingCommand: VerifyHolderBindingCommand,
+    private val jsonLdContextValidator: JsonLdContextValidator,
+    private val jsonLdSchemaValidator: JsonLdSchemaValidator,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
@@ -153,12 +166,25 @@ class ValidateAuthorizationResponseCommandImpl(
                     continue
                 }
 
-                // Validate format matches query if specified
+                // Validate format matches query if specified.
+                //
+                // Special case for `vc+ld+json+jwt`: detectFormat returns
+                // JWT_VC_JSON for any compact JWS, since VCDM 1.1 JWT-VC and
+                // VCDM 2.0 JOSE-enveloped credentials are indistinguishable
+                // at the wire level. When the verifier explicitly asked for
+                // `vc+ld+json+jwt`, accept the JWT and let the JSON-LD shape
+                // validator (validateVcLdJsonShape) enforce VCDM 2.0 by
+                // peeking at the body's @context. A JWT_VC_JSON body
+                // smuggled in under that query format will be caught there.
                 val queryFormat = matchingQuery.format
+                val isVcLdJsonJwtQueryOverJwtWire =
+                    queryFormat == CredentialFormat.VC_LD_JSON_JWT.value &&
+                        detectedFormat == CredentialFormat.JWT_VC_JSON
                 val formatMatches =
                     queryFormat == null ||
                         queryFormat == detectedFormat.value ||
-                        CredentialFormat.fromValueLenient(queryFormat) == detectedFormat
+                        CredentialFormat.fromValueLenient(queryFormat) == detectedFormat ||
+                        isVcLdJsonJwtQueryOverJwtWire
 
                 if (!formatMatches) {
                     errors.add("Presentation format '${detectedFormat.value}' for query '$queryId' does not match required format '$queryFormat'")
@@ -243,6 +269,22 @@ class ValidateAuthorizationResponseCommandImpl(
                     continue
                 }
 
+                // VCDM 2.0 + JSON-LD: enforce the same `@context` and JSON
+                // Schema validators that the issuer side runs. Only runs
+                // when the verifier asked for `vc+ld+json+jwt`; SD-JWT,
+                // mdoc, and VCDM 1.1 jwt_vc_json presentations skip the
+                // JWT-body decode entirely.
+                if (queryFormat == CredentialFormat.VC_LD_JSON_JWT.value) {
+                    val vcLdViolation = validateVcLdJsonShape(presentation)
+                    if (vcLdViolation != null) {
+                        errors.add(
+                            "VCDM 2.0 + JSON-LD validation failed for query '$queryId' at index $presentationIndex: " +
+                                vcLdViolation,
+                        )
+                        continue
+                    }
+                }
+
                 // Extract disclosed claims from the presentation
                 val disclosedClaims = extractDisclosedClaims(presentation, detectedFormat)
 
@@ -307,6 +349,87 @@ class ValidateAuthorizationResponseCommandImpl(
     }
 
     /**
+     * If [presentation] is a JWT compact serialization whose payload looks
+     * like a VCDM 2.0 + JSON-LD credential (i.e. has a top-level `@context`
+     * containing `https://www.w3.org/ns/credentials/v2`), validate the
+     * `@context` chain (UNTP `@vocab` MUST-NOT) and the JSON Schema
+     * registered for the primary `type`. Returns null on success or when the
+     * presentation does not look like VCDM 2.0; returns a human-readable
+     * reason string on validation failure.
+     *
+     * Holder binding has already been verified by the time this is called,
+     * so we can safely decode the payload without re-checking the signature.
+     * Decode is best-effort: malformed bytes return null (no crash).
+     */
+    private suspend fun validateVcLdJsonShape(presentation: String): String? {
+        val payload = decodeJwtPayloadOrNull(presentation) ?: return null
+        val context = payload["@context"] ?: return null
+        if (!referencesVcdm2Context(context)) return null
+
+        val contextResult =
+            jsonLdContextValidator.validate(
+                ValidateJsonLdContextInput(context = context),
+            )
+        if (contextResult.isErr) {
+            return formatJsonLdError(contextResult.error)
+        }
+
+        // Schema validation runs against the VC body. Our format handler
+        // emits the VC body merged with JWT registered claims at the JWT
+        // root, so the same payload validates cleanly: JSON Schema's
+        // `additionalProperties: true` (default for UNTP schemas) lets the
+        // extra `iss`/`iat`/`exp`/`sub`/`cnf` keys pass through.
+        val primaryType = primaryCredentialTypeOrNull(payload) ?: return null
+        val schemaResult =
+            jsonLdSchemaValidator.validate(
+                ValidateJsonLdSchemaInput(payload = payload, credentialType = primaryType),
+            )
+        // Unknown types (no schema in the registry) are a soft pass; schema
+        // mismatches and malformed schemas abort.
+        if (schemaResult.isErr && schemaResult.error !is JsonLdError.NoSchemaRegistered) {
+            return formatJsonLdError(schemaResult.error)
+        }
+
+        return null
+    }
+
+    private fun decodeJwtPayloadOrNull(presentation: String): JsonObject? {
+        val parts = presentation.split(".")
+        if (parts.size != 3) return null
+        val bytes =
+            try {
+                parts[1].decodeFromBase64Url()
+            } catch (expected: IllegalArgumentException) {
+                return null
+            }
+        val parsed =
+            try {
+                JSON_LENIENT.parseToJsonElement(bytes.decodeToString())
+            } catch (expected: kotlinx.serialization.SerializationException) {
+                return null
+            }
+        return parsed as? JsonObject
+    }
+
+    private fun referencesVcdm2Context(context: kotlinx.serialization.json.JsonElement): Boolean {
+        val target = WellKnownContexts.VCDM_2_0
+        return when (context) {
+            is JsonPrimitive -> context.isString && context.content == target
+            is JsonArray -> context.any { (it as? JsonPrimitive)?.let { p -> p.isString && p.content == target } == true }
+            else -> false
+        }
+    }
+
+    private fun primaryCredentialTypeOrNull(payload: JsonObject): String? {
+        val types = (payload["type"] as? JsonArray) ?: return null
+        val stringTypes = types.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        return stringTypes.firstOrNull { it != WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL }
+            ?: stringTypes.firstOrNull()
+    }
+
+    private fun formatJsonLdError(error: JsonLdError): String = "${error.code}: ${error.message.defaultMessage}"
+
+    /**
      * Extract disclosed claims from a credential presentation.
      * For SD-JWT: parses the compact serialization and resolves all disclosures.
      */
@@ -341,4 +464,12 @@ class ValidateAuthorizationResponseCommandImpl(
                 emptyMap()
             }
         }
+
+    private companion object {
+        val JSON_LENIENT =
+            Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+            }
+    }
 }

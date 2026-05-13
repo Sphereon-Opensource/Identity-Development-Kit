@@ -138,6 +138,20 @@ class WebvhDeactivateE2ETest {
             assertEquals(deactivationEntry.versionId, replay.selectedEntry.versionId, "replay LATEST must select the deactivation entry")
             assertEquals(true, replay.activeParameters.deactivated, "active parameters after replay must show deactivated=true")
             assertEquals(emptyList(), replay.activeParameters.updateKeys, "active updateKeys after replay must be empty")
+
+            // did:web companion is populated for the deactivated state too;
+            // resolvers that only speak did:web see the final (deactivated)
+            // document with alsoKnownAs back to the webvh DID.
+            assertNotNull(deactivateResult.value.didWebDocument, "deactivate did:web companion must be populated by default")
+            assertNotNull(deactivateResult.value.didWebJson, "deactivate did:web companion JSON must be populated by default")
+            assertEquals(
+                "did:web:example.com",
+                deactivateResult.value.didWebDocument!!.id,
+                "deactivate companion id must strip the SCID",
+            )
+            val deactivateAka = deactivateResult.value.didWebDocument!!.alsoKnownAs
+            assertNotNull(deactivateAka, "deactivate companion must declare alsoKnownAs")
+            assertTrue(genesis.did in deactivateAka, "deactivate companion must alsoKnownAs the webvh DID")
         }
 
     private suspend fun generateEd25519AndMultikey(prefix: String): Pair<String, String> {

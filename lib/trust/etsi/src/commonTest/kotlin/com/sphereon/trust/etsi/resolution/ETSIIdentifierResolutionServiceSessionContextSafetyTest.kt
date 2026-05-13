@@ -123,14 +123,14 @@ class ETSIIdentifierResolutionServiceSessionContextSafetyTest {
 
     private fun createTrustListService(sessionId: String): ETSITrustListIdentifierResolutionServiceImpl =
         ETSITrustListIdentifierResolutionServiceImpl(
-            execution = TestSessionExecution(createAnonymousSessionContext(sessionId)),
+            execution = TestSessionExecution(createAnonymousSessionContext(sessionId, "$sessionId-correlation")),
             trustListResolvers = setOf(MockTrustListResolver()),
             trustListParser = MockTrustListParser(),
         )
 
     private fun createX509ValidationService(sessionId: String): X509ETSIValidationIdentifierResolutionServiceImpl =
         X509ETSIValidationIdentifierResolutionServiceImpl(
-            execution = TestSessionExecution(createAnonymousSessionContext(sessionId)),
+            execution = TestSessionExecution(createAnonymousSessionContext(sessionId, "$sessionId-correlation")),
             trustListResolvers = setOf(MockTrustListResolver()),
             trustListParser = MockTrustListParser(),
             x509VerifyService = MockX509VerifyService(),

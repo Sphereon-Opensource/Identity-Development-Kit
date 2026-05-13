@@ -67,7 +67,7 @@ class UniversalOid4vpDescriptorProvider : HttpAdapterDescriptorProvider {
                     // Prepend adapter base path for dispatcher matching.
                     // Endpoint commands define patterns relative to the adapter's base path,
                     // but the dispatcher expects full paths for candidate selection.
-                    endpoint.copy(pathPattern = basePath + endpoint.pathPattern)
+                    endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },
         )
 }

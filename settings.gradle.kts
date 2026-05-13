@@ -62,6 +62,7 @@ pluginManagement {
         mavenLocal {
             content {
                 includeGroupAndSubgroups("com.sphereon")
+
             }
         }
     }
@@ -248,6 +249,7 @@ dependencyResolutionManagement {
         mavenLocal {
             content {
                 includeGroupAndSubgroups("com.sphereon")
+
             }
         }
     }
@@ -314,6 +316,10 @@ includeProject("lib-crypto-data-integrity-proof-public", "lib/crypto/data-integr
 includeProject("lib-crypto-data-integrity-proof-impl", "lib/crypto/data-integrity-proof/impl")
 includeProject("lib-crypto-data-integrity-proof-eddsa-jcs-2022", "lib/crypto/data-integrity-proof/eddsa-jcs-2022")
 
+// JSON-LD 1.1 capability (Track A: loader + validators; Track B: full processor)
+includeProject("lib-jsonld-public", "lib/jsonld/public")
+includeProject("lib-jsonld-loader", "lib/jsonld/loader")
+
 // SD-JWT libraries
 includeProject("lib-sdjwt-public", "lib/sdjwt/public")
 includeProject("lib-sdjwt-impl", "lib/sdjwt/impl")
@@ -379,6 +385,10 @@ includeProject("lib-data-store-blob-impl", "lib/data/store/blob/impl")
 // Attribute Flow (flow-agnostic attribute wiring primitives: AttributeBag, AttributePath,
 // AttributeSource/Target/Binding. Consumed by IDV graphs, issuance pipelines, tabular sources, etc.)
 includeProject("lib-attribute-flow-public", "lib/attribute/flow/public")
+
+// Attribute Mapping (generic source -> target attribute rename rules + applier; reused by
+// reconciliation flows, CSV-roster issuance, OIDC claim projection, etc.)
+includeProject("lib-attribute-mapping-public", "lib/attribute/mapping/public")
 
 // Invitation service — RELOCATED to VDX as vdx-service-invitation-* per
 // feedback_edk_vs_vdx_placement (invitation orchestration is a product feature,

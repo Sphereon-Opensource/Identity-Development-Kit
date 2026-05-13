@@ -16,6 +16,7 @@
 
 package com.sphereon.identity.reconciliation.model
 
+import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
@@ -41,8 +42,8 @@ data class ReconciliationProvider
         val identifierAttributeName: String = "sub",
         val enabled: Boolean = true,
         val mappingMode: MappingMode = MappingMode.EXPLICIT,
-        val attributeMappings: List<ReconciliationAttributeMapping> = emptyList(),
-        val userInfoAttributeMappings: List<ReconciliationAttributeMapping> = emptyList(),
+        val attributeMappings: List<AttributeMapping> = emptyList(),
+        val userInfoAttributeMappings: List<AttributeMapping> = emptyList(),
         val assuranceAcr: String? = null,
         val assuranceAmr: List<String>? = null,
     )

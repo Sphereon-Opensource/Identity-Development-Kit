@@ -68,7 +68,7 @@ class Oid4vciIssuerProtocolDescriptorProvider : HttpAdapterDescriptorProvider {
                     HandleDeferredCredentialEndpointCommand.ENDPOINT,
                     HandleNotificationEndpointCommand.ENDPOINT,
                 ).map { endpoint ->
-                    endpoint.copy(pathPattern = basePath + endpoint.pathPattern)
+                    endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },
         )
 }

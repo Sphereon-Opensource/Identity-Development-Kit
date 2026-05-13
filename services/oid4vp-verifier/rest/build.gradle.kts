@@ -30,6 +30,10 @@ kotlin {
                 implementation(projects.libOpenidOid4vpUniversalImpl)
                 implementation(projects.libOpenidOid4vpCommonPublic)
                 implementation(projects.libOpenidOid4vpDcql)
+                // JsonLd validators are reached transitively through verifier-impl
+                // with implementation scope; the Ktor server graph needs them on
+                // the compile classpath so Metro can discover their @Inject ctors.
+                implementation(projects.libJsonldLoader)
 
                 // Core
                 implementation(projects.libCoreApiPublic)

@@ -10,8 +10,6 @@
     <ID>ClassOrdering:IdentityFilter.kt$IdentityFilter$Companion</ID>
     <ID>ClassOrdering:IdentityResult.kt$IdentityResult$fun toIdentity()</ID>
     <ID>ClassOrdering:IdentityRole.kt$IdentityRole$override fun toString(): String</ID>
-    <ID>ClassOrdering:PageRequest.kt$Page$fun &lt;R> map(transform: (T) -> R)</ID>
-    <ID>ClassOrdering:PageRequest.kt$PageRequest$Companion</ID>
     <ID>ClassOrdering:PartyFetchOptions.kt$PartyFetchOptions$Companion</ID>
     <ID>ClassOrdering:PartyFilter.kt$PartyFilter$Companion</ID>
     <ID>ClassOrdering:PartyResult.kt$PartyResult$fun toParty()</ID>

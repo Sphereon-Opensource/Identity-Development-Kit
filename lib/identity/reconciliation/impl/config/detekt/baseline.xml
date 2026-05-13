@@ -2,6 +2,33 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>MatchingDeclarationName:WasmJsReconciliationTestAppGraph.wasmJs.kt$WasmJsReconciliationTestAppGraph : AbstractAppGraph</ID>
+    <ID>ClassOrdering:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$Companion</ID>
+    <ID>ClassOrdering:KottageReconciliationProviderStore.kt$KottageReconciliationProviderStore$Companion</ID>
+    <ID>ClassOrdering:ReconciliationProviderConfigBinder.kt$ReconciliationProviderConfigBinder$Companion</ID>
+    <ID>ComplexCondition:GetReconciliationSessionCommandImpl.kt$GetReconciliationSessionCommandImpl$session.status != ReconciliationSessionStatus.COMPLETED &amp;&amp; session.status != ReconciliationSessionStatus.CANCELLED &amp;&amp; session.status != ReconciliationSessionStatus.EXPIRED &amp;&amp; session.expiresAt &lt; Clock.System.now()</ID>
+    <ID>CyclomaticComplexMethod:CompleteReconciliationCommandImpl.kt$CompleteReconciliationCommandImpl$override suspend fun doExecute( args: CompleteReconciliationArgs, applyDuring: (CompleteReconciliationArgs) -> CompleteReconciliationArgs, ): IdkResult&lt;CompleteReconciliationResult, IdkError></ID>
+    <ID>LongMethod:CompleteReconciliationCommandImpl.kt$CompleteReconciliationCommandImpl$override suspend fun doExecute( args: CompleteReconciliationArgs, applyDuring: (CompleteReconciliationArgs) -> CompleteReconciliationArgs, ): IdkResult&lt;CompleteReconciliationResult, IdkError></ID>
+    <ID>LongMethod:CreateReconciliationSessionCommandImpl.kt$CreateReconciliationSessionCommandImpl$@OptIn(ExperimentalUuidApi::class) override suspend fun doExecute( args: CreateReconciliationSessionArgs, applyDuring: (CreateReconciliationSessionArgs) -> CreateReconciliationSessionArgs, ): IdkResult&lt;CreateReconciliationSessionResult, IdkError></ID>
+    <ID>LongParameterList:CompleteReconciliationCommandImpl.kt$CompleteReconciliationCommandImpl$( execution: SessionExecution, private val sessionStore: ReconciliationSessionStore, private val providerStore: ReconciliationProviderStore, private val oidcConnectionResolver: OidcConnectionResolver, private val reconciliationCryptoService: ReconciliationCryptoService, private val exchangeTokenCommand: ExchangeTokenCommand, private val fetchUserInfoCommand: FetchUserInfoCommand, private val createMatchCommand: CreateIdentityMatchCommand, private val identityMatchStore: IdentityMatchStore, private val oidcDiscoveryService: OidcDiscoveryService, private val tokenClaimExtractor: OidcTokenClaimExtractor, )</ID>
+    <ID>LongParameterList:CreateReconciliationSessionCommandImpl.kt$CreateReconciliationSessionCommandImpl$( authorizationEndpoint: String, clientId: String, redirectUri: String, scopes: List&lt;String>, state: String, nonce: String, codeChallenge: String, codeChallengeMethod: String, )</ID>
+    <ID>LongParameterList:KmsBackedReconciliationMaterialService.kt$KmsBackedReconciliationMaterialService$( material: ReconciliationMaterial, holderKey: String?, providerSubject: String?, canonicalAttributes: CanonicalAttributeBag, credentialScopedAttributes: Map&lt;String, AttributeBag>?, profile: ReconciliationMaterialProfile, current: Boolean, )</ID>
+    <ID>LoopWithTooManyJumpStatements:ReconciliationProviderConfigBinder.kt$ReconciliationProviderConfigBinder$for</ID>
+    <ID>LoopWithTooManyJumpStatements:ReconciliationProviderConfigBinder.kt$ReconciliationProviderConfigBinder$while</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$200</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$201</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$400</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$404</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$409</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$410</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$500</ID>
+    <ID>MagicNumber:IdentityReconciliationHttpAdapter.kt$IdentityReconciliationHttpAdapter$502</ID>
+    <ID>MagicNumber:ReconciliationSessionCleanupJob.kt$ReconciliationSessionCleanupJob$1000</ID>
+    <ID>MagicNumber:ReconciliationSessionCleanupJob.kt$ReconciliationSessionCleanupJob$60</ID>
+    <ID>ReturnCount:CompleteReconciliationCommandImpl.kt$CompleteReconciliationCommandImpl$override suspend fun doExecute( args: CompleteReconciliationArgs, applyDuring: (CompleteReconciliationArgs) -> CompleteReconciliationArgs, ): IdkResult&lt;CompleteReconciliationResult, IdkError></ID>
+    <ID>ReturnCount:CreateReconciliationSessionCommandImpl.kt$CreateReconciliationSessionCommandImpl$@OptIn(ExperimentalUuidApi::class) override suspend fun doExecute( args: CreateReconciliationSessionArgs, applyDuring: (CreateReconciliationSessionArgs) -> CreateReconciliationSessionArgs, ): IdkResult&lt;CreateReconciliationSessionResult, IdkError></ID>
+    <ID>ReturnCount:KmsBackedReconciliationMaterialService.kt$KmsBackedReconciliationMaterialService$private fun resolveCredentialAttributes( material: CredentialAttributeTupleMaterial, credentialScopedAttributes: Map&lt;String, AttributeBag>?, ): Map&lt;String, JsonElement>?</ID>
+    <ID>ReturnCount:KmsBackedReconciliationMaterialService.kt$KmsBackedReconciliationMaterialService$private suspend fun deriveSingle( material: ReconciliationMaterial, holderKey: String?, providerSubject: String?, canonicalAttributes: CanonicalAttributeBag, credentialScopedAttributes: Map&lt;String, AttributeBag>?, profile: ReconciliationMaterialProfile, current: Boolean, ): DerivedMaterial?</ID>
+    <ID>ReturnCount:KottageReconciliationSessionStore.kt$KottageReconciliationSessionStore$override suspend fun findByState( tenantId: String, state: String, ): ReconciliationSession?</ID>
+    <ID>StringLiteralDuplication:ReconciliationProviderConfigBinder.kt$ReconciliationProviderConfigBinder$"false"</ID>
   </CurrentIssues>
 </SmellBaseline>

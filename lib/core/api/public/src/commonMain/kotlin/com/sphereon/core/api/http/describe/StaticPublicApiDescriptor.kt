@@ -62,8 +62,9 @@ abstract class StaticPublicApiDescriptor(
             mount = mount,
             endpoints =
                 endpoints.map { endpoint ->
-                    val fullPath = buildFullPath(mount.adapterBasePath, endpoint.pathPattern)
-                    endpoint.copy(pathPattern = fullPath)
+                    endpoint.copy(
+                        pathPatterns = endpoint.pathPatterns.map { buildFullPath(mount.adapterBasePath, it) },
+                    )
                 },
         )
 
