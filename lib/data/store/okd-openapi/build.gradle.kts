@@ -36,6 +36,12 @@ val bundledSpecFile =
         .get()
         .asFile
 val templatesPath = rootProject.projectDir.resolve("lib/crypto/kms/rest/api/src/openapi/templates").absolutePath
+// Use paths relative to projectDir to avoid whitespace splitting in the @openapitools/openapi-generator-cli
+// npm wrapper when the absolute path contains spaces (e.g. ".../Sphereon IDTech/...").
+val bundledSpecRelative = bundledSpecFile.relativeTo(projectDir).path
+val generatedOpenapiRelative = layout.buildDirectory.dir("generated/openapi").get().asFile.relativeTo(projectDir).path
+val templatesRelative = rootProject.projectDir.resolve("lib/crypto/kms/rest/api/src/openapi/templates").relativeTo(projectDir).path
+val okdSpecYamlRelative = File(okdSpecDir, "spec.yaml").relativeTo(projectDir).path
 
 val bundleOkdSpec by tasks.registering(Exec::class) {
     description = "Bundle OKD spec ${'$'}ref references into a single YAML file"
@@ -54,10 +60,10 @@ val bundleOkdSpec by tasks.registering(Exec::class) {
         "--yes",
         "@redocly/cli",
         "bundle",
-        File(okdSpecDir, "spec.yaml").path,
+        okdSpecYamlRelative,
         "--force",
         "-o",
-        bundledSpecFile.path,
+        bundledSpecRelative,
     )
 }
 
@@ -80,18 +86,15 @@ val generateOkdModels by tasks.registering(Exec::class) {
         "@openapitools/openapi-generator-cli",
         "generate",
         "-i",
-        bundledSpecFile.path,
+        bundledSpecRelative,
         "-g",
         "kotlin",
         "--library",
         "multiplatform",
         "-o",
-        layout.buildDirectory
-            .dir("generated/openapi")
-            .get()
-            .asFile.path,
+        generatedOpenapiRelative,
         "-t",
-        templatesPath,
+        templatesRelative,
         "--global-property",
         "models,supportingFiles=",
         "--model-package",
