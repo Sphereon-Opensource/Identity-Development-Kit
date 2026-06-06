@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.http.config
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.TenantPathMode
@@ -45,6 +46,11 @@ class UniversalHttpDefaultsBuilder {
     var tenantPathMode: TenantPathMode = TenantPathMode.OFF
 
     /**
+     * Default protocol-style tenant path policy.
+     */
+    var tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None
+
+    /**
      * Default tenant segment pattern.
      */
     var tenantSegmentPattern: String = HttpAdapterMount.DEFAULT_TENANT_SEGMENT_PATTERN
@@ -68,6 +74,7 @@ class UniversalHttpDefaultsBuilder {
         UniversalHttpDefaults(
             serverPrefix = serverPrefix,
             tenantPathMode = tenantPathMode,
+            tenantPathPolicy = tenantPathPolicy,
             tenantSegmentPattern = tenantSegmentPattern,
             tenantResolutionPriority = tenantResolutionPriority,
             defaultConsumes = defaultConsumes,
@@ -97,6 +104,11 @@ class UniversalHttpAdapterOverrideBuilder {
     var tenantPathMode: TenantPathMode? = null
 
     /**
+     * Override the protocol-style tenant path policy for this adapter.
+     */
+    var tenantPathPolicy: TenantPathPolicy? = null
+
+    /**
      * Override the tenant segment pattern for this adapter.
      */
     var tenantSegmentPattern: String? = null
@@ -116,6 +128,7 @@ class UniversalHttpAdapterOverrideBuilder {
             serverPrefix = serverPrefix,
             adapterBasePath = adapterBasePath,
             tenantPathMode = tenantPathMode,
+            tenantPathPolicy = tenantPathPolicy,
             tenantSegmentPattern = tenantSegmentPattern,
             tenantResolutionPriority = tenantResolutionPriority,
             enabled = enabled,

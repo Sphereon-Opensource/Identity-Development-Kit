@@ -30,12 +30,12 @@ object AttributePredicateEvaluator {
         predicate: AttributePredicate,
         attributes: AttributeBag,
     ): Boolean {
-        val element = attributes[predicate.attributePath]
-        val text = element?.let { extractText(it) }
+        val record = attributes[predicate.attributePath]
+        val text = record?.jsonValue?.let { extractText(it) }
 
         return when (predicate.operator) {
             MatchOperator.EXISTS -> {
-                element != null
+                record != null
             }
 
             MatchOperator.NOT_EMPTY -> {

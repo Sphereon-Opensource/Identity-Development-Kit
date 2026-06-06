@@ -40,9 +40,20 @@ import com.sphereon.openid.oid4vci.issuer.config.CredentialIssuancePolicyConfig
 import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
 import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.sdjwt.vc.ClaimSdMetadata
+import com.sphereon.sdjwt.vc.SdJwtVcTypeMetadata
+import com.sphereon.sdjwt.vc.VctClaimDisplayInput
+import com.sphereon.sdjwt.vc.VctClaimInput
+import com.sphereon.sdjwt.vc.VctDisplayInput
+import com.sphereon.sdjwt.vc.VctTypeMetadataInput
+import com.sphereon.sdjwt.vc.buildSdJwtVcTypeMetadata
+import com.sphereon.statuslist.StatusListBinding
+import com.sphereon.statuslist.StatusListDefinitionsProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.Json
@@ -107,9 +118,18 @@ import kotlinx.serialization.json.jsonObject
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<Oid4vciIssuerConfigProvider>())
+@ContributesBinding(SessionScope::class, binding = binding<VctTypeMetadataProvider>())
 class ConfigDrivenOid4vciIssuerConfigProvider(
     private val execution: SessionExecution,
-) : Oid4vciIssuerConfigProvider {
+    // Status lists are a standalone, protocol-neutral concern (see StatusListDefinitionsProvider).
+    // The issuer only declares per-credential *bindings* and resolves the referenced list's
+    // spec/purposes through this provider; the definitions themselves live at the root
+    // `statuslists` config namespace and are hosted at their own root path. Optional: deployments
+    // without a status-list module on the classpath (no binding) simply expose no bindings, mirroring
+    // the optional CredentialStatusEnricher SPI.
+    private val statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
+) : Oid4vciIssuerConfigProvider,
+    VctTypeMetadataProvider {
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
@@ -148,11 +168,22 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
                 ?: 60L
 
     /**
-     * Signing key for issuer metadata, read from `sphereon.oid4vci.issuer.signingKeyAlias`.
-     * Resolved against the KMS by alias when producing signed_metadata (OID4VCI §13.2.4).
+     * Signing key for issuer metadata, used to produce `signed_metadata` (OID4VCI §11.2.4).
+     *
+     * `signed_metadata` is OPTIONAL, and publishing it commits the issuer to a signature the
+     * holder MUST be able to verify (it resolves the signer via the issuer's published JWKS).
+     * Emitting it therefore requires an explicit opt-in (`oid4vci.issuer.signed-metadata.enabled`,
+     * default false) and a configured signing alias. This keeps it decoupled from the issuer
+     * signing key's primary role (credential signing): a tenant having a signing key does not
+     * by itself force unverifiable signed metadata onto holders.
      */
     override val signingKey: ManagedIdentifierOptsOrResult?
-        get() = metadataSigningKeyAlias?.let { alias -> ManagedOptsAlias(identifier = alias) }
+        get() {
+            val enabled =
+                configService.getPropertyAsString("$NAMESPACE.signed-metadata.enabled")?.toBoolean() ?: false
+            if (!enabled) return null
+            return metadataSigningKeyAlias?.let { alias -> ManagedOptsAlias(identifier = alias) }
+        }
 
     /**
      * ECDH-ES decryption key alias for OID4VCI 1.0 §11.2.4 `credential_request_encryption`.
@@ -334,8 +365,6 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
 
         val proofTypes = buildProofTypes(prefix)
         val proofTypeAttestations = buildProofTypeAttestations(prefix, proofTypes.keys)
-        val displayName = configService.getPropertyAsString("$prefix.display.name")
-        val displayLocale = configService.getPropertyAsString("$prefix.display.locale")
         val credentialDefinitionTypes =
             configService
                 .getPropertyAsString("$prefix.credentialDefinition.types")
@@ -376,10 +405,20 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
                     } else {
                         listOf(claimName)
                     }
-                val displayLabel = path.last().replace('_', ' ').replaceFirstChar { it.uppercase() }
+                val claimDisplays = buildClaimDisplays("$prefix.claims.[$claimName]")
                 claim(path) {
                     this.mandatory = mandatory
-                    display(displayLabel)
+                    if (claimDisplays.isEmpty()) {
+                        // No per-locale display configured: fall back to a humanised label derived
+                        // from the claim path (no locale), so the claim still carries a name.
+                        display(path.last().replace('_', ' ').replaceFirstChar { it.uppercase() })
+                    } else {
+                        // OID4VCI 1.0 §11.2.2 claim display is multi-locale: emit one entry per
+                        // configured locale. The config authors a `label` per locale (VCT term); the
+                        // OID4VCI claim display field is `name`, so we map label -> name here. The
+                        // VCT projection reuses the same source with `label` semantics intact.
+                        claimDisplays.forEach { (locale, d) -> display(name = d.label, locale = locale) }
+                    }
                 }
             }
 
@@ -400,14 +439,170 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
                 }
             }
 
-            if (!displayName.isNullOrEmpty()) {
+            // Optional branding (OID4VCI 1.0 §11.2.2 display object). Lets the issuer advertise
+            // name / description / logo / colors / background image per locale in metadata so
+            // consumers (wallets, demo UIs) can brand the credential without a separate type-
+            // metadata document — essential for mso_mdoc, which has no SD-JWT VCT to carry branding,
+            // and equally for wallets that only read OID4VCI metadata (not VCT type metadata).
+            buildCredentialDisplays(prefix).forEach { (locale, d) ->
                 display {
-                    name = displayName
-                    locale = displayLocale
+                    name = d.name
+                    this.locale = locale
+                    description = d.description
+                    backgroundColor = d.backgroundColor
+                    textColor = d.textColor
+                    d.logoUri?.let { logo(uri = it, altText = d.logoAltText) }
+                    d.backgroundImageUri?.let { backgroundImage(it) }
                 }
             }
         }
     }
+
+    /**
+     * One per-locale credential display entry sourced from config. Mirrors the OID4VCI 1.0 §11.2.2
+     * display object and the SD-JWT VC type-metadata `display[].rendering.simple` shape, so a single
+     * config block drives both the OID4VCI metadata display and the served VCT.
+     */
+    private data class CredentialDisplayEntry(
+        val name: String,
+        val description: String?,
+        val backgroundColor: String?,
+        val textColor: String?,
+        val logoUri: String?,
+        val logoAltText: String?,
+        val backgroundImageUri: String?,
+        val backgroundImageAltText: String?,
+    )
+
+    /** One per-locale claim display entry (`label` is the VCT term; mapped to OID4VCI `name`). */
+    private data class ClaimDisplayEntry(
+        val label: String,
+        val description: String?,
+    )
+
+    /**
+     * Discover the bracket-quoted locale keys under a `<...>.display` map (e.g. `[en-US]`, `[de-DE]`).
+     * Mirrors [discoverClaimNames]: the [PropertyKeyNormalizer] preserves bracket-quoted keys
+     * verbatim, so a BCP47 tag like `en-US` survives intact (an unquoted key would be mangled by the
+     * underscore/case normalisation). Returns the tags with the brackets stripped.
+     */
+    private fun discoverDisplayLocales(displayPrefix: String): List<String> =
+        configService
+            .getSubPropertiesAsString(setOf(displayPrefix), stripPrefix = true, redact = false)
+            .keys
+            .mapNotNull { key ->
+                val first = key.split('.').firstOrNull() ?: return@mapNotNull null
+                if (first.startsWith("[") && first.endsWith("]")) {
+                    first.removeSurrounding("[", "]").takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                }
+            }.distinct()
+
+    /** Read the per-locale credential display map under `<prefix>.display.[<locale>]`. */
+    private fun buildCredentialDisplays(prefix: String): Map<String, CredentialDisplayEntry> =
+        discoverDisplayLocales("$prefix.display")
+            .mapNotNull { locale ->
+                val dp = "$prefix.display.[$locale]"
+                val name = configService.getPropertyAsString("$dp.name") ?: return@mapNotNull null
+                locale to
+                    CredentialDisplayEntry(
+                        name = name,
+                        description = configService.getPropertyAsString("$dp.description"),
+                        backgroundColor = configService.getPropertyAsString("$dp.backgroundColor"),
+                        textColor = configService.getPropertyAsString("$dp.textColor"),
+                        logoUri = configService.getPropertyAsString("$dp.logo.uri"),
+                        logoAltText = configService.getPropertyAsString("$dp.logo.altText"),
+                        backgroundImageUri = configService.getPropertyAsString("$dp.backgroundImage.uri"),
+                        backgroundImageAltText = configService.getPropertyAsString("$dp.backgroundImage.altText"),
+                    )
+            }.toMap()
+
+    /** Read the per-locale claim display map under `<claimPrefix>.display.[<locale>]`. */
+    private fun buildClaimDisplays(claimPrefix: String): Map<String, ClaimDisplayEntry> =
+        discoverDisplayLocales("$claimPrefix.display")
+            .mapNotNull { locale ->
+                val dp = "$claimPrefix.display.[$locale]"
+                val label =
+                    configService.getPropertyAsString("$dp.label")
+                        ?: configService.getPropertyAsString("$dp.name")
+                        ?: return@mapNotNull null
+                locale to ClaimDisplayEntry(label = label, description = configService.getPropertyAsString("$dp.description"))
+            }.toMap()
+
+    // -------------------------------------------------------------------------
+    // VctTypeMetadataProvider — optional SD-JWT VC type-metadata served from this same config.
+    //
+    // This is the IDK config-driven source the SPI documents: it derives each sd-jwt credential's
+    // VCT from the exact display/claims blocks that drive the OID4VCI metadata, funnelling them
+    // through the shared pure builder so the wire shape lives in one place. A future EDK/VDX
+    // semantic source contributes its own VctTypeMetadataProvider (replacing this binding) and reuses
+    // the same builder. Credentials without a `vct` (e.g. mso_mdoc) contribute no VCT.
+    // -------------------------------------------------------------------------
+
+    private data class VctRef(
+        val configId: String,
+        val vctUrl: String
+    )
+
+    /** Served-VCT id (last `vct` URL segment) -> its config id + full URL, for every sd-jwt cred. */
+    private fun vctRefs(): Map<String, VctRef> {
+        val ids = configService.getPropertyAsString("$NAMESPACE.credentialConfigurationIds")?.splitComma() ?: return emptyMap()
+        val out = LinkedHashMap<String, VctRef>()
+        for (configId in ids) {
+            val prefix = "${CredentialIssuancePolicyConfig.CONFIG_NAMESPACE}.[$configId]"
+            val vctUrl = configService.getPropertyAsString("$prefix.vct")?.takeIf { it.isNotEmpty() } ?: continue
+            val bare = vctUrl.substringAfterLast('/').takeIf { it.isNotEmpty() } ?: configId
+            out[bare] = VctRef(configId, vctUrl)
+        }
+        return out
+    }
+
+    override suspend fun listVcts(): List<String> = vctRefs().keys.toList()
+
+    override suspend fun resolve(vct: String): SdJwtVcTypeMetadata? {
+        val ref = vctRefs()[vct] ?: return null
+        return buildVctTypeMetadataInput(ref)?.let { buildSdJwtVcTypeMetadata(it) }
+    }
+
+    private fun buildVctTypeMetadataInput(ref: VctRef): VctTypeMetadataInput? {
+        val prefix = "${CredentialIssuancePolicyConfig.CONFIG_NAMESPACE}.[${ref.configId}]"
+        val displays =
+            buildCredentialDisplays(prefix).map { (locale, d) ->
+                VctDisplayInput(
+                    locale = locale,
+                    name = d.name,
+                    description = d.description,
+                    logoUri = d.logoUri,
+                    logoAltText = d.logoAltText,
+                    backgroundImageUri = d.backgroundImageUri,
+                    backgroundColor = d.backgroundColor,
+                    textColor = d.textColor,
+                )
+            }
+        val claims =
+            discoverClaimNames(prefix).map { claimName ->
+                val mandatory =
+                    configService.getProperty("$prefix.claims.$claimName.mandatory", Boolean::class, false) ?: false
+                // Selective-disclosure flag per claim (SD-JWT VC type metadata). Defaults to ALWAYS
+                // (the claim is individually disclosable, i.e. optional/toggleable for a verifier);
+                // set `sd: allowed` or `sd: never` to make a claim required / always-present.
+                val sd =
+                    configService.getPropertyAsString("$prefix.claims.[$claimName].sd")?.let { parseClaimSd(it) }
+                        ?: ClaimSdMetadata.ALWAYS
+                val claimDisplays =
+                    buildClaimDisplays("$prefix.claims.[$claimName]").map { (locale, cd) ->
+                        VctClaimDisplayInput(locale = locale, label = cd.label, description = cd.description)
+                    }
+                // sd-jwt claim paths are single-segment field names; the bracketed config key carries
+                // the on-the-wire claim name verbatim.
+                VctClaimInput(path = listOf(claimName), mandatory = mandatory, sd = sd, displays = claimDisplays)
+            }
+        if (displays.isEmpty() && claims.isEmpty()) return null
+        return VctTypeMetadataInput(vct = ref.vctUrl, displays = displays, claims = claims)
+    }
+
+    private fun parseClaimSd(value: String): ClaimSdMetadata? = ClaimSdMetadata.entries.firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
 
     /**
      * Dynamically enumerate the claim names configured under `<prefix>.claims`.
@@ -446,7 +641,13 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
     private fun buildCredentialSigningConfig(configId: String): CredentialSigningConfig {
         val prefix = "${CredentialIssuancePolicyConfig.CONFIG_NAMESPACE}.[$configId]"
 
-        val signingKeyAlias = configService.getPropertyAsString("$prefix.signingKeyAlias")
+        // Per-credential alias wins; otherwise fall back to the issuer-level signing key
+        // (`oid4vci.issuer.signingKeyAlias`, written per-tenant by the issuer bootstrap).
+        // Credentials sign with the issuer's key by default, so deployments that provision a
+        // single tenant signing key need not repeat it on every credential configuration.
+        val signingKeyAlias =
+            configService.getPropertyAsString("$prefix.signingKeyAlias")
+                ?: metadataSigningKeyAlias
         val signingKeyMode =
             SigningKeyMode.fromConfig(
                 configService.getPropertyAsString("$prefix.signingKeyMode"),
@@ -462,6 +663,40 @@ class ConfigDrivenOid4vciIssuerConfigProvider(
             expirationInDays = expirationInDays,
         )
     }
+
+    // region status lists
+    //
+    // Status-list *definitions* are NOT an OID4VCI concept — they are protocol-neutral (usable for
+    // credentials AND tokens) and live at the root `statuslists` namespace, resolved through the
+    // injected [StatusListDefinitionsProvider] and hosted at their own root path (`/statuslists/{id}`).
+    // The issuer only declares which list each credential type binds to:
+    //   oid4vci.issuer.credentials.[<configId>].statusListId: revocation
+
+    override val statusListBindings: Map<String, StatusListBinding>
+        get() {
+            // No status-list definitions source on the classpath -> the issuer advertises no bindings.
+            val definitions = statusListDefinitionsProvider?.invoke() ?: return emptyMap()
+            val configIds =
+                configService.getPropertyAsString("$NAMESPACE.credentialConfigurationIds")?.splitComma()
+                    ?: return emptyMap()
+            return configIds
+                .mapNotNull { configId ->
+                    val prefix = "${CredentialIssuancePolicyConfig.CONFIG_NAMESPACE}.[$configId]"
+                    val listId =
+                        configService.getPropertyAsString("$prefix.statusListId")?.takeIf { it.isNotBlank() }
+                            ?: return@mapNotNull null
+                    // Resolve the referenced list's spec/purposes from the standalone definitions source.
+                    val definition = definitions.byId(listId) ?: return@mapNotNull null
+                    configId to
+                        StatusListBinding(
+                            statusListCorrelationId = listId,
+                            spec = definition.spec,
+                            purposes = definition.purposes,
+                        )
+                }.toMap()
+        }
+
+    // endregion
 
     /**
      * Builds the OID4VCI 1.0 §11.2.3 `key_attestations_required` policy per proof type, if

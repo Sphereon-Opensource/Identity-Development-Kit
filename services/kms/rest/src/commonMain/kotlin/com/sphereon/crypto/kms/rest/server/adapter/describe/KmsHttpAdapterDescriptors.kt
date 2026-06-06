@@ -61,14 +61,14 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         pathPattern = "/keys/{aliasOrKid}",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getKey",
-                        commandId = "getKey",
+                        commandId = "kms.keys.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
                         pathPattern = "/keys/",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listKeys",
-                        commandId = "listKeys",
+                        commandId = "kms.keys.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -76,7 +76,7 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "storeKey",
-                        commandId = "storeKey",
+                        commandId = "kms.keys.store",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -84,7 +84,7 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "generateKey",
-                        commandId = "generateKey",
+                        commandId = "kms.keys.generate",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -92,13 +92,13 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "registerKeyReference",
-                        commandId = "registerKeyReference",
+                        commandId = "kms.keys.register",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.DELETE,
                         pathPattern = "/keys/{aliasOrKid}",
                         operationId = "deleteKey",
-                        commandId = "deleteKey",
+                        commandId = "kms.keys.delete",
                     ),
                 ),
         )
@@ -201,14 +201,14 @@ class ResolversHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         pathPattern = "/resolvers/",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listResolvers",
-                        commandId = "listResolvers",
+                        commandId = "kms.resolvers.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
                         pathPattern = "/resolvers/{resolverId}",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getResolver",
-                        commandId = "getResolver",
+                        commandId = "kms.resolvers.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -216,7 +216,7 @@ class ResolversHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "resolvePublicKey",
-                        commandId = "resolvePublicKey",
+                        commandId = "kms.resolvers.resolve",
                     ),
                 ),
         )

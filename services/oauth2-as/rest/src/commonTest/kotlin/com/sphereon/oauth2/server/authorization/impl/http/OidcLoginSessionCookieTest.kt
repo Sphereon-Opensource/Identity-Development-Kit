@@ -92,6 +92,7 @@ class OidcLoginSessionCookieTest {
                         )
                 },
             configProvider = TestOAuth2ServersConfigProvider(),
+            baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
             loginSessionIdProvider = provider,
         )
 
@@ -120,6 +121,7 @@ class OidcLoginSessionCookieTest {
             loginSessionIdProvider = provider,
             configProvider = TestOAuth2ServersConfigProvider(),
             requiredActionsRedirectHandler = NoopRedirectHandler,
+            baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
         )
 
     @Test

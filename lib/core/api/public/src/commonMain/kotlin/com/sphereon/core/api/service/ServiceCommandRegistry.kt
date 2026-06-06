@@ -18,7 +18,9 @@ package com.sphereon.core.api.service
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.OptionalBinding
 import kotlin.jvm.JvmStatic
 
 /**
@@ -112,4 +114,31 @@ interface SessionScopedCommandRegistry {
     interface Graph {
         val sessionScopedCommandRegistry: SessionScopedCommandRegistry
     }
+}
+
+/**
+ * Exposes [ServiceCommandRegistry] as an optional graph accessor so that consumers declaring
+ * `ServiceCommandRegistry? = null` constructor parameters resolve cleanly under the Metro
+ * `nullable type key`. Suppliers add a second
+ * `@ContributesBinding(AppScope::class, binding = binding<ServiceCommandRegistry?>())` so the
+ * default `null` body here is overridden whenever a real binding is present in the graph.
+ */
+@ContributesTo(AppScope::class)
+interface ServiceCommandRegistryOptionalProvider {
+    @OptionalBinding
+    val optionalServiceCommandRegistry: ServiceCommandRegistry? get() = null
+}
+
+/**
+ * Exposes [SessionScopedCommandRegistry] as an optional graph accessor so that consumers declaring
+ * `SessionScopedCommandRegistry? = null` constructor parameters resolve cleanly under the Metro
+ * `nullable type key`. Suppliers (the IDK [com.sphereon.core.defaults.service.SimpleSessionScopedCommandRegistry]
+ * and the VDX `DefaultSessionScopedCommandRegistry`) add a second
+ * `@ContributesBinding(SessionScope::class, binding = binding<SessionScopedCommandRegistry?>())`
+ * so the default `null` body here is overridden whenever a real binding is present in the graph.
+ */
+@ContributesTo(SessionScope::class)
+interface SessionScopedCommandRegistryOptionalProvider {
+    @OptionalBinding
+    val optionalSessionScopedCommandRegistry: SessionScopedCommandRegistry? get() = null
 }

@@ -7,6 +7,7 @@ import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.statuslist.impl.StatusListProvisioner
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -35,6 +36,22 @@ fun main() {
             profile = System.getenv("APP_PROFILE") ?: "development",
             version = "1.0.0",
         )
+
+    // Create any configured credential status lists (root `statuslists` config) before serving, so
+    // the hosted token exists even before the first credential references it. Best-effort: a
+    // misconfigured status list logs a warning rather than taking down the whole issuer.
+    kotlinx.coroutines.runBlocking {
+        val session =
+            appGraph.userContextManager
+                .getAnonymous()
+                .sessionContextManager
+                .createOrGetFromId("statuslist-provisioning")
+        val provisioner = (session.graph as StatusListProvisioner.Graph).statusListProvisioner
+        val result = provisioner.provisionConfigured()
+        if (result.isErr) {
+            println("WARN: status list provisioning failed (status lists will be unavailable): ${result.error}")
+        }
+    }
 
     embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
         configureOid4vciIssuer(appGraph)

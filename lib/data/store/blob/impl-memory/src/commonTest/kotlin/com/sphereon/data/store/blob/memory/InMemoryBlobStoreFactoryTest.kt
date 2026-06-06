@@ -54,7 +54,7 @@ class InMemoryBlobStoreFactoryTest {
             )
         val store = factory.create(config)
         assertNotNull(store)
-        assertEquals("memory", store.storeId)
+        assertEquals("memory", store.schemeId)
     }
 
     @Test

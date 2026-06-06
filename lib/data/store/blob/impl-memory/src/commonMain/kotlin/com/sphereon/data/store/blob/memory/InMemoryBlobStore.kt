@@ -41,7 +41,7 @@ internal class InMemoryBlobStore(
     private val partition: InMemoryBlobPartition,
     private val maxEntries: Int = 0,
 ) : BlobStore {
-    override val storeId: String = BlobStoreSchemes.MEMORY
+    override val schemeId: String = BlobStoreSchemes.MEMORY
 
     override val capabilities: BlobStoreCapabilities = BlobStoreCapabilities.SIMPLE
 
@@ -226,7 +226,7 @@ internal class InMemoryBlobStore(
     ): BlobDescriptor =
         BlobDescriptor(
             path = path,
-            storeId = storeId,
+            storeId = schemeId,
             sizeBytes = sizeBytes,
             contentType = metadata.contentType,
             filename = path.substringAfterLast('/'),

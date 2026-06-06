@@ -19,16 +19,18 @@
 
 package com.sphereon.crypto.core.x509
 
-import at.asitplus.awesn1.Asn1PrimitiveOctetString
+import at.asitplus.awesn1.Asn1OctetString
 import at.asitplus.awesn1.Asn1String
 import at.asitplus.awesn1.Asn1Time
 import at.asitplus.awesn1.ObjectIdentifier
-import at.asitplus.awesn1.crypto.pki.AttributeTypeAndValue
-import at.asitplus.awesn1.crypto.pki.RelativeDistinguishedName
-import at.asitplus.awesn1.crypto.pki.TbsCertificate
+import at.asitplus.awesn1.crypto.X509SignatureValue
+import at.asitplus.awesn1.crypto.pki.X500AttributeTypeAndValue
+import at.asitplus.awesn1.crypto.pki.X500RelativeDistinguishedName
 import at.asitplus.awesn1.crypto.pki.X509Certificate
 import at.asitplus.awesn1.crypto.pki.X509CertificateExtension
-import at.asitplus.awesn1.encodeToPem
+import at.asitplus.awesn1.crypto.pki.X509TbsCertificate
+import at.asitplus.awesn1.serialization.DER
+import at.asitplus.awesn1.serialization.encodeToPem
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeTo
@@ -38,10 +40,11 @@ import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
+import com.sphereon.crypto.core.generic.CryptoAlg
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
 import com.sphereon.crypto.core.interop.certificateFromX509Certificate
-import com.sphereon.crypto.core.interop.ecSignatureToAsn1BitString
+import com.sphereon.crypto.core.interop.ecSignatureToX509SignatureValue
 import com.sphereon.crypto.core.interop.toCertificateDto
 import com.sphereon.crypto.core.interop.toSignatureAlgorithmIdentifier
 import com.sphereon.crypto.core.interop.toSubjectPublicKeyInfo
@@ -53,6 +56,7 @@ import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.CertificateResult
 import io.ktor.util.sha1
+import kotlinx.serialization.encodeToByteArray
 import kotlin.experimental.ExperimentalObjCRefinement
 import kotlin.native.HiddenFromObjC
 
@@ -103,7 +107,7 @@ fun certificateChainFromX5c(x5c: Array<String>): Array<Certificate> = x5c.map { 
 
 fun certificateFromPem(input: String): Certificate {
     val x509 = x509CertificateFromPem(input)
-    val derBytes = x509.encodeToTlv().derEncoded
+    val derBytes = DER.encodeToByteArray(x509)
     return certificateFromX509Certificate(x509, derBytes)
 }
 
@@ -150,9 +154,9 @@ object CertificateCreationUtils {
         val signatureAlgorithm = issuerKeyInfo.signatureAlgorithm ?: SignatureAlgorithm.ECDSA_SHA256
         val jwk = CoseJoseKeyMappingService.toJoseJwk(subjectKeyInfo.key)
         val sha1Fingerprint = computeSubjectKeyIdentifier(jwk)
-        val keyIdElement = Asn1PrimitiveOctetString(sha1Fingerprint)
+        val keyIdElement = Asn1OctetString(sha1Fingerprint)
         val derKeyId = keyIdElement.derEncoded
-        val extnValue = Asn1PrimitiveOctetString(derKeyId)
+        val extnValue = Asn1OctetString(derKeyId)
 
         val skiExtension =
             X509CertificateExtension(
@@ -165,12 +169,9 @@ object CertificateCreationUtils {
         val subjectDn = createDN(subject)
 
         val tbsCertificate =
-            TbsCertificate(
-                version = 2,
-                serialNumber =
-                    at.asitplus.awesn1
-                        .Asn1Integer(serialNumber)
-                        .twosComplement(),
+            X509TbsCertificate(
+                version = X509TbsCertificate.Version.V3,
+                serialNumber = at.asitplus.awesn1.Asn1Integer(serialNumber),
                 signatureAlgorithm = signatureAlgorithm.toSignatureAlgorithmIdentifier(),
                 issuerName = issuerDn,
                 subjectName = subjectDn,
@@ -180,13 +181,22 @@ object CertificateCreationUtils {
                 extensions = listOf(skiExtension),
             )
 
-        val der = tbsCertificate.encodeToTlv().derEncoded
+        val der = DER.encodeToByteArray(tbsCertificate)
         val signature = signatureFunction(der)
+        // ECDSA raw signatures (r || s) must be DER-wrapped as an ECDSA-Sig-Value SEQUENCE;
+        // RSA (PKCS#1 / PSS) and EdDSA signatures are already the final signature bits and
+        // go into the certificate's BIT STRING as-is — wrapping them in r/s INTEGERs would
+        // produce a structurally valid but cryptographically broken certificate.
+        val signatureValue =
+            when (signatureAlgorithm.cryptoAlgorithm) {
+                CryptoAlg.ECDSA -> ecSignatureToX509SignatureValue(signature)
+                else -> X509SignatureValue(signature)
+            }
         val x509Certificate =
             X509Certificate(
                 tbsCertificate,
                 tbsCertificate.signatureAlgorithm,
-                ecSignatureToAsn1BitString(signature),
+                signatureValue,
             )
 
         val certificate = x509Certificate.toCertificateDto()
@@ -196,26 +206,26 @@ object CertificateCreationUtils {
 
     @OptIn(ExperimentalObjCRefinement::class)
     @HiddenFromObjC
-    fun createDN(params: X509DistinguishedNameElements): MutableList<RelativeDistinguishedName> {
-        val dn = mutableListOf<RelativeDistinguishedName>()
-        dn.add(RelativeDistinguishedName(AttributeTypeAndValue.CommonName(Asn1String.UTF8(params.commonName))))
+    fun createDN(params: X509DistinguishedNameElements): MutableList<X500RelativeDistinguishedName> {
+        val dn = mutableListOf<X500RelativeDistinguishedName>()
+        dn.add(X500RelativeDistinguishedName(X500AttributeTypeAndValue.CommonName(Asn1String.UTF8(params.commonName))))
 
-        addNonNullAttribute(dn, AttributeTypeAndValue::Country, params.country)
-        addNonNullAttribute(dn, { value -> AttributeTypeAndValue.Other(ObjectIdentifier(X500AttributeTypeOids.ST), value) }, params.state)
-        addNonNullAttribute(dn, AttributeTypeAndValue::Organization, params.organizationName)
-        addNonNullAttribute(dn, AttributeTypeAndValue::OrganizationalUnit, params.organizationUnit)
-        addNonNullAttribute(dn, { value -> AttributeTypeAndValue.Other(ObjectIdentifier(X500AttributeTypeOids.L), value) }, params.locality)
-        addNonNullAttribute(dn, { value -> AttributeTypeAndValue.Other(ObjectIdentifier(X500AttributeTypeOids.EMAIL_ADDRESS), value) }, params.email)
+        addNonNullAttribute(dn, X500AttributeTypeAndValue::Country, params.country)
+        addNonNullAttribute(dn, { value -> X500AttributeTypeAndValue(ObjectIdentifier(X500AttributeTypeOids.ST), value) }, params.state)
+        addNonNullAttribute(dn, X500AttributeTypeAndValue::Organization, params.organizationName)
+        addNonNullAttribute(dn, X500AttributeTypeAndValue::OrganizationalUnit, params.organizationUnit)
+        addNonNullAttribute(dn, { value -> X500AttributeTypeAndValue(ObjectIdentifier(X500AttributeTypeOids.L), value) }, params.locality)
+        addNonNullAttribute(dn, { value -> X500AttributeTypeAndValue(ObjectIdentifier(X500AttributeTypeOids.EMAIL_ADDRESS), value) }, params.email)
         return dn
     }
 
     private fun addNonNullAttribute(
-        dn: MutableList<RelativeDistinguishedName>,
-        attributeFactory: (Asn1String) -> AttributeTypeAndValue,
+        dn: MutableList<X500RelativeDistinguishedName>,
+        attributeFactory: (Asn1String) -> X500AttributeTypeAndValue,
         value: String?,
     ) {
         value?.let {
-            dn.add(RelativeDistinguishedName(attributeFactory(Asn1String.UTF8(it))))
+            dn.add(X500RelativeDistinguishedName(attributeFactory(Asn1String.UTF8(it))))
         }
     }
 
@@ -234,7 +244,7 @@ object CertificateCreationUtils {
     }
 
     private fun computeRSASubjectKeyIdentifier(jwk: Jwk): ByteArray {
-        val derEncoded = jwk.toSubjectPublicKeyInfo().encodeToTlv().derEncoded
+        val derEncoded = DER.encodeToByteArray(jwk.toSubjectPublicKeyInfo())
         return sha1(derEncoded)
     }
 

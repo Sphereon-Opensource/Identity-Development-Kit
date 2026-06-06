@@ -95,6 +95,9 @@ kotlin {
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOauth2CommonImpl)
 
+                // DCQL store bindings transitively required by KvAuthorizationSessionStore
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
+
                 // SD-JWT for verifier dependencies
                 implementation(projects.libSdjwtImpl)
 

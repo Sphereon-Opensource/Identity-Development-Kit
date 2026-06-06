@@ -25,6 +25,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import kotlinx.coroutines.test.runTest
@@ -54,6 +55,7 @@ class RevocationHttpEndpointCommandImplTest {
                     execution = TestSessionExecution(),
                     handleRevocationRequestCommand = FakeRevocationCommand { Ok(Unit) },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     auditEmitter = NoOpOAuth2AuditEmitter,
                 )
 
@@ -79,6 +81,7 @@ class RevocationHttpEndpointCommandImplTest {
                     execution = TestSessionExecution(),
                     handleRevocationRequestCommand = FakeRevocationCommand { error("Should not be called") },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     auditEmitter = NoOpOAuth2AuditEmitter,
                 )
 
@@ -98,6 +101,7 @@ class RevocationHttpEndpointCommandImplTest {
                     handleRevocationRequestCommand =
                         FakeRevocationCommand { Err(IdkError.fromString(code = "invalid_client", message = "nope")) },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     auditEmitter = NoOpOAuth2AuditEmitter,
                 )
 

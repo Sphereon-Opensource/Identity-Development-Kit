@@ -51,6 +51,11 @@ kotlin {
                 // OID4VCI protocol models
                 api(projects.libOpenidOid4vciCommonPublic)
 
+                // SD-JWT VC type-metadata model + the source-agnostic VCT builder, for the optional
+                // VctTypeMetadataProvider SPI (issuer can serve VCTs from config or, later, a
+                // semantic EDK/VDX source).
+                api(projects.libSdjwtPublic)
+
                 // OAuth2 common (for TokenResponse, AS metadata)
                 api(projects.libOauth2CommonPublic)
 
@@ -59,6 +64,11 @@ kotlin {
 
                 // KV store (for session/nonce/offer persistence)
                 api(projects.libDataStoreKvPublic)
+
+                // Issuance pipeline configuration (for PipelineConfigurationResolver SPI)
+                api(projects.libCredentialIssuancePipelinePublic)
+                // StatusListBinding on IssuanceContext for OID4VCI status-list enrichment
+                api(projects.libStatuslistPublic)
 
                 // Serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)

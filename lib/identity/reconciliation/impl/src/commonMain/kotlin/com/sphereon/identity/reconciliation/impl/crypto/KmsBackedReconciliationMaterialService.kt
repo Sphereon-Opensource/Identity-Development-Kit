@@ -133,7 +133,9 @@ class KmsBackedReconciliationMaterialService(
         }
         val key = material.credentialQueryId ?: material.credentialId ?: return null
         val bag = credentialScopedAttributes[key] ?: return null
-        return bag.attributes.mapKeys { (k, _) -> k.value }
+        return bag.attributes.entries
+            .mapNotNull { (path, record) -> record.jsonValue?.let { path.value to it } }
+            .toMap()
     }
 
     private fun buildTupleInput(

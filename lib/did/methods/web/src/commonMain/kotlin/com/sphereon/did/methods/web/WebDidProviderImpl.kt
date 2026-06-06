@@ -84,6 +84,8 @@ class WebDidProviderImpl : DidProvider {
 
         // Build the DID
         val did = WebDidUrlBuilder.urlToDid(domain, options.path ?: emptyList())
+        val documentControllers = options.requestedControllers()
+        val vmController = documentControllers.firstOrNull() ?: did
 
         // Create verification methods from options
         val verificationMethods = mutableListOf<VerificationMethod>()
@@ -103,7 +105,7 @@ class WebDidProviderImpl : DidProvider {
                     VerificationMethod(
                         id = fullVmId,
                         type = vmConfig.type.value,
-                        controller = vmConfig.controller ?: did,
+                        controller = vmConfig.controller ?: vmController,
                         publicKeyJwk = jwk,
                     )
                 verificationMethods.add(vm)
@@ -132,7 +134,7 @@ class WebDidProviderImpl : DidProvider {
                         type =
                             options.verificationMethodType?.value
                                 ?: VerificationMethodType.JSON_WEB_KEY_2020.value,
-                        controller = options.controller ?: did,
+                        controller = vmController,
                         publicKeyJwk = jwk,
                     )
                 verificationMethods.add(vm)
@@ -161,7 +163,7 @@ class WebDidProviderImpl : DidProvider {
         val document =
             DidDocument(
                 id = did,
-                controller = options.controller,
+                controller = documentControllers,
                 verificationMethod = verificationMethods.takeIf { it.isNotEmpty() },
                 authentication = authenticationRefs.takeIf { it.isNotEmpty() },
                 assertionMethod = assertionMethodRefs.takeIf { it.isNotEmpty() },
@@ -181,6 +183,8 @@ class WebDidProviderImpl : DidProvider {
             ),
         )
     }
+
+    private fun DidCreateOptions.requestedControllers(): List<String> = controllers.ifEmpty { controller?.let(::listOf) ?: emptyList() }
 
     override suspend fun update(
         did: String,
@@ -341,32 +345,165 @@ class WebDidProviderImpl : DidProvider {
     override suspend fun removeKey(
         did: String,
         keyId: String,
-    ): IdkResult<DidUpdateResult, IdkError> =
-        Err(
-            IdkError.ILLEGAL_ARGUMENT_ERROR(
-                message = "removeKey requires the current DID document. Use update() with currentDocument.",
+        currentDocument: DidDocument?,
+    ): IdkResult<DidUpdateResult, IdkError> {
+        if (!did.startsWith("did:web:")) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID must be a did:web: $did"))
+        }
+        val current =
+            currentDocument ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(message = "removeKey requires the current DID document"),
+            )
+        val absoluteVmId = if (keyId.startsWith("#")) "$did$keyId" else keyId
+        val matches: (String) -> Boolean = { it == absoluteVmId || it.endsWith("#$keyId") }
+        val filteredVms = (current.verificationMethod ?: emptyList()).filterNot { matches(it.id) }
+        val newDocument =
+            current.copy(
+                verificationMethod = filteredVms,
+                authentication = removeReferencesById(current.authentication, matches),
+                assertionMethod = removeReferencesById(current.assertionMethod, matches),
+                keyAgreement = removeReferencesById(current.keyAgreement, matches),
+                capabilityInvocation = removeReferencesById(current.capabilityInvocation, matches),
+                capabilityDelegation = removeReferencesById(current.capabilityDelegation, matches),
+            )
+        return Ok(
+            DidUpdateResult(
+                did = did,
+                didDocument = newDocument,
+                verificationMethodsByPurpose = newDocument.getVerificationMethodsByPurpose(),
             ),
         )
+    }
 
     override suspend fun addService(
         did: String,
         service: DidService,
-    ): IdkResult<DidUpdateResult, IdkError> =
-        Err(
-            IdkError.ILLEGAL_ARGUMENT_ERROR(
-                message = "addService requires the current DID document. Use update() with currentDocument.",
+        currentDocument: DidDocument?,
+    ): IdkResult<DidUpdateResult, IdkError> {
+        if (!did.startsWith("did:web:")) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID must be a did:web: $did"))
+        }
+        val current =
+            currentDocument ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(message = "addService requires the current DID document"),
+            )
+        val newServices = (current.service ?: emptyList()) + service
+        val newDocument = current.copy(service = newServices)
+        return Ok(
+            DidUpdateResult(
+                did = did,
+                didDocument = newDocument,
+                verificationMethodsByPurpose = newDocument.getVerificationMethodsByPurpose(),
             ),
         )
+    }
 
     override suspend fun removeService(
         did: String,
         serviceId: String,
-    ): IdkResult<DidUpdateResult, IdkError> =
-        Err(
-            IdkError.ILLEGAL_ARGUMENT_ERROR(
-                message = "removeService requires the current DID document. Use update() with currentDocument.",
+        currentDocument: DidDocument?,
+    ): IdkResult<DidUpdateResult, IdkError> {
+        if (!did.startsWith("did:web:")) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID must be a did:web: $did"))
+        }
+        val current =
+            currentDocument ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(message = "removeService requires the current DID document"),
+            )
+        val absoluteId = if (serviceId.startsWith("#")) "$did$serviceId" else serviceId
+        val newServices =
+            (current.service ?: emptyList()).filterNot {
+                it.id == absoluteId || it.id.endsWith("#$serviceId")
+            }
+        val newDocument = current.copy(service = newServices)
+        return Ok(
+            DidUpdateResult(
+                did = did,
+                didDocument = newDocument,
+                verificationMethodsByPurpose = newDocument.getVerificationMethodsByPurpose(),
             ),
         )
+    }
+
+    override suspend fun updateKey(
+        did: String,
+        keyId: String,
+        options: AddKeyOptions,
+    ): IdkResult<DidUpdateResult, IdkError> {
+        if (!did.startsWith("did:web:")) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID must be a did:web: $did"))
+        }
+        val current =
+            options.currentDocument ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(message = "updateKey requires the current DID document"),
+            )
+        val absoluteVmId = if (keyId.startsWith("#")) "$did$keyId" else keyId
+        val target =
+            (current.verificationMethod ?: emptyList()).firstOrNull {
+                it.id == absoluteVmId || it.id.endsWith("#$keyId")
+            } ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Verification method not found: $keyId"))
+
+        val replaced =
+            target.copy(
+                type = options.verificationMethodType?.value ?: target.type,
+                controller = options.controller ?: target.controller,
+                publicKeyJwk = options.publicKeyJwk ?: target.publicKeyJwk,
+            )
+        val newVms =
+            (current.verificationMethod ?: emptyList()).map {
+                if (it.id == target.id) replaced else it
+            }
+        val newDocument = current.copy(verificationMethod = newVms)
+        return Ok(
+            DidUpdateResult(
+                did = did,
+                didDocument = newDocument,
+                verificationMethodsByPurpose = newDocument.getVerificationMethodsByPurpose(),
+            ),
+        )
+    }
+
+    override suspend fun updateService(
+        did: String,
+        serviceId: String,
+        service: DidService,
+        currentDocument: DidDocument?,
+    ): IdkResult<DidUpdateResult, IdkError> {
+        if (!did.startsWith("did:web:")) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID must be a did:web: $did"))
+        }
+        val current =
+            currentDocument ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(message = "updateService requires the current DID document"),
+            )
+        val absoluteId = if (serviceId.startsWith("#")) "$did$serviceId" else serviceId
+        val existing =
+            (current.service ?: emptyList()).firstOrNull {
+                it.id == absoluteId || it.id.endsWith("#$serviceId")
+            } ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Service not found: $serviceId"))
+        val newServices =
+            (current.service ?: emptyList()).map {
+                if (it.id == existing.id) service else it
+            }
+        val newDocument = current.copy(service = newServices)
+        return Ok(
+            DidUpdateResult(
+                did = did,
+                didDocument = newDocument,
+                verificationMethodsByPurpose = newDocument.getVerificationMethodsByPurpose(),
+            ),
+        )
+    }
+
+    private fun removeReferencesById(
+        list: List<VerificationMethodOrReference>?,
+        matches: (String) -> Boolean,
+    ): List<VerificationMethodOrReference>? =
+        list?.filterNot { entry ->
+            val ref = entry.reference
+            val embedded = entry.embedded
+            (ref != null && matches(ref)) || (embedded != null && matches(embedded.id))
+        }
 
     /**
      * Applies updates to a DID document.
@@ -377,14 +514,9 @@ class WebDidProviderImpl : DidProvider {
     ): DidDocument {
         var updated = current
 
-        // Update controller if specified
-        options.controller?.let { updated = updated.copy(controller = it) }
-
-        // Add new verification methods
-        options.addVerificationMethods?.let { newVms ->
-            val currentVms = updated.verificationMethod ?: emptyList()
-            updated = updated.copy(verificationMethod = currentVms + newVms)
-        }
+        // NOTE: options.controller used to be applied here (replacing the controller list with
+        // a single value). Removed in IDK-21 review (VDX-infra-agt) — controllers are managed
+        // via dedicated Add/Remove controller endpoints (or ReplaceDid for full replacement).
 
         // Remove verification methods
         options.removeVerificationMethodIds?.let { idsToRemove ->

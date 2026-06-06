@@ -28,8 +28,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.device.DeviceVerificationApprovalHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.DeviceApprovalContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultContext
@@ -66,6 +66,7 @@ class DeviceVerificationApprovalHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val renderer: DeviceVerificationPageRenderer,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val storage: DeviceAuthorizationStorage,
     private val loginSessionStore: OidcLoginSessionStore,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
@@ -94,7 +95,7 @@ class DeviceVerificationApprovalHttpEndpointCommandImpl(
         val userCode =
             request.queryParameters["user_code"]?.takeIf { it.isNotBlank() }
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing required parameter: user_code", json))
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val locale = negotiateLocale(request.headers["accept-language"] ?: request.headers["Accept-Language"])
 
         if (!hasActiveLoginSession()) {

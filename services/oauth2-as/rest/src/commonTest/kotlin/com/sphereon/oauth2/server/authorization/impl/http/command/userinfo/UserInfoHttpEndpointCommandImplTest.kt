@@ -32,6 +32,7 @@ import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoR
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import com.sphereon.oauth2.server.resource.command.ValidateAccessTokenArgs
@@ -390,6 +391,7 @@ class UserInfoHttpEndpointCommandImplTest {
         handleUserInfoRequestCommand = handle,
         validateAccessTokenCommand = validate,
         configProvider = config,
+        baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
         dpopNonceManager = NoOpNonceManager,
         clientCertificateExtractor = NoOpClientCertExtractor,
     )

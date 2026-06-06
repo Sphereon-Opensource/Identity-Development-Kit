@@ -32,6 +32,7 @@ import com.sphereon.did.manager.DidUpdateOptions
 import com.sphereon.did.manager.DidUpdateResult
 import com.sphereon.did.methods.webvh.WebvhDidCapabilities
 import com.sphereon.did.methods.webvh.provider.WebvhDidProvider
+import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.DidService
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -52,6 +53,12 @@ import dev.zacsweers.metro.binding
  * `DidProviderRegistry.getProvider("webvh")` returns a non-null value (which
  * advertises the method's capabilities), but each generic mutating method
  * fails fast with a directive to use the webvh-specific commands.
+ *
+ * The `currentDocument: DidDocument?` parameter on `removeKey` / `addService` /
+ * `removeService` is part of the [DidProvider] contract — did:web needs it to
+ * republish the whole document, since did:web has no stateful resolver. webvh
+ * has its own log-backed state machine and these generic paths are unsupported,
+ * so the parameter is accepted (for interface conformance) but ignored.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -79,17 +86,20 @@ class WebvhDidProviderImpl : WebvhDidProvider {
 
     override suspend fun removeKey(
         did: String,
-        keyId: String
+        keyId: String,
+        currentDocument: DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> = unsupported("removeKey")
 
     override suspend fun addService(
         did: String,
-        service: DidService
+        service: DidService,
+        currentDocument: DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> = unsupported("addService")
 
     override suspend fun removeService(
         did: String,
-        serviceId: String
+        serviceId: String,
+        currentDocument: DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> = unsupported("removeService")
 
     private fun <T> unsupported(operation: String): IdkResult<T, IdkError> =

@@ -39,7 +39,7 @@ class FileSystemBlobStoreFactoryTest {
             )
         val store = factory.create(config)
         assertNotNull(store)
-        assertEquals(BlobStoreSchemes.FILESYSTEM, store.storeId)
+        assertEquals(BlobStoreSchemes.FILESYSTEM, store.schemeId)
     }
 
     @Test

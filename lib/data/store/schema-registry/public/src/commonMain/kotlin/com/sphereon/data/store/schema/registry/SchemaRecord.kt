@@ -45,4 +45,6 @@ data class SchemaRecord
         val sourceEtag: String? = null,
         val createdAt: Instant,
         val updatedAt: Instant,
+        /** Provenance metadata: where this record came from and which layer owns it. Null for legacy records. */
+        val provenance: SchemaRecordProvenance? = null,
     )

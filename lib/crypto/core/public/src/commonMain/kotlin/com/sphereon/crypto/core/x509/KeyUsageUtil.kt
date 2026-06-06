@@ -17,21 +17,15 @@
 
 package com.sphereon.crypto.core.x509
 
-import at.asitplus.awesn1.Asn1BitString
-import at.asitplus.awesn1.Asn1EncapsulatingOctetString
 import at.asitplus.awesn1.crypto.pki.X509CertificateExtension
 
+// In awesn1 0.3.0 [X509CertificateExtension.value] is the raw extnValue OCTET STRING content,
+// i.e. the DER encoding of the inner KeyUsage BIT STRING, which is exactly what
+// [KeyUsage.fromDerBitString] consumes.
 internal fun getKeyUsageContent(extensions: List<X509CertificateExtension>?): ByteArray? =
     extensions
         ?.firstOrNull { it.oid.toString() == X509ExtensionOids.KEY_USAGE }
         ?.value
-        ?.let { value ->
-            when (value) {
-                is Asn1BitString -> value.rawBytes
-                is Asn1EncapsulatingOctetString -> value.content
-                else -> null
-            }
-        }
 
 fun parseKeyUsage(raw: ByteArray): Map<String, Boolean> {
     val keyUsage = KeyUsage.fromDerBitString(raw)

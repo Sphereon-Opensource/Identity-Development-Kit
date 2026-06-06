@@ -30,6 +30,19 @@ kotlin {
                 // OID4VCI Issuer service logic
                 implementation(projects.libOpenidOid4vciIssuerPublic)
                 implementation(projects.libOpenidOid4vciIssuerImpl)
+
+                // Credential status list: the driver/signer/resolver/enricher bindings (the enricher
+                // embeds status into issued credentials; the driver hosts the signed token).
+                // statuslist-impl brings the in-memory reference driver by default. The public token
+                // hosting + simple by-index admin REST come from the standalone services-statuslist-rest
+                // module (co-hosted here; not coupled to OID4VCI).
+                implementation(projects.libStatuslistPublic)
+                implementation(projects.libStatuslistImpl)
+                implementation(projects.servicesStatuslistRest)
+
+                // Issuance pipeline (ContributeAttributesCommand, AttributeRecord, LookupKey)
+                implementation(projects.libCredentialIssuancePipelinePublic)
+                implementation(projects.libAttributePipelinePublic)
                 implementation(projects.libOpenidOid4vciCommonPublic)
 
                 // JSON-LD validation bindings — `VcLdJsonJwtFormatHandler` (in

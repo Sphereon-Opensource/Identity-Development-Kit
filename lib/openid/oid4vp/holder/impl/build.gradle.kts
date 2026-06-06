@@ -35,6 +35,15 @@ kotlin {
                 api(projects.libOpenidOid4vpCommonImpl)
                 api(projects.libOpenidOid4vpDcql)
 
+                // SD-JWT presentation (Key Binding JWT production for dc+sd-jwt holder binding)
+                api(projects.libSdjwtPublic)
+
+                // mdoc OID4VP DeviceResponse construction (ISO 18013-5/-7) for mso_mdoc holder
+                // binding. Public surface only: MdocOid4vpService + codecs + the PE/Document/
+                // IssuerSigned types. The impl (lib-mdoc-core-impl) supplies the bindings on the
+                // assembled app classpath (the wallet app graph already includes it).
+                api(projects.libMdocCorePublic)
+
                 // Serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
 
@@ -60,6 +69,11 @@ kotlin {
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
+                // Real mdoc-core impls (codecs, MdocOid4vpServiceImpl, MdocSignServiceImpl) so the
+                // mso_mdoc holder test exercises a genuinely issued + device-signed DeviceResponse.
+                implementation(projects.libMdocCoreImpl)
+                // CBOR + crypto impl bindings the test AppScope graph merges (CborParser etc.).
+                implementation(projects.libCborImpl)
                 implementation(sphereonlib.io.ktor.client.mock)
             }
         }

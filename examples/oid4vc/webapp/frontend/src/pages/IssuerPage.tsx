@@ -17,7 +17,7 @@ const ISSUER_PRESETS: WalletTargetPreset[] = [
 ]
 const ISSUER_DEFAULT_TARGET = 'openid-credential-offer://'
 
-type Step = 'select' | 'configure' | 'offer' | 'success'
+type Step = 'select' | 'configure' | 'offer' | 'success' | 'error'
 
 const OFFER_STAGES = [
   'credential_offer_created',
@@ -54,6 +54,7 @@ export function IssuerPage() {
 
   useEffect(() => {
     if (status?.status === 'credential_issued') setStep('success')
+    else if (status?.status === 'error') setStep('error')
   }, [status?.status])
 
   const handleSelectCredential = (configId: string) => {
@@ -69,7 +70,7 @@ export function IssuerPage() {
     if (grantType === 'pre-auth') {
       const preAuth: Record<string, unknown> = {}
       if (usePin) {
-        preAuth.tx_code = { input_mode: 'numeric', length: 4 }
+        preAuth.tx_code = { input_mode: 'numeric', length: 6 }
       }
       grants['pre_authorized_code'] = preAuth
     } else {
@@ -150,6 +151,9 @@ export function IssuerPage() {
                     onChange={() => setGrantType('auth-code')} />
                   {t('issuer.authCode')}
                 </label>
+                {grantType === 'auth-code' && (
+                  <p className="field-hint">{t('issuer.demoLogin')}</p>
+                )}
               </div>
               <CredentialCard
                 name={selectedConfig}
@@ -212,6 +216,32 @@ export function IssuerPage() {
             }}>
               {t('issuer.verifyThis')}
             </button>
+            <button className="btn btn-secondary" onClick={() => {
+              setStep('select')
+              setOffer(null)
+              setSelectedConfig(null)
+            }}>
+              {t('issuer.issueAnother')}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 'error' && (
+        <section className="error-section">
+          <div className="error-icon">&#10007;</div>
+          <h2>{t('issuer.failed')}</h2>
+          <p className="error-message">{status?.error?.message ?? t('issuer.failedDesc')}</p>
+          {status?.error?.code && <p className="field-hint">{status.error.code}</p>}
+
+          <details className="session-details">
+            <summary>{t('details.toggle')}</summary>
+            <pre className="session-details-payload">
+              {JSON.stringify({ offer, status }, null, 2)}
+            </pre>
+          </details>
+
+          <div className="success-actions">
             <button className="btn btn-secondary" onClick={() => {
               setStep('select')
               setOffer(null)

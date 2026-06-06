@@ -32,14 +32,14 @@ import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.jarm.JarmMode
 import com.sphereon.openid.oid4vp.common.VpToken
+import com.sphereon.openid.oid4vp.common.store.StoreMetadata
+import com.sphereon.openid.oid4vp.common.store.StoredEntry
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.StoredAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeError
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStoreResult
-import com.sphereon.openid.oid4vp.verifier.store.StoreMetadata
-import com.sphereon.openid.oid4vp.verifier.store.StoredEntry
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject

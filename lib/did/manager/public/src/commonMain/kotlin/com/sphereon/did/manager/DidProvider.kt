@@ -17,10 +17,13 @@
 
 package com.sphereon.did.manager
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.did.capabilities.DidMethodCapabilities
+import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.DidService
 
 /**
@@ -102,11 +105,16 @@ interface DidProvider {
      *
      * @param did The DID to remove the key from
      * @param keyId The verification method ID to remove
+     * @param currentDocument The current DID document — required for methods
+     *   that must republish the whole document (e.g. did:web has no stateful
+     *   resolver). Methods that derive the document from the DID itself (e.g.
+     *   did:key) ignore it. Optional so the contract stays uniform.
      * @return The updated DID document
      */
     suspend fun removeKey(
         did: String,
         keyId: String,
+        currentDocument: DidDocument? = null,
     ): IdkResult<DidUpdateResult, IdkError>
 
     /**
@@ -116,11 +124,13 @@ interface DidProvider {
      *
      * @param did The DID to add the service to
      * @param service The service to add
+     * @param currentDocument The current DID document (required for did:web)
      * @return The updated DID document
      */
     suspend fun addService(
         did: String,
         service: DidService,
+        currentDocument: DidDocument? = null,
     ): IdkResult<DidUpdateResult, IdkError>
 
     /**
@@ -130,12 +140,66 @@ interface DidProvider {
      *
      * @param did The DID to remove the service from
      * @param serviceId The service ID to remove
+     * @param currentDocument The current DID document (required for did:web)
      * @return The updated DID document
      */
     suspend fun removeService(
         did: String,
         serviceId: String,
+        currentDocument: DidDocument? = null,
     ): IdkResult<DidUpdateResult, IdkError>
+
+    /**
+     * Replaces an existing verification method on a DID.
+     *
+     * Only supported if [capabilities.keyManagement.replacement] is true.
+     * Default implementation returns UNSUPPORTED_OPERATION; methods that natively support
+     * key replacement (e.g., did:web) override this to perform an atomic remove+add.
+     *
+     * @param did The DID owning the verification method
+     * @param keyId The verification method ID (fragment or absolute) to replace
+     * @param options New key material and metadata (carries `currentDocument` for did:web)
+     * @return The updated DID document
+     */
+    suspend fun updateKey(
+        did: String,
+        keyId: String,
+        options: AddKeyOptions,
+    ): IdkResult<DidUpdateResult, IdkError> =
+        Err(
+            IdkError.fromString(
+                message = "DID method '$method' does not support verification method replacement",
+                code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
+            ),
+        )
+
+    /**
+     * Replaces an existing service entry on a DID.
+     *
+     * Only supported if [capabilities.serviceManagement.replacement] is true.
+     * Default implementation returns UNSUPPORTED_OPERATION; methods that natively support
+     * service replacement (e.g., did:web) override this.
+     *
+     * @param did The DID owning the service
+     * @param serviceId The service ID to replace
+     * @param service The replacement service definition
+     * @param currentDocument The current DID document (required for did:web)
+     * @return The updated DID document
+     */
+    suspend fun updateService(
+        did: String,
+        serviceId: String,
+        service: DidService,
+        currentDocument: DidDocument? = null,
+    ): IdkResult<DidUpdateResult, IdkError> =
+        Err(
+            IdkError.fromString(
+                message = "DID method '$method' does not support service replacement",
+                code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
+            ),
+        )
 }
 
 /**

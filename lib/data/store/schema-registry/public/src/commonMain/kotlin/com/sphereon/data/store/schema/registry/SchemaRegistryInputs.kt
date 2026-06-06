@@ -33,6 +33,7 @@ data class CreateSchemaInput
         val contentType: String? = null,
         val contentBase64: String? = null,
         val contentText: String? = null,
+        val provenance: SchemaRecordProvenance? = null,
     )
 
 @JsExportCompat
@@ -56,4 +57,5 @@ data class ImportExternalInput
         val schemaType: SchemaType,
         val sourceUrl: String,
         val description: String? = null,
+        val provenance: SchemaRecordProvenance? = null,
     )

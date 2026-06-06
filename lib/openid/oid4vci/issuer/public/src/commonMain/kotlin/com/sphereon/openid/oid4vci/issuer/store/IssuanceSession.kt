@@ -55,6 +55,8 @@ data class IssuanceSession(
      * audit-only batch skipping webhooks, etc.).
      */
     val postIssuanceHookAllowList: List<String>? = null,
+    /** Join key to the EDK pipeline session (its correlationId). Null when no pipeline is bound. */
+    val pipelineCorrelationId: String? = null,
     val createdAt: Long,
     val expiresAt: Long,
 )

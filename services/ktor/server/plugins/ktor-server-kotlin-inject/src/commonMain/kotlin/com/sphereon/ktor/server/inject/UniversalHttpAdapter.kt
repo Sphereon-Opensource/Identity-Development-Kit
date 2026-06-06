@@ -19,6 +19,7 @@ package com.sphereon.ktor.server.inject
 import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
 import dev.zacsweers.metro.createGraph
 import io.ktor.http.ContentType
@@ -36,6 +37,18 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import io.ktor.util.AttributeKey
+
+/**
+ * Per-call attribute holding the Layer 1 resolved base tenant id.
+ *
+ * Tenant-resolution plugins stamp this key after validating JWT/host tenancy.
+ * Ktor request converters copy it into
+ * [CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER] on the in-process
+ * [GenericHttpRequest] so downstream dispatch never trusts a client-supplied
+ * tenant header.
+ */
+val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.baseTenantId")
 
 /**
  * Configuration for the Universal HTTP Adapter exposure.
@@ -187,6 +200,7 @@ fun Route.installUniversalHttpAdapters(configure: UniversalHttpAdapterConfig.() 
 suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
     val method = request.httpMethod.value
     val path = request.path()
+    val resolvedBaseTenantId = attributes.getOrNull(BaseTenantIdAttribute)
 
     // Extract headers (joined for the scalar map) plus the raw multi-value view so consumers
     // that need single-occurrence semantics (RFC 9449 §4.1) can detect duplicates.
@@ -194,6 +208,13 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
         request.headers
             .entries()
             .associate { (name, values) -> name to values.joinToString(", ") }
+            .let { wireHeaders ->
+                if (resolvedBaseTenantId == null) {
+                    wireHeaders
+                } else {
+                    wireHeaders + (CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER to resolvedBaseTenantId)
+                }
+            }
     // RFC 9110 §5.3 / RFC 9449 §4.1: a header may appear multiple times. Some Ktor engines
     // (CIO included) emit `entries()` as one entry per occurrence, which silently collapses
     // duplicates when fed straight into `.associate { }`. Use `names()` + `getAll()` so the

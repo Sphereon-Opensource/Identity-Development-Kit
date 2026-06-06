@@ -49,6 +49,7 @@ import dev.zacsweers.metro.binding
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<OAuth2ServersConfigProvider>())
+@ContributesBinding(SessionScope::class, binding = binding<OAuth2ServersConfigProvider?>())
 class OAuth2ServersConfigBinder(
     private val execution: SessionExecution,
 ) : OAuth2ServersConfigProvider {
@@ -113,6 +114,7 @@ class OAuth2ServersConfigBinder(
         return OAuth2ServersConfig(
             defaultServer = defaultServer,
             servers = servers,
+            explicitlyConfigured = serverIds.isNotEmpty(),
         )
     }
 
@@ -442,6 +444,9 @@ class OAuth2ServersConfigBinder(
                     defaults.requireRequestUriRegistration,
                 ) ?: defaults.requireRequestUriRegistration,
             session = loadSessionConfig(serverPrefix),
+            // Optional plain-text login-page notice (demo test-account hint, maintenance banner).
+            // Unset in production → null → the renderer emits no notice markup.
+            loginNotice = configService.getPropertyAsString("$serverPrefix.login-notice", null),
         )
     }
 

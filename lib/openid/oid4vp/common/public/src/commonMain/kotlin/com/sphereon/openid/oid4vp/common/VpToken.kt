@@ -31,39 +31,44 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
 /**
- * VP Token (Verifiable Presentation Token) - OpenID4VP 1.0 Final DCQL Format
+ * VP Token (Verifiable Presentation Token) - OpenID4VP 1.0 Final DCQL Format.
  *
- * OpenID4VP 1.0 Final Section 6.4:
- * "When using DCQL, the vp_token is a JSON object where each key is a credential
- * query ID from the dcql_query, and the value is either a single presentation
- * string or an array of presentation strings."
+ * OpenID4VP 1.0 §8.1 (Response Parameters): when the Authorization Request used
+ * `dcql_query`, the `vp_token` is a JSON object whose keys are the DCQL credential-query
+ * `id`s and whose values are the Presentation(s) matching that query. A single query may
+ * match multiple Credentials, so the value MAY be a single Presentation or an array of
+ * Presentations.
  *
- * DCQL vp_token format:
+ * Critically, the *type of each Presentation value is Credential-Format dependent* (§8.1,
+ * Appendix B):
+ *
+ *  - Compact / string formats — the Presentation is a JSON **string**:
+ *      - `dc+sd-jwt` (IETF SD-JWT VC, with optional KB-JWT) — Appendix B.4
+ *      - `jwt_vc_json` (W3C VC secured as a JWT/JWS) — Appendix B.1
+ *      - `mso_mdoc` (base64url-encoded ISO 18013-5 `DeviceResponse`) — Appendix B.3
+ *  - W3C Data Integrity formats — the Presentation is a JSON **object**:
+ *      - `ldp_vc` / `ldp_vp` (JSON-LD Verifiable Presentation with an embedded proof) — Appendix B.2
+ *
+ * Therefore each Presentation is modelled as a [JsonElement] that may be a
+ * [JsonPrimitive] (string) OR a [JsonObject]. Code MUST NOT assume the string form and
+ * MUST NOT blanket-cast to `jsonPrimitive` — branch on the element type / Credential
+ * Format instead.
+ *
+ * DCQL vp_token wire shapes:
  * ```json
- * {
- *   "credential_query_id_1": "eyJhbGc...",
- *   "credential_query_id_2": ["eyJhbGc...", "eyJhbGc..."]
- * }
+ * { "credential_query_id_1": "eyJhbGc..." }                 // single compact presentation
+ * { "credential_query_id_2": ["eyJhbGc...", "eyJhbGc..."] } // multiple compact presentations
+ * { "credential_query_id_3": { "@context": [...], ... } }   // single ldp_vp (JSON object)
  * ```
  *
- * Each key corresponds to an `id` from a credential query in the DCQL query.
- * Each value contains the presentation(s) matching that query.
- *
- * Presentations can be in various formats:
- * - SD-JWT DC (dc+sd-jwt) - RFC 9901
- * - mDoc (mso_mdoc) - ISO 18013-5
- * - JWT VP (jwt_vp_json) - W3C VC Data Model
- *
- * @property presentations Map from credential query ID to list of presentations.
- *                         Note: Even single presentations are stored as single-element lists.
+ * @property presentationElements Canonical map from credential query ID to the list of
+ *   Presentation elements. Each element is a string ([JsonPrimitive]) for compact formats
+ *   or a [JsonObject] for `ldp_vc`/`ldp_vp`. Even single presentations are single-element lists.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VpToken", exact = true)
@@ -71,62 +76,103 @@ import kotlin.native.ObjCName
 @Serializable(with = VpTokenSerializer::class)
 data class VpToken(
     @JsExportIgnoreCompat
-    val presentations: Map<String, List<String>>,
+    val presentationElements: Map<String, List<JsonElement>>,
 ) {
     init {
-        require(presentations.isNotEmpty()) { "VP Token must contain at least one credential query" }
-        presentations.forEach { (queryId, presentationList) ->
+        require(presentationElements.isNotEmpty()) { "VP Token must contain at least one credential query" }
+        presentationElements.forEach { (queryId, presentationList) ->
             require(queryId.isNotBlank()) { "Credential query ID cannot be blank" }
             require(presentationList.isNotEmpty()) { "Presentations list for query '$queryId' cannot be empty" }
             presentationList.forEach { presentation ->
-                require(presentation.isNotBlank()) { "Presentation in query '$queryId' cannot be blank" }
+                requirePresentationShape(queryId, presentation)
             }
         }
     }
 
     /**
-     * Get all presentations as a flat list (ignoring query IDs).
+     * Compact-format view of the presentations: each [JsonElement] is rendered to a [String].
+     *
+     * String ([JsonPrimitive]) presentations (`dc+sd-jwt`, `jwt_vc_json`, `mso_mdoc`) yield
+     * their raw content. Object (`ldp_vc`/`ldp_vp`) presentations are rendered as compact JSON
+     * so legacy string-based call sites never crash with a [ClassCastException]; consumers that
+     * must verify or inspect an LDP presentation should use [presentationElements] /
+     * [getPresentationElements] and branch on the element type instead.
+     */
+    val presentations: Map<String, List<String>>
+        get() = presentationElements.mapValues { (_, list) -> list.map { it.asPresentationString() } }
+
+    /**
+     * Get all presentations (as strings) as a flat list (ignoring query IDs).
      */
     val allPresentations: List<String>
-        get() = presentations.values.flatten()
+        get() = presentationElements.values.flatten().map { it.asPresentationString() }
+
+    /**
+     * Get all Presentation elements as a flat list (ignoring query IDs), preserving the
+     * JSON shape (string vs object) so format-specific verification can branch correctly.
+     */
+    val allPresentationElements: List<JsonElement>
+        get() = presentationElements.values.flatten()
 
     /**
      * Get the total number of presentations across all queries.
      */
     val presentationCount: Int
-        get() = presentations.values.sumOf { it.size }
+        get() = presentationElements.values.sumOf { it.size }
 
     /**
      * Get all credential query IDs present in this VP token.
      */
     val queryIds: Set<String>
-        get() = presentations.keys
+        get() = presentationElements.keys
 
     /**
-     * Get presentations for a specific credential query ID.
+     * Get presentations (as strings) for a specific credential query ID.
      *
      * @param queryId The credential query ID from the DCQL query
      * @return List of presentations for this query, or null if not found
      */
-    fun getPresentation(queryId: String): List<String>? = presentations[queryId]
+    fun getPresentation(queryId: String): List<String>? = presentationElements[queryId]?.map { it.asPresentationString() }
 
     /**
-     * Get a single presentation for a query ID (first one if multiple).
+     * Get Presentation elements for a specific credential query ID, preserving the JSON shape.
+     *
+     * @param queryId The credential query ID from the DCQL query
+     * @return List of presentation elements for this query, or null if not found
+     */
+    fun getPresentationElements(queryId: String): List<JsonElement>? = presentationElements[queryId]
+
+    /**
+     * Get a single presentation (as string) for a query ID (first one if multiple).
      *
      * @param queryId The credential query ID
      * @return The first presentation for this query, or null if not found
      */
-    fun getSinglePresentation(queryId: String): String? = presentations[queryId]?.firstOrNull()
+    fun getSinglePresentation(queryId: String): String? = presentationElements[queryId]?.firstOrNull()?.asPresentationString()
+
+    /**
+     * Get a single Presentation element for a query ID (first one if multiple), preserving shape.
+     *
+     * @param queryId The credential query ID
+     * @return The first presentation element for this query, or null if not found
+     */
+    fun getSinglePresentationElement(queryId: String): JsonElement? = presentationElements[queryId]?.firstOrNull()
 
     companion object {
         /**
+         * Construct a [VpToken] from a map of query IDs to compact (string) presentations.
+         * Each string is wrapped as a [JsonPrimitive]. Use the primary constructor directly
+         * when any presentation is an `ldp_vc`/`ldp_vp` JSON object.
+         */
+        @JvmStatic
+        fun fromStrings(presentations: Map<String, List<String>>): VpToken = VpToken(presentations.mapValues { (_, list) -> list.map { JsonPrimitive(it) } })
+
+        /**
          * Create a VP Token from a JSON element.
          *
-         * Parses both the DCQL object format:
-         * ```json
-         * { "query_id": "presentation" }
-         * { "query_id": ["presentation1", "presentation2"] }
-         * ```
+         * Parses the DCQL object format where keys are credential query IDs and values are
+         * either a single Presentation or an array of Presentations. Each Presentation is a
+         * string (compact formats) or a JSON object (`ldp_vc`/`ldp_vp`) per OID4VP §8.1.
          *
          * @param json JSON element representing the vp_token
          * @return Parsed VpToken
@@ -148,37 +194,21 @@ data class VpToken(
         private fun parseObjectFormat(jsonObject: JsonObject): VpToken {
             require(jsonObject.isNotEmpty()) { "VP Token object cannot be empty" }
 
-            val presentations = mutableMapOf<String, List<String>>()
+            val presentations = mutableMapOf<String, List<JsonElement>>()
 
             for ((queryId, value) in jsonObject) {
-                val presentationList =
+                val presentationList: List<JsonElement> =
                     when (value) {
-                        is JsonPrimitive -> {
-                            require(value.isString) {
-                                "VP Token presentation for '$queryId' must be a string, got: ${value::class.simpleName}"
-                            }
-                            listOf(value.content)
-                        }
+                        is JsonArray -> value.toList()
 
-                        is JsonArray -> {
-                            value.jsonArray.map { element ->
-                                require(element is JsonPrimitive && element.isString) {
-                                    "VP Token array element for '$queryId' must be a string"
-                                }
-                                element.jsonPrimitive.content
-                            }
-                        }
-
-                        else -> {
-                            throw IllegalArgumentException(
-                                "VP Token value for '$queryId' must be a string or array, got: ${value::class.simpleName}",
-                            )
-                        }
+                        // A single Presentation: string (compact) or object (ldp_vc/ldp_vp).
+                        else -> listOf(value)
                     }
 
                 require(presentationList.isNotEmpty()) {
                     "VP Token presentations for '$queryId' cannot be empty"
                 }
+                presentationList.forEach { requirePresentationShape(queryId, it) }
 
                 presentations[queryId] = presentationList
             }
@@ -187,25 +217,70 @@ data class VpToken(
         }
 
         /**
+         * A Presentation value is either a non-blank string (compact formats) or a JSON
+         * object (`ldp_vc`/`ldp_vp`). Anything else (number, boolean, null, nested array,
+         * blank string) is not a valid OID4VP §8.1 Presentation.
+         */
+        private fun requirePresentationShape(
+            queryId: String,
+            element: JsonElement,
+        ) {
+            when (element) {
+                is JsonPrimitive -> {
+                    require(element.isString) {
+                        "VP Token presentation for '$queryId' must be a string or a JSON object, got a non-string primitive"
+                    }
+                    require(element.content.isNotBlank()) {
+                        "Presentation in query '$queryId' cannot be blank"
+                    }
+                }
+
+                is JsonObject -> {
+                    Unit
+                }
+
+                // ldp_vc / ldp_vp
+
+                else -> {
+                    throw IllegalArgumentException(
+                        "VP Token presentation for '$queryId' must be a string or a JSON object, got: ${element::class.simpleName}",
+                    )
+                }
+            }
+        }
+
+        /**
          * Convert VP Token to JSON element.
          *
          * Serializes to DCQL object format:
-         * - Single presentations are serialized as strings
-         * - Multiple presentations are serialized as arrays
+         * - Single presentations are serialized as their element (string or object)
+         * - Multiple presentations are serialized as an array of elements
          *
          * @return JSON object with credential query IDs as keys
          */
         fun VpToken.toJson(): JsonElement {
             val entries =
-                presentations.mapValues { (_, presentationList) ->
+                presentationElements.mapValues { (_, presentationList) ->
                     if (presentationList.size == 1) {
-                        JsonPrimitive(presentationList.first())
+                        presentationList.first()
                     } else {
-                        JsonArray(presentationList.map { JsonPrimitive(it) })
+                        JsonArray(presentationList)
                     }
                 }
             return JsonObject(entries)
         }
+
+        /**
+         * Render a Presentation element to its compact string form: string content for
+         * [JsonPrimitive], compact JSON for objects/arrays.
+         */
+        private fun JsonElement.asPresentationString(): String =
+            when (this) {
+                is JsonPrimitive -> if (isString) content else toString()
+                else -> COMPACT_JSON.encodeToString(JsonElement.serializer(), this)
+            }
+
+        private val COMPACT_JSON = Json
     }
 }
 
@@ -242,42 +317,52 @@ object VpTokenSerializer : KSerializer<VpToken> {
  */
 @JsExportCompat
 class VpTokenBuilder {
-    private val presentations = mutableMapOf<String, MutableList<String>>()
+    private val presentations = mutableMapOf<String, MutableList<JsonElement>>()
 
     /**
-     * Add a presentation for a credential query ID.
+     * Add a compact (string) presentation for a credential query ID.
      *
      * @param queryId The credential query ID from the DCQL query
-     * @param presentation The presentation string
+     * @param presentation The compact presentation string
      */
     fun presentation(
         queryId: String,
         presentation: String,
     ) = apply {
+        presentations.getOrPut(queryId) { mutableListOf() }.add(JsonPrimitive(presentation))
+    }
+
+    /**
+     * Add a presentation element (string or `ldp_vc`/`ldp_vp` JSON object) for a query ID.
+     */
+    fun presentationElement(
+        queryId: String,
+        presentation: JsonElement,
+    ) = apply {
         presentations.getOrPut(queryId) { mutableListOf() }.add(presentation)
     }
 
     /**
-     * Add multiple presentations for a credential query ID.
+     * Add multiple compact (string) presentations for a credential query ID.
      *
      * @param queryId The credential query ID
-     * @param presentationList List of presentations
+     * @param presentationList List of compact presentations
      */
     fun presentations(
         queryId: String,
         presentationList: List<String>,
     ) = apply {
-        presentations.getOrPut(queryId) { mutableListOf() }.addAll(presentationList)
+        presentations.getOrPut(queryId) { mutableListOf() }.addAll(presentationList.map { JsonPrimitive(it) })
     }
 
     /**
-     * Add a presentation entry (query ID to presentation mapping).
+     * Add a presentation entry (query ID to compact presentation mapping).
      */
     fun entry(
         queryId: String,
         vararg presentationValues: String,
     ) = apply {
-        presentations.getOrPut(queryId) { mutableListOf() }.addAll(presentationValues)
+        presentations.getOrPut(queryId) { mutableListOf() }.addAll(presentationValues.map { JsonPrimitive(it) })
     }
 
     /**
@@ -305,29 +390,29 @@ class VpTokenBuilder {
 inline fun buildVpToken(block: VpTokenBuilder.() -> Unit): VpToken = VpTokenBuilder().apply(block).build()
 
 /**
- * Create a VP Token with a single presentation.
+ * Create a VP Token with a single compact (string) presentation.
  *
  * @param queryId The credential query ID
- * @param presentation The presentation string
+ * @param presentation The compact presentation string
  */
 fun vpTokenOf(
     queryId: String,
     presentation: String,
-): VpToken = VpToken(mapOf(queryId to listOf(presentation)))
+): VpToken = VpToken.fromStrings(mapOf(queryId to listOf(presentation)))
 
 /**
- * Create a VP Token from a map of query IDs to presentations.
+ * Create a VP Token from a map of query IDs to compact (string) presentations.
  *
  * @param entries Map of credential query IDs to presentation lists
  */
-fun vpTokenOf(entries: Map<String, List<String>>): VpToken = VpToken(entries)
+fun vpTokenOf(entries: Map<String, List<String>>): VpToken = VpToken.fromStrings(entries)
 
 /**
- * Create a VP Token from pairs of query IDs to presentations.
+ * Create a VP Token from pairs of query IDs to compact (string) presentations.
  *
  * @param pairs Pairs of (queryId, presentation)
  */
 fun vpTokenOf(vararg pairs: Pair<String, String>): VpToken {
     val grouped = pairs.groupBy({ it.first }, { it.second })
-    return VpToken(grouped)
+    return VpToken.fromStrings(grouped)
 }

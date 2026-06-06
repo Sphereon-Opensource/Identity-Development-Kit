@@ -23,13 +23,29 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                // Reusable OID4VP REST adapters (verifier + universal) — the adapter classes
+                // and endpoint commands this standalone server mounts. `api` so the server's
+                // jvmMain and the test source sets see them.
+                api(projects.libOpenidOid4vpVerifierRest)
+
                 // OID4VP Verifier + Universal service logic
                 implementation(projects.libOpenidOid4vpVerifierPublic)
                 implementation(projects.libOpenidOid4vpVerifierImpl)
+
+                // Credential status verification: brings the StatusListResolver binding + the two
+                // CredentialStatusVerifier set members so the verifier actually checks status lists.
+                implementation(projects.libStatuslistPublic)
+                implementation(projects.libStatuslistImpl)
                 implementation(projects.libOpenidOid4vpUniversalPublic)
                 implementation(projects.libOpenidOid4vpUniversalImpl)
                 implementation(projects.libOpenidOid4vpCommonPublic)
                 implementation(projects.libOpenidOid4vpDcql)
+                // DCQL store: KvDcqlQueryConfigurationStore binding (required by THIS
+                // standalone server's own graph) + admin ServiceCommands + REST surface. A
+                // consuming assembly that brings its own DCQL store depends on
+                // lib-openid-oid4vp-verifier-rest directly instead of this module.
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
+                implementation(projects.libOpenidOid4vpDcqlStoreRest)
                 // JsonLd validators are reached transitively through verifier-impl
                 // with implementation scope; the Ktor server graph needs them on
                 // the compile classpath so Metro can discover their @Inject ctors.

@@ -32,9 +32,9 @@ import com.sphereon.data.store.kv.impl.KvStoreManager
 import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.ClientMetadata
+import com.sphereon.openid.oid4vp.common.store.StoreMetadata
 import com.sphereon.openid.oid4vp.verifier.model.ClientMetadataConfiguration
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
-import com.sphereon.openid.oid4vp.verifier.store.StoreMetadata
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -255,12 +255,12 @@ class KvClientMetadataConfigurationStore(
             IdkError.fromString(message = "Failed to read client metadata configuration: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_CLIENT_METADATA_STORE_ERROR")
         }
 
-    override suspend fun getEntry(key: String): IdkResult<com.sphereon.openid.oid4vp.verifier.store.StoredEntry<ClientMetadataConfiguration>?, IdkError> =
+    override suspend fun getEntry(key: String): IdkResult<com.sphereon.openid.oid4vp.common.store.StoredEntry<ClientMetadataConfiguration>?, IdkError> =
         kv
             .getEntry(namespace, key)
             .map { entry ->
                 entry?.let {
-                    com.sphereon.openid.oid4vp.verifier.store.StoredEntry(
+                    com.sphereon.openid.oid4vp.common.store.StoredEntry(
                         value = it.value.toPublic(),
                         createdAt = it.metadata.createdAtEpochMillis,
                         expiresAt = it.metadata.expiresAtEpochMillis,

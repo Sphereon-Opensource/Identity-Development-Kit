@@ -54,6 +54,65 @@ fun GenericHttpRequest.requireQueryParam(name: String): IdkResult<String, IdkErr
 fun GenericHttpRequest.optionalQueryParam(name: String): IdkResult<String?, IdkError> = Ok(queryParams[name])
 
 /**
+ * Extract an optional integer query parameter with inclusive `[min, max]` bounds. Returns
+ * [Ok] with `null` when the parameter is absent; returns [Err] with [ErrorCategory.VALIDATION]
+ * when the value is non-numeric or out of range.
+ */
+fun GenericHttpRequest.optionalIntQueryParam(
+    name: String,
+    min: Int = Int.MIN_VALUE,
+    max: Int = Int.MAX_VALUE,
+): IdkResult<Int?, IdkError> {
+    val raw = optionalQueryParam(name).getOrElse { return Err(it) } ?: return Ok(null)
+    val parsed =
+        raw.toIntOrNull()
+            ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Invalid integer for query parameter '$name': '$raw'."),
+            )
+    if (parsed < min) {
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "Query parameter '$name' must be >= $min (got $parsed).",
+            ),
+        )
+    }
+    if (parsed > max) {
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "Query parameter '$name' must be <= $max (got $parsed).",
+            ),
+        )
+    }
+    return Ok(parsed)
+}
+
+/**
+ * Extract an optional boolean query parameter. Accepts only `"true"` / `"false"`
+ * (case-insensitive). Returns [Ok] with `null` when absent; [Err] with
+ * [ErrorCategory.VALIDATION] for any other value.
+ */
+fun GenericHttpRequest.optionalBoolQueryParam(name: String): IdkResult<Boolean?, IdkError> {
+    val raw = optionalQueryParam(name).getOrElse { return Err(it) } ?: return Ok(null)
+    return when (raw.lowercase()) {
+        "true" -> {
+            Ok(true)
+        }
+
+        "false" -> {
+            Ok(false)
+        }
+
+        else -> {
+            Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Invalid boolean for query parameter '$name': '$raw'. Expected 'true' or 'false'.",
+                ),
+            )
+        }
+    }
+}
+
+/**
  * Extract a required header value case-insensitively per RFC 9110 §5.1. Returns [Err] with
  * [ErrorCategory.VALIDATION] when no header matches [name] under case-insensitive comparison.
  */

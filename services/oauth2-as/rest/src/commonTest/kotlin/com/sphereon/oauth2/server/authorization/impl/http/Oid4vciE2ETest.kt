@@ -27,6 +27,8 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.service.StringResult
+import com.sphereon.core.defaults.context.DefaultResolvedTenantIdProvider
+import com.sphereon.core.defaults.http.NoOpRoutableSlugLookup
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
@@ -139,6 +141,7 @@ import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequest
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestArgs
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.JwksHttpEndpointCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.OAuth2ServerMetadataHttpEndpointCommandImpl
@@ -263,18 +266,35 @@ class Oid4vciE2ETest {
                 execution = exec,
                 asInstanceResolver = asResolver,
                 asInstanceIdProvider = asIdProvider,
+                slugLookup = NoOpRoutableSlugLookup(),
+                tenantIdProvider = DefaultResolvedTenantIdProvider(),
                 tokenEndpointCommand =
                     TokenHttpEndpointCommandImpl(
                         execution = exec,
                         handleTokenRequestCommand = Oid4vciFakeHandleTokenRequestCommand(service, configProvider),
                         configProvider = configProvider,
+                        baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                         dpopNonceManager = Oid4vciFakeNoOpDpopNonceManager,
                         clientCertificateExtractor = Oid4vciFakeNoCertExtractor,
                         auditEmitter = NoOpOAuth2AuditEmitter,
                     ),
-                introspectionEndpointCommand = IntrospectionHttpEndpointCommandImpl(exec, Oid4vciFakeHandleIntrospectionRequestCommand(service), configProvider, NoOpOAuth2AuditEmitter),
-                revocationEndpointCommand = RevocationHttpEndpointCommandImpl(exec, Oid4vciFakeHandleRevocationRequestCommand(service), configProvider, NoOpOAuth2AuditEmitter),
-                parEndpointCommand = ParHttpEndpointCommandImpl(exec, Oid4vciFakeHandlePushedAuthorizationRequestCommand(service), configProvider),
+                introspectionEndpointCommand =
+                    IntrospectionHttpEndpointCommandImpl(
+                        exec,
+                        Oid4vciFakeHandleIntrospectionRequestCommand(service),
+                        configProvider,
+                        DefaultOAuth2ServerBaseUrlResolver(),
+                        NoOpOAuth2AuditEmitter
+                    ),
+                revocationEndpointCommand =
+                    RevocationHttpEndpointCommandImpl(
+                        exec,
+                        Oid4vciFakeHandleRevocationRequestCommand(service),
+                        configProvider,
+                        DefaultOAuth2ServerBaseUrlResolver(),
+                        NoOpOAuth2AuditEmitter
+                    ),
+                parEndpointCommand = ParHttpEndpointCommandImpl(exec, Oid4vciFakeHandlePushedAuthorizationRequestCommand(service), configProvider, DefaultOAuth2ServerBaseUrlResolver()),
             )
         val discoveryHandler = Oid4vciFakeHandleDiscoveryRequestCommand(service)
         val discoveryAdapter =
@@ -282,8 +302,10 @@ class Oid4vciE2ETest {
                 execution = exec,
                 asInstanceResolver = asResolver,
                 asInstanceIdProvider = asIdProvider,
-                oauth2ServerMetadataCommand = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, discoveryHandler, configProvider),
-                openidDiscoveryCommand = OpenidDiscoveryHttpEndpointCommandImpl(exec, discoveryHandler, configProvider),
+                slugLookup = NoOpRoutableSlugLookup(),
+                tenantIdProvider = DefaultResolvedTenantIdProvider(),
+                oauth2ServerMetadataCommand = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, discoveryHandler, configProvider, DefaultOAuth2ServerBaseUrlResolver()),
+                openidDiscoveryCommand = OpenidDiscoveryHttpEndpointCommandImpl(exec, discoveryHandler, configProvider, DefaultOAuth2ServerBaseUrlResolver()),
                 jwksCommand = JwksHttpEndpointCommandImpl(exec, Oid4vciFakeHandleJwksRequestCommand(service)),
             )
 

@@ -33,7 +33,17 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("BlobStore", exact = true)
 interface BlobStore {
-    val storeId: String
+    /**
+     * The BACKEND SCHEME this store implements (e.g. `"memory"`, `"filesystem"`, `"kv"`, `"okd"`),
+     * a constant baked into each implementation.
+     *
+     * This is NOT the configured registry id. Callers resolve a store by its CONFIGURED id
+     * (e.g. `"default"` from `blob.stores.default.*`) via [BlobStoreService.getStore], and that
+     * configured id is what travels in [BlobInfo.storeId] and is stamped onto every caller-facing
+     * [BlobDescriptor.storeId] by [BlobService]. The scheme id here only identifies which backend
+     * implementation a store is; never round-trip it back through the service as a store id.
+     */
+    val schemeId: String
 
     val capabilities: BlobStoreCapabilities
 

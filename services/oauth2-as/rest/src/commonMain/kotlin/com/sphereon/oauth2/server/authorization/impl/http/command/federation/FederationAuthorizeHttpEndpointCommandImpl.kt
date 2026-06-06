@@ -42,7 +42,7 @@ private const val SESSION_TOKEN_BYTES = 16
 /**
  * HTTP shell over [InitiateProviderAuthenticationCommand] for the federation login entry point.
  * Parses the `provider` (and optional `login_hint`) query params, resolves the base URL through
- * [resolveFederationBaseUrl], generates a local session id, and renders the upstream redirect.
+ * [FederationBaseUrlResolver], generates a local session id, and renders the upstream redirect.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -52,6 +52,7 @@ class FederationAuthorizeHttpEndpointCommandImpl(
     private val initiateProviderAuthenticationCommand: InitiateProviderAuthenticationCommand,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: FederationBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = FederationAuthorizeHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -75,7 +76,7 @@ class FederationAuthorizeHttpEndpointCommandImpl(
                 null
             }
 
-        val baseUrl = request.resolveFederationBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val sessionId = "fed-" + secureRandom.newToken(lengthBytes = SESSION_TOKEN_BYTES, encoding = Encoding.HEX)
 
         val result =

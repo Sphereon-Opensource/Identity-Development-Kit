@@ -19,8 +19,10 @@ package com.sphereon.oauth2.server.authorization.impl.http
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.RoutableSlugLookup
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
@@ -51,6 +53,8 @@ class OAuth2FederationHttpAdapter(
     execution: SessionExecution,
     asInstanceResolver: OAuth2ServerInstanceResolver,
     asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider,
+    slugLookup: RoutableSlugLookup,
+    tenantIdProvider: MutableResolvedTenantIdProvider,
     private val federationAuthorizeCommand: FederationAuthorizeHttpEndpointCommand,
     private val federationCallbackCommand: FederationCallbackHttpEndpointCommand,
     private val reconciliationAuthorizeCommand: ReconciliationAuthorizeHttpEndpointCommand,
@@ -62,6 +66,8 @@ class OAuth2FederationHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
         asInstanceResolver = asInstanceResolver,
         asInstanceIdProvider = asInstanceIdProvider,
+        slugLookup = slugLookup,
+        tenantIdProvider = tenantIdProvider,
         // /federation/* and /reconciliation/* are issuer-path-prefixed.
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {

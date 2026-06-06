@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BracesOnIfStatements:Iri.kt$Iri.Companion$else</ID>
+    <ID>BracesOnIfStatements:Iri.kt$Iri.Companion$if</ID>
+    <ID>BracesOnIfStatements:Iri.kt$IriComponents.Companion$if</ID>
+    <ID>ClassOrdering:Iri.kt$Iri$private fun decompose(): IriComponents</ID>
+    <ID>ClassOrdering:Iri.kt$Iri.Companion$// RFC 3986 Appendix B: the canonical IRI/URI decomposition regex. // Group 2 = scheme, group 4 = authority, group 5 = path, group 7 = // query, group 9 = fragment. Authority is null if "//" is absent. private val DECOMPOSE_REGEX = Regex("""^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?$""")</ID>
+    <ID>ClassOrdering:Iri.kt$Iri.Companion$// RFC 3986 §3.1: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ). private val SCHEME_REGEX = Regex("""^[A-Za-z][A-Za-z0-9+\-.]*$""")</ID>
+    <ID>ClassOrdering:ResolveContextServiceCommand.kt$ResolveContextServiceCommand$Companion</ID>
+    <ID>ClassOrdering:ValidateJsonLdContextServiceCommand.kt$ValidateJsonLdContextServiceCommand$Companion</ID>
+    <ID>ClassOrdering:ValidateJsonLdSchemaServiceCommand.kt$ValidateJsonLdSchemaServiceCommand$Companion</ID>
+    <ID>MagicNumber:Iri.kt$Iri.Companion$0x20</ID>
+    <ID>MagicNumber:Iri.kt$Iri.Companion$0x7F</ID>
+    <ID>MagicNumber:Iri.kt$Iri.Companion$3</ID>
+    <ID>MagicNumber:Iri.kt$Iri.Companion$4</ID>
+    <ID>ReturnCount:Iri.kt$Iri.Companion$private fun isSyntacticallyValid(value: String): Boolean</ID>
+    <ID>StringLiteralDuplication:JsonLdError.kt$JsonLdError.InvalidLocalContext$"location"</ID>
+    <ID>StringLiteralDuplication:JsonLdError.kt$JsonLdError.LoadingDocumentFailed$"reason"</ID>
+  </CurrentIssues>
+</SmellBaseline>

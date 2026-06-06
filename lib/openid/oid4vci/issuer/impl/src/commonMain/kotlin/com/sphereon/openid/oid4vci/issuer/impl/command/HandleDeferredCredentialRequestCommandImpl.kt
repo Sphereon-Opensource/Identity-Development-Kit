@@ -32,10 +32,10 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
+import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestCommand
-import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
-import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
+import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
 import dev.zacsweers.metro.ContributesBinding
@@ -44,6 +44,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Clock
 
 /**
  * Handles deferred credential requests per OID4VCI 1.0 Section 9.1 / 1.1 Section 10.
@@ -51,9 +52,13 @@ import kotlinx.serialization.json.put
  * Flow:
  * 1. Validate access token via AS bridge
  * 2. Look up deferred entry by transaction ID
- * 3. If READY -> deliver credential, mark as DELIVERED
- * 4. If PENDING -> return issuance_pending error with interval
- * 5. If FAILED/EXPIRED/DELIVERED -> return invalid_transaction_id error
+ * 3. If READY: deliver credential, mark as DELIVERED
+ * 4. If PENDING: enforce `expiresAt`, then (Task 7.3) hand off to
+ *    [DeferredPipelineReExecutor] which runs the DEFERRED pipeline phase, re-checks
+ *    completeness, and dispatches the format handler when complete. If re-execution does not
+ *    fire (pure-IDK, no pipeline binding, still incomplete, etc.) return the OID4VCI 1.1 §10.2
+ *    transactionId+interval response so the HTTP adapter answers 202
+ * 5. If FAILED / EXPIRED / DELIVERED: return invalid_transaction_id error
  * 6. Apply encryption if requested
  */
 @Inject
@@ -63,9 +68,15 @@ class HandleDeferredCredentialRequestCommandImpl(
     execution: SessionExecution,
     private val asBridge: Oid4vciAuthorizationServerBridge,
     private val deferredStore: DeferredCredentialStore,
-    private val encryptor: CredentialResponseEncryptor,
-    private val nonceManager: NonceManager,
+    private val clock: Clock,
     private val eventService: SessionEventService? = null,
+    /**
+     * Factory for the optional [DeferredPipelineReExecutor] that drives the PENDING-branch
+     * pipeline re-execution. Returns `null` in pure-IDK deployments that did not wire the
+     * EDK pipeline commands; the PENDING branch then falls through to the OID4VCI 1.1 §10.2
+     * `transactionId+interval` response.
+     */
+    private val reExecutorFactory: DeferredPipelineReExecutorFactory,
 ) : TypedServiceCommandAdapter<HandleDeferredCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleDeferredCredentialRequestCommand.COMMAND_ID,
         execution = execution,
@@ -74,6 +85,17 @@ class HandleDeferredCredentialRequestCommandImpl(
     ),
     HandleDeferredCredentialRequestCommand {
     override val commandId: String get() = HandleDeferredCredentialRequestCommand.COMMAND_ID
+
+    /**
+     * Lazily built so pure-IDK deployments (no pipeline commands wired in) keep the executor
+     * null and the PENDING branch falls through to the 202 transactionId+interval response.
+     */
+    private val reExecutor: DeferredPipelineReExecutor? =
+        reExecutorFactory.create(
+            tenantIdProvider = {
+                runCatching { execution.sessionContext.context.tenant.tenantId }.getOrNull()
+            },
+        )
 
     override suspend fun supports(args: Any): Boolean = args is HandleDeferredCredentialRequestArgs
 
@@ -90,19 +112,23 @@ class HandleDeferredCredentialRequestCommandImpl(
         args: HandleDeferredCredentialRequestArgs,
         result: IdkResult<CredentialResponse, IdkError>,
     ) {
+        val es = eventService ?: return
+        val credentialIssued = result.isOk && result.value.credentials != null
         val type =
-            if (result.isOk) {
-                EventTypes.OID4VCI_CREDENTIAL_DEFERRED_ISSUED
-            } else {
-                EventTypes.OID4VCI_CREDENTIAL_FAILED
+            when {
+                credentialIssued -> EventTypes.OID4VCI_CREDENTIAL_DEFERRED_ISSUED
+
+                result.isOk -> return
+
+                // still-pending 202: no event
+                else -> EventTypes.OID4VCI_CREDENTIAL_FAILED
             }
-        val category = if (result.isOk) EventCategories.OPERATION else EventCategories.ERROR
+        val category = if (credentialIssued) EventCategories.OPERATION else EventCategories.ERROR
         val payload =
             buildJsonObject {
                 put("transactionId", args.deferredRequest.transactionId)
                 if (!result.isOk) put("operation", "deferredCredential")
             }
-        val es = eventService ?: return
         es.emit(
             es
                 .eventBuilder()
@@ -123,67 +149,105 @@ class HandleDeferredCredentialRequestCommandImpl(
         val deferredRequest = applied.deferredRequest
 
         // 1. Validate access token
-        asBridge
-            .validateAccessToken(
-                ValidateAccessTokenArgs(
-                    accessToken = applied.accessToken,
-                    dpopProof = applied.dpopProof,
-                    httpUrl = applied.httpUrl,
-                    httpMethod = applied.httpMethod,
-                ),
-            ).getOrElse { return Err(it) }
+        val tokenContext =
+            asBridge
+                .validateAccessToken(
+                    ValidateAccessTokenArgs(
+                        accessToken = applied.accessToken,
+                        dpopProof = applied.dpopProof,
+                        httpUrl = applied.httpUrl,
+                        httpMethod = applied.httpMethod,
+                    ),
+                ).getOrElse { return Err(it) }
 
         // 2. Look up deferred entry
         val transactionId = deferredRequest.transactionId
         val entry =
             deferredStore.get(transactionId).getOrElse { return Err(it) }
-                ?: return Err(IdkError.NOT_FOUND_ERROR(message = "invalid_transaction_id"))
+                ?: return invalidTransactionId()
 
         // 3. Handle based on status
         return when (entry.status) {
-            DeferredCredentialStatus.READY -> {
-                // Mark as delivered
-                deferredStore
-                    .update(entry.copy(status = DeferredCredentialStatus.DELIVERED))
-                    .getOrElse { return Err(it) }
+            DeferredCredentialStatus.READY -> deliverReady(entry)
 
-                // Build credential response. OID4VCI 1.0 §8.3 always uses the `credentials`
-                // array form, whether the deferred result holds a single credential or a batch.
-                val batchCredentials = entry.credentialResponses
-                val items =
-                    if (!batchCredentials.isNullOrEmpty()) {
-                        batchCredentials.map { CredentialResponseItem(credential = it) }
-                    } else {
-                        val credentialJson =
-                            entry.credentialResponse
-                                ?: return Err(IdkError.UNKNOWN_ERROR(message = "Deferred entry READY but no credential stored"))
-                        listOf(CredentialResponseItem(credential = credentialJson))
-                    }
-                Ok(
-                    CredentialResponse(
-                        credentials = items,
-                        notificationId = entry.notificationId,
-                    ),
-                )
-            }
-
-            DeferredCredentialStatus.PENDING -> {
-                // OID4VCI 1.1 Section 10.2: return Ok with transaction_id + interval so the
-                // HTTP adapter can respond 202 with the correct body (not an error response).
-                Ok(
-                    CredentialResponse(
-                        transactionId = transactionId,
-                        interval = entry.retryAfterSeconds,
-                    ),
-                )
-            }
+            DeferredCredentialStatus.PENDING -> handlePending(entry, tokenContext)
 
             DeferredCredentialStatus.FAILED,
             DeferredCredentialStatus.EXPIRED,
             DeferredCredentialStatus.DELIVERED,
-            -> {
-                Err(IdkError.NOT_FOUND_ERROR(message = "invalid_transaction_id"))
-            }
+            -> invalidTransactionId()
         }
+    }
+
+    private fun invalidTransactionId(): IdkResult<CredentialResponse, IdkError> = Err(IdkError.NOT_FOUND_ERROR(message = INVALID_TRANSACTION_ID))
+
+    /**
+     * Mark a READY entry as DELIVERED and return the stored credential response per
+     * OID4VCI 1.0 §8.3.
+     */
+    private suspend fun deliverReady(entry: DeferredCredentialEntry,): IdkResult<CredentialResponse, IdkError> {
+        deferredStore
+            .update(entry.copy(status = DeferredCredentialStatus.DELIVERED))
+            .getOrElse { return Err(it) }
+
+        val batchCredentials = entry.credentialResponses
+        val items =
+            if (!batchCredentials.isNullOrEmpty()) {
+                batchCredentials.map { CredentialResponseItem(credential = it) }
+            } else {
+                val credentialJson =
+                    entry.credentialResponse
+                        ?: return Err(IdkError.UNKNOWN_ERROR(message = "Deferred entry READY but no credential stored"))
+                listOf(CredentialResponseItem(credential = credentialJson))
+            }
+        return Ok(
+            CredentialResponse(
+                credentials = items,
+                notificationId = entry.notificationId,
+            ),
+        )
+    }
+
+    /**
+     * PENDING branch: enforce expiry, then attempt a pipeline re-execution per Task 7.3, and
+     * finally fall back to the OID4VCI 1.1 §10.2 transactionId+interval response so the HTTP
+     * adapter answers 202.
+     */
+    private suspend fun handlePending(
+        entry: DeferredCredentialEntry,
+        tokenContext: ValidatedTokenContext,
+    ): IdkResult<CredentialResponse, IdkError> {
+        val expiredResult = enforceExpiry(entry)
+        if (expiredResult != null) return expiredResult
+
+        val reExecResult = reExecutor?.attempt(entry, tokenContext)
+        if (reExecResult != null) return reExecResult
+
+        return Ok(
+            CredentialResponse(
+                transactionId = entry.transactionId,
+                interval = entry.retryAfterSeconds,
+            ),
+        )
+    }
+
+    /**
+     * Returns `Err(invalid_transaction_id)` and flips the entry to EXPIRED when the entry has
+     * passed its `expiresAt`. Returns `null` otherwise so the caller continues with re-execution.
+     *
+     * OID4VCI 1.0 §10.2 lists `invalid_transaction_id` as the error for "the transaction does
+     * not exist, has expired, or is unknown": same code the FAILED / EXPIRED / DELIVERED branch
+     * uses, surfaced consistently here when we discover expiry during a PENDING poll.
+     */
+    private suspend fun enforceExpiry(entry: DeferredCredentialEntry,): IdkResult<CredentialResponse, IdkError>? {
+        if (clock.now().toEpochMilliseconds() < entry.expiresAt) return null
+        deferredStore
+            .update(entry.copy(status = DeferredCredentialStatus.EXPIRED))
+            .getOrElse { return Err(it) }
+        return invalidTransactionId()
+    }
+
+    private companion object {
+        const val INVALID_TRANSACTION_ID = "invalid_transaction_id"
     }
 }

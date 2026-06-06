@@ -27,11 +27,11 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.logout.CreateLogoutTokenArgs
 import com.sphereon.oauth2.server.authorization.command.logout.CreateLogoutTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -59,7 +59,7 @@ import kotlin.time.Clock
 class CreateLogoutTokenCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
-    @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
+    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val secureRandom: SecureRandom,
 ) : TypedServiceCommandAdapter<CreateLogoutTokenArgs, StringResult, IdkError>(
         commandId = CreateLogoutTokenCommand.COMMAND_ID,
@@ -77,6 +77,7 @@ class CreateLogoutTokenCommandImpl(
         applyDuring: (CreateLogoutTokenArgs) -> CreateLogoutTokenArgs,
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
+        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         if (serverIdentifier == null) {
             return Err(
                 IdkError.fromDTO(

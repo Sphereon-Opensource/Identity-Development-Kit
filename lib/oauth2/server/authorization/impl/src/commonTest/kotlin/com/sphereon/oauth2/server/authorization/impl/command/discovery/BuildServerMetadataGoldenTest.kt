@@ -26,6 +26,7 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,7 +78,7 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    serverIdentifier = null,
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(),
                     identifierService = ctx.identifierService,
                     grantHandlers = emptySet(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
@@ -138,7 +139,7 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    serverIdentifier = null,
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(),
                     identifierService = ctx.identifierService,
                     grantHandlers = emptySet(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
@@ -161,7 +162,7 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    serverIdentifier = null,
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(),
                     identifierService = ctx.identifierService,
                     grantHandlers = emptySet(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
@@ -213,7 +214,7 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    serverIdentifier = ManagedOptsAlias(identifier = alias),
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = alias)),
                     identifierService = ctx.identifierService,
                     grantHandlers = emptySet(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,

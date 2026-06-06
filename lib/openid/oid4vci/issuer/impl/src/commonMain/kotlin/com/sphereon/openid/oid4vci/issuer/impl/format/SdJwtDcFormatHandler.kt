@@ -41,8 +41,10 @@ import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.sdjwt.IssueSdJwtArgs
 import com.sphereon.sdjwt.SdJwtService
 import com.sphereon.sdjwt.dsl.sdJwtPayload
+import com.sphereon.statuslist.spi.CredentialStatusEnricher
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.JsonArray
@@ -65,6 +67,7 @@ class SdJwtDcFormatHandler(
     private val kms: KeyManagerService,
     private val didProviderRegistry: DidProviderRegistry,
     private val issuerKeyIdResolver: com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver,
+    private val statusEnricherProvider: Provider<CredentialStatusEnricher>? = null,
 ) : CredentialFormatHandler {
     override val supportedFormat: String = CredentialFormat.SD_JWT_DC.value
 
@@ -109,6 +112,11 @@ class SdJwtDcFormatHandler(
         // expiration check applies.
         val exp: Long? = context.expirationInDays?.let { iat + it.toLong() * SECONDS_PER_DAY }
 
+        // Pre-sign: reserve a Token Status List entry (if configured) so the `status.status_list`
+        // reference is embedded into the signed SD-JWT.
+        val reservedStatus =
+            reserveCredentialStatus(statusEnricherProvider?.invoke(), context).getOrElse { return Err(it) }
+
         // Build the SD-JWT payload using the DSL
         val payload =
             sdJwtPayload {
@@ -117,6 +125,8 @@ class SdJwtDcFormatHandler(
                 claim("vct", vct)
                 iat(iat)
                 if (exp != null) claim("exp", exp)
+                // Status list reference — a standard, never-selectively-disclosed claim.
+                reservedStatus?.let { claim("status", it.claim) }
                 // Holder binding: cnf carries EXACTLY ONE of `kid` (DID VM URL) or `jwk`,
                 // matching the method the wallet used in its proof. Wallet libraries such
                 // as credo-ts pick the first branch they find — including both with `jwk`

@@ -29,12 +29,7 @@ import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
-import com.sphereon.crypto.key.persistence.NoOpKeyReferenceStore
-import com.sphereon.di.session.SessionScope
-import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
 import kotlin.time.Instant
@@ -46,12 +41,13 @@ import kotlin.time.Instant
  * rather than removing rows, preserving audit history. All queries filter out
  * soft-deleted rows via `WHERE deleted_at IS NULL`.
  *
- * Replaces [NoOpKeyReferenceStore] when this module is on the classpath,
- * enabling persistent mode for the [ManagedKeyStoreSelector][com.sphereon.crypto.key.persistence.impl.ManagedKeyStoreSelector].
+ * Not bound directly: [SqliteKeyReferenceStoreFactory] contributes this dialect
+ * into the database-dialect selection map consumed by
+ * [SelectingKeyReferenceStore][com.sphereon.crypto.key.persistence.SelectingKeyReferenceStore],
+ * so the dialect is a runtime configuration decision and may coexist on the
+ * classpath with the PostgreSQL/MySQL dialects.
  */
 @Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<KeyReferenceStore>(), replaces = [NoOpKeyReferenceStore::class])
 class SqliteKeyReferenceStoreImpl(
     private val database: KeyReferenceDatabaseSqlite,
 ) : KeyReferenceStore {

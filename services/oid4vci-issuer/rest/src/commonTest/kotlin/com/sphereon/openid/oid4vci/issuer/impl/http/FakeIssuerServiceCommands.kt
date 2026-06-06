@@ -2,17 +2,24 @@ package com.sphereon.openid.oid4vci.issuer.impl.http
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.jose.jws.JwtCompactResult
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
+import com.sphereon.openid.oid4vci.common.model.CredentialOffer
+import com.sphereon.openid.oid4vci.common.model.CredentialOfferGrants
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
+import com.sphereon.openid.oid4vci.common.model.PreAuthorizedCodeOfferGrant
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataCommand
+import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
+import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
+import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestArgs
@@ -95,6 +102,48 @@ internal class FakeHandleDeferredCredentialRequestCommand : HandleDeferredCreden
     override suspend fun execute(args: HandleDeferredCredentialRequestArgs): IdkResult<CredentialResponse, IdkError> {
         lastArgs = args
         return result
+    }
+}
+
+/**
+ * Fake issuer-level offer-creation command. Each [execute] call mints a distinct
+ * [CreatedCredentialOffer]: a fresh offer id, session id and pre-authorized code, so a test can
+ * observe the fresh-per-fetch property (two GETs on the same reusable URI produce two distinct
+ * inner offers). The protocol [CredentialOffer] has no correlation_id field, so the per-mint
+ * distinguishing value surfaces as the pre-authorized code inside `grants`.
+ */
+internal class FakeCreateCredentialOfferCommand : CreateCredentialOfferCommand {
+    private var counter = 0
+    val seenArgs = mutableListOf<CreateCredentialOfferArgs>()
+
+    override val commandId: String get() = CreateCredentialOfferCommand.COMMAND_ID
+    override val id: String get() = commandId
+    override val isEnabled: Boolean get() = true
+    override val inputTypeToken: TypeToken<CreateCredentialOfferArgs> = typeToken()
+    override val outputTypeToken: TypeToken<CreatedCredentialOffer> = typeToken()
+
+    override suspend fun execute(args: CreateCredentialOfferArgs): IdkResult<CreatedCredentialOffer, IdkError> {
+        seenArgs.add(args)
+        counter += 1
+        val mint = counter
+        val offer =
+            CredentialOffer(
+                credentialIssuer = args.issuerId,
+                credentialConfigurationIds = args.credentialConfigurationIds,
+                grants =
+                    CredentialOfferGrants(
+                        preAuthorizedCode =
+                            PreAuthorizedCodeOfferGrant(preAuthorizedCode = "fresh-pre-auth-code-$mint"),
+                    ),
+            )
+        return Ok(
+            CreatedCredentialOffer(
+                offerId = "fresh-offer-id-$mint",
+                sessionId = "fresh-session-id-$mint",
+                offer = offer,
+                offerUri = "openid-credential-offer://?credential_offer_uri=fresh-$mint",
+            ),
+        )
     }
 }
 

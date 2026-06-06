@@ -68,6 +68,7 @@ import dev.zacsweers.metro.binding
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CredentialIssuancePolicyResolver>())
+@ContributesBinding(SessionScope::class, binding = binding<CredentialIssuancePolicyResolver?>())
 class DefaultCredentialIssuancePolicyResolver(
     private val execution: SessionExecution,
 ) : CredentialIssuancePolicyResolver {

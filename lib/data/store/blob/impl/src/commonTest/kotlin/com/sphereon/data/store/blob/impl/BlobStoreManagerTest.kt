@@ -62,7 +62,7 @@ class BlobStoreManagerTest {
         val config = InMemoryBlobStoreConfig(id = "test-mem", scopeBinding = BlobStoreScopeBinding.APP)
         val store = manager.createFromBlobStoreConfig(config)
         assertNotNull(store)
-        assertEquals(BlobStoreSchemes.MEMORY, store.storeId)
+        assertEquals(BlobStoreSchemes.MEMORY, store.schemeId)
     }
 
     @Test
@@ -113,7 +113,7 @@ class BlobStoreManagerTest {
         val config = InMemoryBlobStoreConfig(id = "resolve-test", scopeBinding = BlobStoreScopeBinding.APP)
         val store = manager.resolve(config)
         assertNotNull(store)
-        assertEquals(BlobStoreSchemes.MEMORY, store.storeId)
+        assertEquals(BlobStoreSchemes.MEMORY, store.schemeId)
     }
 
     @Test

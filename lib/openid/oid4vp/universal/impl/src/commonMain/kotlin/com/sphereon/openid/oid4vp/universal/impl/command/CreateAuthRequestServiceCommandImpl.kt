@@ -38,6 +38,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vc.common.QrCodeService
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ResponseMode
+import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryResolver
 import com.sphereon.openid.oid4vp.universal.CreateAuthRequestServiceCommand
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
@@ -51,7 +52,6 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCallbackCon
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
-import com.sphereon.openid.oid4vp.verifier.store.DcqlQueryConfigurationStore
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.buildJsonObject
@@ -76,7 +76,7 @@ import kotlin.random.Random
 class CreateAuthRequestServiceCommandImpl(
     execution: SessionExecution,
     private val oid4vpVerifierService: Oid4vpVerifierService,
-    private val dcqlConfigStore: DcqlQueryConfigurationStore,
+    private val dcqlQueryResolver: DcqlQueryResolver,
     private val clientMetadataConfigStore: ClientMetadataConfigurationStore,
     private val sessionEventService: SessionEventService,
     private val qrCodeService: QrCodeService,
@@ -111,27 +111,14 @@ class CreateAuthRequestServiceCommandImpl(
             )
         }
 
-        // 2. Resolve DCQL query (from config store or inline)
-        val dcqlQuery =
+        // 2. Resolve DCQL query (via the resolver SPI for a stored query_id, or inline)
+        val resolvedQuery =
             if (inputQueryId != null) {
-                val config =
-                    dcqlConfigStore.getByQueryId(inputQueryId).getOrNull()
-                        ?: return Err(
-                            IdkError.NOT_FOUND_ERROR(
-                                message = "Query configuration not found: $inputQueryId",
-                            ),
-                        )
-                if (!config.enabled) {
-                    return Err(
-                        IdkError.ILLEGAL_ARGUMENT_ERROR(
-                            message = "Query configuration is disabled: $inputQueryId",
-                        ),
-                    )
-                }
-                config.dcqlQuery
+                dcqlQueryResolver.resolveForCreate(inputQueryId, input.verifierId).getOrElse { return Err(it) }
             } else {
-                inputDcqlQuery!!
+                null
             }
+        val dcqlQuery = resolvedQuery?.dcqlQuery ?: inputDcqlQuery!!
 
         // 3. Resolve client metadata (from config store or use default)
         val clientMetadataConfig =
@@ -191,7 +178,8 @@ class CreateAuthRequestServiceCommandImpl(
         // but OID4VP §11.1 client_metadata doesn't define `redirect_uris` — that's OAuth2
         // RFC 7591. response_uri sourcing belongs to verifier deployment configuration.
         val responseUri =
-            configProvider.getConfig().responseUri
+            input.responseUri
+                ?: configProvider.getConfig().responseUri
                 ?: "$clientId/response"
 
         // 6. Resolve client_id_scheme: explicit > detect from client_id prefix > default
@@ -309,6 +297,9 @@ class CreateAuthRequestServiceCommandImpl(
                 // OID4VP §5.10: surfaces as `&request_uri_method=…` on the outer OAuth2 URL.
                 // Caller-supplied; we don't second-guess (verifier-impl validates the value).
                 requestUriMethod = input.requestUriMethod?.takeIf { it.isNotBlank() },
+                dcqlQueryId = resolvedQuery?.dcqlQueryId,
+                dcqlQueryVersion = resolvedQuery?.version,
+                credentialStatusPolicies = input.credentialStatusPolicies,
             )
 
         val created =

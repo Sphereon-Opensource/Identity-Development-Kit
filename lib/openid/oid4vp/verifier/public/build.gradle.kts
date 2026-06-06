@@ -59,6 +59,12 @@ kotlin {
                 // DCQL (for query creation)
                 api(projects.libOpenidOid4vpDcql)
 
+                // Credential status policy (CredentialStatusPolicy on the create-request args + session)
+                api(projects.libStatuslistPublic)
+
+                // DCQL query configuration store (DcqlQueryConfigurationStore is exposed on Oid4vpVerifierService)
+                api(projects.libOpenidOid4vpDcqlStorePublic)
+
                 // Serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
 

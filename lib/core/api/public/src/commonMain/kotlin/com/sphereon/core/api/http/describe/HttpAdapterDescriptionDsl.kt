@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.http.describe
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.compat.JsExportCompat
 
 /**
@@ -66,6 +67,7 @@ class HttpAdapterMountBuilder {
     var serverPrefix: String = ""
     var adapterBasePath: String = "/"
     var tenantPathMode: TenantPathMode = TenantPathMode.OFF
+    var tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None
     var tenantSegmentPattern: String = HttpAdapterMount.DEFAULT_TENANT_SEGMENT_PATTERN
     var tenantResolutionPriority: TenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
 
@@ -74,6 +76,7 @@ class HttpAdapterMountBuilder {
             serverPrefix = serverPrefix,
             adapterBasePath = adapterBasePath,
             tenantPathMode = tenantPathMode,
+            tenantPathPolicy = tenantPathPolicy,
             tenantSegmentPattern = tenantSegmentPattern,
             tenantResolutionPriority = tenantResolutionPriority,
         )

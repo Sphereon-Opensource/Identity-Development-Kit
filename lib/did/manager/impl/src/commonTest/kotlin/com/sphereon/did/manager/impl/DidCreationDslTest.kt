@@ -147,7 +147,7 @@ class DidCreationDslTest {
         assertEquals(1, result.options.services?.size)
         val service = result.options.services!!.first()
         assertEquals("linked-domains", service.id)
-        assertEquals("LinkedDomains", service.type)
+        assertEquals(listOf("LinkedDomains"), service.type)
 
         // Verify key configs
         assertEquals(2, result.keyConfigs.size)
@@ -221,9 +221,30 @@ class DidCreationDslTest {
             }
 
         assertEquals("did:web:controller.example.com", result.options.controller)
+        assertEquals(listOf("did:web:controller.example.com"), result.options.controllers)
         assertEquals(
             com.sphereon.did.models.VerificationMethodType.JSON_WEB_KEY_2020,
             result.options.verificationMethodType,
+        )
+    }
+
+    @Test
+    fun testMultipleControllers() {
+        val result =
+            didCreateOptions {
+                method("web")
+                domain("example.com")
+                controllers("did:web:controller-a.example.com", "did:web:controller-b.example.com")
+                autoGenerateKey {
+                    keyType(KeyTypeMapping.EC)
+                    curve(Curve.P_256)
+                }
+            }
+
+        assertEquals(null, result.options.controller)
+        assertEquals(
+            listOf("did:web:controller-a.example.com", "did:web:controller-b.example.com"),
+            result.options.controllers,
         )
     }
 

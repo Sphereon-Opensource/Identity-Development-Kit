@@ -36,7 +36,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
-import io.ktor.util.AttributeKey
+import com.sphereon.ktor.server.inject.BaseTenantIdAttribute as SharedBaseTenantIdAttribute
 
 /**
  * Per-call attribute holding the Layer 1 resolved base tenant id.
@@ -53,7 +53,11 @@ import io.ktor.util.AttributeKey
  * code can read it, without either module needing to depend on a particular
  * tenant-resolution plugin implementation.
  */
-val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.baseTenantId")
+@Deprecated(
+    message = "Use com.sphereon.ktor.server.inject.BaseTenantIdAttribute",
+    replaceWith = ReplaceWith("BaseTenantIdAttribute", "com.sphereon.ktor.server.inject.BaseTenantIdAttribute"),
+)
+val BaseTenantIdAttribute get() = SharedBaseTenantIdAttribute
 
 /**
  * Stamp the resolved base tenant id onto the call. Idempotent — calling it

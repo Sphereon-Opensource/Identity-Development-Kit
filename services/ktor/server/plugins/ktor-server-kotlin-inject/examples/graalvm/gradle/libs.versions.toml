@@ -13,7 +13,7 @@ rules = "1.7.0"
 kiwa = "0.1.0-SNAPSHOT"
 
 sphereon-plugin = "0.25.0-SNAPSHOT"
-app-platform = "0.0.12SPH-SNAPSHOT"
+app-platform = "0.0.15SPH-SNAPSHOT"
 kotlin = "2.3.21"
 sphereon-idk = "0.25.0-SNAPSHOT"
 spring-boot = "3.5.13"

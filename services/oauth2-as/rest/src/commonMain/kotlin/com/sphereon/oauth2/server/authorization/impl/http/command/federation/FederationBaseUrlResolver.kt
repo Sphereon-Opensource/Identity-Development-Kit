@@ -17,22 +17,43 @@
 package com.sphereon.oauth2.server.authorization.impl.http.command.federation
 
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
 
-/*
- * Shared base-URL resolution for the federation HTTP endpoint commands. Honours
- * `X-Forwarded-Proto` / `Host` when no issuer is configured so the upstream IdP redirect URL
- * stays consistent behind reverse proxies.
+/**
+ * Shared base-URL resolution for the federation HTTP endpoint commands.
+ *
+ * The default IDK implementation honours `X-Forwarded-Proto` / `Host` when no issuer is
+ * configured so the upstream IdP redirect URL stays consistent behind reverse proxies. EDK
+ * runtimes can bind a tenant-aware implementation that resolves the active tenant's public
+ * endpoint binding from `tenant_public_endpoint` instead.
  */
+interface FederationBaseUrlResolver {
+    suspend fun resolveBaseUrl(
+        request: GenericHttpRequest,
+        configProvider: OAuth2ServersConfigProvider,
+    ): String
+}
 
-internal fun GenericHttpRequest.resolveFederationBaseUrl(configProvider: OAuth2ServersConfigProvider): String {
-    val configuredIssuer = configProvider.serverConfig.issuer?.trimEnd('/')
-    if (configuredIssuer != null) return configuredIssuer
-    val host = headers["host"] ?: headers["Host"] ?: "localhost"
-    val proto =
-        headers["x-forwarded-proto"]
-            ?: headers["X-Forwarded-Proto"]
-            ?: headers["X-FORWARDED-PROTO"]
-    val scheme = if (proto.equals("https", ignoreCase = true)) "https" else "http"
-    return "$scheme://$host"
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class)
+class DefaultFederationBaseUrlResolver : FederationBaseUrlResolver {
+    override suspend fun resolveBaseUrl(
+        request: GenericHttpRequest,
+        configProvider: OAuth2ServersConfigProvider,
+    ): String {
+        val configuredIssuer = configProvider.serverConfig.issuer?.trimEnd('/')
+        if (configuredIssuer != null) return configuredIssuer
+        val host = request.headers["host"] ?: request.headers["Host"] ?: "localhost"
+        val proto =
+            request.headers["x-forwarded-proto"]
+                ?: request.headers["X-Forwarded-Proto"]
+                ?: request.headers["X-FORWARDED-PROTO"]
+        val scheme = if (proto.equals("https", ignoreCase = true)) "https" else "http"
+        return "$scheme://$host"
+    }
 }

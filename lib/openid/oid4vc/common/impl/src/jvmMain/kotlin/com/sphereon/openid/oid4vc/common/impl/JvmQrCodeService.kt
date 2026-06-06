@@ -51,6 +51,13 @@ class JvmQrCodeService : QrCodeService {
                     .withSize(cellSize)
                     .withColor(darkColor)
                     .withBackgroundColor(lightColor)
+                    // qrcode-kotlin's square shape defaults to a non-zero inner spacing, drawing
+                    // each module as a smaller square with a white border inside its cell. That
+                    // leaves visible gaps between dark modules which many camera scanners cannot
+                    // reconstruct into a valid matrix (and makes the code look washed out). Force
+                    // 0 so modules are contiguous. The 4-module quiet zone is already part of the
+                    // rendered matrix, so no extra `withMargin` is needed.
+                    .withInnerSpacing(0)
                     .build(content)
                     .renderToBytes()
 

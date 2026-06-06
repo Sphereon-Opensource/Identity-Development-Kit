@@ -34,11 +34,11 @@ import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationError
 import com.sphereon.oauth2.server.authorization.command.authorization.AuthorizeHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestArgs
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.loginSessionCookieValue
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2HtmlErrorPage
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.storage.MutableOidcLoginSessionIdProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -65,6 +65,7 @@ class AuthorizeHttpEndpointCommandImpl(
     private val handleAuthorizeRequestCommands: Set<HandleAuthorizeRequestCommand>,
     private val createAuthorizationErrorResponseCommand: CreateAuthorizationErrorResponseCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val loginSessionIdProvider: MutableOidcLoginSessionIdProvider,
 ) : HttpEndpointCommandAdapter(
         id = AuthorizeHttpEndpointCommand.COMMAND_ID,
@@ -114,7 +115,7 @@ class AuthorizeHttpEndpointCommandImpl(
                 request.queryParameters.filterValues { it != null } as Map<String, String>
             }
 
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val handleArgs =
             HandleAuthorizeRequestArgs(
                 queryParameters = parameters,

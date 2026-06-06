@@ -31,6 +31,7 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizatio
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.authorization.matchesRegisteredRedirectUri
+import com.sphereon.oauth2.server.authorization.impl.command.authorization.resolvePublicClientFallback
 import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
@@ -111,6 +112,10 @@ class VerifyPushedAuthorizationRequestCommandImpl(
                         details = "Failed to retrieve client registration: $error",
                     )
                 }.getOrElse { return Err(it) }
+                // Permissive public-client fallback — mirrors resolveTrustedRedirect at the
+                // authorization endpoint so PAR accepts unregistered public clients when the
+                // server permits any public client (publicClients.allowAny + permissiveRedirectUri).
+                ?: resolvePublicClientFallback(request.clientId, configProvider)
 
         if (client == null) {
             return Err(
@@ -161,6 +166,11 @@ class VerifyPushedAuthorizationRequestCommandImpl(
                     ),
                 )
             }
+        } else if (client.redirectUris.isEmpty()) {
+            // Permissive fallback (empty redirectUris on a synthesised public client) accepts any
+            // explicit URI — mirrors resolveTrustedRedirect at the authorization endpoint. Normal
+            // registered clients always have a redirect-URI list, so this only loosens the synthetic
+            // public-client path.
         } else {
             // Verify redirect_uri matches one of the registered URIs per RFC 6749 §3.1.2.2:
             // strict simple-string match wins; otherwise scheme + authority + path match against

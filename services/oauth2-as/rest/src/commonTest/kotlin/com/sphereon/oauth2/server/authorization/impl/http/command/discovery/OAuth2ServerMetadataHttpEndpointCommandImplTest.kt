@@ -26,6 +26,7 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
 import com.sphereon.oauth2.server.authorization.command.discovery.OAuth2ServerMetadataHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import kotlinx.coroutines.test.runTest
@@ -56,6 +57,7 @@ class OAuth2ServerMetadataHttpEndpointCommandImplTest {
                     execution = TestSessionExecution(),
                     handleDiscoveryRequestCommand = FakeDiscoveryCommand { error("Not invoked here") },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             assertTrue(command.supports(GenericHttpRequest(method = "GET", path = "/.well-known/oauth-authorization-server")))
@@ -81,6 +83,7 @@ class OAuth2ServerMetadataHttpEndpointCommandImplTest {
                             )
                         },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =
@@ -108,6 +111,7 @@ class OAuth2ServerMetadataHttpEndpointCommandImplTest {
                     handleDiscoveryRequestCommand =
                         FakeDiscoveryCommand { Err(IdkError.fromString(code = "server_error", message = "boom")) },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =

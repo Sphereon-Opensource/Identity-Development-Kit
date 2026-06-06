@@ -18,6 +18,7 @@
 @file:OptIn(ExperimentalStdlibApi::class)
 
 import at.asitplus.awesn1.crypto.pki.X509Certificate
+import at.asitplus.awesn1.serialization.DER
 import com.sphereon.crypto.core.createTestHttpClient
 import com.sphereon.crypto.core.interop.x509CertificateFromDer
 import com.sphereon.crypto.core.interop.x509CertificateFromPem
@@ -28,6 +29,7 @@ import com.sphereon.crypto.core.x509.downloadCertificateChain
 import com.sphereon.crypto.core.x509.toX500
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToByteArray
 import org.kotlincrypto.hash.sha1.SHA1
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -150,7 +152,12 @@ eTCn+mxYcL+QkJA3DCokSdxVOB7yBw==
         val cert = x509CertificateFromPem(testPem)
 
         assertNotNull(cert)
-        assertEquals("643A1745CE94C11FF80D2175D7DC3B65833652B4", cert.tbsCertificate.serialNumber.toHexString(format = HexFormat.UpperCase))
+        assertEquals(
+            "643A1745CE94C11FF80D2175D7DC3B65833652B4",
+            cert.tbsCertificate.serialNumber
+                .twosComplement()
+                .toHexString(format = HexFormat.UpperCase)
+        )
         assertEquals("C=NL,ST=North Holland,L=Amsterdam,O=Sphereon ID Tech,OU=Identity,CN=sphereon.com", cert.tbsCertificate.issuerName.toX500())
         assertEquals("C=NL,ST=North Holland,L=Amsterdam,O=Sphereon ID Tech,OU=Identity,CN=sphereon.com", cert.tbsCertificate.subjectName.toX500())
     }
@@ -183,7 +190,7 @@ eTCn+mxYcL+QkJA3DCokSdxVOB7yBw==
     fun testFingerprint() {
         val certDTO = certificateFromPem(testPem)
         val x509 = x509CertificateFromPem(testPem)
-        val derBytes = x509.encodeToTlv().derEncoded
+        val derBytes = DER.encodeToByteArray(x509)
 
         assertNotNull(derBytes)
         val expectedFingerprint = SHA1().digest(derBytes).toHexString(format = HexFormat.UpperCase)
@@ -193,12 +200,19 @@ eTCn+mxYcL+QkJA3DCokSdxVOB7yBw==
     @Test
     fun testDerConversion() {
         val x509 = x509CertificateFromPem(testPem)
-        val derBytes = x509.encodeToTlv().derEncoded
+        val derBytes = DER.encodeToByteArray(x509)
 
         assertNotNull(derBytes)
 
         val fromDer = x509CertificateFromDer(derBytes)
-        assertEquals(x509.tbsCertificate.serialNumber.toHexString(format = HexFormat.UpperCase), fromDer.tbsCertificate.serialNumber.toHexString(format = HexFormat.UpperCase))
+        assertEquals(
+            x509.tbsCertificate.serialNumber
+                .twosComplement()
+                .toHexString(format = HexFormat.UpperCase),
+            fromDer.tbsCertificate.serialNumber
+                .twosComplement()
+                .toHexString(format = HexFormat.UpperCase)
+        )
         assertEquals(x509.tbsCertificate.issuerName.toX500(), fromDer.tbsCertificate.issuerName.toX500())
     }
 
@@ -225,7 +239,7 @@ eTCn+mxYcL+QkJA3DCokSdxVOB7yBw==
                 println("Certificate #${index + 1}:")
                 println("  Subject: ${cert.tbsCertificate.subjectName.toX500()}")
                 println("  Issuer: ${cert.tbsCertificate.issuerName.toX500()}")
-                println("  Serial: ${cert.tbsCertificate.serialNumber.toHexString(format = HexFormat.UpperCase)}")
+                println("  Serial: ${cert.tbsCertificate.serialNumber.twosComplement().toHexString(format = HexFormat.UpperCase)}")
                 println()
             }
 

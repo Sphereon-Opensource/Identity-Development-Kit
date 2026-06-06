@@ -55,8 +55,12 @@ import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.data.store.kv.memory.InMemoryKvBackingStorageImpl
 import com.sphereon.data.store.kv.memory.InMemoryKvStoreFactoryImpl
 import com.sphereon.data.store.schema.registry.CreateSchemaInput
+import com.sphereon.data.store.schema.registry.ImportExternalInput
 import com.sphereon.data.store.schema.registry.SchemaHostingMode
 import com.sphereon.data.store.schema.registry.SchemaRecordFilter
+import com.sphereon.data.store.schema.registry.SchemaRecordOrigin
+import com.sphereon.data.store.schema.registry.SchemaRecordOwnerLayer
+import com.sphereon.data.store.schema.registry.SchemaRecordProvenance
 import com.sphereon.data.store.schema.registry.SchemaType
 import com.sphereon.data.store.schema.registry.UpdateSchemaInput
 import com.sphereon.data.store.schema.registry.impl.persistence.BlobStoreSchemaRecordRepository
@@ -67,6 +71,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.uuid.ExperimentalUuidApi
 
@@ -140,6 +145,8 @@ class DefaultSchemaRegistryServiceTest {
             assertEquals("student-credential", created.name)
             assertEquals(SchemaType.JSON_SCHEMA, created.schemaType)
             assertNotNull(created.contentHash)
+            // No provenance supplied on the input -> the record carries none.
+            assertNull(created.provenance)
 
             // Get by ID
             val getResult = service.getSchema("test-tenant", created.id)
@@ -271,6 +278,80 @@ class DefaultSchemaRegistryServiceTest {
             val dupResult = service.createSchema("t1", CreateSchemaInput(namespace = "ns", name = "unique", schemaType = SchemaType.JSON_SCHEMA, contentText = "{}"))
             assertTrue(dupResult.isErr)
             assertEquals("ALREADY_EXISTS_ERROR", dupResult.error.code)
+        }
+
+    @Test
+    fun createSchemaPreservesProvenance() =
+        runTest {
+            val service = createService()
+            val provenance =
+                SchemaRecordProvenance(
+                    origin = SchemaRecordOrigin.INTERNAL_AUTHORED,
+                    ownerLayer = SchemaRecordOwnerLayer.OTHER,
+                    ownerId = "author-tool",
+                )
+            val result =
+                service.createSchema(
+                    tenantId = "test-tenant",
+                    input =
+                        CreateSchemaInput(
+                            namespace = "ns",
+                            name = "authored-schema",
+                            schemaType = SchemaType.JSON_SCHEMA,
+                            contentText = "{}",
+                            provenance = provenance,
+                        ),
+                )
+            assertTrue(result.isOk)
+            val record = result.value
+            assertNotNull(record.provenance)
+            val recordProvenance = record.provenance!!
+            assertEquals(SchemaRecordOrigin.INTERNAL_AUTHORED, recordProvenance.origin)
+            assertEquals(SchemaRecordOwnerLayer.OTHER, recordProvenance.ownerLayer)
+            assertEquals("author-tool", recordProvenance.ownerId)
+        }
+
+    @Test
+    fun importExternalDefaultsProvenanceToExternal() =
+        runTest {
+            val fetchedData = """{"type": "object"}""".encodeToByteArray()
+            val stubFetcher =
+                object : SchemaExternalFetcher {
+                    override suspend fun fetch(
+                        url: String,
+                        ifNoneMatch: String?,
+                        maxSizeBytes: Long,
+                    ): com.sphereon.core.api.IdkResult<FetchResult, com.sphereon.core.api.error.IdkError> =
+                        com.sphereon.core.api.Ok(
+                            FetchResult(
+                                data = fetchedData,
+                                contentType = "application/schema+json",
+                                etag = null,
+                                notModified = false,
+                            )
+                        )
+                }
+            val blobService = createTestBlobService()
+            val repository = BlobStoreSchemaRecordRepository(blobService)
+            val service = DefaultSchemaRegistryService(repository, blobService, stubFetcher)
+
+            val result =
+                service.importExternal(
+                    tenantId = "test-tenant",
+                    input =
+                        ImportExternalInput(
+                            namespace = "ns",
+                            name = "external-schema",
+                            schemaType = SchemaType.JSON_SCHEMA,
+                            sourceUrl = "https://example.com/schema.json",
+                        ),
+                )
+            assertTrue(result.isOk)
+            val record = result.value
+            assertNotNull(record.provenance)
+            val recordProvenance = record.provenance!!
+            assertEquals(SchemaRecordOrigin.EXTERNAL, recordProvenance.origin)
+            assertEquals("https://example.com/schema.json", recordProvenance.sourceUrl)
         }
 
     // -- Test support classes --

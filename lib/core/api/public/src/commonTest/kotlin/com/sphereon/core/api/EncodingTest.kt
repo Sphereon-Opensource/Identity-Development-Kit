@@ -272,6 +272,21 @@ class EncodeToEncodingTest {
 
 class UrlEncodingTest {
     @Test
+    fun encodeUrlComponentLeavesUnreservedCharacters() {
+        assertEquals("AZaz09-_.~", "AZaz09-_.~".encodeUrlComponent())
+    }
+
+    @Test
+    fun encodeUrlComponentUsesUtf8PercentEncoding() {
+        assertEquals("%C3%A9%20%F0%9F%9A%80", "\u00E9 \uD83D\uDE80".encodeUrlComponent())
+    }
+
+    @Test
+    fun encodeUrlComponentEncodesPathAndQueryDelimiters() {
+        assertEquals("a%2Fb%3Fc%3Dd%26e", "a/b?c=d&e".encodeUrlComponent())
+    }
+
+    @Test
     fun encodeUrlGraphEncodesSpace() {
         assertEquals("Hello%20World", "Hello World".encodeUrlGraph())
     }

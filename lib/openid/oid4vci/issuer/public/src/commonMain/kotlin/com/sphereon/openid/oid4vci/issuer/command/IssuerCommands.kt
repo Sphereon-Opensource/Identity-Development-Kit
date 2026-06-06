@@ -16,12 +16,15 @@
 
 package com.sphereon.openid.oid4vci.issuer.command
 
+import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtCompactResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.BatchCredentialIssuance
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
@@ -33,6 +36,9 @@ import com.sphereon.openid.oid4vci.common.model.DeferredCredentialRequest
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.OptionalBinding
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 // ============================================================================
@@ -46,6 +52,10 @@ data class CreateCredentialOfferArgs(
     val preAuthorizedCodeGrant: Boolean = false,
     val authorizationCodeGrant: Boolean = false,
     val txCodeRequired: Boolean = false,
+    /** Optional tx_code (PIN) length to advertise in the offer and generate. Null = unspecified (issuer default). */
+    val txCodeLength: Int? = null,
+    /** Optional tx_code input mode ("numeric" | "text"). Null = issuer default (numeric). */
+    val txCodeInputMode: String? = null,
     val preSeededAttributes: Map<String, JsonElement>? = null,
     val offerTtlSeconds: Long = 600,
     /**
@@ -72,6 +82,24 @@ data class CreateCredentialOfferArgs(
      * already carries a query). Null falls back to `openid-credential-offer://`.
      */
     val scheme: String? = null,
+    /**
+     * Controls whether the offer URI is single-use (default) or stays alive across multiple
+     * wallet fetches, minting a fresh offer on each GET.
+     */
+    val uriLifecycle: OfferUriLifecycle = OfferUriLifecycle.SINGLE_USE,
+    /**
+     * Lookup keys seeded into the pipeline session at offer-creation time so attribute
+     * sources can start resolving subject data before the wallet presents a proof.
+     * Only meaningful when a pipeline is bound to this offer.
+     */
+    @JsExportIgnoreCompat
+    val initialLookupKeys: List<LookupKey> = emptyList(),
+    /**
+     * Rate-limit applied to a reusable offer URI. Mandatory when
+     * [uriLifecycle] is [OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH]; must be null for
+     * [OfferUriLifecycle.SINGLE_USE] (ignored but accepted).
+     */
+    val rateLimit: OfferRateLimit? = null,
 )
 
 @JsExportCompat
@@ -235,4 +263,88 @@ interface BuildSignedIssuerMetadataCommand : ServiceCommand<BuildSignedIssuerMet
     companion object {
         const val COMMAND_ID = "oid4vci.issuer.signedmetadata"
     }
+}
+
+// ============================================================================
+// MintDeferralScopedTokenCommand
+// ============================================================================
+
+/**
+ * Args for the issuer-side mint of a deferral-scoped access token (§6.5 wallet-auth
+ * invariant). Used when refresh tokens are disabled on the issuing AS and the credential
+ * is deferred for longer than the wallet's original access-token lifetime.
+ *
+ * The minted JWT is an RFC 9068 `at+jwt` carrying:
+ * - `iss` — the issuer identifier of the AS minting the token
+ * - `iat` / `exp` — `exp = iat + [ttlSeconds]`
+ * - `scope = "deferred_credential"` — the only operation the token authorizes
+ * - `correlation_id` / `transaction_id` — pin the token to the specific deferred entry
+ * - `cnf.jkt` — DPoP key thumbprint, when the original wallet token was DPoP-bound
+ */
+@JsExportCompat
+@Serializable
+data class MintDeferralScopedTokenArgs(
+    /**
+     * Pipeline correlation id linking the token to the deferred issuance session so the
+     * `/deferred_credential` handler can re-resolve the session without trusting opaque
+     * wallet state.
+     */
+    val correlationId: String,
+    /** OID4VCI 1.0 §8.3.4 transaction id the wallet polls with. */
+    val transactionId: String,
+    /** Token lifetime in seconds — typically `deferralPolicy.maxDeferralSeconds + margin`. */
+    val ttlSeconds: Long,
+    /**
+     * Optional DPoP key thumbprint (RFC 9449 `jkt`). When non-null the minted token is
+     * DPoP-bound so the wallet must continue presenting a DPoP proof on subsequent polls;
+     * null mints a plain Bearer token (the original access token was unbound).
+     */
+    val cnfJkt: String? = null,
+    /**
+     * Optional `aud` claim — typically the deferred-credential endpoint URL. Omitted from
+     * the payload when null so the token stays valid for the AS-wide audience.
+     */
+    val audience: String? = null,
+)
+
+/**
+ * Result of [MintDeferralScopedTokenCommand]: a signed `at+jwt` and the lifetime the wallet
+ * should treat the token as valid for.
+ */
+@JsExportCompat
+@Serializable
+data class MintDeferralScopedTokenResult(
+    /** The minted compact JWS, ready to be returned to the wallet as a bearer/DPoP token. */
+    val accessToken: String,
+    /** Same value as `ttlSeconds` on the args, returned for caller convenience. */
+    val expiresInSeconds: Long,
+)
+
+/**
+ * §6.5 wallet-auth invariant: mints a deferral-scoped access token the wallet uses to call
+ * `/deferred_credential` after its original access token would expire. Wired into the issuer
+ * when the deployment has refresh tokens disabled and the deferral policy exceeds the access
+ * token lifetime; the common refresh-token-enabled path does not use this command.
+ */
+@JsExportCompat
+interface MintDeferralScopedTokenCommand : ServiceCommand<MintDeferralScopedTokenArgs, MintDeferralScopedTokenResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vci.issuer.mint-deferral-token"
+    }
+}
+
+/**
+ * Exposes [MintDeferralScopedTokenCommand] as an optional graph accessor so that consumers
+ * declaring `MintDeferralScopedTokenCommand? = null` constructor parameters resolve cleanly under
+ * the Metro `nullable type key`. The IDK
+ * [com.sphereon.openid.oid4vci.issuer.impl.command.MintDeferralScopedTokenCommandImpl] adds a
+ * second `@ContributesBinding(SessionScope::class, binding = binding<MintDeferralScopedTokenCommand?>())`
+ * so this default `null` body is overridden whenever the issuer-impl module is on the classpath.
+ */
+@ContributesTo(SessionScope::class)
+interface MintDeferralScopedTokenCommandOptionalProvider {
+    @OptionalBinding
+    val optionalMintDeferralScopedTokenCommand: MintDeferralScopedTokenCommand? get() = null
 }

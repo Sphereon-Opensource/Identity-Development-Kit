@@ -16,6 +16,7 @@
 
 package com.sphereon.crypto.kms.keystore.software
 
+import at.asitplus.awesn1.serialization.DER
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeTo
@@ -62,6 +63,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.refTo
 import kotlinx.cinterop.value
+import kotlinx.serialization.encodeToByteArray
 import platform.CoreFoundation.CFBooleanRef
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDataGetBytePtr
@@ -86,7 +88,6 @@ import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
 import platform.Security.SecKeyCopyExternalRepresentation
 import platform.Security.SecKeyCopyPublicKey
-import platform.Security.SecKeyCreateWithData
 import platform.Security.SecKeyRef
 import platform.Security.kSecAttrAccessible
 import platform.Security.kSecAttrAccessibleAfterFirstUnlock
@@ -181,15 +182,15 @@ actual class SoftwareKeyStoreService actual constructor(
                 ?: throw PKIException("Native key not found: $alias")
 
         val publicKeyRef =
-            platform.Security.SecKeyCopyPublicKey(secKeyRef)
+            SecKeyCopyPublicKey(secKeyRef)
                 ?: throw PKIException("Failed to extract public key from native key: $alias")
 
         val publicKeyData =
-            platform.Security.SecKeyCopyExternalRepresentation(publicKeyRef, null)
+            SecKeyCopyExternalRepresentation(publicKeyRef, null)
                 ?: throw PKIException("Failed to export public key for native key: $alias")
 
-        val pubKeyLength = platform.CoreFoundation.CFDataGetLength(publicKeyData).toInt()
-        val pubKeyBytesPtr = platform.CoreFoundation.CFDataGetBytePtr(publicKeyData)
+        val pubKeyLength = CFDataGetLength(publicKeyData).toInt()
+        val pubKeyBytesPtr = CFDataGetBytePtr(publicKeyData)
         val pubKeyBytes =
             pubKeyBytesPtr?.readBytes(pubKeyLength)
                 ?: throw PKIException("Failed to read public key bytes for native key: $alias")
@@ -314,9 +315,9 @@ actual class SoftwareKeyStoreService actual constructor(
         // Import the key from JWK → DER using awesn1
         val keyDer =
             if (isPrivate) {
-                jwk.toPkcs8PrivateKeyInfo().encodeToTlv().derEncoded
+                DER.encodeToByteArray(jwk.toPkcs8PrivateKeyInfo())
             } else {
-                jwk.toSubjectPublicKeyInfo().encodeToTlv().derEncoded
+                DER.encodeToByteArray(jwk.toSubjectPublicKeyInfo())
             }
 
         // Idempotent store: remove prior alias then add
@@ -895,17 +896,17 @@ internal object Keychain {
 
         val attributes =
             cfDict(
-                platform.Security.kSecAttrKeyType to
+                kSecAttrKeyType to
                     when (keyType) {
-                        KeyTypeMapping.EC -> platform.Security.kSecAttrKeyTypeECSECPrimeRandom
-                        KeyTypeMapping.RSA -> platform.Security.kSecAttrKeyTypeRSA
+                        KeyTypeMapping.EC -> kSecAttrKeyTypeECSECPrimeRandom
+                        KeyTypeMapping.RSA -> kSecAttrKeyTypeRSA
                         else -> throw PKIException("Unsupported key type: $keyType")
                     },
-                platform.Security.kSecAttrKeySizeInBits to keySizeBits.toCFNumber(),
-                platform.Security.kSecAttrKeyClass to platform.Security.kSecAttrKeyClassPrivate,
-                platform.Security.kSecAttrIsPermanent to true.toCFBoolean(),
-                platform.Security.kSecAttrApplicationTag to tagData,
-                platform.Security.kSecAttrAccessible to platform.Security.kSecAttrAccessibleAfterFirstUnlock,
+                kSecAttrKeySizeInBits to keySizeBits.toCFNumber(),
+                kSecAttrKeyClass to kSecAttrKeyClassPrivate,
+                kSecAttrIsPermanent to true.toCFBoolean(),
+                kSecAttrApplicationTag to tagData,
+                kSecAttrAccessible to kSecAttrAccessibleAfterFirstUnlock,
             ) ?: throw PKIException("Failed to create key attributes")
 
         return memScoped {

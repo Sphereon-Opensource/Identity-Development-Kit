@@ -93,7 +93,7 @@ fun Application.configureOid4vcDemo(
         route("/api") {
             // Issuer metadata
             get("/issuer/metadata") {
-                val response = httpClient.get("$issuerUrl/.well-known/openid-credential-issuer")
+                val response = httpClient.get("$issuerUrl/.well-known/openid-credential-issuer/oid4vci")
                 call.respondBytes(response.readRawBytes(), ContentType.Application.Json, HttpStatusCode(response.status.value, ""))
             }
 

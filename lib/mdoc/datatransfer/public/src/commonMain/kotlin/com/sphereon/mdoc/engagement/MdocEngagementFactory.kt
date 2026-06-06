@@ -19,6 +19,7 @@ package com.sphereon.mdoc.engagement
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.http.percentDecode
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.mdoc.transfer.device.BleOptions
@@ -603,7 +604,8 @@ class Oid4vpRetrievalBuilder(
             val params =
                 queryString.split("&").associate {
                     val (key, value) = it.split("=", limit = 2)
-                    key to decodeURIGraph(value)
+                    // Query-string semantics: `+` is a space, every `%HH` decodes.
+                    key to value.percentDecode(plusAsSpace = true)
                 }
 
             // Extract parameters from the URI
@@ -672,32 +674,4 @@ class Oid4vpRetrievalBuilder(
                 ),
         )
     }
-
-    /**
-     * Simple URI graph decoding.
-     * This is a basic implementation - for production use a proper URL decoding library.
-     */
-    private fun decodeURIGraph(value: String): String =
-        value
-            .replace("%20", " ")
-            .replace("%21", "!")
-            .replace("%22", "\"")
-            .replace("%23", "#")
-            .replace("%24", "$")
-            .replace("%25", "%")
-            .replace("%26", "&")
-            .replace("%27", "'")
-            .replace("%28", "(")
-            .replace("%29", ")")
-            .replace("%2A", "*")
-            .replace("%2B", "+")
-            .replace("%2C", ",")
-            .replace("%2F", "/")
-            .replace("%3A", ":")
-            .replace("%3B", ";")
-            .replace("%3D", "=")
-            .replace("%3F", "?")
-            .replace("%40", "@")
-            .replace("%5B", "[")
-            .replace("%5D", "]")
 }

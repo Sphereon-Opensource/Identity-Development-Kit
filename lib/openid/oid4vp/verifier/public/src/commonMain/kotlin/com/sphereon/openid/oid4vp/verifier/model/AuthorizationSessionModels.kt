@@ -22,6 +22,7 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
+import com.sphereon.statuslist.CredentialStatusPolicy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -123,6 +124,15 @@ data class AuthorizationSession(
     val correlationId: String,
     val queryId: String? = null,
     val dcqlQuery: DcqlQuery,
+    /**
+     * Version snapshot of the DCQL query this session was created against, when the query came
+     * from a version-history store. The session resolves this exact `(dcqlQueryId,
+     * dcqlQueryVersion)` for its full lifetime, so a later edit of the query header does not
+     * change what an in-flight session validates against. Both null for inline DCQL queries or
+     * stores without versioning.
+     */
+    val dcqlQueryId: String? = null,
+    val dcqlQueryVersion: Int? = null,
     val authorizationRequest: AuthorizationRequest,
     val status: AuthorizationSessionStatus,
     val error: AuthorizationSessionError? = null,
@@ -154,6 +164,14 @@ data class AuthorizationSession(
      * `IssuanceSession.postIssuanceHookAllowList` on the OID4VCI side.
      */
     val postPresentationHookAllowList: List<String>? = null,
+    /**
+     * Per-DCQL-credential-query credential status policy, keyed by the DCQL credential query `id`,
+     * pinned for this session's lifetime. Read at response validation to decide whether a received
+     * credential's resolved status is acceptable. Null / missing entry → the strict default
+     * ([com.sphereon.statuslist.CredentialStatusPolicy] defaults). Only enforced when a non-empty set
+     * of `CredentialStatusVerifier` implementations is on the verifier's classpath.
+     */
+    val credentialStatusPolicies: Map<String, CredentialStatusPolicy>? = null,
     val createdAt: Long,
     val updatedAt: Long,
     val expiresAt: Long,

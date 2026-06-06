@@ -19,98 +19,197 @@ package com.sphereon.did.persistence
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import kotlin.time.Instant
 
 /**
- * Repository interface for DID persistence operations.
+ * Persistence contract for DIDs.
  *
- * Implementations handle storage and retrieval of DID records.
- * This interface is platform-agnostic - implementations may use
- * SQLite (IDK), PostgreSQL/MySQL (EDK), or in-memory storage.
+ * Every [DidDetail] is loaded and saved as a unit — the aggregate-root [DidRecord] plus every
+ * child-row collection. Sub-resource methods (`saveVerificationMethod`, `deleteService`, etc.)
+ * exist for the incremental mutations the IDK-19 REST surface exposes as addressable endpoints;
+ * full-graph save is always `save(aggregate)`.
  *
- * No `I` prefix - implementations are suffixed with `Impl`.
+ * Rules that apply across every implementation (Memory, SQLite, PostgreSQL, MySQL):
+ * - Returns [IdkResult] with [IdkError]. "Not found" returns `Ok(null)`, not an `Err` —
+ *   see `vdx/CLAUDE.md` §Result Type.
+ * - Timestamps are [kotlin.time.Instant].
+ * - [tenantId] is nullable on the Memory + SQLite IDK dev dialects; PostgreSQL + MySQL
+ *   require a non-null tenant and return [IdkError.ILLEGAL_ARGUMENT_ERROR] when passed `null`.
+ * - Aggregate operations are transactional: SQL dialects use `transaction { }`; Memory wraps
+ *   the same work in a single `Mutex.withLock`.
+ * - Aggregate save is **delete-then-insert** for child rows — simple, idempotent, fine at the
+ *   sizes we expect (typical aggregates hold fewer than 30 rows).
  */
 interface DidRepository {
-    /**
-     * Saves a new DID record.
-     *
-     * @param record The record to save
-     * @return Success or error (e.g., if DID already exists)
-     */
-    suspend fun save(record: DidRecord): IdkResult<Unit, IdkError>
+    // ============ Aggregate ops (primary read/write path) ============
 
     /**
-     * Finds a DID record by its DID string.
-     *
-     * @param did The DID to find
-     * @return The record if found, null otherwise
+     * Persists [aggregate] atomically. Upserts the aggregate root by [DidRecord.id] and
+     * replaces every child collection (delete-then-insert inside one transaction).
      */
-    suspend fun findByDid(did: String): IdkResult<DidRecord?, IdkError>
+    suspend fun save(aggregate: DidDetail): IdkResult<Unit, IdkError>
 
     /**
-     * Finds a DID record by its alias.
+     * Loads the aggregate for [did] within [tenantId]. Returns `Ok(null)` when no row matches.
      *
-     * @param alias The alias to search for
-     * @return The record if found, null otherwise
+     * @param includeDeleted When `true`, returns soft-deleted aggregates as well.
      */
-    suspend fun findByAlias(alias: String): IdkResult<DidRecord?, IdkError>
+    suspend fun findByDid(
+        tenantId: String?,
+        did: String,
+        includeDeleted: Boolean = false,
+    ): IdkResult<DidDetail?, IdkError>
 
     /**
-     * Finds all DID records matching the optional filter.
-     *
-     * @param filter Optional filter criteria
-     * @return List of matching records
+     * Loads the aggregate whose [DidRecord.alias] matches. Returns `Ok(null)` when no row matches.
      */
-    suspend fun findAll(filter: DidRecordFilter? = null): IdkResult<List<DidRecord>, IdkError>
+    suspend fun findByAlias(
+        tenantId: String?,
+        alias: String,
+        includeDeleted: Boolean = false,
+    ): IdkResult<DidDetail?, IdkError>
 
     /**
-     * Updates an existing DID record.
+     * Loads every aggregate matching [filter]. Implementation must batch child-row fetches
+     * (1 query for did_record + 1 batched-IN query per child table = 9 queries total,
+     * regardless of result size — never N+1). Ordering follows [DidRecord.createdAt] ascending.
      *
-     * @param record The record to update (matched by id)
-     * @return Success or error (e.g., if record not found)
+     * If [DidRecordFilter.size] is non-null the storage layer applies `LIMIT/OFFSET` (SQL) or an
+     * equivalent slice (memory) so the caller never has to materialise the full set just to
+     * retrieve one page. [DidRecordFilter.page] is zero-based.
      */
-    suspend fun update(record: DidRecord): IdkResult<Unit, IdkError>
+    suspend fun findAll(filter: DidRecordFilter): IdkResult<List<DidDetail>, IdkError>
 
     /**
-     * Deletes a DID record.
-     *
-     * @param did The DID to delete
-     * @return Success or error (e.g., if not found)
+     * Counts every aggregate matching [filter] (page/size on [filter] are ignored — the count
+     * always reflects the full result set). Used by paginated list flows to populate
+     * `totalElements` without materialising every aggregate.
      */
-    suspend fun delete(did: String): IdkResult<Unit, IdkError>
+    suspend fun count(filter: DidRecordFilter): IdkResult<Long, IdkError>
 
     /**
-     * Saves a key mapping for a DID.
-     *
-     * @param didRecordId The ID of the DID record
-     * @param mapping The key mapping to save
-     * @return Success or error
+     * Soft-deletes the DID by setting `deleted_at = [deletedAt]`. Child rows are retained so
+     * audit queries (`includeDeleted = true`) still see the historic shape.
      */
-    suspend fun saveKeyMapping(
-        didRecordId: String,
-        mapping: DidKeyMappingRecord,
+    suspend fun softDelete(
+        tenantId: String?,
+        did: String,
+        deletedAt: Instant,
+        deletedBy: String?,
     ): IdkResult<Unit, IdkError>
 
     /**
-     * Gets all key mappings for a DID record.
-     *
-     * @param didRecordId The ID of the DID record
-     * @return List of key mappings
+     * Deletes the DID and cascades to every child row. Reserved for tenant offboarding
+     * and similar administrative flows — day-to-day use is [softDelete].
      */
-    suspend fun getKeyMappings(didRecordId: String): IdkResult<List<DidKeyMappingRecord>, IdkError>
+    suspend fun delete(
+        tenantId: String?,
+        did: String,
+    ): IdkResult<Unit, IdkError>
+
+    // ============ Child-row ops (IDK-19 sub-resource REST endpoints) ============
+
+    /** Upserts a verification method (insert on new `id`, replace otherwise). */
+    suspend fun saveVerificationMethod(vm: DidVerificationMethodRecord): IdkResult<Unit, IdkError>
 
     /**
-     * Deletes a key mapping.
+     * Removes a verification method and cascades to any relationships / key mappings.
      *
-     * @param mappingId The ID of the mapping to delete
-     * @return Success or error
+     * [tenantId] scopes the delete to a specific tenant. EDK dialects MUST reject
+     * `tenantId == null` with `ILLEGAL_ARGUMENT_ERROR` and join through the parent
+     * `did_record` so that a child-row UUID belonging to tenant A cannot be deleted from
+     * a request scoped to tenant B. The IDK Memory/SQLite dialects accept null tenant
+     * (development only). Returns `NOT_FOUND_ERROR` if no row matched.
      */
-    suspend fun deleteKeyMapping(mappingId: String): IdkResult<Unit, IdkError>
+    suspend fun deleteVerificationMethod(
+        tenantId: String?,
+        verificationMethodId: String,
+    ): IdkResult<Unit, IdkError>
+
+    /** Upserts a relationship row. */
+    suspend fun saveVerificationRelationship(rel: DidVerificationRelationshipRecord): IdkResult<Unit, IdkError>
 
     /**
-     * Deletes all key mappings for a DID record.
-     *
-     * @param didRecordId The ID of the DID record
-     * @return Success or error
+     * Removes a relationship row by id. See [deleteVerificationMethod] for tenant
+     * isolation semantics.
      */
-    suspend fun deleteKeyMappingsForDid(didRecordId: String): IdkResult<Unit, IdkError>
+    suspend fun deleteVerificationRelationship(
+        tenantId: String?,
+        relationshipId: String,
+    ): IdkResult<Unit, IdkError>
+
+    /** Upserts a service. */
+    suspend fun saveService(service: DidServiceRecord): IdkResult<Unit, IdkError>
+
+    /**
+     * Removes a service by id. See [deleteVerificationMethod] for tenant isolation
+     * semantics.
+     */
+    suspend fun deleteService(
+        tenantId: String?,
+        serviceId: String,
+    ): IdkResult<Unit, IdkError>
+
+    /** Upserts a key mapping. */
+    suspend fun saveKeyMapping(mapping: DidKeyMappingRecord): IdkResult<Unit, IdkError>
+
+    /**
+     * Removes a key mapping by id. See [deleteVerificationMethod] for tenant isolation
+     * semantics.
+     */
+    suspend fun deleteKeyMapping(
+        tenantId: String?,
+        mappingId: String,
+    ): IdkResult<Unit, IdkError>
+
+    /** Upserts a controller entry. */
+    suspend fun saveController(controller: DidControllerRecord): IdkResult<Unit, IdkError>
+
+    /**
+     * Removes a controller entry by id. See [deleteVerificationMethod] for tenant
+     * isolation semantics.
+     */
+    suspend fun deleteController(
+        tenantId: String?,
+        controllerId: String,
+    ): IdkResult<Unit, IdkError>
+
+    /** Upserts an `alsoKnownAs` entry. */
+    suspend fun saveAlsoKnownAs(aka: DidAlsoKnownAsRecord): IdkResult<Unit, IdkError>
+
+    /**
+     * Removes an `alsoKnownAs` entry by id. See [deleteVerificationMethod] for tenant
+     * isolation semantics.
+     */
+    suspend fun deleteAlsoKnownAs(
+        tenantId: String?,
+        akaId: String,
+    ): IdkResult<Unit, IdkError>
+
+    /** Upserts an `equivalentId` entry. */
+    suspend fun saveEquivalentId(eq: DidEquivalentIdRecord): IdkResult<Unit, IdkError>
+
+    /**
+     * Removes an `equivalentId` entry by its row id (not the DID string). See
+     * [deleteVerificationMethod] for tenant isolation semantics.
+     */
+    suspend fun deleteEquivalentId(
+        tenantId: String?,
+        equivalentIdRowId: String,
+    ): IdkResult<Unit, IdkError>
+
+    // ============ Context ops ============
+
+    /** Returns the ordered `@context` list for a DID. */
+    suspend fun getContexts(didRecordId: String): IdkResult<List<DidDocumentContextRecord>, IdkError>
+
+    /**
+     * Atomically replaces every context row for [didRecordId] with [contexts]
+     * (delete-then-insert). Separate from per-row operations because the `@context` array is
+     * a single ordered value whose mutation is always "replace the whole list".
+     */
+    suspend fun replaceContexts(
+        didRecordId: String,
+        contexts: List<DidDocumentContextRecord>,
+    ): IdkResult<Unit, IdkError>
 }

@@ -648,7 +648,7 @@ class SoftwareKmsProviderImpl(
             } else {
                 CertificateOptions(
                     subjectKeyInfo = keyInfo,
-                    subject = X509DistinguishedNameElements(commonName = "alias"),
+                    subject = X509DistinguishedNameElements(commonName = alias ?: kid),
                 )
             }
         if (certOpts != null && keyInfo.x5c == null) {

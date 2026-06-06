@@ -54,6 +54,8 @@ fun createOfferArgs(builder: CreateCredentialOfferArgsBuilder.() -> Unit): Creat
         preAuthorizedCodeGrant = state.preAuthorizedCodeGrant,
         authorizationCodeGrant = state.authorizationCodeGrant,
         txCodeRequired = state.txCodeRequired,
+        txCodeLength = state.txCodeLength,
+        txCodeInputMode = state.txCodeInputMode,
         preSeededAttributes = state.preSeededAttributes,
         offerTtlSeconds = state.offerTtlSeconds,
     )

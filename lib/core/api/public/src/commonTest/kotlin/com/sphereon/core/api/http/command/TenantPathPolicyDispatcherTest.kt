@@ -77,6 +77,22 @@ class TenantPathPolicyDispatcherTest {
         }
 
     @Test
+    fun leadingSlug_peelsBeforeAdapterBasePath_andDispatchesRelativeEndpoint() =
+        runTest {
+            val adapter =
+                adapter(
+                    policy = TenantPathPolicy.LeadingSlug(maxDepth = 1),
+                    mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/oid4vp"),
+                    slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
+                    endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/request-uri/{id}")),
+                )
+            val response = adapter.handleRequest(request("GET", "/acme/oid4vp/request-uri/123"))
+            assertEquals(200, response.statusCode)
+            assertEquals("/request-uri/123", captured.last())
+            assertEquals("tenant-acme", adapter.providerSeen)
+        }
+
+    @Test
     fun leadingSlug_failsToPeel_whenSlugInvalid_andFallsThroughToAsIs() =
         runTest {
             val adapter =
@@ -181,9 +197,10 @@ class TenantPathPolicyDispatcherTest {
 
     private fun adapter(
         policy: TenantPathPolicy,
+        mount: HttpAdapterMount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
         slugLookup: RoutableSlugLookup,
         endpoints: List<HttpEndpointCommand>,
-    ): TestableAdapter = TestableAdapter(policy, slugLookup, endpoints)
+    ): TestableAdapter = TestableAdapter(policy, mount, slugLookup, endpoints)
 
     private fun request(
         method: String,
@@ -209,12 +226,13 @@ class TenantPathPolicyDispatcherTest {
 
     private inner class TestableAdapter(
         policy: TenantPathPolicy,
+        mount: HttpAdapterMount,
         private val slugLookup: RoutableSlugLookup,
         override val endpointCommands: List<HttpEndpointCommand>,
     ) : CommandBackedHttpAdapter(
             id = "test-adapter",
             execution = TestSessionExecution(),
-            mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
+            mount = mount,
             tenantPathPolicy = policy,
         ) {
         @Volatile var providerSeen: String? = null

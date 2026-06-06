@@ -20,7 +20,10 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.RoutableSlugLookup
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetJwtVcIssuerMetadataRootEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetJwtVcIssuerMetadataScopedEndpointCommand
@@ -46,6 +49,8 @@ import dev.zacsweers.metro.binding
 @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
 class JwtVcIssuerMetadataHttpAdapter(
     execution: SessionExecution,
+    slugLookup: RoutableSlugLookup,
+    tenantIdProvider: MutableResolvedTenantIdProvider,
     private val rootCommand: GetJwtVcIssuerMetadataRootEndpointCommand,
     private val scopedCommand: GetJwtVcIssuerMetadataScopedEndpointCommand,
 ) : CommandBackedHttpAdapter(
@@ -56,7 +61,11 @@ class JwtVcIssuerMetadataHttpAdapter(
                 serverPrefix = "",
                 adapterBasePath = "",
             ),
+        tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
     ) {
+    override val routableSlugLookup: RoutableSlugLookup = slugLookup
+    override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = tenantIdProvider
+
     companion object {
         const val ID: String = "OID4VCI_JWT_VC_ISSUER_METADATA"
     }

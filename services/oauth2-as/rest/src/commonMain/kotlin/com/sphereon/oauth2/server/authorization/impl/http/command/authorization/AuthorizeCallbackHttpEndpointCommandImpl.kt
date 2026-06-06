@@ -30,10 +30,10 @@ import com.sphereon.oauth2.server.authorization.command.AuthorizationResponseDat
 import com.sphereon.oauth2.server.authorization.command.authorization.AuthorizeCallbackHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackArgs
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.loginSessionCookieValue
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.requiredaction.RequiredActionsRedirectHandler
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.storage.MutableOidcLoginSessionIdProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -55,6 +55,7 @@ class AuthorizeCallbackHttpEndpointCommandImpl(
     private val loginSessionIdProvider: MutableOidcLoginSessionIdProvider,
     private val configProvider: OAuth2ServersConfigProvider,
     private val requiredActionsRedirectHandler: RequiredActionsRedirectHandler,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = AuthorizeCallbackHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -79,7 +80,7 @@ class AuthorizeCallbackHttpEndpointCommandImpl(
             queryParams["session_id"]
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing session_id parameter", json))
 
-        val baseUrlOverride = request.resolveBaseUrl(configProvider)
+        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val approvalResult =
             handleAuthorizeCallbackCommand.execute(
                 HandleAuthorizeCallbackArgs(sessionId = sessionId, baseUrlOverride = baseUrlOverride),

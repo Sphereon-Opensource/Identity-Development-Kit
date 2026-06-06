@@ -21,6 +21,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriArgs
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriCommand
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
@@ -48,7 +49,6 @@ import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriHandler
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
-import com.sphereon.openid.oid4vp.verifier.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo

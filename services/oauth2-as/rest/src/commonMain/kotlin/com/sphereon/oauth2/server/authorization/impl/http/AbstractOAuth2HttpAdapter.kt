@@ -23,8 +23,10 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
+import com.sphereon.core.api.http.command.RoutableSlugLookup
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
 import kotlinx.serialization.json.Json
@@ -47,6 +49,8 @@ abstract class AbstractOAuth2HttpAdapter(
     mount: HttpAdapterMount,
     private val asInstanceResolver: OAuth2ServerInstanceResolver,
     private val asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider,
+    slugLookup: RoutableSlugLookup,
+    tenantIdProvider: MutableResolvedTenantIdProvider,
     /**
      * Per RFC 8414 §3 / RFC 8615 the well-known endpoints place the issuer path
      * AS A SUFFIX after the well-known name (`/.well-known/openid-configuration/<issuer-path>`),
@@ -65,6 +69,9 @@ abstract class AbstractOAuth2HttpAdapter(
         mount = mount,
         tenantPathPolicy = tenantPathPolicy,
     ) {
+    override val routableSlugLookup: RoutableSlugLookup = slugLookup
+    override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = tenantIdProvider
+
     private val errorJson =
         Json {
             prettyPrint = false

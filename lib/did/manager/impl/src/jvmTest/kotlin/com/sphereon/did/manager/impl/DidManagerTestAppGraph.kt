@@ -20,10 +20,13 @@ package com.sphereon.did.manager.impl
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
+import com.sphereon.did.persistence.DidRepository
+import com.sphereon.did.persistence.memory.MemoryDidRepositoryImpl
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
 
 /**
@@ -40,6 +43,11 @@ import dev.zacsweers.metro.createGraphFactory
  */
 @DependencyGraph(AppScope::class)
 abstract class DidManagerTestAppGraph : AbstractAppGraph() {
+    // The DidRepository binding now flows from DidRepositorySelectorModule + the
+    // MemoryDidPersistenceModule contribution on the classpath. Without a
+    // `did.persistence.type` property the selector defaults to memory, matching this
+    // graph's previous behaviour.
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

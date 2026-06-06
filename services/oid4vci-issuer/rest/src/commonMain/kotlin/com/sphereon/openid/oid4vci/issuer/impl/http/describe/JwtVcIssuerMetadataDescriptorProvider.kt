@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.http.describe
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
@@ -48,6 +49,7 @@ class JwtVcIssuerMetadataDescriptorProvider : HttpAdapterDescriptorProvider {
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = "",
+                    tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
                 ),
             endpoints =
                 listOf(

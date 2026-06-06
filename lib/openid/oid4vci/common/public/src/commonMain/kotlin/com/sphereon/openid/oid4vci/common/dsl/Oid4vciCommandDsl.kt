@@ -723,6 +723,12 @@ class CreateCredentialOfferArgsBuilder {
     /** Whether a transaction code (PIN) is required for pre-authorized code grant. */
     var txCodeRequired: Boolean = false
 
+    /** Optional tx_code length to advertise in the offer and generate (null = issuer default). */
+    var txCodeLength: Int? = null
+
+    /** Optional tx_code input mode ("numeric" | "text"; null = numeric). */
+    var txCodeInputMode: String? = null
+
     /** Offer TTL in seconds. Defaults to 600 (10 minutes). */
     var offerTtlSeconds: Long = DEFAULT_OFFER_TTL_SECONDS
 
@@ -752,9 +758,15 @@ class CreateCredentialOfferArgsBuilder {
     /**
      * Enable pre-authorized code grant and optionally require a transaction code.
      */
-    fun preAuthorizedCodeGrant(txCodeRequired: Boolean = false) {
+    fun preAuthorizedCodeGrant(
+        txCodeRequired: Boolean = false,
+        txCodeLength: Int? = null,
+        txCodeInputMode: String? = null,
+    ) {
         this.preAuthorizedCodeGrant = true
         this.txCodeRequired = txCodeRequired
+        this.txCodeLength = txCodeLength
+        this.txCodeInputMode = txCodeInputMode
     }
 
     /**
@@ -791,6 +803,8 @@ class CreateCredentialOfferArgsBuilder {
             preAuthorizedCodeGrant = preAuthorizedCodeGrant,
             authorizationCodeGrant = authorizationCodeGrant,
             txCodeRequired = txCodeRequired,
+            txCodeLength = txCodeLength,
+            txCodeInputMode = txCodeInputMode,
             preSeededAttributes = preSeededAttributes.toMap().takeIf { it.isNotEmpty() },
             offerTtlSeconds = offerTtlSeconds,
         )
@@ -809,6 +823,8 @@ data class CreateCredentialOfferArgsState(
     val preAuthorizedCodeGrant: Boolean,
     val authorizationCodeGrant: Boolean,
     val txCodeRequired: Boolean,
+    val txCodeLength: Int? = null,
+    val txCodeInputMode: String? = null,
     val preSeededAttributes: Map<String, JsonElement>?,
     val offerTtlSeconds: Long,
 )

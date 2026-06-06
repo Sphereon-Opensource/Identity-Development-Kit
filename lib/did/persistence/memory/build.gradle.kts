@@ -78,5 +78,15 @@ kotlin {
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }
         }
+        val jvmTest by getting {
+            dependencies {
+                implementation(projects.libDidPersistenceTestFixtures)
+                implementation(sphereonlib.org.jetbrains.kotlin.test.junit5)
+            }
+        }
     }
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    useJUnitPlatform()
 }

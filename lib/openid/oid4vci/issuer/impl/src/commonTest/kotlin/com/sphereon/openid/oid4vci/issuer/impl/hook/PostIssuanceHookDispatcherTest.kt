@@ -185,10 +185,10 @@ class PostIssuanceHookDispatcherTest {
         }
 
     @Test
-    fun sessionAllowListCannotExpandPatternSet() =
+    fun sessionAllowListIsAuthoritativeOverDeploymentPatterns() =
         runTest {
             val consume = RecordingHook("hook.post-issuance.redemption-consume")
-            val unrelated = RecordingHook("hook.audit.credential-issuance") // not under hook.post-issuance.**
+            val unrelated = RecordingHook("hook.audit.credential-issuance") // outside hook.post-issuance.**
 
             val dispatcher =
                 PostIssuanceHookDispatcher(
@@ -197,9 +197,9 @@ class PostIssuanceHookDispatcherTest {
                     propertyResolver = null,
                 )
 
-            // Session allow-list names BOTH, but the deployment-level pattern
-            // `hook.post-issuance.**` only matches consume. The allow-list
-            // narrows; it cannot add commands the pattern didn't find.
+            // A per-session allow-list is an explicit, authoritative opt-in: it fires exactly the
+            // listed hook ids regardless of the deployment patterns (which apply only when no
+            // allow-list is given). Both named hooks resolve in the session registry, so both fire.
             dispatcher.dispatch(
                 args = hookArgs(boundUsageToken = "tok-1"),
                 sessionAllowList =
@@ -210,7 +210,11 @@ class PostIssuanceHookDispatcherTest {
             )
 
             assertEquals(1, consume.invocations)
-            assertEquals(0, unrelated.invocations, "allow-list may not broaden the deployment set")
+            assertEquals(
+                1,
+                unrelated.invocations,
+                "the session allow-list is authoritative: a listed, resolvable hook fires regardless of deployment patterns",
+            )
         }
 
     // ─────────────────────────────────────────────────────────────

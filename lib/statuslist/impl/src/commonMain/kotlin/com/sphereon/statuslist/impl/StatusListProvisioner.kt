@@ -1,0 +1,65 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sphereon.statuslist.impl
+
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.di.session.SessionScope
+import com.sphereon.statuslist.CreateStatusListArgs
+import com.sphereon.statuslist.StatusListDefinitionsProvider
+import com.sphereon.statuslist.StatusListErrors
+import com.sphereon.statuslist.StatusListRef
+import com.sphereon.statuslist.spi.StatusListDriver
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
+
+/**
+ * Ensures configured status lists exist before they are used — call [provisionConfigured] once at
+ * startup so each hosted token is available even before the first artifact references it. Idempotent:
+ * a list already present (by `correlationId`) is left untouched.
+ */
+@Inject
+@SingleIn(SessionScope::class)
+class StatusListProvisioner(
+    private val driver: StatusListDriver,
+    private val definitionsProvider: StatusListDefinitionsProvider,
+) {
+    /** Create every configured status-list definition that does not yet exist. */
+    suspend fun provisionConfigured(): IdkResult<Unit, IdkError> = ensureExists(definitionsProvider.definitions)
+
+    /** Create each of the given definitions that does not yet exist. Returns Ok once all are present. */
+    suspend fun ensureExists(definitions: List<CreateStatusListArgs>): IdkResult<Unit, IdkError> {
+        for (definition in definitions) {
+            StatusListErrors.validateCreateArgs(definition)?.let { return Err(it) }
+            val existing =
+                driver.getStatusList(StatusListRef(correlationId = definition.correlationId)).getOrElse { return Err(it) }
+            if (existing == null) {
+                driver.createStatusList(definition).getOrElse { return Err(it) }
+            }
+        }
+        return Ok(Unit)
+    }
+
+    /** Session-graph accessor so a server startup hook can resolve the provisioner. */
+    @ContributesTo(SessionScope::class)
+    interface Graph {
+        val statusListProvisioner: StatusListProvisioner
+    }
+}

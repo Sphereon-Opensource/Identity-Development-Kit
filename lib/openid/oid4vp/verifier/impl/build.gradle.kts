@@ -69,6 +69,7 @@ kotlin {
                 api(projects.libOpenidOid4vpVerifierPublic)
                 api(projects.libOpenidOid4vpCommonPublic)
                 api(projects.libOpenidOid4vpDcql)
+                api(projects.libOpenidOid4vpDcqlStorePublic)
 
                 // KV storage (for KV-backed OID4VP stores)
                 api(projects.libDataStoreKvPublic)
@@ -77,6 +78,9 @@ kotlin {
 
                 // SD-JWT verification
                 api(projects.libSdjwtPublic)
+
+                // Credential status verification SPI + evaluation (impls supplied by the deployment)
+                implementation(projects.libStatuslistPublic)
 
                 // JSON-LD context + schema validation for VCDM 2.0
                 // (vc+ld+json+jwt) presentations. Mirrors the wiring on the
@@ -116,6 +120,8 @@ kotlin {
                 implementation(projects.libCoreTest)
                 implementation(projects.libCoreApiDefault)
                 implementation(projects.libCoreEventsImpl)
+                // KvDcqlQueryConfigurationStore binding for the verifier test app graph
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
@@ -143,6 +149,7 @@ kotlin {
                 implementation(projects.libCoreTest)
                 implementation(projects.libCoreApiDefault)
                 implementation(projects.libCoreEventsImpl)
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)

@@ -48,6 +48,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -58,6 +59,7 @@ import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -262,6 +264,7 @@ class HttpAsBridge(
                     credentialConfigurationIds = credentialConfigurationIds,
                     credentialIdentifiers = credentialIdentifiers.ifEmpty { null },
                     cnfJkt = cnfJkt,
+                    userinfoClaims = resolveLocalUserinfoClaims(args.accessToken),
                 ),
             )
         } catch (expected: Exception) {
@@ -277,6 +280,42 @@ class HttpAsBridge(
             },
         )
 
+    /**
+     * Surface the authenticated user's claims to issuance by reading the AS's own UserInfo
+     * endpoint (OIDC §5.3.2) for the access token, when the tenant has opted in via
+     * `oid4vci.issuer.surface-local-userinfo-to-issuance=true`.
+     *
+     * For a LOCAL (config-backed / database-backed) AS there is no upstream IdP, so the access
+     * token carries no identity claims (RFC 9068) and introspection surfaces none. The AS resolves
+     * the user's claims by subject at /userinfo; this reads exactly that and surfaces the claims
+     * (minus `sub`, already modeled as the dedicated subject) onto
+     * [ValidatedTokenContext.userinfoClaims], which the issuance pipeline's
+     * `PipelineCredentialAttributeContributor` pushes into the AUTHORIZATION phase for
+     * `AuthSessionClaimSource` to map into credential attributes.
+     *
+     * Off by default so existing deployments are byte-identical. Any failure (token lacks `openid`
+     * scope, /userinfo unreachable, etc.) yields `null` rather than failing token validation. The
+     * claims returned are scope-filtered by the AS per the token's granted scopes.
+     */
+    private suspend fun resolveLocalUserinfoClaims(accessToken: String): Map<String, JsonElement>? {
+        val enabled =
+            configService.getPropertyAsString(SURFACE_LOCAL_USERINFO_KEY)?.toBoolean() ?: false
+        if (!enabled) return null
+        return try {
+            val response =
+                httpClient.get("$asInternalUrl/userinfo") {
+                    headers { append(HttpHeaders.Authorization, "Bearer $accessToken") }
+                }
+            if (response.status.value !in 200..299) return null
+            json
+                .decodeFromString<JsonObject>(response.bodyAsText())
+                .filterKeys { it != "sub" }
+                .takeIf { it.isNotEmpty() }
+        } catch (expected: Exception) {
+            null
+        }
+    }
+
     private fun generateTxCode(): String {
         val bytes = CryptographyRandom.nextBytes(6)
         return bytes.joinToString("") { (it.toInt() and 0xFF).mod(10).toString() }
@@ -284,6 +323,7 @@ class HttpAsBridge(
 
     companion object {
         const val CONFIG_PREFIX = "oid4vci.issuer.as-bridge"
+        const val SURFACE_LOCAL_USERINFO_KEY = "oid4vci.issuer.surface-local-userinfo-to-issuance"
 
         /**
          * RFC 9449 §11.1: jti-replay tracking window in seconds. Default covers the verifier's

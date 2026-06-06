@@ -18,13 +18,13 @@
 package com.sphereon.crypto.core.x509
 
 import at.asitplus.awesn1.Asn1Primitive
-import at.asitplus.awesn1.crypto.pki.RelativeDistinguishedName
+import at.asitplus.awesn1.crypto.pki.X500RelativeDistinguishedName
 
 /** Comma‑separated X.500 name from a list of RDNs */
-fun List<RelativeDistinguishedName>.toX500(): String = joinToString(",") { it.toX500() }
+fun List<X500RelativeDistinguishedName>.toX500(): String = joinToString(",") { it.toX500() }
 
 /** Plus‑separated X.500 string for a single RDN */
-fun RelativeDistinguishedName.toX500(): String =
+fun X500RelativeDistinguishedName.toX500(): String =
     attrsAndValues.joinToString("+") { atv ->
         val type = OID_TO_SHORT_NAME_MAP[atv.oid.toString()] ?: atv.oid.toString()
         val valueString =

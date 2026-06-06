@@ -20,6 +20,7 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.http.percentDecode
 import com.sphereon.core.api.log.Log
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import dev.whyoleg.cryptography.random.CryptographyRandom
@@ -266,7 +267,7 @@ private fun hostFromUrlOrNull(url: String): String? {
  * [effectiveScheme] + [effectiveHost] which honor the
  * [com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.trustForwardedHeaders] gate.
  */
-internal fun GenericHttpRequest.resolveBaseUrl(
+fun GenericHttpRequest.resolveBaseUrl(
     configProvider: OAuth2ServersConfigProvider,
     tenantPath: String? = null,
 ): String {
@@ -323,7 +324,7 @@ internal fun parseFormBody(body: String?): Map<String, List<String>>? {
             .mapNotNull { param ->
                 val parts = param.split('=', limit = 2)
                 if (parts.size == 2) {
-                    urlDecode(parts[0]) to urlDecode(parts[1])
+                    parts[0].percentDecode(plusAsSpace = true) to parts[1].percentDecode(plusAsSpace = true)
                 } else {
                     null
                 }
@@ -331,40 +332,6 @@ internal fun parseFormBody(body: String?): Map<String, List<String>>? {
     } catch (_: Exception) {
         null
     }
-}
-
-/**
- * URL decode a string (simple implementation covering the OAuth2 wire shapes we care about).
- */
-internal fun urlDecode(value: String): String {
-    val sb = StringBuilder()
-    var i = 0
-    while (i < value.length) {
-        when {
-            value[i] == '+' -> {
-                sb.append(' ')
-                i++
-            }
-
-            value[i] == '%' && i + 2 < value.length -> {
-                val hex = value.substring(i + 1, i + 3)
-                val code = hex.toIntOrNull(16)
-                if (code != null) {
-                    sb.append(code.toChar())
-                    i += 3
-                } else {
-                    sb.append(value[i])
-                    i++
-                }
-            }
-
-            else -> {
-                sb.append(value[i])
-                i++
-            }
-        }
-    }
-    return sb.toString()
 }
 
 /**

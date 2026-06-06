@@ -26,6 +26,7 @@ import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.statuslist.CredentialStatusPolicy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -112,6 +113,29 @@ data class CreateAuthorizationRequestArgs(
      * analytics, redemption) and a specific flow / tenant wants to opt in to only some.
      */
     val postPresentationHookAllowList: List<String>? = null,
+    /**
+     * Version snapshot of the DCQL query this request was built from, when it came from a
+     * version-history store. Threaded onto the resulting
+     * [com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession] so the session pins the
+     * exact `(dcqlQueryId, dcqlQueryVersion)` for its lifetime. Both null for inline DCQL
+     * queries or stores without versioning.
+     */
+    val dcqlQueryId: String? = null,
+    val dcqlQueryVersion: Int? = null,
+    /**
+     * Optional per-DCQL-credential-query credential status policy, keyed by the DCQL credential query
+     * `id`. Decides how the verifier treats a received credential's resolved status (accept revoked /
+     * suspended, require a status list, fail-closed on unresolvable). Threaded onto the resulting
+     * [com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession] and applied at response
+     * validation. A query with no entry (or null map) uses the strict default
+     * ([CredentialStatusPolicy] defaults: reject revoked/suspended, status optional, fail closed).
+     *
+     * Deliberately NOT a field on the wire [com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery]:
+     * OpenID4VP 1.0 final DCQL defines no status concept, so this verifier-internal policy stays out
+     * of the signed `dcql_query` delivered to the wallet. Status checking only runs when a non-empty
+     * set of `CredentialStatusVerifier` implementations is on the verifier's classpath.
+     */
+    val credentialStatusPolicies: Map<String, CredentialStatusPolicy>? = null,
 )
 
 /**

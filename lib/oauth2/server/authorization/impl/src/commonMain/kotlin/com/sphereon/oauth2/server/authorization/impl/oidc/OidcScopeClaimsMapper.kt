@@ -72,6 +72,10 @@ class OidcScopeClaimsMapperImpl : OidcScopeClaimsMapper {
                         "zoneinfo",
                         "locale",
                         "updated_at",
+                        // Non-OIDC-standard profile attribute surfaced under `profile` so a
+                        // config-backed user's organisational role flows to /userinfo and, via the
+                        // issuer's UserInfo-to-issuance bridge, into issued credentials.
+                        "job_title",
                     ),
                 "email" to setOf("email", "email_verified"),
                 "address" to setOf("address"),

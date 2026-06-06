@@ -111,6 +111,13 @@ data class VerifierInfo(
  * @property presentation Serialized presentation (JWT, SD-JWT, or mdoc CBOR)
  * @property format Format identifier (e.g., "dc+sd-jwt", "mso_mdoc", "jwt_vp")
  * @property disclosedClaims Optional map of disclosed claims (for SD-JWT)
+ * @property holderKeyAlias Optional KMS alias of the holder's key bound to this credential.
+ *                          When present for an SD-JWT format, the OID4VP holder produces a
+ *                          Key Binding JWT (RFC 9901 §4.3) over the presentation, binding it to
+ *                          the verifier's `client_id` (audience) and the request `nonce`. The
+ *                          stored [presentation] is the issuer SD-JWT; the holder appends the
+ *                          freshly signed KB-JWT before submission. Null means the [presentation]
+ *                          is submitted as-is (no holder binding added by the holder).
  */
 @Serializable
 @JsExportCompat
@@ -121,6 +128,7 @@ data class SelectedCredential(
     val format: String,
     @JsExportIgnoreCompat
     val disclosedClaims: Map<String, String>? = null,
+    val holderKeyAlias: String? = null,
 )
 
 /**

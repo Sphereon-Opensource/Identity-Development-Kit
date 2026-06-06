@@ -26,6 +26,7 @@ import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestArgs
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import kotlinx.coroutines.test.runTest
@@ -60,6 +61,7 @@ class IntrospectionHttpEndpointCommandImplTest {
                             Ok(TokenIntrospectionResponse(active = true, scope = "read"))
                         },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     auditEmitter = NoOpOAuth2AuditEmitter,
                 )
 
@@ -89,6 +91,7 @@ class IntrospectionHttpEndpointCommandImplTest {
                     handleIntrospectionRequestCommand =
                         FakeIntrospectionCommand { error("Should not be called") },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     auditEmitter = NoOpOAuth2AuditEmitter,
                 )
 
@@ -110,6 +113,7 @@ class IntrospectionHttpEndpointCommandImplTest {
                             Err(IdkError.fromString(code = "invalid_client", message = "bad creds"))
                         },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     auditEmitter = NoOpOAuth2AuditEmitter,
                 )
 

@@ -17,13 +17,11 @@
 
 package com.sphereon.crypto.kms
 
-import at.asitplus.awesn1.Asn1Element
-import at.asitplus.awesn1.Asn1Sequence
-import at.asitplus.awesn1.crypto.SignatureAlgorithmIdentifier
+import at.asitplus.awesn1.crypto.X509AlgorithmIdentifier
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequest
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequestInfo
-import at.asitplus.awesn1.crypto.pki.RelativeDistinguishedName
-import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.crypto.pki.X500RelativeDistinguishedName
+import at.asitplus.awesn1.serialization.DER
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
@@ -32,7 +30,7 @@ import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.CertificateSigningRequest
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
-import com.sphereon.crypto.core.interop.ecSignatureToAsn1BitString
+import com.sphereon.crypto.core.interop.ecSignatureToX509SignatureValue
 import com.sphereon.crypto.core.interop.toSignatureAlgorithmIdentifier
 import com.sphereon.crypto.core.interop.toSubjectPublicKeyInfo
 import com.sphereon.crypto.core.jose.JwaCurve
@@ -47,6 +45,8 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.decodeFromByteArray
+import kotlinx.serialization.encodeToByteArray
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.experimental.ExperimentalObjCRefinement
 import kotlin.native.HiddenFromObjC
@@ -105,7 +105,7 @@ class CertificateServiceImpl(
 
         // Get the TBS bytes for signing
         val sigAlg = jwk.toSignatureAlgorithmIdentifier()
-        val initialTbsBytes = tbsCsr.encodeToTlv().derEncoded
+        val initialTbsBytes = DER.encodeToByteArray(tbsCsr)
 
         // Verify that the TBS bytes will match what Pkcs10CertificationRequest will contain
         // There's a known issue where tbsCsr encoding may produce different output than what
@@ -119,19 +119,16 @@ class CertificateServiceImpl(
                     0
                 }
             } // r=1, s=1 (last byte of each 32-byte graph)
-        val dummySig = ecSignatureToAsn1BitString(dummySigBytes)
+        val dummySig = ecSignatureToX509SignatureValue(dummySigBytes)
         val tempCsr =
             Pkcs10CertificationRequest(
                 certificationRequestInfo = tbsCsr,
                 signatureAlgorithm = sigAlg,
                 signatureValue = dummySig,
             )
-        val tempCsrDer = tempCsr.encodeToTlv().derEncoded
-        val parsedTempCsr =
-            Pkcs10CertificationRequest.decodeFromTlv(
-                (Asn1Element.parse(tempCsrDer) as Asn1Sequence),
-            )
-        val actualTbsBytes = parsedTempCsr.certificationRequestInfo.encodeToTlv().derEncoded
+        val tempCsrDer = DER.encodeToByteArray(tempCsr)
+        val parsedTempCsr = DER.decodeFromByteArray<Pkcs10CertificationRequest>(tempCsrDer)
+        val actualTbsBytes = DER.encodeToByteArray(parsedTempCsr.certificationRequestInfo)
 
         // Use the actual TBS bytes if they differ from the initial encoding
         val tbsBytesToSign =
@@ -154,7 +151,7 @@ class CertificateServiceImpl(
             Pkcs10CertificationRequest(
                 certificationRequestInfo = tbsCsr,
                 signatureAlgorithm = sigAlg,
-                signatureValue = ecSignatureToAsn1BitString(signature),
+                signatureValue = ecSignatureToX509SignatureValue(signature),
             )
 
         with(distinguishedNameElements) {
@@ -167,7 +164,7 @@ class CertificateServiceImpl(
                 country = country,
                 email = email,
                 serialNumber = serialNumber,
-                der = csr.encodeToTlv().derEncoded,
+                der = DER.encodeToByteArray(csr),
             )
         }
     }
@@ -175,7 +172,7 @@ class CertificateServiceImpl(
     // Todo double check the oid's values for correctness
     @OptIn(ExperimentalObjCRefinement::class)
     @HiddenFromObjC
-    private fun createDN(params: X509DistinguishedNameElements): List<RelativeDistinguishedName> = CertificateCreationUtils.createDN(params)
+    private fun createDN(params: X509DistinguishedNameElements): List<X500RelativeDistinguishedName> = CertificateCreationUtils.createDN(params)
 
     @OptIn(ExperimentalObjCRefinement::class)
     @HiddenFromObjC
@@ -219,7 +216,7 @@ class CertificateServiceImpl(
      */
     @OptIn(ExperimentalObjCRefinement::class)
     @HiddenFromObjC
-    private fun Jwk.toSignatureAlgorithmIdentifier(): SignatureAlgorithmIdentifier {
+    private fun Jwk.toSignatureAlgorithmIdentifier(): X509AlgorithmIdentifier {
         val sigAlg =
             when (crv) {
                 JwaCurve.P_256 -> SignatureAlgorithm.ECDSA_SHA256

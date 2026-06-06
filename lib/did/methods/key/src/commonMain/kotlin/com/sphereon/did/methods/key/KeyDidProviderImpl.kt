@@ -20,6 +20,7 @@ package com.sphereon.did.methods.key
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
@@ -137,6 +138,7 @@ class KeyDidProviderImpl(
             IdkError.fromString(
                 message = "did:key does not support updates. DIDs are immutable and derived from the key material.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -150,6 +152,7 @@ class KeyDidProviderImpl(
             IdkError.fromString(
                 message = "did:key does not support deactivation. DIDs are immutable and always valid.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -163,6 +166,7 @@ class KeyDidProviderImpl(
             IdkError.fromString(
                 message = "did:key does not support adding keys. Each DID corresponds to exactly one key.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -170,12 +174,14 @@ class KeyDidProviderImpl(
     override suspend fun removeKey(
         did: String,
         keyId: String,
+        currentDocument: com.sphereon.did.models.DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> {
         // did:key supports only a single key per DID
         return Err(
             IdkError.fromString(
                 message = "did:key does not support removing keys. Each DID corresponds to exactly one key.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -183,12 +189,14 @@ class KeyDidProviderImpl(
     override suspend fun addService(
         did: String,
         service: DidService,
+        currentDocument: com.sphereon.did.models.DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> {
         // did:key does not support services
         return Err(
             IdkError.fromString(
                 message = "did:key does not support services. Use did:web for DIDs with services.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -196,12 +204,14 @@ class KeyDidProviderImpl(
     override suspend fun removeService(
         did: String,
         serviceId: String,
+        currentDocument: com.sphereon.did.models.DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> {
         // did:key does not support services
         return Err(
             IdkError.fromString(
                 message = "did:key does not support services.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }

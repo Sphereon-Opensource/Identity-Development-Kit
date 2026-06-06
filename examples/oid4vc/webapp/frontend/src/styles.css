@@ -81,6 +81,26 @@ body {
   padding-top: 8px;
 }
 
+/* === Configure / detail sections (cards) === */
+.configure-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  margin-bottom: 16px;
+}
+.configure-section h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--color-text);
+}
+/* A short description directly under a section heading. */
+.configure-section > .field-hint {
+  margin-top: -4px;
+  margin-bottom: 16px;
+}
+
 /* === Buttons === */
 .btn {
   display: inline-block; padding: 10px 20px; border-radius: var(--radius);
@@ -290,8 +310,10 @@ body {
 }
 
 /* === Success === */
-.success-section, .verified-section { text-align: center; }
+.success-section, .verified-section, .error-section { text-align: center; }
 .success-icon { font-size: 4rem; color: var(--color-success); margin-bottom: 8px; }
+.error-icon { font-size: 4rem; color: var(--color-error); margin-bottom: 8px; }
+.error-section .session-details { margin-top: 20px; text-align: left; }
 .success-actions { display: flex; gap: 12px; justify-content: center; margin-top: 24px; }
 
 /* === Verified Claims List === */

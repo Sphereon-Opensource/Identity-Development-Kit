@@ -1,5 +1,5 @@
 /*
- * (c) 2026 Sphereon International B.V.
+ * © 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,59 @@
  * limitations under the License.
  */
 
+@file:OptIn(ExperimentalTime::class)
+
 package com.sphereon.openid.oid4vci.issuer.impl.bridge
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.PropertySource
+import com.sphereon.core.api.conf.PropertySources
+import com.sphereon.core.api.conf.TenantConfigService
+import com.sphereon.core.api.context.ContextConfig
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionContextManager
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.oauth2.common.model.VerifyDpopProofResult
+import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
+import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreatePushedAuthorizationResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
+import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
+import com.sphereon.oauth2.server.authorization.command.GetUserInfoArgs
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
+import com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.ParseIntrospectionRequestArgs
+import com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.ParseRevocationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs
+import com.sphereon.oauth2.server.authorization.command.RevokeTokenArgs
+import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
+import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
@@ -32,16 +74,23 @@ import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
+import com.sphereon.openid.oid4vci.issuer.impl.command.NoOpSessionLogService
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.files.Path
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.reflect.KClass
+import kotlin.reflect.cast
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * Contract tests for the Oid4vciAuthorizationServerBridge across AS deployment modes.
@@ -93,68 +142,175 @@ class AsDeploymentModeContractTest {
         override suspend fun introspectToken(args: IntrospectTokenArgs): IdkResult<TokenIntrospectionResponse, IdkError> = introspectionResult
 
         // --- All other methods are not used by the bridge and throw ---
-        override suspend fun parseTokenRequest(args: com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs) = notUsed()
+        override suspend fun parseTokenRequest(args: ParseTokenRequestArgs) = notUsed()
 
-        override suspend fun verifyAuthorizationCodeGrant(args: com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs) = notUsed()
+        override suspend fun verifyAuthorizationCodeGrant(args: VerifyAuthorizationCodeGrantArgs) = notUsed()
 
-        override suspend fun verifyRefreshTokenGrant(args: com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs) = notUsed()
+        override suspend fun verifyRefreshTokenGrant(args: VerifyRefreshTokenGrantArgs) = notUsed()
 
-        override suspend fun verifyClientCredentialsGrant(args: com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs) = notUsed()
+        override suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs) = notUsed()
 
-        override suspend fun verifyTokenExchangeGrant(args: com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs) = notUsed()
+        override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs) = notUsed()
 
-        override suspend fun verifyPreAuthorizedCodeGrant(args: com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs) = notUsed()
+        override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs) = notUsed()
 
-        override suspend fun createAccessToken(args: com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs) = notUsed()
+        override suspend fun createAccessToken(args: CreateAccessTokenArgs) = notUsed()
 
-        override suspend fun createRefreshToken(args: com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs) = notUsed()
+        override suspend fun createRefreshToken(args: CreateRefreshTokenArgs) = notUsed()
 
-        override suspend fun createTokenResponse(args: com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs) = notUsed()
+        override suspend fun createTokenResponse(args: CreateTokenResponseArgs) = notUsed()
 
-        override suspend fun parseAuthorizationRequest(args: com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestArgs) = notUsed()
+        override suspend fun parseAuthorizationRequest(args: ParseAuthorizationRequestArgs) = notUsed()
 
-        override suspend fun verifyAuthorizationRequest(args: com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData) = notUsed()
+        override suspend fun verifyAuthorizationRequest(args: AuthorizationRequestData) = notUsed()
 
-        override suspend fun createAuthorizationSession(args: com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest) = notUsed()
+        override suspend fun createAuthorizationSession(args: VerifiedAuthorizationRequest) = notUsed()
 
-        override suspend fun createAuthorizationCode(args: com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeArgs) = notUsed()
+        override suspend fun createAuthorizationCode(args: CreateAuthorizationCodeArgs) = notUsed()
 
-        override suspend fun createAuthorizationResponse(args: com.sphereon.oauth2.server.authorization.command.CreateAuthorizationResponseArgs) = notUsed()
+        override suspend fun createAuthorizationResponse(args: CreateAuthorizationResponseArgs) = notUsed()
 
-        override suspend fun createAuthorizationErrorResponse(args: com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseArgs) = notUsed()
+        override suspend fun createAuthorizationErrorResponse(args: CreateAuthorizationErrorResponseArgs) = notUsed()
 
-        override suspend fun parsePushedAuthorizationRequest(args: com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestArgs) = notUsed()
+        override suspend fun parsePushedAuthorizationRequest(args: ParsePushedAuthorizationRequestArgs) = notUsed()
 
-        override suspend fun verifyPushedAuthorizationRequest(args: com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs) = notUsed()
+        override suspend fun verifyPushedAuthorizationRequest(args: VerifyPushedAuthorizationRequestArgs) = notUsed()
 
-        override suspend fun createRequestUri(args: com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest) = notUsed()
+        override suspend fun createRequestUri(args: VerifiedAuthorizationRequest) = notUsed()
 
-        override suspend fun createPushedAuthorizationResponse(args: com.sphereon.oauth2.server.authorization.command.CreatePushedAuthorizationResponseArgs) = notUsed()
+        override suspend fun createPushedAuthorizationResponse(args: CreatePushedAuthorizationResponseArgs) = notUsed()
 
         override suspend fun retrieveAuthorizationRequestByUri(requestUri: String) = notUsed()
 
-        override suspend fun parseIntrospectionRequest(args: com.sphereon.oauth2.server.authorization.command.ParseIntrospectionRequestArgs) = notUsed()
+        override suspend fun parseIntrospectionRequest(args: ParseIntrospectionRequestArgs) = notUsed()
 
-        override suspend fun parseRevocationRequest(args: com.sphereon.oauth2.server.authorization.command.ParseRevocationRequestArgs) = notUsed()
+        override suspend fun parseRevocationRequest(args: ParseRevocationRequestArgs) = notUsed()
 
-        override suspend fun revokeToken(args: com.sphereon.oauth2.server.authorization.command.RevokeTokenArgs): IdkResult<Unit, IdkError> =
-            throw UnsupportedOperationException("Not used in bridge tests")
+        override suspend fun revokeToken(args: RevokeTokenArgs): IdkResult<Unit, IdkError> = throw UnsupportedOperationException("Not used in bridge tests")
 
-        override suspend fun buildServerMetadata(args: com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs) = notUsed()
+        override suspend fun buildServerMetadata(args: BuildServerMetadataArgs) = notUsed()
 
-        override suspend fun verifyClientAuthentication(args: com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs) = notUsed()
+        override suspend fun verifyClientAuthentication(args: VerifyClientAuthenticationArgs) = notUsed()
 
-        override suspend fun createAttestationChallenge(args: com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeArgs) = notUsed()
+        override suspend fun createAttestationChallenge(args: CreateAttestationChallengeArgs) = notUsed()
 
-        override suspend fun createIdToken(args: com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs) = notUsed()
+        override suspend fun createIdToken(args: CreateIdTokenArgs) = notUsed()
 
-        override suspend fun getUserInfo(args: com.sphereon.oauth2.server.authorization.command.GetUserInfoArgs) = notUsed()
+        override suspend fun getUserInfo(args: GetUserInfoArgs) = notUsed()
 
-        override suspend fun getJwks(args: com.sphereon.oauth2.server.authorization.command.GetJwksArgs) = notUsed()
+        override suspend fun getJwks(args: GetJwksArgs) = notUsed()
 
         override val commands: AuthorizationServerService.Commands get() = throw UnsupportedOperationException("Not used in bridge tests")
 
         private fun notUsed(): Nothing = throw UnsupportedOperationException("Not used in bridge tests")
+    }
+
+    // ========================================================================
+    // Fakes — config / session
+    // ========================================================================
+
+    private class FakePrincipalConfigService(
+        private val properties: Map<String, String> = emptyMap(),
+    ) : PrincipalConfigService {
+        override val parent: TenantConfigService get() = error("parent not used in bridge tests")
+        override val configLevel: ConfigLevel = ConfigLevel.PRINCIPAL
+
+        override fun addPropertySource(source: PropertySource<*>): Nothing = error("not used")
+
+        override fun removePropertySource(source: PropertySource<*>): Nothing = error("not used")
+
+        override fun getActiveProfile(): String = "test"
+
+        override fun getAppName(): String = "test-app"
+
+        override fun getConfigLocation(): Path = error("not used")
+
+        override fun getPropertySources(includeParents: Boolean): PropertySources = error("not used")
+
+        @Suppress("DEPRECATION")
+        override fun getNamespace(): String = ""
+
+        override fun containsProperty(key: String): Boolean = properties.containsKey(key)
+
+        override fun <T : Any> getProperty(
+            key: String,
+            targetType: KClass<T>,
+            defaultValue: T?,
+        ): T? {
+            val value = properties[key] ?: return defaultValue
+            return targetType.cast(value)
+        }
+
+        override fun getPropertyAsString(
+            key: String,
+            defaultValue: String?,
+        ): String? = properties[key] ?: defaultValue
+
+        override fun <T : Any> getRequiredProperty(
+            key: String,
+            targetType: KClass<T>,
+            defaultValue: T?,
+        ): T = getProperty(key, targetType, defaultValue) ?: error("Missing required property $key")
+
+        override fun getRequiredPropertyAsString(
+            key: String,
+            defaultValue: String?,
+        ): String = getPropertyAsString(key, defaultValue) ?: error("Missing required property $key")
+
+        override fun getAllProperties(): Map<String, Any> = properties.toMap()
+
+        override fun getAllPropertiesAsString(redact: Boolean): Map<String, String> = properties
+
+        override fun getSubProperties(
+            prefixes: Set<String>,
+            stripPrefix: Boolean,
+        ): Map<String, Any> = computeSubProperties(prefixes, stripPrefix)
+
+        override fun getSubPropertiesAsString(
+            prefixes: Set<String>,
+            stripPrefix: Boolean,
+            redact: Boolean,
+        ): Map<String, String> = computeSubProperties(prefixes, stripPrefix)
+
+        private fun computeSubProperties(
+            prefixes: Set<String>,
+            stripPrefix: Boolean,
+        ): Map<String, String> {
+            val matched = mutableMapOf<String, String>()
+            for (prefix in prefixes) {
+                for ((key, value) in properties) {
+                    val matches = key.startsWith("$prefix.") || key == prefix
+                    if (!matches) continue
+                    val outKey = if (stripPrefix) key.removePrefix("$prefix.") else key
+                    matched[outKey] = value
+                }
+            }
+            return matched
+        }
+    }
+
+    private class FakeContextConfig(
+        private val principalConfigService: PrincipalConfigService,
+    ) : ContextConfig {
+        override val app: AppConfigService get() = error("not used in bridge tests")
+        override val tenant: TenantConfigService get() = error("not used in bridge tests")
+        override val principal: PrincipalConfigService get() = principalConfigService
+
+        override fun conf(level: ConfigLevel): ConfigService =
+            when (level) {
+                ConfigLevel.PRINCIPAL -> principalConfigService
+                else -> error("Only PRINCIPAL config is used in bridge tests")
+            }
+    }
+
+    private class FakeSessionExecution(
+        configProperties: Map<String, String> = emptyMap(),
+    ) : SessionExecution {
+        private val principalConfig = FakePrincipalConfigService(configProperties)
+        override val sessionContext: SessionContext = NoOpSessionContext
+        override val sessionContextManager: SessionContextManager get() = error("not used in bridge tests")
+        override val log: SessionLogService = NoOpSessionLogService(sessionContext)
+        override val conf: ContextConfig = FakeContextConfig(principalConfig)
     }
 
     // ========================================================================
@@ -167,12 +323,14 @@ class AsDeploymentModeContractTest {
             FakeAuthorizationServerService(
                 Ok(TokenIntrospectionResponse(active = false)),
             ),
+        configProperties: Map<String, String> = emptyMap(),
     ): Pair<SphereonAsBridge, FakeAuthorizationServerService> {
         val bridge =
             SphereonAsBridge(
                 preAuthorizedCodeStorage = storage,
                 authorizationServerService = asService,
                 verifyDpopProofCommand = NoopVerifyDpopProofCommand,
+                execution = FakeSessionExecution(configProperties),
             )
         return bridge to asService
     }
@@ -381,6 +539,148 @@ class AsDeploymentModeContractTest {
                 )
 
             assertTrue(result.isErr, "Token without sub claim should be rejected")
+        }
+
+    @Test
+    fun validateAccessTokenSurfacesAcrAndAuthTimeWhenPresent() =
+        runTest {
+            val authTimeEpoch = 1_700_000_000L
+            val introspectionResponse =
+                TokenIntrospectionResponse(
+                    active = true,
+                    sub = "user-acr",
+                    clientId = "client-1",
+                    scope = "openid",
+                    additionalClaims =
+                        mapOf<String, JsonElement>(
+                            "acr" to JsonPrimitive("urn:mace:incommon:iap:silver"),
+                            "auth_time" to JsonPrimitive(authTimeEpoch),
+                        ),
+                )
+
+            val (bridge, _) = createEmbeddedBridge(asService = FakeAuthorizationServerService(Ok(introspectionResponse)))
+
+            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "token-with-acr"))
+
+            assertTrue(result.isOk, "validateAccessToken should succeed")
+            val ctx = result.value
+            assertEquals("urn:mace:incommon:iap:silver", ctx.acr)
+            assertEquals(Instant.fromEpochSeconds(authTimeEpoch), ctx.authTime)
+            assertNull(ctx.upstreamSubject)
+            assertNull(ctx.upstreamIssuer)
+            assertNull(ctx.userinfoClaims)
+        }
+
+    @Test
+    fun validateAccessTokenSurfacesUpstreamFederationClaimsWhenPresent() =
+        runTest {
+            val introspectionResponse =
+                TokenIntrospectionResponse(
+                    active = true,
+                    sub = "local-user",
+                    clientId = "client-2",
+                    additionalClaims =
+                        mapOf<String, JsonElement>(
+                            "upstream_sub" to JsonPrimitive("ext-user-42"),
+                            "upstream_iss" to JsonPrimitive("https://enterprise-idp.example.com"),
+                        ),
+                )
+
+            val (bridge, _) = createEmbeddedBridge(asService = FakeAuthorizationServerService(Ok(introspectionResponse)))
+
+            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "federated-token"))
+
+            assertTrue(result.isOk)
+            val ctx = result.value
+            assertEquals("ext-user-42", ctx.upstreamSubject)
+            assertEquals("https://enterprise-idp.example.com", ctx.upstreamIssuer)
+        }
+
+    @Test
+    fun validateAccessTokenOmitsOptionalClaimsWhenAbsent() =
+        runTest {
+            val introspectionResponse =
+                TokenIntrospectionResponse(
+                    active = true,
+                    sub = "plain-user",
+                    clientId = "client-3",
+                )
+
+            val (bridge, _) = createEmbeddedBridge(asService = FakeAuthorizationServerService(Ok(introspectionResponse)))
+
+            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "plain-token"))
+
+            assertTrue(result.isOk)
+            val ctx = result.value
+            assertNull(ctx.acr)
+            assertNull(ctx.authTime)
+            assertNull(ctx.upstreamSubject)
+            assertNull(ctx.upstreamIssuer)
+            assertNull(ctx.userinfoClaims)
+        }
+
+    @Test
+    fun validateAccessTokenSurfacesUserinfoClaimsWhenTenantOptIn() =
+        runTest {
+            val idpIssuer = "https://enterprise-idp.example.com"
+            val introspectionResponse =
+                TokenIntrospectionResponse(
+                    active = true,
+                    sub = "federated-user",
+                    clientId = "client-4",
+                    additionalClaims =
+                        mapOf<String, JsonElement>(
+                            "upstream_iss" to JsonPrimitive(idpIssuer),
+                            "upstream_sub" to JsonPrimitive("idp-sub-99"),
+                            "email" to JsonPrimitive("user@enterprise.example.com"),
+                            "given_name" to JsonPrimitive("Test"),
+                        ),
+                )
+
+            val (bridge, _) =
+                createEmbeddedBridge(
+                    asService = FakeAuthorizationServerService(Ok(introspectionResponse)),
+                    configProperties = mapOf("tenant.idp.[$idpIssuer].surface-userinfo-to-issuance" to "true"),
+                )
+
+            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "federated-token-with-ui"))
+
+            assertTrue(result.isOk)
+            val ctx = result.value
+            assertNotNull(ctx.userinfoClaims, "userinfoClaims should be populated when tenant opts in")
+            assertEquals(JsonPrimitive("user@enterprise.example.com"), ctx.userinfoClaims!!["email"])
+            assertEquals(JsonPrimitive("Test"), ctx.userinfoClaims!!["given_name"])
+            // Protocol claims are excluded from userinfoClaims
+            assertNull(ctx.userinfoClaims!!["upstream_iss"])
+            assertNull(ctx.userinfoClaims!!["upstream_sub"])
+        }
+
+    @Test
+    fun validateAccessTokenOmitsUserinfoClaimsWhenTenantNotOptIn() =
+        runTest {
+            val idpIssuer = "https://enterprise-idp.example.com"
+            val introspectionResponse =
+                TokenIntrospectionResponse(
+                    active = true,
+                    sub = "federated-user",
+                    clientId = "client-5",
+                    additionalClaims =
+                        mapOf<String, JsonElement>(
+                            "upstream_iss" to JsonPrimitive(idpIssuer),
+                            "email" to JsonPrimitive("user@enterprise.example.com"),
+                        ),
+                )
+
+            val (bridge, _) =
+                createEmbeddedBridge(
+                    asService = FakeAuthorizationServerService(Ok(introspectionResponse)),
+                    // No config property set — opt-in is absent
+                )
+
+            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "token-no-ui-opt-in"))
+
+            assertTrue(result.isOk)
+            assertNull(result.value.userinfoClaims, "userinfoClaims should be null when tenant has not opted in")
         }
 
     // ========================================================================

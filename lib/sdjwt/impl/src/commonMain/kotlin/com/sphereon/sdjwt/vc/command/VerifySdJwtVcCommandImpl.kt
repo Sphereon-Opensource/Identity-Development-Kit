@@ -33,6 +33,7 @@ import com.sphereon.sdjwt.vc.SdJwtVcVerificationResult
 import com.sphereon.sdjwt.vc.SdJwtVcVerifierImpl
 import com.sphereon.sdjwt.vc.VerifySdJwtVcArgs
 import com.sphereon.sdjwt.vc.VerifySdJwtVcPresentationArgs
+import com.sphereon.statuslist.spi.CredentialStatusVerifier
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.HttpClient
@@ -47,6 +48,7 @@ class VerifySdJwtVcCommandImpl(
     execution: SessionExecution,
     private val verifySdJwtCommand: VerifySdJwtCommand,
     private val httpClientFactory: HttpClientFactory,
+    private val credentialStatusVerifiers: Set<CredentialStatusVerifier> = emptySet(),
 ) : TypedServiceCommandAdapter<VerifySdJwtVcArgs, SdJwtVcVerificationResult, IdkError>(
         commandId = VerifySdJwtVcCommand.COMMAND_ID,
         execution = execution,
@@ -66,7 +68,12 @@ class VerifySdJwtVcCommandImpl(
         val baseVerifier: suspend (VerifySdJwtArgs) -> IdkResult<SdJwtVerificationResult, IdkError> = { baseArgs ->
             verifySdJwtCommand.execute(baseArgs)
         }
-        val verifier = SdJwtVcVerifierImpl(baseVerifier, httpClientFactory.createClient(HttpClientOptions.createDefault()))
+        val verifier =
+            SdJwtVcVerifierImpl(
+                baseVerifier,
+                httpClientFactory.createClient(HttpClientOptions.createDefault()),
+                credentialStatusVerifiers,
+            )
         return verifier.verify(appliedArgs.sdJwt, appliedArgs.opts).mapError { error ->
             IdkError.fromString(
                 message =
@@ -93,6 +100,7 @@ class VerifySdJwtVcPresentationCommandImpl(
     execution: SessionExecution,
     private val verifySdJwtCommand: VerifySdJwtCommand,
     private val httpClientFactory: HttpClientFactory,
+    private val credentialStatusVerifiers: Set<CredentialStatusVerifier> = emptySet(),
 ) : TypedServiceCommandAdapter<VerifySdJwtVcPresentationArgs, SdJwtVcPresentationVerificationResult, IdkError>(
         commandId = VerifySdJwtVcPresentationCommand.COMMAND_ID,
         execution = execution,
@@ -112,7 +120,12 @@ class VerifySdJwtVcPresentationCommandImpl(
         val baseVerifier: suspend (VerifySdJwtArgs) -> IdkResult<SdJwtVerificationResult, IdkError> = { baseArgs ->
             verifySdJwtCommand.execute(baseArgs)
         }
-        val verifier = SdJwtVcVerifierImpl(baseVerifier, httpClientFactory.createClient(HttpClientOptions.createDefault()))
+        val verifier =
+            SdJwtVcVerifierImpl(
+                baseVerifier,
+                httpClientFactory.createClient(HttpClientOptions.createDefault()),
+                credentialStatusVerifiers,
+            )
         return verifier.verifyPresentation(appliedArgs.sdJwt, appliedArgs.expectedNonce, appliedArgs.opts).mapError { error ->
             IdkError.fromString(
                 message =

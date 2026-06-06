@@ -82,6 +82,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(projects.libCborImpl)
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }
         }
         findByName("appleMain")?.dependencies {

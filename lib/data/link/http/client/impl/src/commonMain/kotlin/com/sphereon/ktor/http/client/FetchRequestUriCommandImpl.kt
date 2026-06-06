@@ -215,7 +215,8 @@ class FetchRequestUriCommandImpl(
         // Require HTTPS except for localhost (for testing)
         if (url.protocol.name.lowercase() == "http") {
             val host = url.host.lowercase()
-            if (host != "localhost" && host != "127.0.0.1" && host != "[::1]") {
+            // RFC 6761: `.localhost` (incl. subdomains) is loopback; http is acceptable.
+            if (host != "localhost" && host != "127.0.0.1" && host != "[::1]" && !host.endsWith(".localhost")) {
                 return IdkError.ILLEGAL_ARGUMENT_ERROR(
                     message = "Request URI must use HTTPS (HTTP only allowed for localhost). Got: $requestUri",
                 )

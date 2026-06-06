@@ -28,8 +28,8 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
 import com.sphereon.oauth2.server.authorization.command.discovery.OAuth2ServerMetadataHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -49,6 +49,7 @@ class OAuth2ServerMetadataHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handleDiscoveryRequestCommand: HandleDiscoveryRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = OAuth2ServerMetadataHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -75,7 +76,7 @@ class OAuth2ServerMetadataHttpEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
         val tenantPath = request.queryParameters["tenant-path"]
-        val baseUrlOverride = request.resolveBaseUrl(configProvider, tenantPath)
+        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(request, configProvider, tenantPath)
 
         val result =
             handleDiscoveryRequestCommand.execute(

@@ -5,7 +5,6 @@ services:
       - "8080:8080"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./vct/resolved:/srv/vct:ro
       - ./assets:/srv/assets:ro
       - ./well-known:/srv/well-known:ro
     depends_on:
@@ -114,6 +113,11 @@ services:
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - OAUTH2_AS_INTERNAL_URL=http://oauth2-as:8080
+      # Issuer-wide JOSE signing mode shared by the SD-JWT credentials AND their status list (one
+      # issuer identity, so a wallet trusts the list the same way it trusts the credential). Default
+      # (plain demo) = did:jwk so any wallet verifies self-contained with no out-of-band CA trust. The
+      # conformance x509/HAIP profiles override it to x5c (profiles/conformance-x509-*.env).
+      - OID4VCI_SIGNING_MODE=${OID4VCI_SIGNING_MODE:-did:jwk}
       - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
       # OID4VCI 1.0 §11.2.4 credential response encryption support. Defaults advertise
@@ -162,7 +166,7 @@ services:
       # Hits the full metadata endpoint instead of bare /health: this verifies the
       # service is up AND the config provider, DI graph, and signed_metadata pipeline
       # all work end-to-end. A regression in signing-key resolution fails the probe.
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health", "http://localhost:8080/.well-known/openid-credential-issuer"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health", "http://localhost:8080/.well-known/openid-credential-issuer/oid4vci"]
       interval: 10s
       timeout: 5s
       start_period: 30s

@@ -17,13 +17,12 @@
 
 package com.sphereon.crypto.core.generic
 
-import at.asitplus.awesn1.Asn1Element
-import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequest
-import at.asitplus.awesn1.encodeToPem
-import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.serialization.DER
+import at.asitplus.awesn1.serialization.encodeToPem
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromByteArray
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
@@ -107,8 +106,7 @@ CertificateSigningRequest
         }
 
         fun toPem(): String {
-            val seq = Asn1Element.parse(der) as Asn1Sequence
-            val csr = Pkcs10CertificationRequest.doDecode(seq)
+            val csr = DER.decodeFromByteArray<Pkcs10CertificationRequest>(der)
             return csr.encodeToPem()
         }
 

@@ -91,6 +91,7 @@ import kotlin.uuid.Uuid
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CredentialDesignService>())
+@ContributesBinding(SessionScope::class, binding = binding<CredentialDesignService?>())
 class DefaultCredentialDesignService(
     private val credentialDesignRepository: CredentialDesignRepository,
     private val issuerDesignRepository: IssuerDesignRepository,

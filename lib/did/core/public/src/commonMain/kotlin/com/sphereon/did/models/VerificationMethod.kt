@@ -19,11 +19,14 @@ package com.sphereon.did.models
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.did.serializers.VerificationMethodWithExtensionsSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
+import kotlin.time.Instant
 
 /**
  * Represents a verification method in a DID Document.
@@ -35,13 +38,21 @@ import kotlin.native.ObjCName
  * @property id The verification method ID. This is typically a DID URL fragment (e.g., "did:example:123#key-1")
  * @property type The type of verification method (e.g., "JsonWebKey2020", "Multikey")
  * @property controller The DID of the controller of this verification method
- * @property publicKeyJwk The public key in JWK format (mutually exclusive with publicKeyMultibase)
- * @property publicKeyMultibase The public key in multibase format (mutually exclusive with publicKeyJwk)
+ * @property publicKeyJwk The public key in JWK format. Mutually exclusive on the wire with
+ *           [publicKeyMultibase] / [blockchainAccountId]; may be null for EXTERNAL VMs whose
+ *           key material is resolved out-of-band via the persistence layer's key-reference.
+ * @property publicKeyMultibase The public key in multibase format. See [publicKeyJwk] note.
+ * @property blockchainAccountId CAIP-10 blockchain account identifier for blockchain-backed
+ *           verification methods (e.g. `eip155:1:0x…`). DID 1.1.
+ * @property expiresAt Lifecycle metadata — when this VM ceases to be usable. DID 1.1.
+ * @property revokedAt Lifecycle metadata — when this VM was revoked. DID 1.1.
+ * @property extensions Unknown JSON properties on this VM, captured verbatim for lossless
+ *           round-trip. Must not hold keys defined by the W3C DID Core schema.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DidVerificationMethod", exact = true)
 @JsExportCompat
-@Serializable
+@Serializable(with = VerificationMethodWithExtensionsSerializer::class)
 data class VerificationMethod
     @JvmOverloads
     constructor(
@@ -50,11 +61,19 @@ data class VerificationMethod
         val controller: String,
         val publicKeyJwk: Jwk? = null,
         val publicKeyMultibase: String? = null,
+        val blockchainAccountId: String? = null,
+        val expiresAt: Instant? = null,
+        val revokedAt: Instant? = null,
+        val extensions: Map<String, JsonElement> = emptyMap(),
     ) {
         init {
-            require(publicKeyJwk != null || publicKeyMultibase != null) {
-                "VerificationMethod must have either publicKeyJwk or publicKeyMultibase"
-            }
+            // DID-Core 1.0 documents may carry legacy key encodings (publicKeyBase58,
+            // publicKeyHex, publicKeyPem) that round-trip through [extensions] rather than
+            // dedicated fields. EXTERNAL VMs may also defer key material resolution to the
+            // persistence layer's key-reference. The invariant is therefore "carry some key
+            // material via canonical fields, a recognised legacy extension, or none at all
+            // (deferred resolution)" — i.e. construction must never fail simply because the
+            // legacy publicKey* form is in extensions.
         }
 
         /**

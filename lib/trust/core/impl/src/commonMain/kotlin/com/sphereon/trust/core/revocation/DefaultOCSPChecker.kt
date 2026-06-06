@@ -12,6 +12,7 @@ import at.asitplus.awesn1.Asn1Primitive
 import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.encoding.Asn1
 import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.serialization.DER
 import com.sphereon.core.api.cache.CacheRequirements
 import com.sphereon.core.api.cache.CacheService
 import com.sphereon.core.api.cache.CacheTtlConfig
@@ -31,6 +32,7 @@ import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.serialization.encodeToByteArray
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 
@@ -176,11 +178,9 @@ class DefaultOCSPChecker(
             val issuerX509 = issuerCert.toX509Certificate()
 
             // SHA-1 hash of issuer's Distinguished Name (DER encoded)
-            val issuerNameDer =
-                Asn1
-                    .Sequence {
-                        issuerX509.tbsCertificate.issuerName.forEach { +it }
-                    }.derEncoded
+            // In awesn1 0.3.0 the X.500 name (List<X500RelativeDistinguishedName>) is a
+            // @Serializable type encoded via the DER format, producing the RDNSequence bytes.
+            val issuerNameDer = DER.encodeToByteArray(issuerX509.tbsCertificate.issuerName)
             val issuerNameHash =
                 org.kotlincrypto.hash.sha1
                     .SHA1()
@@ -224,7 +224,7 @@ class DefaultOCSPChecker(
                                     // issuerKeyHash
                                     +Asn1.OctetString(issuerKeyHash)
                                     // serialNumber
-                                    +Asn1Primitive(Asn1Element.Tag.INT, serialBytes)
+                                    +serialBytes.encodeToTlv()
                                 }
                             }
                         }

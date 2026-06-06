@@ -1,107 +1,614 @@
--- DID Database Schema (SQLite Version)
--- Stores managed DID records and their key mappings.
--- Uses TEXT for timestamps (ISO8601 format)
+-- DID database schema (SQLite dialect).
+-- Normalized 9-table aggregate: did_record root + 8 child tables (controllers, aliases,
+-- equivalent ids, contexts, verification methods + relationships, services, key mappings).
+-- External-DID document caching is handled out-of-band by the IDK CacheService and is
+-- not persisted in this database. See DidRepository for the contract served on top of
+-- this schema.
+--
+-- Dialect adaptations:
+--  - TEXT AS Instant (ISO-8601 strings via InstantStringAdapter)
+--  - INTEGER AS Boolean / INTEGER AS Int via column adapters
 
 import kotlin.Boolean;
+import kotlin.Int;
+import kotlin.time.Instant;
 
--- DID record table
+-- ================================================================
+-- 1. did_record — aggregate root
+-- ================================================================
 CREATE TABLE IF NOT EXISTS did_record (
     id TEXT NOT NULL PRIMARY KEY,
-    did TEXT NOT NULL UNIQUE,
+    tenant_id TEXT NOT NULL,
+    did TEXT NOT NULL,
     method TEXT NOT NULL,
     alias TEXT,
-    document_json TEXT,
     role TEXT NOT NULL,
+    canonical_id TEXT,
     deactivated INTEGER AS Boolean NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    extension_properties_json TEXT,
+    created_at TEXT AS Instant NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT AS Instant NOT NULL,
+    updated_by_id TEXT,
+    deleted_at TEXT AS Instant,
+    deleted_by_id TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_did_record_method ON did_record(method);
-CREATE INDEX IF NOT EXISTS idx_did_record_alias ON did_record(alias);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_did_record_tenant_did
+    ON did_record(tenant_id, did) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_did_record_did ON did_record(did);
+CREATE INDEX IF NOT EXISTS idx_did_record_tenant_deleted ON did_record(tenant_id, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_did_record_alias ON did_record(alias);
+-- Live (tenant_id, alias) uniqueness — deleted_at IS NULL and alias IS NOT NULL keeps the
+-- index sparse so soft-deleted rows and rows without an alias don't collide. Closes the
+-- IDK-18 review §4 MINOR ('findByAlias silently returns any one of multiple matches').
+CREATE UNIQUE INDEX IF NOT EXISTS idx_did_record_tenant_alias_live
+    ON did_record(tenant_id, alias)
+    WHERE alias IS NOT NULL AND deleted_at IS NULL;
 
--- DID key mapping table - maps verification methods to KMS keys
+-- ================================================================
+-- 2. did_controller
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_controller (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    controller_did TEXT NOT NULL,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT AS Instant NOT NULL,
+    updated_by_id TEXT,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_did_controller_did_record ON did_controller(did_record_id);
+
+-- ================================================================
+-- 3. did_also_known_as
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_also_known_as (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    aka_uri TEXT NOT NULL,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT AS Instant NOT NULL,
+    updated_by_id TEXT,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_did_aka_did_record ON did_also_known_as(did_record_id);
+
+-- ================================================================
+-- 4. did_equivalent_id
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_equivalent_id (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    equivalent_did TEXT NOT NULL,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT AS Instant NOT NULL,
+    updated_by_id TEXT,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_did_equivalent_did_record ON did_equivalent_id(did_record_id);
+
+-- ================================================================
+-- 5. did_document_context
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_document_context (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    context_uri TEXT NOT NULL,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    updated_at TEXT AS Instant NOT NULL,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_did_context_did_record ON did_document_context(did_record_id);
+
+-- ================================================================
+-- 6. did_verification_method
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_verification_method (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    vm_id TEXT NOT NULL,
+    -- Original authored form of vm_id (e.g. "#key-1") when the source document used a
+    -- relative reference. NULL when the authored form matches the absolute vm_id.
+    -- Round-trip preserves byte-identical output (IDK-18 review waf).
+    vm_id_authored TEXT,
+    type TEXT NOT NULL,
+    controller TEXT NOT NULL,
+    kms_provider_id TEXT,
+    kms_key_alias TEXT,
+    kms_kid TEXT,
+    key_reference_id TEXT,
+    public_key_jwk_json TEXT,
+    public_key_multibase TEXT,
+    inline_in_json TEXT,
+    expires_at TEXT AS Instant,
+    revoked_at TEXT AS Instant,
+    blockchain_account_id TEXT,
+    extension_properties_json TEXT,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT AS Instant NOT NULL,
+    updated_by_id TEXT,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_did_vm_did_record ON did_verification_method(did_record_id);
+CREATE INDEX IF NOT EXISTS idx_did_vm_kms ON did_verification_method(kms_provider_id, kms_key_alias);
+
+-- ================================================================
+-- 7. did_verification_relationship
+-- Polymorphic entry: at least one of (entry_embedded_vm_id, entry_ref_did_url)
+-- must be populated. BOTH may be populated when the entry is a string-form
+-- reference that happens to point at a verification method held in this same
+-- DID document — `DidRecordConverters` resolves the absolute DID URL to the
+-- local VM's UUID and stores it in `entry_embedded_vm_id` so cascade deletes
+-- can operate on a stable FK, while `entry_ref_did_url` keeps the wire-form
+-- string verbatim for round-trip fidelity (the originally authored absolute
+-- or relative form). Earlier the constraint was XOR-strict, but that
+-- rejected the local-string-ref case the converter intentionally produces
+-- (every did:key / did:jwk creation with reference-style relationships
+-- failed at insert time), so SQLite/MySQL are aligned with PostgreSQL on
+-- a relaxed OR constraint.
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_verification_relationship (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    entry_embedded_vm_id TEXT,
+    entry_ref_did_url TEXT,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    updated_at TEXT AS Instant NOT NULL,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE,
+    FOREIGN KEY(entry_embedded_vm_id) REFERENCES did_verification_method(id) ON DELETE CASCADE,
+    CHECK (entry_embedded_vm_id IS NOT NULL OR entry_ref_did_url IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_did_rel_did_record_purpose
+    ON did_verification_relationship(did_record_id, purpose);
+
+-- ================================================================
+-- 8. did_service
+-- ================================================================
+CREATE TABLE IF NOT EXISTS did_service (
+    id TEXT NOT NULL PRIMARY KEY,
+    did_record_id TEXT NOT NULL,
+    service_id TEXT NOT NULL,
+    type_json TEXT NOT NULL,
+    service_endpoint_json TEXT NOT NULL,
+    extension_properties_json TEXT,
+    ordinal INTEGER AS Int NOT NULL,
+    created_at TEXT AS Instant NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT AS Instant NOT NULL,
+    updated_by_id TEXT,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_did_service_did_record ON did_service(did_record_id);
+
+-- ================================================================
+-- 9. did_key_mapping
+-- ================================================================
+-- IDK-18 o77: verification_method_id is a UUID FK to did_verification_method.id
+-- (was wire DID URL TEXT). Deletion of the parent VM cascades to mappings at the
+-- DB layer; the wire-form reference (relative or absolute DID URL) lives in the
+-- separate verification_method_did_url column for serialization/API surfaces.
 CREATE TABLE IF NOT EXISTS did_key_mapping (
     id TEXT NOT NULL PRIMARY KEY,
     did_record_id TEXT NOT NULL,
     verification_method_id TEXT NOT NULL,
-    kms_key_alias TEXT NOT NULL,
+    verification_method_did_url TEXT,
     kms_provider_id TEXT NOT NULL,
+    kms_key_alias TEXT NOT NULL,
+    kms_kid TEXT,
+    key_reference_id TEXT,
     purposes_json TEXT NOT NULL,
-    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE
+    created_at TEXT AS Instant NOT NULL,
+    updated_at TEXT AS Instant NOT NULL,
+    FOREIGN KEY(did_record_id) REFERENCES did_record(id) ON DELETE CASCADE,
+    FOREIGN KEY(verification_method_id) REFERENCES did_verification_method(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_did_keymap_did_record ON did_key_mapping(did_record_id);
+CREATE INDEX IF NOT EXISTS idx_did_keymap_vm ON did_key_mapping(verification_method_id);
+CREATE INDEX IF NOT EXISTS idx_did_keymap_kms ON did_key_mapping(kms_provider_id, kms_key_alias);
 
-CREATE INDEX IF NOT EXISTS idx_did_key_mapping_did ON did_key_mapping(did_record_id);
-
--- =====================
--- DID Record Queries
--- =====================
-
-findById:
-SELECT * FROM did_record WHERE id = :id;
-
-findByDid:
-SELECT * FROM did_record WHERE did = :did;
-
-findByAlias:
-SELECT * FROM did_record WHERE alias = :alias;
-
-findAll:
+-- ================================================================
+-- did_record queries
+-- ================================================================
+findDidRecordByDid:
 SELECT * FROM did_record
-ORDER BY created_at DESC;
+WHERE did = :did
+  AND (:tenantId IS NULL OR tenant_id = :tenantId)
+  AND (:includeDeleted = 1 OR deleted_at IS NULL)
+ORDER BY deleted_at IS NOT NULL, created_at ASC;
 
-findAllFiltered:
+findDidRecordByAlias:
 SELECT * FROM did_record
-WHERE (:method IS NULL OR method = :method)
+WHERE alias = :alias
+  AND (:tenantId IS NULL OR tenant_id = :tenantId)
+  AND (:includeDeleted = 1 OR deleted_at IS NULL)
+ORDER BY deleted_at IS NOT NULL, created_at ASC;
+
+-- :sort is one of 'createdAt','updatedAt','did','method','alias' (camelCase wire form);
+-- :sortDirection is 'ASC' or 'DESC'. The CASE chains below activate exactly one column +
+-- direction pair so the ORDER BY is effectively dynamic without losing prepared-statement
+-- semantics. :search is a case-insensitive substring filter over did and alias.
+findDidRecordsFiltered:
+SELECT * FROM did_record
+WHERE (:tenantId IS NULL OR tenant_id = :tenantId)
+  AND (:method IS NULL OR method = :method)
   AND (:alias IS NULL OR alias = :alias)
   AND (:role IS NULL OR role = :role)
+  AND (:search IS NULL
+       OR LOWER(did) LIKE '%' || LOWER(:search) || '%'
+       OR LOWER(IFNULL(alias, '')) LIKE '%' || LOWER(:search) || '%')
   AND (:includeDeactivated = 1 OR deactivated = 0)
-ORDER BY created_at DESC;
+  AND (:includeDeleted = 1 OR deleted_at IS NULL)
+ORDER BY
+  CASE WHEN :sort = 'createdAt' AND :sortDirection = 'ASC'  THEN created_at END ASC,
+  CASE WHEN :sort = 'createdAt' AND :sortDirection = 'DESC' THEN created_at END DESC,
+  CASE WHEN :sort = 'updatedAt' AND :sortDirection = 'ASC'  THEN updated_at END ASC,
+  CASE WHEN :sort = 'updatedAt' AND :sortDirection = 'DESC' THEN updated_at END DESC,
+  CASE WHEN :sort = 'did'       AND :sortDirection = 'ASC'  THEN did        END ASC,
+  CASE WHEN :sort = 'did'       AND :sortDirection = 'DESC' THEN did        END DESC,
+  CASE WHEN :sort = 'method'    AND :sortDirection = 'ASC'  THEN method     END ASC,
+  CASE WHEN :sort = 'method'    AND :sortDirection = 'DESC' THEN method     END DESC,
+  CASE WHEN :sort = 'alias'     AND :sortDirection = 'ASC'  THEN alias      END ASC,
+  CASE WHEN :sort = 'alias'     AND :sortDirection = 'DESC' THEN alias      END DESC
+LIMIT :limit OFFSET :offset;
 
-countAll:
-SELECT COUNT(*) FROM did_record;
+countDidRecordsFiltered:
+SELECT COUNT(*) FROM did_record
+WHERE (:tenantId IS NULL OR tenant_id = :tenantId)
+  AND (:method IS NULL OR method = :method)
+  AND (:alias IS NULL OR alias = :alias)
+  AND (:role IS NULL OR role = :role)
+  AND (:search IS NULL
+       OR LOWER(did) LIKE '%' || LOWER(:search) || '%'
+       OR LOWER(IFNULL(alias, '')) LIKE '%' || LOWER(:search) || '%')
+  AND (:includeDeactivated = 1 OR deactivated = 0)
+  AND (:includeDeleted = 1 OR deleted_at IS NULL);
 
-insertRecord:
+insertDidRecord:
 INSERT INTO did_record(
-    id, did, method, alias, document_json, role, deactivated, created_at, updated_at
+    id, tenant_id, did, method, alias, role, canonical_id,
+    deactivated, extension_properties_json,
+    created_at, created_by_id, updated_at, updated_by_id,
+    deleted_at, deleted_by_id
 ) VALUES (
-    :id, :did, :method, :alias, :documentJson, :role, :deactivated, :createdAt, :updatedAt
+    :id, :tenantId, :did, :method, :alias, :role, :canonicalId,
+    :deactivated, :extensionPropertiesJson,
+    :createdAt, :createdById, :updatedAt, :updatedById,
+    :deletedAt, :deletedById
 );
 
-updateRecord:
+updateDidRecord:
 UPDATE did_record SET
     alias = :alias,
-    document_json = :documentJson,
+    role = :role,
+    canonical_id = :canonicalId,
     deactivated = :deactivated,
-    updated_at = :updatedAt
+    extension_properties_json = :extensionPropertiesJson,
+    updated_at = :updatedAt,
+    updated_by_id = :updatedById,
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById
 WHERE id = :id;
 
-deleteRecord:
-DELETE FROM did_record WHERE did = :did;
+existsDidRecordById:
+SELECT COUNT(*) FROM did_record WHERE id = :id;
 
-deleteRecordById:
-DELETE FROM did_record WHERE id = :id;
+softDeleteDidRecord:
+UPDATE did_record SET
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById,
+    updated_at = :updatedAt
+WHERE did = :did
+  AND (:tenantId IS NULL OR tenant_id = :tenantId)
+  AND deleted_at IS NULL;
 
--- =====================
--- Key Mapping Queries
--- =====================
+deleteDidRecord:
+DELETE FROM did_record
+WHERE did = :did
+  AND (:tenantId IS NULL OR tenant_id = :tenantId);
 
-findKeyMappingsByDidRecordId:
-SELECT * FROM did_key_mapping WHERE did_record_id = :didRecordId;
+-- ================================================================
+-- did_controller queries
+-- ================================================================
+selectControllersByDidRecord:
+SELECT * FROM did_controller WHERE did_record_id = :didRecordId ORDER BY ordinal ASC;
 
-findKeyMappingById:
-SELECT * FROM did_key_mapping WHERE id = :id;
+selectControllersByDidRecords:
+SELECT * FROM did_controller WHERE did_record_id IN ? ORDER BY did_record_id, ordinal ASC;
+
+insertController:
+INSERT INTO did_controller(
+    id, did_record_id, controller_did, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :controllerDid, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+upsertController:
+INSERT OR REPLACE INTO did_controller(
+    id, did_record_id, controller_did, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :controllerDid, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+deleteControllerById:
+DELETE FROM did_controller
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteControllersByDidRecord:
+DELETE FROM did_controller WHERE did_record_id = :didRecordId;
+
+-- ================================================================
+-- did_also_known_as queries
+-- ================================================================
+selectAkasByDidRecord:
+SELECT * FROM did_also_known_as WHERE did_record_id = :didRecordId ORDER BY ordinal ASC;
+
+selectAkasByDidRecords:
+SELECT * FROM did_also_known_as WHERE did_record_id IN ? ORDER BY did_record_id, ordinal ASC;
+
+insertAka:
+INSERT INTO did_also_known_as(
+    id, did_record_id, aka_uri, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :akaUri, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+upsertAka:
+INSERT OR REPLACE INTO did_also_known_as(
+    id, did_record_id, aka_uri, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :akaUri, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+deleteAkaById:
+DELETE FROM did_also_known_as
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteAkasByDidRecord:
+DELETE FROM did_also_known_as WHERE did_record_id = :didRecordId;
+
+-- ================================================================
+-- did_equivalent_id queries
+-- ================================================================
+selectEquivalentIdsByDidRecord:
+SELECT * FROM did_equivalent_id WHERE did_record_id = :didRecordId ORDER BY ordinal ASC;
+
+selectEquivalentIdsByDidRecords:
+SELECT * FROM did_equivalent_id WHERE did_record_id IN ? ORDER BY did_record_id, ordinal ASC;
+
+insertEquivalentId:
+INSERT INTO did_equivalent_id(
+    id, did_record_id, equivalent_did, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :equivalentDid, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+upsertEquivalentId:
+INSERT OR REPLACE INTO did_equivalent_id(
+    id, did_record_id, equivalent_did, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :equivalentDid, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+deleteEquivalentIdById:
+DELETE FROM did_equivalent_id
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteEquivalentIdsByDidRecord:
+DELETE FROM did_equivalent_id WHERE did_record_id = :didRecordId;
+
+-- ================================================================
+-- did_document_context queries
+-- ================================================================
+selectContextsByDidRecord:
+SELECT * FROM did_document_context WHERE did_record_id = :didRecordId ORDER BY ordinal ASC;
+
+selectContextsByDidRecords:
+SELECT * FROM did_document_context WHERE did_record_id IN ? ORDER BY did_record_id, ordinal ASC;
+
+insertContext:
+INSERT INTO did_document_context(
+    id, did_record_id, context_uri, ordinal, created_at, updated_at
+) VALUES (
+    :id, :didRecordId, :contextUri, :ordinal, :createdAt, :updatedAt
+);
+
+deleteContextsByDidRecord:
+DELETE FROM did_document_context WHERE did_record_id = :didRecordId;
+
+-- ================================================================
+-- did_verification_method queries
+-- ================================================================
+selectVmsByDidRecord:
+SELECT * FROM did_verification_method WHERE did_record_id = :didRecordId ORDER BY ordinal ASC;
+
+selectVmsByDidRecords:
+SELECT * FROM did_verification_method WHERE did_record_id IN ? ORDER BY did_record_id, ordinal ASC;
+
+insertVm:
+INSERT INTO did_verification_method(
+    id, did_record_id, vm_id, vm_id_authored, type, controller,
+    kms_provider_id, kms_key_alias, kms_kid, key_reference_id,
+    public_key_jwk_json, public_key_multibase, inline_in_json,
+    expires_at, revoked_at, blockchain_account_id, extension_properties_json,
+    ordinal, created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :vmId, :vmIdAuthored, :type, :controller,
+    :kmsProviderId, :kmsKeyAlias, :kmsKid, :keyReferenceId,
+    :publicKeyJwkJson, :publicKeyMultibase, :inlineInJson,
+    :expiresAt, :revokedAt, :blockchainAccountId, :extensionPropertiesJson,
+    :ordinal, :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+upsertVm:
+INSERT OR REPLACE INTO did_verification_method(
+    id, did_record_id, vm_id, vm_id_authored, type, controller,
+    kms_provider_id, kms_key_alias, kms_kid, key_reference_id,
+    public_key_jwk_json, public_key_multibase, inline_in_json,
+    expires_at, revoked_at, blockchain_account_id, extension_properties_json,
+    ordinal, created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :vmId, :vmIdAuthored, :type, :controller,
+    :kmsProviderId, :kmsKeyAlias, :kmsKid, :keyReferenceId,
+    :publicKeyJwkJson, :publicKeyMultibase, :inlineInJson,
+    :expiresAt, :revokedAt, :blockchainAccountId, :extensionPropertiesJson,
+    :ordinal, :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+deleteVmById:
+DELETE FROM did_verification_method
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteVmsByDidRecord:
+DELETE FROM did_verification_method WHERE did_record_id = :didRecordId;
+
+findVmWireIdAndDidRecordById:
+SELECT vm.vm_id, vm.did_record_id FROM did_verification_method vm
+INNER JOIN did_record dr ON dr.id = vm.did_record_id
+WHERE vm.id = :id AND (:tenantId IS NULL OR dr.tenant_id = :tenantId);
+
+deleteRelsByEntryRefDidUrlForDid:
+DELETE FROM did_verification_relationship WHERE entry_ref_did_url = :wireId AND did_record_id = :didRecordId;
+
+-- IDK-18 o77: did_key_mapping.verification_method_id is now a UUID FK with
+-- ON DELETE CASCADE — no manual cascade query needed; FK does the work.
+
+-- ================================================================
+-- did_verification_relationship queries
+-- ================================================================
+selectRelsByDidRecord:
+SELECT * FROM did_verification_relationship WHERE did_record_id = :didRecordId ORDER BY purpose, ordinal ASC;
+
+selectRelsByDidRecords:
+SELECT * FROM did_verification_relationship WHERE did_record_id IN ? ORDER BY did_record_id, purpose, ordinal ASC;
+
+insertRel:
+INSERT INTO did_verification_relationship(
+    id, did_record_id, purpose, entry_embedded_vm_id, entry_ref_did_url, ordinal,
+    created_at, updated_at
+) VALUES (
+    :id, :didRecordId, :purpose, :entryEmbeddedVmId, :entryRefDidUrl, :ordinal,
+    :createdAt, :updatedAt
+);
+
+upsertRel:
+INSERT OR REPLACE INTO did_verification_relationship(
+    id, did_record_id, purpose, entry_embedded_vm_id, entry_ref_did_url, ordinal,
+    created_at, updated_at
+) VALUES (
+    :id, :didRecordId, :purpose, :entryEmbeddedVmId, :entryRefDidUrl, :ordinal,
+    :createdAt, :updatedAt
+);
+
+deleteRelById:
+DELETE FROM did_verification_relationship
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteRelsByDidRecord:
+DELETE FROM did_verification_relationship WHERE did_record_id = :didRecordId;
+
+-- ================================================================
+-- did_service queries
+-- ================================================================
+selectServicesByDidRecord:
+SELECT * FROM did_service WHERE did_record_id = :didRecordId ORDER BY ordinal ASC;
+
+selectServicesByDidRecords:
+SELECT * FROM did_service WHERE did_record_id IN ? ORDER BY did_record_id, ordinal ASC;
+
+insertService:
+INSERT INTO did_service(
+    id, did_record_id, service_id, type_json, service_endpoint_json,
+    extension_properties_json, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :serviceId, :typeJson, :serviceEndpointJson,
+    :extensionPropertiesJson, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+upsertService:
+INSERT OR REPLACE INTO did_service(
+    id, did_record_id, service_id, type_json, service_endpoint_json,
+    extension_properties_json, ordinal,
+    created_at, created_by_id, updated_at, updated_by_id
+) VALUES (
+    :id, :didRecordId, :serviceId, :typeJson, :serviceEndpointJson,
+    :extensionPropertiesJson, :ordinal,
+    :createdAt, :createdById, :updatedAt, :updatedById
+);
+
+deleteServiceById:
+DELETE FROM did_service
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteServicesByDidRecord:
+DELETE FROM did_service WHERE did_record_id = :didRecordId;
+
+-- ================================================================
+-- did_key_mapping queries
+-- ================================================================
+selectKeyMappingsByDidRecord:
+SELECT * FROM did_key_mapping WHERE did_record_id = :didRecordId ORDER BY created_at ASC;
+
+selectKeyMappingsByDidRecords:
+SELECT * FROM did_key_mapping WHERE did_record_id IN ? ORDER BY did_record_id, created_at ASC;
 
 insertKeyMapping:
 INSERT INTO did_key_mapping(
-    id, did_record_id, verification_method_id, kms_key_alias, kms_provider_id, purposes_json
+    id, did_record_id, verification_method_id, verification_method_did_url,
+    kms_provider_id, kms_key_alias, kms_kid, key_reference_id, purposes_json,
+    created_at, updated_at
 ) VALUES (
-    :id, :didRecordId, :verificationMethodId, :kmsKeyAlias, :kmsProviderId, :purposesJson
+    :id, :didRecordId, :verificationMethodId, :verificationMethodDidUrl,
+    :kmsProviderId, :kmsKeyAlias, :kmsKid, :keyReferenceId, :purposesJson,
+    :createdAt, :updatedAt
 );
 
-deleteKeyMapping:
-DELETE FROM did_key_mapping WHERE id = :id;
+upsertKeyMapping:
+INSERT OR REPLACE INTO did_key_mapping(
+    id, did_record_id, verification_method_id, verification_method_did_url,
+    kms_provider_id, kms_key_alias, kms_kid, key_reference_id, purposes_json,
+    created_at, updated_at
+) VALUES (
+    :id, :didRecordId, :verificationMethodId, :verificationMethodDidUrl,
+    :kmsProviderId, :kmsKeyAlias, :kmsKid, :keyReferenceId, :purposesJson,
+    :createdAt, :updatedAt
+);
 
-deleteKeyMappingsByDidRecordId:
+deleteKeyMappingById:
+DELETE FROM did_key_mapping
+WHERE id = :id
+  AND (:tenantId IS NULL OR did_record_id IN (SELECT id FROM did_record WHERE id = did_record_id AND tenant_id = :tenantId));
+
+deleteKeyMappingsByDidRecord:
 DELETE FROM did_key_mapping WHERE did_record_id = :didRecordId;

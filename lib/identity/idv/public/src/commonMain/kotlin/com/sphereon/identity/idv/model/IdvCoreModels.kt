@@ -18,7 +18,6 @@ package com.sphereon.identity.idv.model
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.PartyType
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @JsExportCompat
@@ -163,20 +162,10 @@ data class DocumentType(
     }
 }
 
-@JsExportCompat
-@Serializable
-enum class EidasAssuranceLevel(
-    val serializedValue: String,
-) {
-    @SerialName("low")
-    LOW("low"),
-
-    @SerialName("substantial")
-    SUBSTANTIAL("substantial"),
-
-    @SerialName("high")
-    HIGH("high"),
-}
+/**
+ * Canonical definition in core/api/public. This typealias preserves existing import paths.
+ */
+typealias EidasAssuranceLevel = com.sphereon.core.api.service.EidasAssuranceLevel
 
 /**
  * Canonical definition in core/api/public. This typealias preserves existing import paths.
@@ -234,18 +223,10 @@ data class ProofingScenario(
     }
 }
 
-@JsExportCompat
-@Serializable
-data class TrustFrameworkType(
-    val value: String,
-) {
-    companion object {
-        val EIDAS = TrustFrameworkType("eidas")
-        val NIST_800_63A = TrustFrameworkType("nist_800_63A")
-        val UK_DIATF = TrustFrameworkType("uk_diatf")
-        val DE_AML = TrustFrameworkType("de_aml")
-    }
-}
+/**
+ * Canonical definition in core/api/public. This typealias preserves existing import paths.
+ */
+typealias TrustFrameworkType = com.sphereon.core.api.compliance.TrustFrameworkType
 
 @JsExportCompat
 @Serializable
@@ -321,19 +302,10 @@ data class SecretReference(
     val key: String? = null,
 )
 
-@JsExportCompat
-@Serializable
-data class LegalBasis(
-    val value: String,
-) {
-    companion object {
-        val GDPR_ART6_1A_CONSENT = LegalBasis("gdpr_art6_1a_consent")
-        val GDPR_ART6_1B_CONTRACT = LegalBasis("gdpr_art6_1b_contract")
-        val GDPR_ART6_1C_LEGAL_OBLIGATION = LegalBasis("gdpr_art6_1c_legal_obligation")
-        val GDPR_ART6_1F_LEGITIMATE_INTEREST = LegalBasis("gdpr_art6_1f_legitimate_interest")
-        val AMLR_ART56_RECORD_KEEPING = LegalBasis("amlr_art56_record_keeping")
-    }
-}
+/**
+ * Canonical definition in core/api/public. This typealias preserves existing import paths.
+ */
+typealias LegalBasis = com.sphereon.core.api.compliance.LegalBasis
 
 @JsExportCompat
 @Serializable

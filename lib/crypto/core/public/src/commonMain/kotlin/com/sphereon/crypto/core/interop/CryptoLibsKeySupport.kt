@@ -22,16 +22,17 @@ import at.asitplus.awesn1.Asn1Element
 import at.asitplus.awesn1.Asn1Integer
 import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.ObjectIdentifier
-import at.asitplus.awesn1.crypto.EcPrivateKeyInfo
-import at.asitplus.awesn1.crypto.EcdsaSignatureValue
+import at.asitplus.awesn1.crypto.Pkcs1RsaPrivateKeyInfo
 import at.asitplus.awesn1.crypto.Pkcs8PrivateKeyInfo
-import at.asitplus.awesn1.crypto.SignatureAlgorithmIdentifier
+import at.asitplus.awesn1.crypto.Sec1EcPrivateKeyInfo
 import at.asitplus.awesn1.crypto.SubjectPublicKeyInfo
+import at.asitplus.awesn1.crypto.X509AlgorithmIdentifier
+import at.asitplus.awesn1.crypto.X509SignatureValue
 import at.asitplus.awesn1.crypto.pki.X509Certificate
-import at.asitplus.awesn1.decodeAllFromPem
-import at.asitplus.awesn1.encodeToPem
 import at.asitplus.awesn1.encoding.Asn1
 import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.serialization.DER
+import at.asitplus.awesn1.serialization.encodeToPem
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFromBase64
 import com.sphereon.core.api.decodeFromBase64Url
@@ -58,6 +59,8 @@ import com.sphereon.crypto.core.x509.toX500
 import dev.whyoleg.cryptography.CryptographyAlgorithmId
 import dev.whyoleg.cryptography.algorithms.Digest
 import dev.whyoleg.cryptography.algorithms.EC
+import kotlinx.serialization.decodeFromByteArray
+import kotlinx.serialization.encodeToByteArray
 import org.kotlincrypto.hash.sha1.SHA1
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
@@ -202,14 +205,14 @@ DerKmpKeyInfoContext
 // Signature Algorithm Mapping
 // ============================================================================
 
-fun SignatureAlgorithm.toSignatureAlgorithmIdentifier(): SignatureAlgorithmIdentifier {
+fun SignatureAlgorithm.toSignatureAlgorithmIdentifier(): X509AlgorithmIdentifier {
     val (oid, params) =
         SIGNATURE_ALG_OIDS[this]
             ?: throw IllegalArgumentException("Algorithm $this not supported for X.509 signature")
-    return SignatureAlgorithmIdentifier(oid, params)
+    return X509AlgorithmIdentifier(oid, params)
 }
 
-fun SignatureAlgorithmIdentifier.toSignatureAlgorithm(): SignatureAlgorithm =
+fun X509AlgorithmIdentifier.toSignatureAlgorithm(): SignatureAlgorithm =
     OID_TO_SIGNATURE_ALG[oid]
         ?: throw IllegalArgumentException("Unknown signature algorithm OID: $oid")
 
@@ -237,9 +240,9 @@ fun X509Certificate.getPublicKeyJwk(
     generateKid: Boolean? = false,
 ): JwkType = tbsCertificate.subjectPublicKeyInfo.toJwk(x5c, alg, generateKid)
 
-fun X509Certificate.getPublicKeyBytes(): ByteArray = tbsCertificate.subjectPublicKeyInfo.encodeToTlv().derEncoded
+fun X509Certificate.getPublicKeyBytes(): ByteArray = DER.encodeToByteArray(tbsCertificate.subjectPublicKeyInfo)
 
-fun X509Certificate.toCertificateDto() = certificateFromX509Certificate(this, this.encodeToTlv().derEncoded)
+fun X509Certificate.toCertificateDto() = certificateFromX509Certificate(this, DER.encodeToByteArray(this))
 
 fun Certificate.getPublicKeyJwk(
     x5c: Array<String>? = null,
@@ -260,14 +263,13 @@ fun x509CertificateFromBase64(input: String): X509Certificate = x509CertificateF
  */
 fun x509CertificateFromDer(der: ByteArray): X509Certificate {
     try {
-        val seq = Asn1Element.parse(der) as Asn1Sequence
-        return X509Certificate.decodeFromTlv(seq)
+        return DER.decodeFromByteArray<X509Certificate>(der)
     } catch (expected: Throwable) {
         throw IllegalArgumentException("Invalid certificate data", expected)
     }
 }
 
-fun x509CertificateToDerAsBase64(cert: X509Certificate): String = cert.encodeToTlv().derEncoded.encodeToBase64()
+fun x509CertificateToDerAsBase64(cert: X509Certificate): String = DER.encodeToByteArray(cert).encodeToBase64()
 
 fun x509CertificateToPem(cert: X509Certificate): String = cert.encodeToPem()
 
@@ -285,17 +287,17 @@ fun x509CertificateChainToX5c(chain: List<X509Certificate>): Array<String> = cha
 
 internal fun certificateFromX509Certificate(
     x509: X509Certificate,
-    derBytes: ByteArray = x509.encodeToTlv().derEncoded,
+    derBytes: ByteArray = DER.encodeToByteArray(x509),
 ): Certificate =
     with(x509.tbsCertificate) {
         Certificate(
             der = derBytes,
             fingerPrint = SHA1().digest(derBytes).encodeTo(Encoding.HEX).uppercase(),
-            serialNumber = serialNumber.encodeTo(Encoding.HEX).uppercase(),
+            serialNumber = serialNumber.twosComplement().encodeTo(Encoding.HEX).uppercase(),
             issuerDN = issuerName.toX500(),
             subjectDN = subjectName.toX500(),
-            notBefore = Instant.fromEpochSeconds(validFrom.instant.epochSeconds, validFrom.instant.nanosecondsOfSecond),
-            notAfter = Instant.fromEpochSeconds(validUntil.instant.epochSeconds, validUntil.instant.nanosecondsOfSecond),
+            notBefore = Instant.fromEpochSeconds(validity.validFrom.instant.epochSeconds, validity.validFrom.instant.nanosecondsOfSecond),
+            notAfter = Instant.fromEpochSeconds(validity.validUntil.instant.epochSeconds, validity.validUntil.instant.nanosecondsOfSecond),
             keyUsage = getKeyUsageContent(extensions)?.let { KeyUsage.fromDerBitString(it) },
             subjectAlternativeNames = getSubjectAlternativeName(extensions),
         )
@@ -307,7 +309,7 @@ fun x509CertificateChainFromPem(input: String): List<X509Certificate> =
         .map { x509CertificateFromPem(it.value) }
         .toList()
 
-fun x509CertificateToDer(cert: X509Certificate) = cert.encodeToTlv().derEncoded
+fun x509CertificateToDer(cert: X509Certificate) = DER.encodeToByteArray(cert)
 
 fun derToX509Certificate(input: ByteArray) = x509CertificateFromDer(input)
 
@@ -316,14 +318,12 @@ fun derToX509Certificate(input: ByteArray) = x509CertificateFromDer(input)
 // ============================================================================
 
 fun derPrivateKeyToJwk(privateKeyDer: ByteArray): Jwk {
-    val seq = Asn1Element.parse(privateKeyDer) as Asn1Sequence
-    val pkcs8 = Pkcs8PrivateKeyInfo.decodeFromTlv(seq)
+    val pkcs8 = DER.decodeFromByteArray<Pkcs8PrivateKeyInfo>(privateKeyDer)
     return pkcs8.toJwk()
 }
 
 fun derPublicKeyToJwk(publicKeyDer: ByteArray): Jwk {
-    val seq = Asn1Element.parse(publicKeyDer) as Asn1Sequence
-    val spki = SubjectPublicKeyInfo.decodeFromTlv(seq)
+    val spki = DER.decodeFromByteArray<SubjectPublicKeyInfo>(publicKeyDer)
     return spki.toJwk()
 }
 
@@ -381,19 +381,14 @@ fun publicKeyECPemFrom(
 // ============================================================================
 
 /**
- * Converts raw EC signature bytes (r || s concatenated) to an ASN.1 DER-encoded
- * ECDSA signature wrapped in an Asn1BitString (for X509Certificate constructor).
+ * Converts raw EC signature bytes (r || s concatenated) to an X.509 [X509SignatureValue]
+ * holding the DER-encoded `ECDSA-Sig-Value` (for the X509Certificate constructor).
  */
-fun ecSignatureToAsn1BitString(rawBytes: ByteArray): Asn1BitString {
+fun ecSignatureToX509SignatureValue(rawBytes: ByteArray): X509SignatureValue {
     val halfLen = rawBytes.size / 2
-    val rBytes = rawBytes.copyOfRange(0, halfLen)
-    val sBytes = rawBytes.copyOfRange(halfLen, rawBytes.size)
-    val ecdsaSig =
-        EcdsaSignatureValue(
-            r = Asn1Integer.fromUnsignedByteArray(rBytes) as Asn1Integer.Positive,
-            s = Asn1Integer.fromUnsignedByteArray(sBytes) as Asn1Integer.Positive,
-        )
-    return Asn1BitString(ecdsaSig.encodeToTlv().derEncoded)
+    val r = Asn1Integer.fromUnsignedByteArray(rawBytes.copyOfRange(0, halfLen))
+    val s = Asn1Integer.fromUnsignedByteArray(rawBytes.copyOfRange(halfLen, rawBytes.size))
+    return X509SignatureValue.fromRS(r, s)
 }
 
 // ============================================================================
@@ -410,13 +405,13 @@ fun SubjectPublicKeyInfo.toJwk(
     when (algorithmOid) {
         EC_PUBLIC_KEY_OID -> {
             val curveOid =
-                algorithmParameters.firstOrNull()?.let {
+                algorithmParameters?.let {
                     ObjectIdentifier.decodeFromTlv(it.asPrimitive())
                 }
             val curve =
                 EC_OID_TO_CURVE[curveOid]
                     ?: throw IllegalArgumentException("Unknown EC curve OID: $curveOid")
-            val point = subjectPublicKey.rawBytes
+            val point = subjectPublicKey.bitCarryingBytes
             require(point.isNotEmpty() && point[0] == 0x04.toByte()) {
                 "Expected uncompressed EC point (0x04 prefix)"
             }
@@ -523,7 +518,7 @@ fun Pkcs8PrivateKeyInfo.toJwk(x5c: Array<String>? = null): Jwk =
         EC_PUBLIC_KEY_OID -> {
             val ec = decodeEcPrivateKey()
             val curveOid =
-                algorithmParameters.firstOrNull()?.let {
+                algorithmParameters?.let {
                     ObjectIdentifier.decodeFromTlv(it.asPrimitive())
                 }
             val curve = EC_OID_TO_CURVE[curveOid]
@@ -536,7 +531,7 @@ fun Pkcs8PrivateKeyInfo.toJwk(x5c: Array<String>? = null): Jwk =
                 builder.withCrv(curve)
             }
             var hasPublicKey = false
-            ec.publicKey?.rawBytes?.let { point ->
+            ec.publicKey?.bitCarryingBytes?.let { point ->
                 if (point.isNotEmpty() && point[0] == 0x04.toByte()) {
                     val coordSize = (point.size - 1) / 2
                     builder.withX(point.copyOfRange(1, 1 + coordSize).toJwkProp())
@@ -563,8 +558,8 @@ fun Jwk.toPkcs8PrivateKeyInfo(): Pkcs8PrivateKeyInfo {
     return when (kty) {
         JwaKeyType.RSA -> {
             val rsaKey =
-                at.asitplus.awesn1.crypto.RsaPrivateKeyInfo(
-                    version = 0,
+                Pkcs1RsaPrivateKeyInfo(
+                    version = Pkcs1RsaPrivateKeyInfo.Version.TWO_PRIME,
                     modulus = Asn1Integer.fromUnsignedByteArray(n!!.decodeFromBase64Url()),
                     publicExponent = Asn1Integer.fromUnsignedByteArray(e!!.decodeFromBase64Url()),
                     privateExponent = Asn1Integer.fromUnsignedByteArray(d!!.decodeFromBase64Url()),
@@ -592,8 +587,8 @@ fun Jwk.toPkcs8PrivateKeyInfo(): Pkcs8PrivateKeyInfo {
                     null
                 }
             val ecKey =
-                EcPrivateKeyInfo(
-                    version = 1,
+                Sec1EcPrivateKeyInfo(
+                    version = Sec1EcPrivateKeyInfo.Version.V1,
                     privateKey = dBytes,
                     parameters = curveOid,
                     publicKey = publicKey,
@@ -611,14 +606,14 @@ fun Jwk.toPkcs8PrivateKeyInfo(): Pkcs8PrivateKeyInfo {
 // X509 Signature Algorithm ↔ SignatureAlgorithm
 // ============================================================================
 
-fun SignatureAlgorithmIdentifier.toSignatureAlgorithmOrNull(): SignatureAlgorithm? = OID_TO_SIGNATURE_ALG[oid]
+fun X509AlgorithmIdentifier.toSignatureAlgorithmOrNull(): SignatureAlgorithm? = OID_TO_SIGNATURE_ALG[oid]
 
 // ============================================================================
 // SubjectPublicKeyInfo PEM encoding
 // ============================================================================
 
 fun SubjectPublicKeyInfo.encodeToPem(): String {
-    val der = encodeToTlv().derEncoded
+    val der = DER.encodeToByteArray(this)
     val base64 = der.encodeToBase64()
     val body = base64.chunked(64).joinToString("\n")
     return "-----BEGIN PUBLIC KEY-----\n$body\n-----END PUBLIC KEY-----"

@@ -23,6 +23,8 @@ import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
+import com.sphereon.oauth2.server.authorization.impl.testutil.TenantOverrideSessionExecution
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
@@ -53,7 +55,7 @@ class GetJwksCommandImplTest {
             // RPs interpret that as "no public verification key available" rather than treating
             // the endpoint as broken.
             val store: SigningKeyStore = InMemorySigningKeyStore()
-            val command = GetJwksCommandImpl(ctx.execution, store, ctx.identifierService)
+            val command = GetJwksCommandImpl(ctx.execution, store, ctx.identifierService, fixedSigningIdentifierResolver())
 
             val result = command.execute(GetJwksArgs())
 
@@ -74,7 +76,7 @@ class GetJwksCommandImplTest {
             val legacyKey = generateAndRegister(store, kid = "kid-legacy", state = OAuth2SigningKeyState.LEGACY, priority = 5)
             val activeKey = generateAndRegister(store, kid = "kid-active", state = OAuth2SigningKeyState.ACTIVE, priority = 10)
 
-            val command = GetJwksCommandImpl(ctx.execution, store, ctx.identifierService)
+            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService, fixedSigningIdentifierResolver())
             val result = command.execute(GetJwksArgs())
 
             assertTrue(result.isOk, "GetJwks must succeed when two real keys are registered")
@@ -103,7 +105,7 @@ class GetJwksCommandImplTest {
             generateAndRegister(store, kid = "kid-active", state = OAuth2SigningKeyState.ACTIVE, priority = 10)
             generateAndRegister(store, kid = "kid-disabled", state = OAuth2SigningKeyState.DISABLED, priority = 1)
 
-            val command = GetJwksCommandImpl(ctx.execution, store, ctx.identifierService)
+            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService, fixedSigningIdentifierResolver())
             val result = command.execute(GetJwksArgs())
 
             assertTrue(result.isOk)

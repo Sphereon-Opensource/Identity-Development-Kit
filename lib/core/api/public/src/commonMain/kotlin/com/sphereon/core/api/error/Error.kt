@@ -402,6 +402,27 @@ open class IdkError(
 
         @JvmStatic
         @JsStatic
+        fun QUOTA_EXCEEDED_ERROR(
+            severity: Severity = Severity.ERROR,
+            causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
+            resource: String? = null,
+            message: String = "Quota exceeded${resource?.let { ": $it" } ?: ""}",
+            throwable: Throwable? = null,
+        ) = IdkError(
+            code = "QUOTA_EXCEEDED_ERROR",
+            message =
+                Message(
+                    i18nKey = "com.sphereon.core.error.quota-exceeded-error",
+                    defaultMessage = message,
+                ),
+            severity = severity,
+            category = ErrorCategory.RATE_LIMITED,
+            causes = causes,
+            exception = throwable,
+        )
+
+        @JvmStatic
+        @JsStatic
         fun ALREADY_EXISTS_ERROR(
             severity: Severity = Severity.ERROR,
             causes: List<IdkErrorType> = emptyList<IdkErrorType>(),

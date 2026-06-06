@@ -35,6 +35,12 @@ import kotlin.native.ObjCName
 @JsExportCompat
 @Serializable
 data class GetAuthRequestStatusInput(
-    @SerialName("correlationId")
+    // Serialized name MUST match the `{correlation_id}` placeholder in the
+    // GET/DELETE `/backend/auth/requests/{correlation_id}` HttpEndpointDescriptor
+    // pathPattern. The binary transport builds the command input JSON from the
+    // extracted path params (BinaryCommandAdapter.buildInputFromParams), keyed by
+    // the literal placeholder name. A camelCase `correlationId` here would leave the
+    // field unset for a body-less GET and surface as "Request body required".
+    @SerialName("correlation_id")
     val correlationId: String,
 )

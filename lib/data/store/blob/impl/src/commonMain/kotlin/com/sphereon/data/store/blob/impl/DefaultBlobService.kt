@@ -161,11 +161,18 @@ class DefaultBlobService(
      * since [storeBlob] now always returns the LOGICAL path, callers
      * round-trip correctly without ever seeing the storage layer's
      * tenant scoping.
+     *
+     * `storeId` is set to the CONFIGURED registry id (e.g. `"default"`),
+     * never the backend scheme id ([BlobStore.schemeId], e.g.
+     * `"filesystem"`). The scheme id is not round-trippable: a later
+     * `getBlob` would call `resolveStoreId("filesystem")` →
+     * `blobStoreService.getStore("filesystem")` → no such configured id →
+     * "Blob store config not found".
      */
     private fun tenantScopedInfo(
         info: BlobInfo,
         tenantId: String,
-        store: BlobStore,
+        configuredStoreId: String,
     ): BlobInfo {
         val logicalPath =
             info.path ?: kotlin.uuid.Uuid
@@ -177,44 +184,33 @@ class DefaultBlobService(
             } else {
                 "$tenantId/$logicalPath"
             }
-        // Preserve the caller-supplied storeId (the CONFIGURED id, e.g.
-        // "default", that maps to the registered `BlobStoreFactory` entry
-        // in `BlobStoreService`). Falling back to `store.storeId` would
-        // overwrite it with the BACKEND SCHEME constant (e.g.
-        // `BlobStoreSchemes.FILESYSTEM = "filesystem"`) which is not
-        // round-trippable: a later `getBlob` would call
-        // `resolveStoreId("filesystem")` → `blobStoreService.getStore("filesystem")`
-        // → no such configured id → "Blob store config not found".
-        return info.copy(path = scopedPath, storeId = info.storeId ?: store.storeId)
+        return info.copy(path = scopedPath, storeId = info.storeId ?: configuredStoreId)
     }
 
     /**
-     * Strips the tenant prefix from a storage-layer descriptor and
-     * normalises `storeId` back to the CONFIGURED id (e.g. `"default"`
-     * from `blob.stores.default.*`) so callers can round-trip the
-     * descriptor through [getBlob] without surfacing storage-layer
-     * implementation details:
+     * THE single boundary that turns a storage-layer descriptor into a
+     * caller-facing one. Every value returned from this service flows
+     * through here so no descriptor ever leaks a tenant-scoped path or the
+     * backend scheme id:
      *
      *  - **Path**: backend stores write under `<tenantId>/<logical>`;
      *    callers must see only the logical path or a later `getBlob`
      *    will re-scope and produce `<tenantId>/<tenantId>/...` (the
      *    historical "double-prefix" bug).
      *
-     *  - **storeId**: backend `BlobStore` impls hardcode `storeId =
-     *    BlobStoreSchemes.<scheme>` (e.g. `"filesystem"`), not the
-     *    configured registry id. A descriptor carrying the scheme would
-     *    fail the next `getBlob` lookup with "Blob store config not
-     *    found for store ID: filesystem". Rewriting back to the
-     *    configured id keeps the round-trip stable.
+     *  - **storeId**: backend [BlobStore] impls stamp `storeId =
+     *    [BlobStore.schemeId]` (e.g. `"filesystem"`), not the configured
+     *    registry id. A descriptor carrying the scheme would fail the
+     *    next `getBlob` lookup with "Blob store config not found for
+     *    store ID: filesystem". Rewriting to the configured id keeps the
+     *    round-trip stable.
      *
-     * Idempotent on path; preserves descriptor's storeId when no
-     * configured id is known. Pass `configuredStoreId = null` if the
-     * caller deliberately wants the raw scheme-id (uncommon).
+     * Idempotent on path.
      */
     private fun unscopeForCaller(
         descriptor: BlobDescriptor,
         tenantId: String,
-        configuredStoreId: String?,
+        configuredStoreId: String,
     ): BlobDescriptor {
         val prefix = "$tenantId/"
         val unscopedPath =
@@ -223,8 +219,27 @@ class DefaultBlobService(
             } else {
                 descriptor.path
             }
-        val effectiveStoreId = configuredStoreId ?: descriptor.storeId
-        return descriptor.copy(path = unscopedPath, storeId = effectiveStoreId)
+        return descriptor.copy(path = unscopedPath, storeId = configuredStoreId)
+    }
+
+    /**
+     * [unscopeForCaller] applied to a [ResolvedBlobInfo]: normalises both
+     * the embedded descriptor and the embedded [BlobInfo] (path + storeId)
+     * so the resolved value the caller sees is fully unscoped and carries
+     * the configured store id.
+     */
+    private fun unscopeResolvedForCaller(
+        resolved: ResolvedBlobInfo,
+        tenantId: String,
+        configuredStoreId: String,
+    ): ResolvedBlobInfo {
+        val prefix = "$tenantId/"
+        val unscopedInfoPath =
+            resolved.info.path?.let { if (it.startsWith(prefix)) it.removePrefix(prefix) else it }
+        return resolved.copy(
+            info = resolved.info.copy(path = unscopedInfoPath, storeId = configuredStoreId),
+            descriptor = unscopeForCaller(resolved.descriptor, tenantId, configuredStoreId),
+        )
     }
 
     private fun getCas(
@@ -258,8 +273,12 @@ class DefaultBlobService(
         options: PutOptions,
     ): IdkResult<BlobDescriptor, IdkError> {
         val tenantId = target.tenantId ?: "default"
+        // Configured registry id (e.g. "default"), NOT the backend scheme id ("memory",
+        // "filesystem", ...) that the store impl stamps onto descriptors. Used for the metadata
+        // index and the caller-facing descriptor so getBlob can resolve the store on round-trip.
+        val configuredStoreId = resolveStoreId(target.storeId)
         val store = resolveStore(target.storeId)
-        val scopedInfo = tenantScopedInfo(target, tenantId, store)
+        val scopedInfo = tenantScopedInfo(target, tenantId, configuredStoreId)
         log.debug("storeBlob: ${emitInfoString(scopedInfo)} (${data.size} bytes)")
 
         val digestAlg = options.digestAlgorithm
@@ -285,7 +304,12 @@ class DefaultBlobService(
             descriptor = retentionResult.value
         }
 
-        val indexResult = metadataIndex.index(descriptor)
+        // Index under the CONFIGURED storeId (e.g. "default"), not the backend scheme id the
+        // store impl stamps onto the descriptor (e.g. "memory"). The search path returns the
+        // indexed descriptor verbatim, and callers round-trip it back through getBlob(storeId=...);
+        // a scheme id there fails with "Blob store config not found for store ID: <scheme>".
+        // The scoped path is kept so the tenant-scoped pathPrefix search still matches.
+        val indexResult = metadataIndex.index(descriptor.copy(storeId = configuredStoreId))
         if (indexResult.isErr) {
             log.warn("Failed to index metadata for ${emitInfoString(scopedInfo)}: ${indexResult.error}")
         }
@@ -295,7 +319,7 @@ class DefaultBlobService(
         // producing `<tenant>/<tenant>/…` and without "Blob store config
         // not found" lookups. Both are storage-layer implementation
         // details that should not leak to callers.
-        return Ok(unscopeForCaller(descriptor, tenantId, configuredStoreId = scopedInfo.storeId))
+        return Ok(unscopeForCaller(descriptor, tenantId, configuredStoreId = configuredStoreId))
     }
 
     override suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError> {
@@ -308,9 +332,14 @@ class DefaultBlobService(
         val path =
             blobInfo.path
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for getBlob"))
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
         val store = resolveStore(blobInfo.storeId)
-        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, store)
-        return store.get(scopedInfo)
+        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, configuredStoreId)
+        val getResult = store.get(scopedInfo)
+        if (getResult.isErr) {
+            return getResult
+        }
+        return Ok(unscopeResolvedForCaller(getResult.value, tenantId, configuredStoreId))
     }
 
     override suspend fun getBlobInfo(info: BlobInfoType): IdkResult<BlobDescriptor, IdkError> {
@@ -323,8 +352,9 @@ class DefaultBlobService(
         val path =
             blobInfo.path
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for getBlobInfo"))
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
         val store = resolveStore(blobInfo.storeId)
-        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, store)
+        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, configuredStoreId)
 
         val statResult = store.stat(scopedInfo)
         if (statResult.isErr) {
@@ -335,11 +365,11 @@ class DefaultBlobService(
 
         val indexedResult = metadataIndex.getIndexed(scopedInfo)
         if (indexedResult.isErr || indexedResult.value == null) {
-            return Ok(storageDescriptor)
+            return Ok(unscopeForCaller(storageDescriptor, tenantId, configuredStoreId))
         }
 
         val indexed = indexedResult.value!!
-        return Ok(
+        val merged =
             storageDescriptor.copy(
                 metadata =
                     storageDescriptor.metadata.copy(
@@ -348,8 +378,8 @@ class DefaultBlobService(
                         retentionHint = indexed.metadata.retentionHint ?: storageDescriptor.metadata.retentionHint,
                     ),
                 contentHash = indexed.contentHash ?: storageDescriptor.contentHash,
-            ),
-        )
+            )
+        return Ok(unscopeForCaller(merged, tenantId, configuredStoreId))
     }
 
     override suspend fun deleteBlob(info: BlobInfoType): IdkResult<Boolean, IdkError> {
@@ -358,8 +388,9 @@ class DefaultBlobService(
         val path =
             blobInfo.path
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for deleteBlob"))
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
         val store = resolveStore(blobInfo.storeId)
-        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, store)
+        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, configuredStoreId)
         log.debug("deleteBlob: ${emitInfoString(scopedInfo)}")
 
         // Check retention policy before deleting
@@ -396,10 +427,20 @@ class DefaultBlobService(
         options: ListOptions,
     ): IdkResult<ListResult, IdkError> {
         val tenantId = info.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(info.storeId)
         val store = resolveStore(info.storeId)
         val scopedOptions = options.copy(prefix = "$tenantId/${options.prefix ?: ""}")
-        val scopedInfo = tenantScopedInfo(info, tenantId, store)
-        return store.list(scopedInfo, scopedOptions)
+        val scopedInfo = tenantScopedInfo(info, tenantId, configuredStoreId)
+        val listResult = store.list(scopedInfo, scopedOptions)
+        if (listResult.isErr) {
+            return listResult
+        }
+        val result = listResult.value
+        return Ok(
+            result.copy(
+                descriptors = result.descriptors.map { unscopeForCaller(it, tenantId, configuredStoreId) },
+            ),
+        )
     }
 
     override suspend fun copyBlob(
@@ -409,14 +450,16 @@ class DefaultBlobService(
         val sourceInfo = source.toBlobInfo()
         val sourceTenantId = sourceInfo.tenantId ?: "default"
         val destTenantId = destination.tenantId ?: "default"
+        val sourceConfiguredStoreId = resolveStoreId(sourceInfo.storeId)
+        val destConfiguredStoreId = resolveStoreId(destination.storeId)
         val sourceStore = resolveStore(sourceInfo.storeId)
         val destStore = resolveStore(destination.storeId)
-        val scopedSource = tenantScopedInfo(sourceInfo, sourceTenantId, sourceStore)
-        val scopedDest = tenantScopedInfo(destination, destTenantId, destStore)
+        val scopedSource = tenantScopedInfo(sourceInfo, sourceTenantId, sourceConfiguredStoreId)
+        val scopedDest = tenantScopedInfo(destination, destTenantId, destConfiguredStoreId)
         log.debug("copyBlob: ${emitInfoString(scopedSource)} -> ${emitInfoString(scopedDest)}")
 
         // Cross-store copy: get from source, put to destination
-        if (resolveStoreId(sourceInfo.storeId) != resolveStoreId(destination.storeId)) {
+        if (sourceConfiguredStoreId != destConfiguredStoreId) {
             val getResult = sourceStore.get(scopedSource)
             if (getResult.isErr) {
                 return Err(getResult.error)
@@ -426,12 +469,12 @@ class DefaultBlobService(
             if (putResult.isErr) {
                 return putResult
             }
-            val indexResult = metadataIndex.index(putResult.value)
+            val indexResult = metadataIndex.index(putResult.value.copy(storeId = destConfiguredStoreId))
             if (indexResult.isErr) {
                 log.warn("Failed to index metadata for ${emitInfoString(scopedDest)}: ${indexResult.error}")
             }
             emitBlobEvent(BlobEventTypes.BLOB_COPIED, scopedSource, sizeBytes = putResult.value.sizeBytes, destinationInfo = scopedDest)
-            return putResult
+            return Ok(unscopeForCaller(putResult.value, destTenantId, destConfiguredStoreId))
         }
 
         val copyResult = sourceStore.copy(scopedSource, scopedDest)
@@ -439,12 +482,12 @@ class DefaultBlobService(
             return copyResult
         }
 
-        val indexResult = metadataIndex.index(copyResult.value)
+        val indexResult = metadataIndex.index(copyResult.value.copy(storeId = destConfiguredStoreId))
         if (indexResult.isErr) {
             log.warn("Failed to index metadata for ${emitInfoString(scopedDest)}: ${indexResult.error}")
         }
         emitBlobEvent(BlobEventTypes.BLOB_COPIED, scopedSource, sizeBytes = copyResult.value.sizeBytes, destinationInfo = scopedDest)
-        return copyResult
+        return Ok(unscopeForCaller(copyResult.value, destTenantId, destConfiguredStoreId))
     }
 
     override suspend fun moveBlob(
@@ -454,14 +497,16 @@ class DefaultBlobService(
         val sourceInfo = source.toBlobInfo()
         val sourceTenantId = sourceInfo.tenantId ?: "default"
         val destTenantId = destination.tenantId ?: "default"
+        val sourceConfiguredStoreId = resolveStoreId(sourceInfo.storeId)
+        val destConfiguredStoreId = resolveStoreId(destination.storeId)
         val sourceStore = resolveStore(sourceInfo.storeId)
         val destStore = resolveStore(destination.storeId)
-        val scopedSource = tenantScopedInfo(sourceInfo, sourceTenantId, sourceStore)
-        val scopedDest = tenantScopedInfo(destination, destTenantId, destStore)
+        val scopedSource = tenantScopedInfo(sourceInfo, sourceTenantId, sourceConfiguredStoreId)
+        val scopedDest = tenantScopedInfo(destination, destTenantId, destConfiguredStoreId)
         log.debug("moveBlob: ${emitInfoString(scopedSource)} -> ${emitInfoString(scopedDest)}")
 
         // Cross-store move: copy to destination, then delete from source
-        if (resolveStoreId(sourceInfo.storeId) != resolveStoreId(destination.storeId)) {
+        if (sourceConfiguredStoreId != destConfiguredStoreId) {
             val getResult = sourceStore.get(scopedSource)
             if (getResult.isErr) {
                 return Err(getResult.error)
@@ -479,12 +524,12 @@ class DefaultBlobService(
             if (deindexResult.isErr) {
                 log.warn("Failed to deindex metadata for ${emitInfoString(scopedSource)}: ${deindexResult.error}")
             }
-            val indexResult = metadataIndex.index(putResult.value)
+            val indexResult = metadataIndex.index(putResult.value.copy(storeId = destConfiguredStoreId))
             if (indexResult.isErr) {
                 log.warn("Failed to index metadata for ${emitInfoString(scopedDest)}: ${indexResult.error}")
             }
             emitBlobEvent(BlobEventTypes.BLOB_MOVED, scopedSource, sizeBytes = putResult.value.sizeBytes, destinationInfo = scopedDest)
-            return putResult
+            return Ok(unscopeForCaller(putResult.value, destTenantId, destConfiguredStoreId))
         }
 
         val moveResult = sourceStore.move(scopedSource, scopedDest)
@@ -496,12 +541,12 @@ class DefaultBlobService(
         if (deindexResult.isErr) {
             log.warn("Failed to deindex metadata for ${emitInfoString(scopedSource)}: ${deindexResult.error}")
         }
-        val indexResult = metadataIndex.index(moveResult.value)
+        val indexResult = metadataIndex.index(moveResult.value.copy(storeId = destConfiguredStoreId))
         if (indexResult.isErr) {
             log.warn("Failed to index metadata for ${emitInfoString(scopedDest)}: ${indexResult.error}")
         }
         emitBlobEvent(BlobEventTypes.BLOB_MOVED, scopedSource, sizeBytes = moveResult.value.sizeBytes, destinationInfo = scopedDest)
-        return moveResult
+        return Ok(unscopeForCaller(moveResult.value, destTenantId, destConfiguredStoreId))
     }
 
     // -- CAS operations --
@@ -512,8 +557,18 @@ class DefaultBlobService(
         algorithm: DigestAlg,
     ): IdkResult<ContentAddressDescriptor, IdkError> {
         val tenantId = info.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(info.storeId)
         val cas = getCas(info.storeId, tenantId)
-        return cas.store(data, algorithm, info.toBlobMetadata())
+        val storeResult = cas.store(data, algorithm, info.toBlobMetadata())
+        if (storeResult.isErr) {
+            return storeResult
+        }
+        val casDescriptor = storeResult.value
+        return Ok(
+            casDescriptor.copy(
+                descriptor = unscopeForCaller(casDescriptor.descriptor, tenantId, configuredStoreId),
+            ),
+        )
     }
 
     override suspend fun casGet(
@@ -521,8 +576,13 @@ class DefaultBlobService(
         address: ContentAddress,
     ): IdkResult<ResolvedBlobInfo, IdkError> {
         val tenantId = info.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(info.storeId)
         val cas = getCas(info.storeId, tenantId)
-        return cas.retrieve(address)
+        val retrieveResult = cas.retrieve(address)
+        if (retrieveResult.isErr) {
+            return retrieveResult
+        }
+        return Ok(unscopeResolvedForCaller(retrieveResult.value, tenantId, configuredStoreId))
     }
 
     override suspend fun casVerify(
@@ -542,7 +602,16 @@ class DefaultBlobService(
     ): IdkResult<List<BlobDescriptor>, IdkError> {
         val tenantId = info.tenantId ?: "default"
         val scopedQuery = query.copy(pathPrefix = "$tenantId/${query.pathPrefix ?: ""}")
-        return metadataIndex.search(scopedQuery)
+        val searchResult = metadataIndex.search(scopedQuery)
+        if (searchResult.isErr) return searchResult
+        // Hand back caller-facing descriptors: strip the tenant prefix from the path so a later
+        // getBlob doesn't re-scope into `<tenant>/<tenant>/...`. storeId was already normalised to
+        // the configured id at index time, so descriptor.storeId IS the configured id here.
+        return Ok(
+            searchResult.value.map { descriptor ->
+                unscopeForCaller(descriptor, tenantId, configuredStoreId = descriptor.storeId)
+            },
+        )
     }
 
     // -- Temp URLs --
@@ -553,8 +622,9 @@ class DefaultBlobService(
     ): IdkResult<TempUrlResult, IdkError> {
         val blobInfo = info.toBlobInfo()
         val tenantId = blobInfo.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
         val store = resolveStore(blobInfo.storeId)
-        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, store)
+        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, configuredStoreId)
 
         // Check policy before creating temp URL
         val policyResult = tempUrlPolicy.evaluate(scopedInfo, options)

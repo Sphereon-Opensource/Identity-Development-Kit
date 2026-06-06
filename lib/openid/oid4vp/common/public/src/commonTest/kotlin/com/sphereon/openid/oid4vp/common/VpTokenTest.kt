@@ -26,6 +26,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -44,7 +45,7 @@ class VpTokenTest {
     @Test
     fun createVpTokenWithMultipleQueries() {
         val token =
-            VpToken(
+            VpToken.fromStrings(
                 mapOf(
                     "driver_license_query" to listOf("eyJhbGc1..."),
                     "employment_query" to listOf("eyJhbGc2..."),
@@ -59,7 +60,7 @@ class VpTokenTest {
     @Test
     fun createVpTokenWithMultiplePresentationsForSameQuery() {
         val token =
-            VpToken(
+            VpToken.fromStrings(
                 mapOf(
                     "employment_query" to listOf("eyJhbGc1...", "eyJhbGc2...", "eyJhbGc3..."),
                 ),
@@ -80,21 +81,21 @@ class VpTokenTest {
     @Test
     fun rejectBlankQueryId() {
         assertFailsWith<IllegalArgumentException> {
-            VpToken(mapOf("" to listOf("eyJhbGc...")))
+            VpToken.fromStrings(mapOf("" to listOf("eyJhbGc...")))
         }
     }
 
     @Test
     fun rejectEmptyPresentationsList() {
         assertFailsWith<IllegalArgumentException> {
-            VpToken(mapOf("query1" to emptyList()))
+            VpToken.fromStrings(mapOf("query1" to emptyList()))
         }
     }
 
     @Test
     fun rejectBlankPresentation() {
         assertFailsWith<IllegalArgumentException> {
-            VpToken(mapOf("query1" to listOf("eyJhbGc...", "")))
+            VpToken.fromStrings(mapOf("query1" to listOf("eyJhbGc...", "")))
         }
     }
 
@@ -155,10 +156,66 @@ class VpTokenTest {
         }
     }
 
+    /**
+     * OID4VP §8.1: an `ldp_vc`/`ldp_vp` Presentation value is a JSON object, not a string.
+     * Parsing such a vp_token MUST NOT crash and MUST preserve the object shape.
+     */
+    @Test
+    fun parseVpTokenWithLdpJsonObjectPresentation() {
+        val ldpPresentation =
+            buildJsonObject {
+                put("@context", "https://www.w3.org/ns/credentials/v2")
+                put("type", "VerifiablePresentation")
+                put("proof", buildJsonObject { put("type", "DataIntegrityProof") })
+            }
+        val json =
+            buildJsonObject {
+                put("compact_query", "eyJhbGciOiJFUzI1NiJ9.payload.sig")
+                put("ldp_query", ldpPresentation)
+            }
+
+        val token = VpToken.fromJson(json)
+
+        assertEquals(2, token.presentations.size)
+        assertEquals(2, token.presentationCount)
+        // String presentation round-trips as its raw content.
+        assertEquals("eyJhbGciOiJFUzI1NiJ9.payload.sig", token.getSinglePresentation("compact_query"))
+        // Object presentation is preserved as a JsonObject (no crash, no jsonPrimitive cast).
+        val ldpElement = token.getSinglePresentationElement("ldp_query")
+        assertIs<JsonObject>(ldpElement)
+        assertEquals(ldpPresentation, ldpElement)
+        // The string-view accessor renders the object as compact JSON instead of throwing.
+        assertNotNull(token.getSinglePresentation("ldp_query"))
+        // toJson round-trips the object shape unchanged.
+        val roundTripped = VpToken.fromJson(VpToken.run { token.toJson() })
+        assertEquals(ldpPresentation, roundTripped.getSinglePresentationElement("ldp_query"))
+    }
+
+    /**
+     * A single (non-array) `ldp_vp` JSON object value under a query id is also a valid
+     * Presentation per §8.1 and must parse without crashing.
+     */
+    @Test
+    fun parseVpTokenWithSingleLdpObjectValue() {
+        val ldpPresentation =
+            buildJsonObject {
+                put("type", "VerifiablePresentation")
+            }
+        val json =
+            buildJsonObject {
+                put("ldp_query", ldpPresentation)
+            }
+
+        val token = VpToken.fromJson(json)
+
+        assertEquals(1, token.presentationCount)
+        assertIs<JsonObject>(token.getSinglePresentationElement("ldp_query"))
+    }
+
     @Test
     fun convertVpTokenToJsonWithSinglePresentations() {
         val token =
-            VpToken(
+            VpToken.fromStrings(
                 mapOf(
                     "query1" to listOf("eyJhbGc1..."),
                     "query2" to listOf("eyJhbGc2..."),
@@ -176,7 +233,7 @@ class VpTokenTest {
     @Test
     fun convertVpTokenToJsonWithMultiplePresentations() {
         val token =
-            VpToken(
+            VpToken.fromStrings(
                 mapOf(
                     "query1" to listOf("eyJhbGc1..."),
                     "query2" to listOf("eyJhbGc2...", "eyJhbGc3..."),
@@ -194,7 +251,7 @@ class VpTokenTest {
     @Test
     fun roundtripVpTokenThroughJson() {
         val original =
-            VpToken(
+            VpToken.fromStrings(
                 mapOf(
                     "driver_license" to listOf("eyJhbGc1..."),
                     "employment" to listOf("eyJhbGc2...", "eyJhbGc3..."),
@@ -203,7 +260,7 @@ class VpTokenTest {
         val json = VpToken.run { original.toJson() }
         val parsed = VpToken.fromJson(json)
 
-        assertEquals(original.presentations, parsed.presentations)
+        assertEquals(original.presentationElements, parsed.presentationElements)
         assertEquals(original.presentationCount, parsed.presentationCount)
         assertEquals(original.queryIds, parsed.queryIds)
     }
@@ -226,7 +283,7 @@ class VpTokenTest {
     @Test
     fun allPresentationsReturnsFlatList() {
         val token =
-            VpToken(
+            VpToken.fromStrings(
                 mapOf(
                     "query1" to listOf("pres1"),
                     "query2" to listOf("pres2", "pres3"),

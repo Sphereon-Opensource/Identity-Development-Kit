@@ -136,8 +136,10 @@ class ConfigBackedUserAuthenticationProvider(
 
         // Same trailing-dot avoidance as [listConfiguredAccounts]: the resolver re-appends a
         // boundary `.` itself, so passing `oauth2.users.accounts.alice.claims` works here while
-        // `oauth2.users.accounts.alice.claims.` would match nothing.
-        val claimsRoot = "${ACCOUNTS_PREFIX_NO_DOT}.$username.$ACCOUNT_CLAIMS_LEAF"
+        // `oauth2.users.accounts.alice.claims.` would match nothing. The username is bracket-quoted
+        // when it contains characters the property-key normalizer would otherwise mangle (e.g. the
+        // dots in an email address), so an email username stays one literal config segment.
+        val claimsRoot = "${ACCOUNTS_PREFIX_NO_DOT}.${encodeAccountSegment(username)}.$ACCOUNT_CLAIMS_LEAF"
         // YAML claim names use bracket-quoting (`"[given_name]": Test`) to keep underscored
         // identifiers from being mangled into dotted paths by the property-key normalizer
         // (`given_name` → `given.name`). The brackets are an in-config marker only; strip
@@ -206,7 +208,7 @@ class ConfigBackedUserAuthenticationProvider(
                 redact = false,
             )
         return sub.keys.mapNotNullTo(mutableSetOf()) { key ->
-            key.substringBefore('.', missingDelimiterValue = key).takeIf { it.isNotEmpty() }
+            decodeAccountSegment(key).takeIf { it.isNotEmpty() }
         }
     }
 
@@ -245,7 +247,40 @@ class ConfigBackedUserAuthenticationProvider(
 
         private val devTestWarningEmitted = atomic(false)
 
-        private fun accountPrefix(username: String): String = "$ACCOUNTS_PREFIX$username."
+        /**
+         * Characters that the IDK property-key normalizer treats specially: it lowercases uppercase
+         * letters and collapses spaces/underscores/hyphens/dots into the path delimiter. A username
+         * containing any of these (notably the dots in an email address) must be bracket-quoted so
+         * the resolver keeps it as one literal segment instead of splitting it into a sub-path.
+         */
+        private fun usernameNeedsBracketing(username: String): Boolean =
+            username.any { ch ->
+                ch == '.' || ch == '_' || ch == '-' || ch == ' ' || ch.isUpperCase()
+            }
+
+        /**
+         * Encode a username into a single config-path segment. Bracket-quotes the username when it
+         * would otherwise be mangled by the property-key normalizer (e.g. `employee@acme.example`
+         * → `[employee@acme.example]`); leaves simple identifiers (e.g. `alice`) untouched so legacy
+         * unbracketed account config keeps resolving.
+         */
+        fun encodeAccountSegment(username: String): String = if (usernameNeedsBracketing(username)) "[$username]" else username
+
+        /**
+         * Recover the literal account name from the first path segment returned by sub-property
+         * discovery. Handles both the bracket-quoted form (`[employee@acme.example].password`,
+         * where the dots inside the brackets survive normalization) and the legacy unbracketed
+         * simple form (`alice.password`).
+         */
+        internal fun decodeAccountSegment(strippedKey: String): String =
+            if (strippedKey.startsWith("[")) {
+                val close = strippedKey.indexOf(']')
+                if (close > 0) strippedKey.substring(1, close) else strippedKey
+            } else {
+                strippedKey.substringBefore('.', missingDelimiterValue = strippedKey)
+            }
+
+        private fun accountPrefix(username: String): String = "$ACCOUNTS_PREFIX${encodeAccountSegment(username)}."
 
         private fun accountKey(
             username: String,

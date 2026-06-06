@@ -26,7 +26,6 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.jose.JoseKeyOperations
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedOptsJwk
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -41,6 +40,7 @@ import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationError
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -79,7 +79,7 @@ class CreateAuthorizationErrorResponseCommandImpl(
     private val configProvider: OAuth2ServersConfigProvider,
     private val clientRegistry: ClientRegistry,
     private val createJarmResponse: CreateJarmResponseCommand,
-    @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
+    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
 ) : TypedServiceCommandAdapter<CreateAuthorizationErrorResponseArgs, AuthorizationErrorResponseData, IdkError>(
         commandId = CreateAuthorizationErrorResponseCommand.COMMAND_ID,
         execution = execution,
@@ -142,6 +142,7 @@ class CreateAuthorizationErrorResponseCommandImpl(
         args: CreateAuthorizationErrorResponseArgs,
         parameters: Map<String, String>,
     ): IdkResult<AuthorizationErrorResponseData, AuthorizationServerError> {
+        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         val config = configProvider.serverConfig
         // For error responses, downgrade to the underlying carrier without JARM packaging when
         // JARM cannot be honored (server feature off, client signing alg missing). Fail-open here

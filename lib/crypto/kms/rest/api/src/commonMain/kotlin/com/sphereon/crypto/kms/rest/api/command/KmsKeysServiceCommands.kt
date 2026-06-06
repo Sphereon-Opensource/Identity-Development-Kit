@@ -62,28 +62,6 @@ data class ListKeysInput(
 )
 
 /**
- * Input for the StoreKey service command.
- * Wraps the REST API StoreKey model.
- */
-@OptIn(ExperimentalObjCName::class)
-@ObjCName("StoreKeyInput", exact = true)
-@Serializable
-data class StoreKeyInput(
-    val storeKey: StoreKey,
-)
-
-/**
- * Input for the GenerateKey service command.
- * Wraps the REST API GenerateKeyGlobal model.
- */
-@OptIn(ExperimentalObjCName::class)
-@ObjCName("GenerateKeyInput", exact = true)
-@Serializable
-data class GenerateKeyInput(
-    val generateKey: GenerateKeyGlobal,
-)
-
-/**
  * Input for the DeleteKey service command.
  *
  * @property aliasOrKid Key alias or kid to delete
@@ -211,7 +189,10 @@ interface ListKeysServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("StoreKeyServiceCommand", exact = true)
 interface StoreKeyServiceCommand :
-    ServiceCommand<StoreKeyInput, StoreKeyResponse, IdkError>,
+    // Args ARE the wire body: the OpenAPI StoreKeyRequest body is the flat
+    // StoreKey schema, and BinaryCommandAdapter decodes the raw body into the
+    // args type directly — no wrapper envelope.
+    ServiceCommand<StoreKey, StoreKeyResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.store"
@@ -240,7 +221,11 @@ interface StoreKeyServiceCommand :
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyServiceCommand", exact = true)
 interface GenerateKeyServiceCommand :
-    ServiceCommand<GenerateKeyInput, GenerateKeyResponse, IdkError>,
+    // Args ARE the wire body: the OpenAPI GenerateKeyRequest body is the flat
+    // GenerateKey schema (generated as GenerateKeyGlobal), and
+    // BinaryCommandAdapter decodes the raw body into the args type directly —
+    // no wrapper envelope.
+    ServiceCommand<GenerateKeyGlobal, GenerateKeyResponse, IdkError>,
     PublicApiCommand {
     companion object {
         const val COMMAND_ID = "kms.keys.generate"

@@ -14,11 +14,16 @@
  * limitations under the License.
  */
 
+@file:OptIn(ExperimentalTime::class)
+
 package com.sphereon.openid.oid4vci.issuer.impl.bridge
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
@@ -26,6 +31,7 @@ import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
+import com.sphereon.oauth2.server.authorization.command.GetUserInfoArgs
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
@@ -45,14 +51,18 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * AS bridge for the embedded Sphereon OAuth2 AS (same-process).
@@ -67,12 +77,13 @@ class SphereonAsBridge(
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
     private val authorizationServerService: AuthorizationServerService,
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
+    private val execution: SessionExecution,
 ) : Oid4vciAuthorizationServerBridge {
     override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
         val code = CryptographyRandom.nextBytes(32).encodeToBase64Url()
         val txCode =
             if (args.txCodeRequired) {
-                generateTxCode()
+                generateTxCode(args.txCodeLength ?: DEFAULT_TX_CODE_LENGTH, args.txCodeInputMode)
             } else {
                 null
             }
@@ -204,6 +215,23 @@ class SphereonAsBridge(
                 detailObj["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
             } ?: emptyList()
 
+        val additionalClaims = introspection.additionalClaims
+
+        // acr and auth_time are standard OIDC claims carried in the token.
+        val acr = additionalClaims["acr"]?.jsonPrimitive?.content
+        val authTime =
+            additionalClaims["auth_time"]?.jsonPrimitive?.longOrNull?.let { epochSeconds ->
+                Instant.fromEpochSeconds(epochSeconds)
+            }
+
+        // upstream_sub / upstream_iss are populated by the upstream federation flow; null for local auth.
+        val upstreamSubject = additionalClaims["upstream_sub"]?.jsonPrimitive?.content
+        val upstreamIssuer = additionalClaims["upstream_iss"]?.jsonPrimitive?.content
+
+        val userinfoClaims =
+            resolveUserinfoClaims(additionalClaims, upstreamIssuer)
+                ?: resolveLocalUserinfoClaims(args.accessToken)
+
         return Ok(
             ValidatedTokenContext(
                 subject = subject,
@@ -212,8 +240,77 @@ class SphereonAsBridge(
                 credentialConfigurationIds = credentialConfigurationIds,
                 credentialIdentifiers = credentialIdentifiers.ifEmpty { null },
                 cnfJkt = cnfJkt,
+                userinfoClaims = userinfoClaims,
+                acr = acr,
+                authTime = authTime,
+                upstreamSubject = upstreamSubject,
+                upstreamIssuer = upstreamIssuer,
             ),
         )
+    }
+
+    /**
+     * Surface userinfo claims from the token's `additionalClaims` when the tenant has opted in via
+     * `tenant.idp.[<upstreamIssuer>].surface-userinfo-to-issuance=true`.
+     *
+     * The idpId key uses bracket-quoting because the upstream issuer is a URL: without it,
+     * `PropertyKeyNormalizer` mangles dots, colons, and slashes so the property can never resolve.
+     *
+     * Returns the filtered claim map (with protocol-reserved keys stripped) or `null` when
+     * the tenant has not opted in, the upstream issuer is unknown, or the filtered map is empty.
+     */
+    private fun resolveUserinfoClaims(
+        additionalClaims: Map<String, JsonElement>,
+        upstreamIssuer: String?,
+    ): Map<String, JsonElement>? {
+        upstreamIssuer ?: return null
+        val configService = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
+        val surfaceUserinfo =
+            configService
+                .getPropertyAsString("tenant.idp.[$upstreamIssuer].surface-userinfo-to-issuance")
+                ?.toBoolean()
+                ?: false
+        if (!surfaceUserinfo) {
+            return null
+        }
+        // The token's additionalClaims carry whatever the AS stored at token minting time.
+        // Surface the full map minus the protocol claims already modeled as dedicated fields
+        // so callers don't need to double-read.
+        return additionalClaims.filterKeys { it !in PROTOCOL_CLAIM_KEYS }.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Surface the authenticated user's claims for a LOCAL (non-federated) access token by reading
+     * the AS's own UserInfo for the token, when the tenant has opted in via
+     * `oid4vci.issuer.surface-local-userinfo-to-issuance=true`.
+     *
+     * For a local config-backed or database-backed AS there is no `upstream_iss`, so
+     * [resolveUserinfoClaims] returns null and the issuance pipeline's `AuthSessionClaimSource`
+     * would see no userinfo claims. The user's profile claims are deliberately NOT embedded in the
+     * access token (RFC 9068), but the AS resolves them by subject at the UserInfo endpoint. This
+     * reads exactly that UserInfo (OIDC §5.3.2 — requires the `openid` scope on the token) and
+     * surfaces the claims minus the `sub` field (already modeled as the dedicated subject).
+     *
+     * Off by default so existing deployments are byte-identical: the call is only made when the
+     * opt-in flag is set, and any failure (e.g. the token lacks `openid` scope) yields `null`
+     * rather than failing token validation.
+     */
+    private suspend fun resolveLocalUserinfoClaims(accessToken: String): Map<String, JsonElement>? {
+        val configService = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
+        val enabled =
+            configService
+                .getPropertyAsString(SURFACE_LOCAL_USERINFO_KEY)
+                ?.toBoolean()
+                ?: false
+        if (!enabled) return null
+
+        val userInfo =
+            authorizationServerService
+                .getUserInfo(GetUserInfoArgs(accessToken = accessToken))
+                .getOrElse { return null }
+        return userInfo.claims
+            .filterKeys { it != "sub" && it !in PROTOCOL_CLAIM_KEYS }
+            .takeIf { it.isNotEmpty() }
     }
 
     override suspend fun augmentAsMetadata(args: AugmentAsMetadataArgs): IdkResult<JsonObject, IdkError> =
@@ -224,8 +321,29 @@ class SphereonAsBridge(
             },
         )
 
-    private fun generateTxCode(): String {
-        val bytes = CryptographyRandom.nextBytes(6)
-        return bytes.joinToString("") { (it.toInt() and 0xFF).mod(10).toString() }
+    private fun generateTxCode(
+        length: Int = DEFAULT_TX_CODE_LENGTH,
+        inputMode: String? = null,
+    ): String {
+        val count = length.coerceIn(1, MAX_TX_CODE_LENGTH)
+        val alphabet = if (inputMode == "text") TX_CODE_ALPHANUMERIC else TX_CODE_NUMERIC
+        val bytes = CryptographyRandom.nextBytes(count)
+        return bytes.joinToString("") { alphabet[(it.toInt() and 0xFF).mod(alphabet.length)].toString() }
+    }
+
+    private companion object {
+        const val DEFAULT_TX_CODE_LENGTH = 6
+        const val MAX_TX_CODE_LENGTH = 32
+        const val TX_CODE_NUMERIC = "0123456789"
+        const val TX_CODE_ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        const val SURFACE_LOCAL_USERINFO_KEY = "oid4vci.issuer.surface-local-userinfo-to-issuance"
+        val PROTOCOL_CLAIM_KEYS =
+            setOf(
+                "authorization_details",
+                "acr",
+                "auth_time",
+                "upstream_sub",
+                "upstream_iss",
+            )
     }
 }

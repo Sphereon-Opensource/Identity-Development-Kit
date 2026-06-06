@@ -34,6 +34,16 @@ data class OAuth2ServersConfig(
         mapOf(
             "default" to OAuth2ServerInstanceConfig(),
         ),
+    /**
+     * `false` ONLY for the binder's synthesized bare default — the AS impl is on the classpath but
+     * the process declares no server under the `oauth2.servers.*` keyspace (OID4VCI issuer, OID4VP
+     * verifier, monolith). `true` for every genuinely-configured AS, whether loaded from config or
+     * built directly in code. Lets sign paths tell a hosted AS — which may resolve its `issuer`
+     * per-request and therefore run with `issuer == null` — apart from a service that merely bundles
+     * the impl. Not part of the on-disk config; defaults to `true` so any hand-constructed config is
+     * treated as a real AS, and only the binder's empty-keyspace synthesis opts out (it sets `false`).
+     */
+    val explicitlyConfigured: Boolean = true,
 ) {
     fun getServer(id: String): OAuth2ServerInstanceConfig? = servers[id]
 

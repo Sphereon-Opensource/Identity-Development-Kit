@@ -24,6 +24,7 @@ import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
+import com.sphereon.statuslist.CredentialStatusPolicy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -83,6 +84,12 @@ data class CreateAuthorizationRequestInput(
     @SerialName("request_uri_base")
     val requestUriBase: String? = null,
     /**
+     * HTTPS endpoint where the wallet posts the Authorization Response for `direct_post` and
+     * `direct_post.jwt`. Defaults to the verifier deployment configuration.
+     */
+    @SerialName("response_uri")
+    val responseUri: String? = null,
+    /**
      * URI scheme of the outer wallet deeplink (the part before `://?`), per OID4VP §5.10.
      * Examples: `openid4vp` (default, spec-canonical), `haip` (HAIP profile),
      * `oid4vp` (Sphereon mobile-wallet custom), `openid` (legacy).
@@ -140,6 +147,22 @@ data class CreateAuthorizationRequestInput(
      */
     @SerialName("ttl_seconds")
     val ttlSeconds: Long? = null,
+    /**
+     * Identifier of the verifier this request is for. Opaque to IDK/EDK — passed to the
+     * [com.sphereon.openid.oid4vp.dcql.store.DcqlQueryResolver] so a higher layer can
+     * resolve the DCQL query through a verifier→binding→pinned-version chain.
+     */
+    @SerialName("verifier_id")
+    val verifierId: String? = null,
+    /**
+     * Optional per-DCQL-credential-query credential status policy, keyed by the DCQL credential query
+     * `id`. Decides how the verifier treats a received credential's resolved status (accept revoked /
+     * suspended, require a status list, fail-closed on unresolvable). A verifier-internal extension:
+     * OpenID4VP DCQL has no status concept, so this stays out of the signed `dcql_query` and is only
+     * enforced when the verifier has credential-status implementations on its classpath.
+     */
+    @SerialName("credential_status_policies")
+    val credentialStatusPolicies: Map<String, CredentialStatusPolicy>? = null,
 )
 
 /**

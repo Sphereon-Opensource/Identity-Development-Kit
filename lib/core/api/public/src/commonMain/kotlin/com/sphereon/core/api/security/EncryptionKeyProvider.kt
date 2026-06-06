@@ -63,6 +63,12 @@ data class EncryptionKeyMaterial(
                     "AES-256-GCM requires a 32-byte key, got ${keyBytes.size}"
                 }
             }
+
+            EncryptedBlob.ALG_CHACHA20_POLY1305 -> {
+                require(keyBytes.size == 32) {
+                    "ChaCha20-Poly1305 requires a 32-byte key, got ${keyBytes.size}"
+                }
+            }
         }
     }
 

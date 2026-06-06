@@ -20,7 +20,6 @@ import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
@@ -229,14 +228,11 @@ class KmsKeysServiceCommandsUnitTest {
     fun testGenerateKeyServiceCommandDirectly() =
         runTest {
             val input =
-                GenerateKeyInput(
-                    generateKey =
-                        GenerateKeyGlobal(
-                            alias = "direct-generate-test-${System.currentTimeMillis()}",
-                            providerId = TEST_PROVIDER_ID,
-                            use = JwkUse.sig,
-                            alg = SignatureAlgorithmRest.ECDSA_SHA256,
-                        ),
+                GenerateKeyGlobal(
+                    alias = "direct-generate-test-${System.currentTimeMillis()}",
+                    providerId = TEST_PROVIDER_ID,
+                    use = JwkUse.sig,
+                    alg = SignatureAlgorithmRest.ECDSA_SHA256,
                 )
 
             val result = generateKeyCommand.execute(input)

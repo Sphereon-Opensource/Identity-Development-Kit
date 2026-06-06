@@ -17,11 +17,25 @@ import { useLocalStorage } from '../hooks/useLocalStorage'
 import { useSessionPolling } from '../hooks/useSessionPolling'
 import { useLocale } from '../i18n/LocaleContext'
 
+// Only the spec-compliant OID4VP 1.0 scheme is offered. Other targets (HAIP, web-wallet
+// universal links, app links) are entered via the field's "Custom" option.
 const VERIFIER_PRESETS: WalletTargetPreset[] = [
-  { value: 'oid4vp://', label: 'oid4vp://' },
-  { value: 'haip://', label: 'haip://' },
+  { value: 'openid4vp://', label: 'openid4vp://' },
 ]
-const VERIFIER_DEFAULT_TARGET = 'oid4vp://'
+// Spec-compliant default per OpenID4VP 1.0 (Final) — the IANA-registered scheme is `openid4vp`.
+const VERIFIER_DEFAULT_TARGET = 'openid4vp://'
+const WALLET_TARGET_STORAGE_KEY = 'oid4vc.verifier.walletTarget'
+
+// One-time migration: the original default persisted the non-spec `oid4vp://`. Remap any stored
+// legacy value to the spec-compliant `openid4vp://` so existing users are corrected in place
+// rather than silently keeping the wrong scheme. Runs at module load, before the hook reads it.
+try {
+  if (typeof localStorage !== 'undefined' && localStorage.getItem(WALLET_TARGET_STORAGE_KEY) === 'oid4vp://') {
+    localStorage.setItem(WALLET_TARGET_STORAGE_KEY, VERIFIER_DEFAULT_TARGET)
+  }
+} catch {
+  /* storage unavailable (SSR / disabled) — nothing to migrate */
+}
 
 type RequestUriMethod = 'get' | 'post'
 type ResponseMode = 'direct_post' | 'direct_post.jwt'
@@ -52,7 +66,7 @@ const VERIFIER_PROFILES: ProfilePreset[] = [
   {
     id: 'x509-hash',
     label: 'x509_hash (cert-pinned)',
-    walletTarget: 'oid4vp://',
+    walletTarget: 'openid4vp://',
     requestUriMethod: 'get',
     responseMode: 'direct_post',
     clientIdScheme: 'x509_hash',
@@ -60,7 +74,7 @@ const VERIFIER_PROFILES: ProfilePreset[] = [
   {
     id: 'x509-san-dns',
     label: 'x509_san_dns (DNS-pinned)',
-    walletTarget: 'oid4vp://',
+    walletTarget: 'openid4vp://',
     requestUriMethod: 'get',
     responseMode: 'direct_post',
     clientIdScheme: 'x509_san_dns',
@@ -68,14 +82,14 @@ const VERIFIER_PROFILES: ProfilePreset[] = [
   {
     id: 'did-jwk',
     label: 'did:jwk (DID-bound)',
-    walletTarget: 'oid4vp://',
+    walletTarget: 'openid4vp://',
     requestUriMethod: 'get',
     responseMode: 'direct_post',
     clientIdScheme: 'did:jwk',
   },
 ]
 
-type Step = 'select' | 'configure' | 'present' | 'verified'
+type Step = 'select' | 'configure' | 'present' | 'verified' | 'error'
 
 const VP_STAGES = [
   'authorization_request_created',
@@ -91,10 +105,14 @@ export function VerifierPage() {
   const { metadata, configs, vctCache, error: metadataError } = useCredentialMetadata()
   const [selectedConfig, setSelectedConfig] = useState<string | null>(searchParams.get('credential'))
   const [selectedClaims, setSelectedClaims] = useState<string[]>([])
+  // Credential status policy (default strict: require nothing, reject revoked + suspended).
+  const [requireStatus, setRequireStatus] = useState(false)
+  const [acceptRevoked, setAcceptRevoked] = useState(false)
+  const [acceptSuspended, setAcceptSuspended] = useState(false)
   const [authRequest, setAuthRequest] = useState<AuthRequestResponse | null>(null)
   const [step, setStep] = useState<Step>('select')
   const [actionError, setActionError] = useState<string | null>(null)
-  const [walletTarget, setWalletTarget] = useLocalStorage<string>('oid4vc.verifier.walletTarget', VERIFIER_DEFAULT_TARGET)
+  const [walletTarget, setWalletTarget] = useLocalStorage<string>(WALLET_TARGET_STORAGE_KEY, VERIFIER_DEFAULT_TARGET)
   const [requestUriMethod, setRequestUriMethod] = useLocalStorage<RequestUriMethod>('oid4vc.verifier.requestUriMethod', 'get')
   const [responseMode, setResponseMode] = useLocalStorage<ResponseMode>('oid4vc.verifier.responseMode', 'direct_post')
   const [clientIdScheme, setClientIdScheme] = useLocalStorage<ClientIdScheme>('oid4vc.verifier.clientIdScheme', 'x509_hash')
@@ -170,6 +188,7 @@ export function VerifierPage() {
 
   useEffect(() => {
     if (status?.status === 'authorization_response_verified') setStep('verified')
+    else if (status?.status === 'error') setStep('error')
   }, [status?.status])
 
   const handleSelectCredential = (configId: string) => {
@@ -232,6 +251,12 @@ export function VerifierPage() {
         client_id_scheme: clientIdSchemeWire,
         request_uri_method: requestUriMethod,
         response_mode: responseMode,
+        // Per-query credential status policy (verifier-side; not part of the wire DCQL). Only sent
+        // when it deviates from the strict default, keyed by the DCQL credential query id.
+        credential_status_policies:
+          requireStatus || acceptRevoked || acceptSuspended
+            ? { [selectedConfig]: { requireStatus, acceptRevoked, acceptSuspended } }
+            : undefined,
         qr_code: { size: 400 },
       }
       const result = await api.createAuthRequest(payload)
@@ -282,6 +307,42 @@ export function VerifierPage() {
             display={selectedDisplay}
             selected
           />
+
+          {(vctCache[selectedConfig]?.claims?.length ?? 0) > 0 && (
+            <details className="advanced-options claims-section" open>
+              <summary>
+                {t('verifier.selectClaims')} ({selectedClaims.length}/{vctCache[selectedConfig]?.claims?.length})
+              </summary>
+              <div className="advanced-options-content">
+                <ClaimSelector
+                  claims={vctCache[selectedConfig]?.claims ?? []}
+                  selectedPaths={selectedClaims}
+                  onSelectionChange={setSelectedClaims}
+                />
+              </div>
+            </details>
+          )}
+
+          <details className="advanced-options" >
+            <summary>{t('verifier.statusPolicy')}</summary>
+            <div className="advanced-options-content">
+              <p className="field-hint">{t('verifier.statusPolicyHint')}</p>
+              <div className="option-group">
+                <label>
+                  <input type="checkbox" checked={requireStatus} onChange={e => setRequireStatus(e.target.checked)} />
+                  {t('verifier.requireStatus')}
+                </label>
+                <label>
+                  <input type="checkbox" checked={acceptRevoked} onChange={e => setAcceptRevoked(e.target.checked)} />
+                  {t('verifier.acceptRevoked')}
+                </label>
+                <label>
+                  <input type="checkbox" checked={acceptSuspended} onChange={e => setAcceptSuspended(e.target.checked)} />
+                  {t('verifier.acceptSuspended')}
+                </label>
+              </div>
+            </div>
+          </details>
 
           <div className="form-field">
             <label>Profile</label>
@@ -457,6 +518,32 @@ export function VerifierPage() {
             <button className="btn btn-primary" onClick={() => navigate('/')}>
               {t('verifier.issueCred')}
             </button>
+            <button className="btn btn-secondary" onClick={() => {
+              setStep('select')
+              setAuthRequest(null)
+              setSelectedConfig(null)
+            }}>
+              {t('verifier.verifyAnother')}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 'error' && (
+        <section className="error-section">
+          <div className="error-icon">&#10007;</div>
+          <h2>{t('verifier.failed')}</h2>
+          <p className="error-message">{status?.error?.message ?? t('verifier.failedDesc')}</p>
+          {status?.error?.code && <p className="field-hint">{status.error.code}</p>}
+
+          <details className="session-details">
+            <summary>{t('details.toggle')}</summary>
+            <pre className="session-details-payload">
+              {JSON.stringify({ authRequest, status }, null, 2)}
+            </pre>
+          </details>
+
+          <div className="success-actions">
             <button className="btn btn-secondary" onClick={() => {
               setStep('select')
               setAuthRequest(null)

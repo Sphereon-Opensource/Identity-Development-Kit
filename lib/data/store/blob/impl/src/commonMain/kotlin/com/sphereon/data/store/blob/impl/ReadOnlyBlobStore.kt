@@ -41,7 +41,7 @@ import kotlin.native.ObjCName
 class ReadOnlyBlobStore(
     private val delegate: BlobStore,
 ) : BlobStore {
-    override val storeId: String get() = delegate.storeId
+    override val schemeId: String get() = delegate.schemeId
     override val capabilities: BlobStoreCapabilities get() = delegate.capabilities
 
     private fun readOnlyError(): IdkError = BlobStoreError.PermissionDenied("Blob store is read-only").toIdkError()

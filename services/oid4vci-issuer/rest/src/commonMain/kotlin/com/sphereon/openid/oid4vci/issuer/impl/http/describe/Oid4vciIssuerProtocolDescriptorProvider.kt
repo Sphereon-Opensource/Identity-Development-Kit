@@ -16,11 +16,13 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.http.describe
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.openid.oid4vci.issuer.impl.http.Oid4vciIssuerProtocolHttpAdapter
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetVctTypeMetadataEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEndpointCommand
@@ -43,6 +45,7 @@ import dev.zacsweers.metro.binding
  * - POST /oid4vci/credential
  * - POST /oid4vci/deferredCredential
  * - POST /oid4vci/notification
+ * - GET /oid4vci/vct/{vctId}  (public SD-JWT VC type metadata, optional VctTypeMetadataProvider)
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -59,6 +62,7 @@ class Oid4vciIssuerProtocolDescriptorProvider : HttpAdapterDescriptorProvider {
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = basePath,
+                    tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
                 ),
             endpoints =
                 listOf(
@@ -67,6 +71,7 @@ class Oid4vciIssuerProtocolDescriptorProvider : HttpAdapterDescriptorProvider {
                     HandleCredentialEndpointCommand.ENDPOINT,
                     HandleDeferredCredentialEndpointCommand.ENDPOINT,
                     HandleNotificationEndpointCommand.ENDPOINT,
+                    GetVctTypeMetadataEndpointCommand.ENDPOINT,
                 ).map { endpoint ->
                     endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },

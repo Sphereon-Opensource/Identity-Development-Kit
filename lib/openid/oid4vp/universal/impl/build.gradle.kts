@@ -65,6 +65,7 @@ kotlin {
                 // OID4VP common
                 api(projects.libOpenidOid4vpCommonPublic)
                 api(projects.libOpenidOid4vpDcql)
+                api(projects.libOpenidOid4vpDcqlStorePublic)
 
                 // OID4VC common impl (QR code service)
                 api(projects.libOpenidOid4vcCommonImpl)
@@ -97,6 +98,8 @@ kotlin {
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(projects.libCoreTest)
                 implementation(projects.libCoreApiDefault)
+                // KvDcqlQueryConfigurationStore binding for the universal OID4VP test app graph
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
@@ -130,6 +133,7 @@ kotlin {
             dependencies {
                 implementation(projects.libCoreTest)
                 implementation(projects.libCoreApiDefault)
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)

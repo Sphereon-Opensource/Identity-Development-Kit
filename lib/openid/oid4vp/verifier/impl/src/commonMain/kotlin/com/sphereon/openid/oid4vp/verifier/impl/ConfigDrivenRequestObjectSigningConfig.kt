@@ -25,7 +25,9 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
@@ -71,11 +73,46 @@ class ConfigDrivenRequestObjectSigningConfig(
 
     override suspend fun resolveSigningKey(): KeyInfoType<*> {
         val alias = requireKeyAlias()
+        ensureSigningKey(alias)
         val opts = ManagedOptsAlias(identifier = alias)
         val result = managedIdentifierService.resolve(opts)
         check(result.isOk) { "Failed to resolve signing key '$alias': ${result.error}" }
         @Suppress("UNCHECKED_CAST")
         return result.value as KeyInfoType<KeyType>
+    }
+
+    /**
+     * Get-or-generate the signing key under [alias]. The DID/x509 binding is derived
+     * deterministically from this key's public JWK, and the request_uri JAR is signed
+     * with it on every fetch — so create-time client_id substitution
+     * (CreateAuthorizationRequestCommandImpl) and fetch-time signing (RequestUriHandlerImpl)
+     * resolve to the SAME identifier only if the key is stable. Generating once and reusing
+     * by alias guarantees that.
+     *
+     * Generated with ES256 (P-256) which is what the verifier advertises in client_metadata
+     * (`sd-jwt_alg_values`/`kb-jwt_alg_values` = ES256) and what did:jwk wallets resolve.
+     * A no-op when the alias already exists.
+     */
+    private suspend fun ensureSigningKey(alias: String) {
+        val existing = kms.getKeyResult(KeyInfo<Nothing>(alias = alias))
+        if (existing.isOk && existing.value.key != null) {
+            return
+        }
+        val generated =
+            kms.generateKeyResult(
+                // Pin the provider explicitly. With KMS routed to a remote crypto service the
+                // alg-only lookup (getKmsBySignatureAlgorithm) can miss because the remote
+                // registry advertises its providers by id, not by a queryable alg set over the
+                // wire — pass the configured provider id so the software KMS is selected directly.
+                providerId = configService.getPropertyAsString("$NAMESPACE.signing.providerId") ?: DEFAULT_PROVIDER_ID,
+                alias = alias,
+                alg = SignatureAlgorithm.ECDSA_SHA256,
+                keyVisibility = KeyVisibility.PRIVATE,
+            )
+        check(generated.isOk) {
+            "Request-object signing is enabled but the signing key '$alias' could not be " +
+                "resolved or generated in the KMS: ${generated.error.message.defaultMessage}"
+        }
     }
 
     /**
@@ -185,12 +222,20 @@ class ConfigDrivenRequestObjectSigningConfig(
                     createResult.verificationMethodsByPurpose[VerificationPurpose.AUTHENTICATION]
                         ?.firstOrNull()
                         ?.id
-                        ?: error(
-                            "DID provider for method '$method' returned no `authentication` verification method for signing key '$alias'. " +
-                                "Configure $NAMESPACE.signing.verification-method-id (full DID URL) or " +
-                                "$NAMESPACE.signing.verification-method-fragment (fragment only) to pin one explicitly — " +
-                                "we won't fabricate a fragment (no universal '#0' default).",
-                        )
+                        // did:jwk encodes the key in the DID itself; per the did:jwk method spec
+                        // the single verification method is always `<did>#0`. That is not a
+                        // fabricated fragment — it is method-defined and unambiguous, so default
+                        // to it for did:jwk specifically (other methods still fail loudly below).
+                        ?: if (method == "jwk") {
+                            "${createResult.did}#0"
+                        } else {
+                            error(
+                                "DID provider for method '$method' returned no `authentication` verification method for signing key '$alias'. " +
+                                    "Configure $NAMESPACE.signing.verification-method-id (full DID URL) or " +
+                                    "$NAMESPACE.signing.verification-method-fragment (fragment only) to pin one explicitly — " +
+                                    "we won't fabricate a fragment (no universal '#0' default).",
+                            )
+                        }
                 }
             }
         return VerifierSignerBinding.Did(did = createResult.did, verificationMethodId = vmId)
@@ -240,6 +285,7 @@ class ConfigDrivenRequestObjectSigningConfig(
     }
 
     private suspend fun loadJwk(alias: String): Jwk {
+        ensureSigningKey(alias)
         val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = alias))
         check(keyResult.isOk) { "Failed to load signing key '$alias' from KMS: ${keyResult.error}" }
         val managedKey = keyResult.value.key
@@ -264,5 +310,6 @@ class ConfigDrivenRequestObjectSigningConfig(
         private const val NAMESPACE = "oid4vp.verifier.request-object"
         private const val DEFAULT_EXPIRATION_SECONDS = 300L
         private const val DEFAULT_MODE = "did:jwk"
+        private const val DEFAULT_PROVIDER_ID = "default"
     }
 }

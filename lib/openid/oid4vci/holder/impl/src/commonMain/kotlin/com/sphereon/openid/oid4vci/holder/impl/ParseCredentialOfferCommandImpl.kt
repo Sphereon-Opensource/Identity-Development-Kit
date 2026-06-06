@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.http.percentDecode
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
@@ -176,55 +177,13 @@ class ParseCredentialOfferCommandImpl(
         for (pair in queryString.split('&')) {
             val eqIdx = pair.indexOf('=')
             if (eqIdx < 0) {
-                result[percentDecode(pair)] = ""
+                result[pair.percentDecode(plusAsSpace = true)] = ""
             } else {
-                val key = percentDecode(pair.substring(0, eqIdx))
-                val value = percentDecode(pair.substring(eqIdx + 1))
+                val key = pair.substring(0, eqIdx).percentDecode(plusAsSpace = true)
+                val value = pair.substring(eqIdx + 1).percentDecode(plusAsSpace = true)
                 result[key] = value
             }
         }
         return result
-    }
-
-    /**
-     * Decodes a percent-encoded string (application/x-www-form-urlencoded semantics).
-     * Replaces '+' with space and decodes %XX sequences.
-     */
-    internal fun percentDecode(encoded: String): String {
-        val sb = StringBuilder()
-        var i = 0
-        while (i < encoded.length) {
-            val c = encoded[i]
-            when {
-                c == '+' -> {
-                    sb.append(' ')
-                    i++
-                }
-
-                c == '%' && i + PERCENT_LOOKAHEAD < encoded.length -> {
-                    val hex = encoded.substring(i + 1, i + PERCENT_ENCODED_LENGTH)
-                    val code = hex.toIntOrNull(HEX_RADIX)
-                    if (code != null) {
-                        sb.append(code.toChar())
-                        i += PERCENT_ENCODED_LENGTH
-                    } else {
-                        sb.append(c)
-                        i++
-                    }
-                }
-
-                else -> {
-                    sb.append(c)
-                    i++
-                }
-            }
-        }
-        return sb.toString()
-    }
-
-    private companion object {
-        private const val PERCENT_LOOKAHEAD = 2
-        private const val PERCENT_ENCODED_LENGTH = 3
-        private const val HEX_RADIX = 16
     }
 }

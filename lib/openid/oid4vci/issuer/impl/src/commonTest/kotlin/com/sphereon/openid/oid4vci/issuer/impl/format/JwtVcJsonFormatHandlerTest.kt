@@ -40,7 +40,24 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class JwtVcJsonFormatHandlerTest {
-    private val handler = JwtVcJsonFormatHandler(jwtService = FakeJwtService())
+    // These tests exercise SigningKeyMode.None (the default on IssuanceContext), so the KMS and
+    // key-id resolver are never invoked — a mock + a no-op stub satisfy the constructor.
+    private object StubIssuerKeyIdResolver : com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver {
+        override suspend fun resolveDidVerificationMethodId(
+            keyAlias: String,
+            didMethod: String,
+        ): IdkResult<String, IdkError> = error("StubIssuerKeyIdResolver should not be invoked under SigningKeyMode.None")
+
+        override suspend fun resolvePublicJwk(keyAlias: String,): IdkResult<kotlinx.serialization.json.JsonObject, IdkError> =
+            error("StubIssuerKeyIdResolver should not be invoked under SigningKeyMode.None")
+    }
+
+    private val handler =
+        JwtVcJsonFormatHandler(
+            jwtService = FakeJwtService(),
+            kms = TestKmsMock(),
+            issuerKeyIdResolver = StubIssuerKeyIdResolver,
+        )
 
     private fun makeConfig(
         format: String,

@@ -18,19 +18,20 @@ package com.sphereon.identity.idv.model
 
 import com.sphereon.attribute.flow.AttributeBag
 import com.sphereon.attribute.flow.AttributePath
+import com.sphereon.attribute.flow.AttributeProvenanceRef
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class AttributePredicateEvaluatorTest {
-    private fun bagOf(vararg pairs: Pair<String, String>): AttributeBag {
-        var bag = AttributeBag.empty()
-        for ((key, value) in pairs) {
-            bag = bag.with(AttributePath(key), JsonPrimitive(value))
-        }
-        return bag
-    }
+    private fun bagOf(vararg pairs: Pair<String, String>): AttributeBag =
+        AttributeBag.of(
+            values = pairs.associate { (key, value) -> AttributePath(key) to JsonPrimitive(value) },
+            sourceId = AttributeProvenanceRef("test"),
+            timestamp = Instant.fromEpochSeconds(0),
+        )
 
     @Test
     fun existsReturnsTrueWhenAttributePresent() {

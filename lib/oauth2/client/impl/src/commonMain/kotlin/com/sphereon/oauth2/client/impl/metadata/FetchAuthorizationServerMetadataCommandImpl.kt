@@ -232,7 +232,8 @@ class FetchAuthorizationServerMetadataCommandImpl(
                     }
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Err(
                 MetadataError.FetchFailed(
                     url = url,

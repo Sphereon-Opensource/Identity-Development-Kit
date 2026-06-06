@@ -53,6 +53,7 @@ class ReconciliationAuthorizeHttpEndpointCommandImpl(
     private val initiateProviderAuthenticationCommand: InitiateProviderAuthenticationCommand,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: FederationBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = ReconciliationAuthorizeHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -71,7 +72,7 @@ class ReconciliationAuthorizeHttpEndpointCommandImpl(
             request.queryParameters["provider"]
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing 'provider' parameter"))
 
-        val baseUrl = request.resolveFederationBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val sessionId = "recon-" + secureRandom.newToken(lengthBytes = RECONCILIATION_SESSION_BYTES, encoding = Encoding.HEX)
 
         val result =

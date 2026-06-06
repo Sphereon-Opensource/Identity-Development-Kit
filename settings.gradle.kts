@@ -316,6 +316,17 @@ includeProject("lib-crypto-data-integrity-proof-public", "lib/crypto/data-integr
 includeProject("lib-crypto-data-integrity-proof-impl", "lib/crypto/data-integrity-proof/impl")
 includeProject("lib-crypto-data-integrity-proof-eddsa-jcs-2022", "lib/crypto/data-integrity-proof/eddsa-jcs-2022")
 
+// Compression primitives (GZIP / zlib / raw DEFLATE) — status lists, JWE, etc.
+includeProject("lib-compression", "lib/compression")
+
+// Credential Status Lists — IETF Token Status List + W3C Bitstring Status List
+includeProject("lib-statuslist-public", "lib/statuslist/public")
+includeProject("lib-statuslist-impl", "lib/statuslist/impl")
+// Public, unauthenticated token hosting REST (serves the signed jwt/cwt; open-core, so IDK).
+// Lives on the services side alongside the other IDK REST API implementations. The business-key
+// admin management REST is EDK (:lib-statuslist-management-rest).
+includeProject("services-statuslist-rest", "services/statuslist/rest")
+
 // JSON-LD 1.1 capability (Track A: loader + validators; Track B: full processor)
 includeProject("lib-jsonld-public", "lib/jsonld/public")
 includeProject("lib-jsonld-loader", "lib/jsonld/loader")
@@ -354,14 +365,23 @@ includeProject("lib-openid-oid4vci-rest-impl", "lib/openid/oid4vci/rest/impl")
 
 // OpenID OID4VP
 includeProject("lib-openid-oid4vp-dcql", "lib/openid/oid4vp/dcql")
+includeProject("lib-openid-oid4vp-dcql-store-public", "lib/openid/oid4vp/dcql-store/public")
+includeProject("lib-openid-oid4vp-dcql-store-impl", "lib/openid/oid4vp/dcql-store/impl")
+includeProject("lib-openid-oid4vp-dcql-store-rest", "lib/openid/oid4vp/dcql-store/rest")
 includeProject("lib-openid-oid4vp-common-public", "lib/openid/oid4vp/common/public")
 includeProject("lib-openid-oid4vp-common-impl", "lib/openid/oid4vp/common/impl")
 includeProject("lib-openid-oid4vp-holder-public", "lib/openid/oid4vp/holder/public")
 includeProject("lib-openid-oid4vp-holder-impl", "lib/openid/oid4vp/holder/impl")
 includeProject("lib-openid-oid4vp-verifier-public", "lib/openid/oid4vp/verifier/public")
 includeProject("lib-openid-oid4vp-verifier-impl", "lib/openid/oid4vp/verifier/impl")
+includeProject("lib-openid-oid4vp-verifier-rest", "lib/openid/oid4vp/verifier/rest")
 includeProject("lib-openid-oid4vp-universal-public", "lib/openid/oid4vp/universal/public")
 includeProject("lib-openid-oid4vp-universal-impl", "lib/openid/oid4vp/universal/impl")
+
+// OpenID Wallet SDK
+includeProject("lib-wallet-public", "lib/openid/wallet/public")
+includeProject("lib-wallet-impl", "lib/openid/wallet/impl")
+includeProject("lib-wallet-cli", "lib/openid/wallet/cli")
 
 // Data Link - BLE
 includeProject("lib-data-link-ble-public", "lib/data/link/ble/public")
@@ -390,6 +410,11 @@ includeProject("lib-attribute-flow-public", "lib/attribute/flow/public")
 // reconciliation flows, CSV-roster issuance, OIDC claim projection, etc.)
 includeProject("lib-attribute-mapping-public", "lib/attribute/mapping/public")
 
+// Attribute Pipeline (the multi-source attribute-pipeline SPI: the active AttributeSource
+// producer interface, SourceContribution, lookup keys, deferral signal, protocol phases.
+// Layers on lib-attribute-flow-public; consumed by the EDK pipeline engine.)
+includeProject("lib-attribute-pipeline-public", "lib/attribute/pipeline/public")
+
 // Invitation service — RELOCATED to VDX as vdx-service-invitation-* per
 // feedback_edk_vs_vdx_placement (invitation orchestration is a product feature,
 // not an open-source primitive).
@@ -411,6 +436,15 @@ includeProject("lib-data-store-schema-registry-impl", "lib/data/store/schema-reg
 includeProject("lib-data-store-credential-design-public", "lib/data/store/credential-design/public")
 includeProject("lib-data-store-credential-design-impl", "lib/data/store/credential-design/impl")
 
+// Data Store - Credential Type Binding (role-independent registry: semantic attribute set -> credential wire format identity)
+includeProject("lib-data-store-credential-type-binding-public", "lib/data/store/credential-type-binding/public")
+includeProject("lib-data-store-credential-type-binding-impl", "lib/data/store/credential-type-binding/impl")
+
+// Data - Credential Definition (role-neutral free-form/lightweight definition: pure claim data, no profile link)
+includeProject("lib-data-credential-definition-public", "lib/data/credential-definition/public")
+includeProject("lib-data-credential-definition-impl", "lib/data/credential-definition/impl")
+includeProject("lib-data-credential-definition-rest", "lib/data/credential-definition/rest")
+
 // Data Store - Party (data models for identity, contact, tenant)
 includeProject("lib-data-store-party-public", "lib/data/store/party/public")
 
@@ -430,6 +464,7 @@ includeProject("lib-did-methods-webvh-rest-server", "lib/did/methods/webvh/rest/
 includeProject("lib-did-persistence-api", "lib/did/persistence/api")
 includeProject("lib-did-persistence-memory", "lib/did/persistence/memory")
 includeProject("lib-did-persistence-sqlite", "lib/did/persistence/sqlite")
+includeProject("lib-did-persistence-test-fixtures", "lib/did/persistence/test-fixtures")
 includeProject("lib-did-rest-resolver-server", "lib/did/rest/resolver/server")
 
 // mDoc libraries
@@ -468,6 +503,11 @@ includeProject("lib-oauth2-jwt-validation-impl", "lib/oauth2/jwt/validation/impl
 includeProject("lib-credential-claims-mapper-public", "lib/credential/claims-mapper/public")
 includeProject("lib-credential-claims-mapper-impl", "lib/credential/claims-mapper/impl")
 
+// Credential Issuance Pipeline (the claims-assembly SPI: CredentialClaimsAssembler, the
+// per-credential binding, the assembled-claims output, deferral policy, OCA semantic refs.
+// Feeds the issuer core's existing IssuanceContext path; layers on lib-attribute-pipeline-public.)
+includeProject("lib-credential-issuance-pipeline-public", "lib/credential/issuance-pipeline/public")
+
 // OID4VP Authentication Bridge
 includeProject("lib-openid-oid4vp-auth-bridge-public", "lib/openid/oid4vp/auth-bridge/public")
 includeProject("lib-openid-oid4vp-auth-bridge-impl", "lib/openid/oid4vp/auth-bridge/impl")
@@ -493,6 +533,7 @@ includeProject("lib-idv-wallet", "lib/identity/idv/wallet")
 includeProject("ktor-server-kotlin-inject", "services/ktor/server/plugins/ktor-server-kotlin-inject")
 includeProject("ktor-server-jwt-auth", "services/ktor/server/plugins/ktor-server-jwt-auth")
 includeProject("services-kms-rest", "services/kms/rest")
+includeProject("services-did-manager-rest", "services/did/manager/rest")
 includeProject("services-oid4vp-verifier-rest", "services/oid4vp-verifier/rest")
 includeProject("services-oauth2-as-rest", "services/oauth2-as/rest")
 includeProject("services-oid4vci-issuer-rest", "services/oid4vci-issuer/rest")

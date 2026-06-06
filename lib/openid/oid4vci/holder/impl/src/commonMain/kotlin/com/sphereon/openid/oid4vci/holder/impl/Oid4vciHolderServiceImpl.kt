@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.holder.impl
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.resolution.managed.ManagedOptsKid
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
@@ -154,6 +155,7 @@ class Oid4vciHolderServiceImpl(
         signingAlgorithm: String,
         clientId: String?,
         count: Int,
+        keyInclusionMode: JwsIdentifierMode,
     ): IdkResult<CreatedProof, IdkError> =
         createCredentialRequestProofCommand.execute(
             CreateCredentialRequestProofArgs(
@@ -163,6 +165,7 @@ class Oid4vciHolderServiceImpl(
                 signingAlgorithm = signingAlgorithm,
                 clientId = clientId,
                 count = count,
+                keyInclusionMode = keyInclusionMode,
             ),
         )
 

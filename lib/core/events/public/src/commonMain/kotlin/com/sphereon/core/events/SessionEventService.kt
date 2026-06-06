@@ -11,6 +11,7 @@ import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.OptionalBinding
 import dev.zacsweers.metro.SingleIn
 
 /**
@@ -69,4 +70,21 @@ interface SessionEventService : EventService {
     interface Graph {
         val sessionEventService: SessionEventService
     }
+}
+
+/**
+ * Exposes [SessionEventService] as an optional graph accessor so consumers declaring
+ * `SessionEventService? = null` constructor parameters resolve cleanly under the Metro
+ * `nullable type key`. The real [com.sphereon.core.events.impl.SessionEventServiceImpl] adds a
+ * second `@ContributesBinding(SessionScope::class, binding = binding<SessionEventService?>())`
+ * so this default `null` body is overridden whenever the events-impl module is on the classpath.
+ *
+ * The accessor name is distinct from [SessionEventService.Graph.sessionEventService] so the merged
+ * Metro graph can implement both interfaces without a Kotlin property-name collision (the merged
+ * class would otherwise declare two `sessionEventService` properties of different types).
+ */
+@ContributesTo(SessionScope::class)
+interface SessionEventServiceOptionalProvider {
+    @OptionalBinding
+    val optionalSessionEventService: SessionEventService? get() = null
 }

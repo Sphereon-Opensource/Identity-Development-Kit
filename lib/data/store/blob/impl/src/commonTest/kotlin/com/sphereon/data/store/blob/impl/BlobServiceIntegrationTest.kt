@@ -637,12 +637,22 @@ class BlobServiceIntegrationTest {
             assertTrue(listB.isOk, "listBlobs for listB should succeed")
             assertEquals(2, listB.value.descriptors.size, "listB should return 2 blobs")
 
-            // Verify no cross-contamination: all paths in A start with listA/
-            for (desc in listA.value.descriptors) {
-                assertTrue(desc.path.startsWith("listA/"), "all listA descriptors should be scoped to listA/")
-            }
-            for (desc in listB.value.descriptors) {
-                assertTrue(desc.path.startsWith("listB/"), "all listB descriptors should be scoped to listB/")
+            // Caller-facing descriptors carry the LOGICAL (unscoped) path: the tenant prefix is a
+            // storage-layer detail that must not leak. Cross-contamination is proven by the counts
+            // above plus the per-tenant logical filenames here.
+            val listAPaths =
+                listA.value.descriptors
+                    .map { it.path }
+                    .toSet()
+            assertEquals(setOf("file1.txt", "file2.txt", "file3.txt"), listAPaths, "listA should expose logical paths")
+            val listBPaths =
+                listB.value.descriptors
+                    .map { it.path }
+                    .toSet()
+            assertEquals(setOf("fileX.txt", "fileY.txt"), listBPaths, "listB should expose logical paths")
+            for (desc in listA.value.descriptors + listB.value.descriptors) {
+                assertFalse(desc.path.startsWith("listA/"), "descriptor path must not leak the tenant prefix")
+                assertFalse(desc.path.startsWith("listB/"), "descriptor path must not leak the tenant prefix")
             }
         }
 

@@ -28,6 +28,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
+import kotlin.time.Instant
 
 /**
  * Resolution metadata returned with DID resolution results.
@@ -103,11 +104,17 @@ data class DidResolutionMetadata
  *
  * Contains information about the DID document itself.
  *
- * @property created ISO 8601 timestamp when the document was created
- * @property updated ISO 8601 timestamp when the document was last updated
+ * @property created Timestamp when the document was created
+ * @property updated Timestamp when the document was last updated
  * @property deactivated Whether the DID has been deactivated
  * @property versionId The version identifier of this document
  * @property nextVersionId The version identifier of the next document version (if known)
+ * @property nextUpdate Earliest point in time the next document version is expected to be
+ *           published. DID 1.1 — optional; resolvers that cannot provide it should leave it null.
+ * @property equivalentId DIDs the resolver asserts identify the same subject as the resolved
+ *           DID. DID 1.1 / Controlled Identifiers v1.0. Ordering is not significant.
+ * @property canonicalId The canonical equivalent identifier for this subject. When present,
+ *           must equal one of the values in [equivalentId] per DID 1.1 §6.4.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DidDocumentMetadata", exact = true)
@@ -116,11 +123,14 @@ data class DidResolutionMetadata
 data class DidDocumentMetadata
     @JvmOverloads
     constructor(
-        val created: String? = null,
-        val updated: String? = null,
+        val created: Instant? = null,
+        val updated: Instant? = null,
         val deactivated: Boolean? = null,
         val versionId: String? = null,
         val nextVersionId: String? = null,
+        val nextUpdate: Instant? = null,
+        val equivalentId: List<String>? = null,
+        val canonicalId: String? = null,
     ) {
         /**
          * Checks if the DID is active (not deactivated).

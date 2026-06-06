@@ -130,8 +130,8 @@ class DidTrustValidationService(
                     )
                 }
 
-                val controller = resolutionResult.didDocument?.controller
-                val controllerTrusted = controller != null && controller in trustedDids
+                val controllers = resolutionResult.didDocument?.controller.orEmpty()
+                val controllerTrusted = controllers.any { it in trustedDids }
 
                 if (controllerTrusted) {
                     enrichWithEntityInfo(

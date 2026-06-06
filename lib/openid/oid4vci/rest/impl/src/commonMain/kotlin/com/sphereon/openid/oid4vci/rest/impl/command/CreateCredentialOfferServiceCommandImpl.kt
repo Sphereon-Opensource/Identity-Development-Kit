@@ -35,6 +35,7 @@ import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferServiceCommand
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSession
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStore
+import com.sphereon.openid.oid4vci.rest.CredentialOfferTemplate
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestEventTypes
 import dev.zacsweers.metro.ContributesBinding
@@ -80,7 +81,8 @@ class CreateCredentialOfferServiceCommandImpl(
 
         val hasPreAuth = input.grants?.preAuthorizedCode != null
         val hasAuthCode = input.grants?.authorizationCode != null
-        val txCodeRequired = input.grants?.preAuthorizedCode?.txCode != null
+        val txCodeConfig = input.grants?.preAuthorizedCode?.txCode
+        val txCodeRequired = txCodeConfig != null
 
         // Prefer the Credential Issuer Identifier (OID4VCI §11.2.2) — may include a path
         // component (e.g. "${BASE}/oid4vci"). Fall back to the REST external base URL for
@@ -98,9 +100,14 @@ class CreateCredentialOfferServiceCommandImpl(
                 preAuthorizedCodeGrant = hasPreAuth || (!hasPreAuth && !hasAuthCode),
                 authorizationCodeGrant = hasAuthCode,
                 txCodeRequired = txCodeRequired,
+                txCodeLength = txCodeConfig?.length,
+                txCodeInputMode = txCodeConfig?.inputMode,
                 preSeededAttributes = input.credentialSubjectData,
                 offerTtlSeconds = input.ttlSeconds ?: CredentialOfferSessionStore.DEFAULT_TTL_SECONDS,
                 scheme = input.scheme,
+                uriLifecycle = input.uriLifecycle,
+                initialLookupKeys = input.initialLookupKeys,
+                rateLimit = input.rateLimit,
             )
 
         val created =
@@ -111,6 +118,23 @@ class CreateCredentialOfferServiceCommandImpl(
         val correlationId = input.correlationId ?: generateCorrelationId()
         val now = Clock.System.now().toEpochMilliseconds()
         val ttl = input.ttlSeconds ?: CredentialOfferSessionStore.DEFAULT_TTL_SECONDS
+
+        // Snapshot the replayable creation inputs so the GET handler can mint a fresh inner
+        // offer on each fetch of a reusable URI. Populated for every offer (the snapshot is
+        // small and harmless for single-use sessions, which simply never replay it).
+        val offerTemplate =
+            CredentialOfferTemplate(
+                issuerId = createArgs.issuerId,
+                credentialConfigurationIds = createArgs.credentialConfigurationIds,
+                preAuthorizedCodeGrant = createArgs.preAuthorizedCodeGrant,
+                authorizationCodeGrant = createArgs.authorizationCodeGrant,
+                txCodeRequired = createArgs.txCodeRequired,
+                txCodeLength = createArgs.txCodeLength,
+                txCodeInputMode = createArgs.txCodeInputMode,
+                preSeededAttributes = createArgs.preSeededAttributes,
+                offerTtlSeconds = createArgs.offerTtlSeconds,
+                scheme = createArgs.scheme,
+            )
 
         val session =
             CredentialOfferSession(
@@ -123,6 +147,10 @@ class CreateCredentialOfferServiceCommandImpl(
                 createdAt = now,
                 lastUpdatedAt = now,
                 expiresAt = now + (ttl * 1000),
+                uriLifecycle = input.uriLifecycle,
+                rateLimit = input.rateLimit,
+                initialLookupKeys = input.initialLookupKeys,
+                offerTemplate = offerTemplate,
             )
 
         credentialOfferSessionStore.create(session).getOrElse { error ->

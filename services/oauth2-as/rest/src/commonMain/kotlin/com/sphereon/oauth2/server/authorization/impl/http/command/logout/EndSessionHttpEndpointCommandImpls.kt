@@ -31,10 +31,10 @@ import com.sphereon.oauth2.server.authorization.command.logout.EndSessionPostHtt
 import com.sphereon.oauth2.server.authorization.command.logout.HandleEndSessionRequestArgs
 import com.sphereon.oauth2.server.authorization.command.logout.HandleEndSessionRequestCommand
 import com.sphereon.oauth2.server.authorization.command.logout.LogoutOutcome
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.loginSessionCookieValue
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -60,9 +60,10 @@ private suspend fun handleEndSession(
     parameters: Map<String, String>,
     handle: HandleEndSessionRequestCommand,
     configProvider: OAuth2ServersConfigProvider,
+    baseUrlResolver: OAuth2ServerBaseUrlResolver,
     json: Json,
 ): IdkResult<GenericHttpResponse, IdkError> {
-    val baseUrl = request.resolveBaseUrl(configProvider)
+    val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
     val args =
         HandleEndSessionRequestArgs(
             idTokenHint = parameters["id_token_hint"]?.takeIf { it.isNotBlank() },
@@ -135,6 +136,7 @@ class EndSessionGetHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handleEndSessionRequestCommand: HandleEndSessionRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = EndSessionGetHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -160,7 +162,7 @@ class EndSessionGetHttpEndpointCommandImpl(
 
         @Suppress("UNCHECKED_CAST")
         val parameters = request.queryParameters.filterValues { it != null } as Map<String, String>
-        return handleEndSession(request, parameters, handleEndSessionRequestCommand, configProvider, json)
+        return handleEndSession(request, parameters, handleEndSessionRequestCommand, configProvider, baseUrlResolver, json)
     }
 }
 
@@ -175,6 +177,7 @@ class EndSessionPostHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handleEndSessionRequestCommand: HandleEndSessionRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = EndSessionPostHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -212,6 +215,6 @@ class EndSessionPostHttpEndpointCommandImpl(
             parseFormBody(request.body)
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing or invalid request body", json))
         val parameters = form.mapValues { (_, values) -> values.first() }
-        return handleEndSession(request, parameters, handleEndSessionRequestCommand, configProvider, json)
+        return handleEndSession(request, parameters, handleEndSessionRequestCommand, configProvider, baseUrlResolver, json)
     }
 }

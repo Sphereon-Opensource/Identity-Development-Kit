@@ -35,6 +35,9 @@ private val allowInsecureHttp: Boolean by lazy {
  * Localhost matching requires the host portion to end at a port separator (:), path separator (/), or end of string
  * to prevent matching domains like "http://localhostnotreally.com".
  *
+ * RFC 6761 reserves the `.localhost` special-use TLD (including any `*.localhost` subdomain,
+ * e.g. `acme.localhost`) for loopback, so plain HTTP is acceptable for those hosts too.
+ *
  * HTTP is also allowed for all hosts when `OAUTH2_CLIENT_ALLOW_INSECURE_HTTP=true` is set,
  * which is needed for Docker-internal hostnames (e.g. `http://keycloak:8080`).
  */
@@ -45,10 +48,27 @@ fun isSecureUrl(url: String): Boolean {
     if (allowInsecureHttp && url.startsWith("http://")) {
         return true
     }
+    // Fast path for the well-known loopback literals (port/path/query must follow, or end-of-string).
     val localPrefixes = listOf("http://localhost", "http://127.0.0.1", "http://[::1]")
-    return localPrefixes.any { prefix ->
-        url.startsWith(prefix) && (url.length == prefix.length || url[prefix.length] in listOf(':', '/', '?'))
+    if (localPrefixes.any { prefix ->
+            url.startsWith(prefix) && (url.length == prefix.length || url[prefix.length] in listOf(':', '/', '?'))
+        }
+    ) {
+        return true
     }
+    // RFC 6761: any `*.localhost` subdomain is also a loopback address; plain HTTP is fine.
+    if (url.startsWith("http://")) {
+        val host =
+            url
+                .substringAfter("://")
+                .substringBefore('/')
+                .substringBefore(':')
+                .substringBefore('?')
+        if (host.endsWith(".localhost")) {
+            return true
+        }
+    }
+    return false
 }
 
 /**

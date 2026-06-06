@@ -22,12 +22,18 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
-import kotlinx.serialization.json.JsonElement
 
 /**
  * Optional callback invoked before credential issuance to contribute additional attributes.
  *
  * IDK ships a no-op default. EDK replaces it via `@ContributesBinding`.
+ *
+ * The result is a [CredentialAttributeContribution] that carries the contributed attributes plus
+ * the set of source ids the contributor is still waiting on for an inbound async-callback
+ * contribution. The issuer command consumes that set to drive the §6.5.7 sync-wait window:
+ * before falling through to the deferral decision tree it suspends up to
+ * [CredentialAttributeContribution.syncWaitWindow] for those sources to land via the callback
+ * endpoint, then re-runs the contributor so any freshly-arrived attributes flow into the merge.
  */
 @JsExportCompat
 interface CredentialAttributeContributor {
@@ -36,5 +42,5 @@ interface CredentialAttributeContributor {
         session: IssuanceSession,
         tokenContext: ValidatedTokenContext,
         credentialConfigurationId: String,
-    ): IdkResult<Map<String, JsonElement>, IdkError>
+    ): IdkResult<CredentialAttributeContribution, IdkError>
 }

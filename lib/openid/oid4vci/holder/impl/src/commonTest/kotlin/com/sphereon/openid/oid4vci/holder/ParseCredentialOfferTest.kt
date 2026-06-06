@@ -180,17 +180,10 @@ class ParseCredentialOfferTest {
             )
         }
 
-    @Test
-    fun percentDecodeHandlesPlusAsSpace() {
-        val impl = makeImpl()
-        assertEquals("hello world", impl.percentDecode("hello+world"))
-    }
-
-    @Test
-    fun percentDecodeHandlesPercentEncoding() {
-        val impl = makeImpl()
-        assertEquals("{\"a\":\"b\"}", impl.percentDecode("%7B%22a%22%3A%22b%22%7D"))
-    }
+    // The form-encoding round-trip used by ParseCredentialOfferCommandImpl is now provided
+    // by [com.sphereon.core.api.http.percentDecode] in lib-core-api-public; that helper has
+    // its own dedicated unit test in [PercentEncodingTest], so this file no longer needs
+    // local coverage of the percent-decode primitive.
 
     /**
      * Simple percent-encoder for test URIs (encodes JSON for use as a query param value).

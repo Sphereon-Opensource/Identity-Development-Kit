@@ -22,7 +22,6 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
@@ -158,14 +157,11 @@ class KmsCommandRegistryIntegrationTest {
             assertNotNull(command, "GenerateKey must be resolvable via registry")
 
             val input =
-                GenerateKeyInput(
-                    generateKey =
-                        GenerateKeyGlobal(
-                            alias = "registry-generate-${System.currentTimeMillis()}",
-                            providerId = TEST_PROVIDER_ID,
-                            use = JwkUse.sig,
-                            alg = SignatureAlgorithmRest.ECDSA_SHA256,
-                        ),
+                GenerateKeyGlobal(
+                    alias = "registry-generate-${System.currentTimeMillis()}",
+                    providerId = TEST_PROVIDER_ID,
+                    use = JwkUse.sig,
+                    alg = SignatureAlgorithmRest.ECDSA_SHA256,
                 )
 
             // When - execute through the registry path (same as LocalServiceCommandTransport uses)
@@ -189,9 +185,7 @@ class KmsCommandRegistryIntegrationTest {
             val alias = "registry-get-${System.currentTimeMillis()}"
             val generateCommand = commandMap.getValue(GenerateKeyServiceCommand.COMMAND_ID)
             generateCommand.execute(
-                GenerateKeyInput(
-                    generateKey = GenerateKeyGlobal(alias = alias, providerId = TEST_PROVIDER_ID),
-                ),
+                GenerateKeyGlobal(alias = alias, providerId = TEST_PROVIDER_ID),
             )
 
             // When - get the key via registry path
@@ -218,12 +212,9 @@ class KmsCommandRegistryIntegrationTest {
             // Given - generate a key first
             val generateCommand = commandMap.getValue(GenerateKeyServiceCommand.COMMAND_ID)
             generateCommand.execute(
-                GenerateKeyInput(
-                    generateKey =
-                        GenerateKeyGlobal(
-                            alias = "registry-list-${System.currentTimeMillis()}",
-                            providerId = TEST_PROVIDER_ID,
-                        ),
+                GenerateKeyGlobal(
+                    alias = "registry-list-${System.currentTimeMillis()}",
+                    providerId = TEST_PROVIDER_ID,
                 ),
             )
 
@@ -252,9 +243,7 @@ class KmsCommandRegistryIntegrationTest {
             val alias = "registry-delete-${System.currentTimeMillis()}"
             val generateCommand = commandMap.getValue(GenerateKeyServiceCommand.COMMAND_ID)
             generateCommand.execute(
-                GenerateKeyInput(
-                    generateKey = GenerateKeyGlobal(alias = alias, providerId = TEST_PROVIDER_ID),
-                ),
+                GenerateKeyGlobal(alias = alias, providerId = TEST_PROVIDER_ID),
             )
 
             // When - delete via registry path

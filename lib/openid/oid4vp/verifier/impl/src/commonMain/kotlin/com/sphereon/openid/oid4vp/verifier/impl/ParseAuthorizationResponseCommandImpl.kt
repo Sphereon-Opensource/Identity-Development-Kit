@@ -167,25 +167,33 @@ class ParseAuthorizationResponseCommandImpl(
         val payload = jarmResult.payload
         val responseParams = payload.responseParameters
 
-        // Extract vp_token from JARM response parameters
+        // Extract vp_token from JARM response parameters.
+        //
+        // OID4VP §8.1: when DCQL was used, vp_token is a JSON object keyed by credential-query
+        // id, whose values are Presentation(s) that are themselves either strings (compact
+        // formats) or JSON objects (ldp_vc/ldp_vp). The JARM payload may carry vp_token as:
+        //  - a JSON string member, when the wallet stringified the DCQL object before embedding
+        //    it as a top-level claim, OR
+        //  - the DCQL JSON object directly as a structured top-level member.
+        // We canonicalize to the raw JSON text in both cases and never assume the primitive form.
+        val vpTokenElement = responseParams["vp_token"]
         val vpTokenRaw =
-            responseParams["vp_token"]?.let {
-                when (it) {
-                    is kotlinx.serialization.json.JsonPrimitive -> {
-                        it.content
-                    }
+            when (vpTokenElement) {
+                null -> {
+                    null
+                }
 
-                    is kotlinx.serialization.json.JsonArray -> {
-                        Json.encodeToString(
-                            kotlinx.serialization.json.JsonArray
-                                .serializer(),
-                            it,
-                        )
-                    }
+                is kotlinx.serialization.json.JsonPrimitive -> {
+                    if (vpTokenElement.isString) vpTokenElement.content else vpTokenElement.toString()
+                }
 
-                    else -> {
-                        it.toString()
-                    }
+                // JSON object (DCQL) or array — serialize the structured element back to JSON text.
+                else -> {
+                    Json.encodeToString(
+                        kotlinx.serialization.json.JsonElement
+                            .serializer(),
+                        vpTokenElement
+                    )
                 }
             } ?: return Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(

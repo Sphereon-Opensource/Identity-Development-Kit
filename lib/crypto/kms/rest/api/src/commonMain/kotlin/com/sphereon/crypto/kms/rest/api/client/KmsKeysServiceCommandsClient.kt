@@ -23,13 +23,13 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyOutput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
+import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyInput
+import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
 import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
@@ -124,10 +124,10 @@ class StoreKeyServiceCommandClient(
     override val id: String = StoreKeyServiceCommand.COMMAND_ID
     override val isEnabled: Boolean = true
     override val commandId: String = StoreKeyServiceCommand.COMMAND_ID
-    override val inputTypeToken: TypeToken<StoreKeyInput> = typeToken<StoreKeyInput>()
+    override val inputTypeToken: TypeToken<StoreKey> = typeToken<StoreKey>()
     override val outputTypeToken: TypeToken<StoreKeyResponse> = typeToken<StoreKeyResponse>()
 
-    override suspend fun execute(args: StoreKeyInput): IdkResult<StoreKeyResponse, IdkError> = invokeCommand(commandId = commandId, input = args, outputTypeToken = outputTypeToken)
+    override suspend fun execute(args: StoreKey): IdkResult<StoreKeyResponse, IdkError> = invokeCommand(commandId = commandId, input = args, outputTypeToken = outputTypeToken)
 }
 
 /**
@@ -142,10 +142,10 @@ class GenerateKeyServiceCommandClient(
     override val id: String = GenerateKeyServiceCommand.COMMAND_ID
     override val isEnabled: Boolean = true
     override val commandId: String = GenerateKeyServiceCommand.COMMAND_ID
-    override val inputTypeToken: TypeToken<GenerateKeyInput> = typeToken<GenerateKeyInput>()
+    override val inputTypeToken: TypeToken<GenerateKeyGlobal> = typeToken<GenerateKeyGlobal>()
     override val outputTypeToken: TypeToken<GenerateKeyResponse> = typeToken<GenerateKeyResponse>()
 
-    override suspend fun execute(args: GenerateKeyInput): IdkResult<GenerateKeyResponse, IdkError> = invokeCommand(commandId = commandId, input = args, outputTypeToken = outputTypeToken)
+    override suspend fun execute(args: GenerateKeyGlobal): IdkResult<GenerateKeyResponse, IdkError> = invokeCommand(commandId = commandId, input = args, outputTypeToken = outputTypeToken)
 }
 
 /**

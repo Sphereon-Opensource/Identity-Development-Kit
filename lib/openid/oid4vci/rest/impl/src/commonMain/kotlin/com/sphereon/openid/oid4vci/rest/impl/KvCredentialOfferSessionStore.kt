@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.rest.impl
 
+import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -31,15 +32,20 @@ import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.impl.KvStoreManager
 import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
+import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSession
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStore
+import com.sphereon.openid.oid4vci.rest.CredentialOfferTemplate
 import com.sphereon.openid.oid4vci.rest.IssuanceCallbackConfig
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -60,6 +66,12 @@ class KvCredentialOfferSessionStore(
         KvNamespace(
             name = "oid4vci.rest.sessions",
             codec = KotlinxSerializationJsonKvCodec(json = json, serializer = CredentialOfferSessionEntry.serializer()),
+        )
+
+    private val offerIdIndexNamespace =
+        KvNamespace(
+            name = "oid4vci.rest.sessions.offer-id",
+            codec = KotlinxSerializationJsonKvCodec(json = json, serializer = String.serializer()),
         )
 
     private val storeConfig: KvStoreConfigBase =
@@ -91,17 +103,22 @@ class KvCredentialOfferSessionStore(
                 CredentialOfferSessionStore.DEFAULT_TTL_SECONDS
             }
 
-        return kv
-            .put(namespace, session.correlationId, entry, ttl.seconds)
-            .map {
-                session
-            }.mapError { e ->
-                IdkError.fromString(
-                    message = "Failed to create credential offer session: ${e.message}",
-                    exception = IllegalStateException(e.toString()),
-                    code = "OID4VCI_SESSION_STORE_ERROR",
-                )
-            }
+        val result =
+            kv
+                .put(namespace, session.correlationId, entry, ttl.seconds)
+                .map {
+                    session
+                }.mapError { e ->
+                    IdkError.fromString(
+                        message = "Failed to create credential offer session: ${e.message}",
+                        exception = IllegalStateException(e.toString()),
+                        code = "OID4VCI_SESSION_STORE_ERROR",
+                    )
+                }
+        if (result.isOk) {
+            kv.put(offerIdIndexNamespace, session.offerId, session.correlationId, ttl.seconds).getOrElse { return Err(it) }
+        }
+        return result
     }
 
     override suspend fun get(correlationId: String): IdkResult<CredentialOfferSession?, IdkError> =
@@ -116,6 +133,20 @@ class KvCredentialOfferSessionStore(
                     code = "OID4VCI_SESSION_STORE_ERROR",
                 )
             }
+
+    override suspend fun getByOfferId(offerId: String): IdkResult<CredentialOfferSession?, IdkError> {
+        val correlationId =
+            kv.get<String>(offerIdIndexNamespace, offerId).getOrElse { e ->
+                return Err(
+                    IdkError.fromString(
+                        message = "Failed to read offer-id index: ${e.message}",
+                        exception = IllegalStateException(e.toString()),
+                        code = "OID4VCI_SESSION_STORE_ERROR",
+                    ),
+                )
+            } ?: return Ok(null)
+        return get(correlationId)
+    }
 
     override suspend fun update(session: CredentialOfferSession): IdkResult<CredentialOfferSession, IdkError> {
         val entry = CredentialOfferSessionEntry.fromPublic(session)
@@ -141,14 +172,19 @@ class KvCredentialOfferSessionStore(
             }
     }
 
-    override suspend fun delete(correlationId: String): IdkResult<Boolean, IdkError> =
-        kv.delete(namespace, correlationId).mapError { e ->
+    override suspend fun delete(correlationId: String): IdkResult<Boolean, IdkError> {
+        val session = get(correlationId).getOrElse { return Err(it) }
+        if (session != null) {
+            kv.delete(offerIdIndexNamespace, session.offerId)
+        }
+        return kv.delete(namespace, correlationId).mapError { e ->
             IdkError.fromString(
                 message = "Failed to delete credential offer session: ${e.message}",
                 exception = IllegalStateException(e.toString()),
                 code = "OID4VCI_SESSION_STORE_ERROR",
             )
         }
+    }
 
     @Serializable
     internal data class CredentialOfferSessionEntry(
@@ -163,6 +199,11 @@ class KvCredentialOfferSessionStore(
         val createdAt: Long,
         val lastUpdatedAt: Long,
         val expiresAt: Long? = null,
+        val uriLifecycle: String = OfferUriLifecycle.SINGLE_USE.name,
+        val rateLimitMaxPerWindow: Int? = null,
+        val rateLimitWindowSeconds: Long? = null,
+        val initialLookupKeysJson: String? = null,
+        val offerTemplate: CredentialOfferTemplate? = null,
     ) {
         fun toPublic(): CredentialOfferSession {
             val callbackConfig =
@@ -176,6 +217,21 @@ class KvCredentialOfferSessionStore(
                         includeIssuanceData = callbackIncludeIssuanceData,
                     )
                 }
+            val resolvedLifecycle =
+                OfferUriLifecycle.entries.firstOrNull { it.name == uriLifecycle }
+                    ?: OfferUriLifecycle.SINGLE_USE
+            val resolvedRateLimit =
+                if (rateLimitMaxPerWindow != null && rateLimitWindowSeconds != null) {
+                    OfferRateLimit(maxPerWindow = rateLimitMaxPerWindow, windowSeconds = rateLimitWindowSeconds)
+                } else {
+                    null
+                }
+            val resolvedLookupKeys: List<LookupKey> =
+                initialLookupKeysJson?.let { jsonStr ->
+                    runCatching {
+                        Json.decodeFromString(ListSerializer(LookupKey.serializer()), jsonStr)
+                    }.getOrElse { emptyList() }
+                } ?: emptyList()
             return CredentialOfferSession(
                 correlationId = correlationId,
                 offerId = offerId,
@@ -188,6 +244,10 @@ class KvCredentialOfferSessionStore(
                 createdAt = createdAt,
                 lastUpdatedAt = lastUpdatedAt,
                 expiresAt = expiresAt,
+                uriLifecycle = resolvedLifecycle,
+                rateLimit = resolvedRateLimit,
+                initialLookupKeys = resolvedLookupKeys,
+                offerTemplate = offerTemplate,
             )
         }
 
@@ -205,6 +265,18 @@ class KvCredentialOfferSessionStore(
                     createdAt = session.createdAt,
                     lastUpdatedAt = session.lastUpdatedAt,
                     expiresAt = session.expiresAt,
+                    uriLifecycle = session.uriLifecycle.name,
+                    rateLimitMaxPerWindow = session.rateLimit?.maxPerWindow,
+                    rateLimitWindowSeconds = session.rateLimit?.windowSeconds,
+                    initialLookupKeysJson =
+                        if (session.initialLookupKeys.isEmpty()) {
+                            null
+                        } else {
+                            runCatching {
+                                Json.encodeToString(ListSerializer(LookupKey.serializer()), session.initialLookupKeys)
+                            }.getOrNull()
+                        },
+                    offerTemplate = session.offerTemplate,
                 )
         }
     }

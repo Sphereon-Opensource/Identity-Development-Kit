@@ -29,9 +29,9 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.device.DeviceVerificationSubmitHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.DeviceEntryContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultContext
@@ -67,6 +67,7 @@ class DeviceVerificationSubmitHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val renderer: DeviceVerificationPageRenderer,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val storage: DeviceAuthorizationStorage,
     private val loginSessionStore: OidcLoginSessionStore,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
@@ -107,7 +108,7 @@ class DeviceVerificationSubmitHttpEndpointCommandImpl(
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing or invalid request body", json))
 
         val rawUserCode = form["user_code"]?.firstOrNull().orEmpty()
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val locale = negotiateLocale(request.headers["accept-language"] ?: request.headers["Accept-Language"])
         val normalised = normaliseUserCode(rawUserCode)
 

@@ -40,6 +40,7 @@ import dev.zacsweers.metro.binding
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<SessionScopedCommandRegistry>())
+@ContributesBinding(SessionScope::class, binding = binding<SessionScopedCommandRegistry?>())
 class SimpleSessionScopedCommandRegistry(
     private val commands: Map<String, Lazy<ServiceCommand<*, *, *>>>,
 ) : SessionScopedCommandRegistry {

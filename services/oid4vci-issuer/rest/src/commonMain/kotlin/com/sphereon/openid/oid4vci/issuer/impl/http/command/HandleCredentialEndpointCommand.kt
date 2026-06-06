@@ -167,6 +167,24 @@ class HandleCredentialEndpointCommandImpl(
                     return Err(error)
                 }
 
+        // OID4VCI 1.0 §8.3.4: a deferred-issuance response carries `transaction_id` (and
+        // `interval`) without `credentials` — the issuer MUST return HTTP 202 so the wallet
+        // knows to poll `/deferredCredential`. Encryption applies only to issued credential
+        // bodies, so the deferral envelope is rendered as plain JSON. Mirrors the predicate
+        // used by [HandleDeferredCredentialEndpointCommandImpl] for §10.2 polling.
+        val isPending = response.transactionId != null && response.credentials == null
+        if (isPending) {
+            val pendingJson = protocolJson.encodeToString(response)
+            log.info("Credential response (deferred): $pendingJson")
+            return Ok(
+                GenericHttpResponse(
+                    statusCode = 202,
+                    headers = JSON_HEADERS,
+                    body = pendingJson,
+                ),
+            )
+        }
+
         // OID4VCI 1.0 §8.3.5: when the wallet supplied `credential_response_encryption`, the
         // entire response body is a single JWE-compact string with `Content-Type:
         // application/jwt`. Otherwise the body is the JSON-serialized [CredentialResponse].

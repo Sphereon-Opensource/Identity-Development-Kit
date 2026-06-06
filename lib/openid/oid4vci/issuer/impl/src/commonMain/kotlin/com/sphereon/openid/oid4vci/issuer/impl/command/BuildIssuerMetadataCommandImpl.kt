@@ -128,7 +128,14 @@ class BuildIssuerMetadataCommandImpl(
             if (url.startsWith("https://")) {
                 return true
             }
-            return privateNetworkPrefixes.any { url.startsWith(it) }
+            if (privateNetworkPrefixes.any { url.startsWith(it) }) {
+                return true
+            }
+            // RFC 6761: the `.localhost` special-use TLD (including any `*.localhost`
+            // subdomain, e.g. `acme.localhost`) is reserved for loopback, so plain HTTP
+            // is acceptable for it just like bare `localhost`.
+            val host = url.substringAfter("://", "").substringBefore('/').substringBefore(':')
+            return host == "localhost" || host.endsWith(".localhost")
         }
     }
 }

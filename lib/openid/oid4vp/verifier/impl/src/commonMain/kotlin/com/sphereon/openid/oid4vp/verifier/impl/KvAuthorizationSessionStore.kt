@@ -35,7 +35,9 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationRequest
+import com.sphereon.openid.oid4vp.common.store.StoreMetadata
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
@@ -47,8 +49,6 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCreateArgs
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionError
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
-import com.sphereon.openid.oid4vp.verifier.store.DcqlQueryConfigurationStore
-import com.sphereon.openid.oid4vp.verifier.store.StoreMetadata
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -499,12 +499,12 @@ class KvAuthorizationSessionStore(
             )
         }
 
-    override suspend fun getEntry(key: String): IdkResult<com.sphereon.openid.oid4vp.verifier.store.StoredEntry<AuthorizationSession>?, IdkError> =
+    override suspend fun getEntry(key: String): IdkResult<com.sphereon.openid.oid4vp.common.store.StoredEntry<AuthorizationSession>?, IdkError> =
         kv
             .getEntry(namespace, key)
             .map { entry ->
                 entry?.let {
-                    com.sphereon.openid.oid4vp.verifier.store.StoredEntry(
+                    com.sphereon.openid.oid4vp.common.store.StoredEntry(
                         value = it.value.toPublic(json),
                         createdAt = it.metadata.createdAtEpochMillis,
                         expiresAt = it.metadata.expiresAtEpochMillis,

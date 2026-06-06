@@ -17,10 +17,16 @@
 
 package com.sphereon.did.persistence.memory
 
+import com.sphereon.core.api.Ok
 import com.sphereon.did.manager.DidRole
+import com.sphereon.did.persistence.DidControllerRecord
+import com.sphereon.did.persistence.DidDetail
 import com.sphereon.did.persistence.DidKeyMappingRecord
 import com.sphereon.did.persistence.DidRecord
 import com.sphereon.did.persistence.DidRecordFilter
+import com.sphereon.did.persistence.DidServiceRecord
+import com.sphereon.did.persistence.DidVerificationMethodRecord
+import com.sphereon.did.persistence.DidVerificationRelationshipRecord
 import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -28,407 +34,219 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
- * Tests for the in-memory DID repository implementation.
+ * Smoke tests for the in-memory aggregate repository.
+ *
+ * The in-memory backend is the only [com.sphereon.did.persistence.DidRepository] with
+ * multiplatform (JVM + JS) coverage, so its tests stay in `commonTest` rather than extending
+ * the JVM-only [com.sphereon.did.persistence.testfixtures.DidRepositoryContract] used by the
+ * SQL dialects.
  */
 class MemoryDidRepositoryImplTest {
-    /**
-     * Test saving and finding a DID record by DID.
-     */
+    private val now: Instant = Instant.parse("2026-04-21T10:00:00Z")
+    private val tenant = "tenant-1"
+
+    private fun record(
+        id: String = "rec-${ids++}",
+        did: String = "did:example:123",
+        alias: String? = null,
+        deactivated: Boolean = false,
+        deletedAt: Instant? = null,
+    ) = DidRecord(
+        id = id,
+        tenantId = tenant,
+        did = did,
+        method = "example",
+        alias = alias,
+        role = DidRole.MANAGED,
+        deactivated = deactivated,
+        createdAt = now,
+        updatedAt = now,
+        deletedAt = deletedAt,
+    )
+
+    private var ids = 0
+
     @Test
-    fun shouldSaveAndFindByDid(): TestResult =
+    fun aggregateRoundTrips(): TestResult =
         runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            val record =
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
-                    method = "key",
-                    alias = "my-key",
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
+            val repo = MemoryDidRepositoryImpl()
+            val rec = record()
+            val vmId = "vm-1"
+            val vm =
+                DidVerificationMethodRecord(
+                    id = vmId,
+                    didRecordId = rec.id,
+                    vmId = "did:example:123#key-1",
+                    type = "JsonWebKey2020",
+                    controller = "did:example:123",
+                    kmsProviderId = "kms",
+                    kmsKeyAlias = "alias-1",
+                    ordinal = 0,
+                    createdAt = now,
+                    updatedAt = now,
                 )
-
-            // Save
-            val saveResult = repository.save(record)
-            assertTrue(saveResult.isOk, "Save should succeed")
-
-            // Find by DID
-            val findResult = repository.findByDid(record.did)
-            assertTrue(findResult.isOk)
-
-            val found = findResult.getOrThrow()
-            assertNotNull(found, "Should find the saved record")
-            assertEquals(record.id, found.id)
-            assertEquals(record.did, found.did)
-            assertEquals(record.method, found.method)
-            assertEquals(record.alias, found.alias)
-        }
-
-    /**
-     * Test finding a DID record by alias.
-     */
-    @Test
-    fun shouldFindByAlias(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            val record =
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk123",
-                    method = "key",
-                    alias = "test-alias",
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
+            val rel =
+                DidVerificationRelationshipRecord(
+                    id = "rel-1",
+                    didRecordId = rec.id,
+                    purpose = "authentication",
+                    entryRefDidUrl = "did:example:123#key-1",
+                    ordinal = 0,
+                    createdAt = now,
+                    updatedAt = now,
                 )
-
-            repository.save(record)
-
-            val findResult = repository.findByAlias("test-alias")
-            assertTrue(findResult.isOk)
-
-            val found = findResult.getOrThrow()
-            assertNotNull(found)
-            assertEquals(record.did, found.did)
-        }
-
-    /**
-     * Test that duplicate DIDs are rejected.
-     */
-    @Test
-    fun shouldRejectDuplicateDid(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            val record1 =
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk123",
-                    method = "key",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
+            val svc =
+                DidServiceRecord(
+                    id = "svc-1",
+                    didRecordId = rec.id,
+                    serviceId = "did:example:123#svc-1",
+                    typeJson = "[\"LinkedDomains\"]",
+                    serviceEndpointJson = "\"https://x.test\"",
+                    ordinal = 0,
+                    createdAt = now,
+                    updatedAt = now,
                 )
-
-            val record2 =
-                DidRecord(
-                    id = "record-2",
-                    did = "did:key:z6Mk123", // Same DID
-                    method = "key",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                )
-
-            repository.save(record1)
-            val result = repository.save(record2)
-
-            assertTrue(result.isErr, "Should reject duplicate DID")
-        }
-
-    /**
-     * Test updating a DID record.
-     */
-    @Test
-    fun shouldUpdateRecord(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            val record =
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk123",
-                    method = "key",
-                    alias = "old-alias",
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                )
-
-            repository.save(record)
-
-            val updatedRecord =
-                record.copy(
-                    alias = "new-alias",
-                    updatedAt = "2025-01-02T00:00:00Z",
-                )
-
-            val updateResult = repository.update(updatedRecord)
-            assertTrue(updateResult.isOk, "Update should succeed")
-
-            // Verify the update
-            val findResult = repository.findByDid(record.did)
-            assertTrue(findResult.isOk)
-            assertEquals("new-alias", findResult.getOrThrow()?.alias)
-
-            // Should be findable by new alias
-            val findByAliasResult = repository.findByAlias("new-alias")
-            assertTrue(findByAliasResult.isOk)
-            assertNotNull(findByAliasResult.getOrThrow())
-
-            // Old alias should not find anything
-            val oldAliasResult = repository.findByAlias("old-alias")
-            assertTrue(oldAliasResult.isOk)
-            assertNull(oldAliasResult.getOrThrow())
-        }
-
-    /**
-     * Test deleting a DID record.
-     */
-    @Test
-    fun shouldDeleteRecord(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            val record =
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk123",
-                    method = "key",
-                    alias = "test-alias",
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                )
-
-            repository.save(record)
-
-            // Delete
-            val deleteResult = repository.delete(record.did)
-            assertTrue(deleteResult.isOk, "Delete should succeed")
-
-            // Should not find by DID anymore
-            val findResult = repository.findByDid(record.did)
-            assertTrue(findResult.isOk)
-            assertNull(findResult.getOrThrow(), "Should not find deleted record")
-
-            // Should not find by alias anymore
-            val aliasResult = repository.findByAlias("test-alias")
-            assertTrue(aliasResult.isOk)
-            assertNull(aliasResult.getOrThrow())
-        }
-
-    /**
-     * Test findAll with no filter.
-     */
-    @Test
-    fun shouldFindAllRecords(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            // Add multiple records
-            repeat(3) { i ->
-                repository.save(
-                    DidRecord(
-                        id = "record-$i",
-                        did = "did:key:z6Mk$i",
-                        method = "key",
-                        alias = null,
-                        documentJson = null,
-                        role = DidRole.MANAGED,
-                        deactivated = false,
-                        createdAt = "2025-01-01T00:00:00Z",
-                        updatedAt = "2025-01-01T00:00:00Z",
-                    ),
-                )
-            }
-
-            val findResult = repository.findAll()
-            assertTrue(findResult.isOk)
-            assertEquals(3, findResult.getOrThrow().size)
-        }
-
-    /**
-     * Test findAll with method filter.
-     */
-    @Test
-    fun shouldFilterByMethod(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            repository.save(
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk1",
-                    method = "key",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                ),
-            )
-
-            repository.save(
-                DidRecord(
-                    id = "record-2",
-                    did = "did:jwk:abc123",
-                    method = "jwk",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                ),
-            )
-
-            val keyRecords = repository.findAll(DidRecordFilter(method = "key"))
-            assertTrue(keyRecords.isOk)
-            val keyRecordsList = keyRecords.getOrThrow()
-            assertEquals(1, keyRecordsList.size)
-            assertEquals("key", keyRecordsList.first().method)
-        }
-
-    /**
-     * Test findAll excluding deactivated records.
-     */
-    @Test
-    fun shouldExcludeDeactivatedByDefault(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            repository.save(
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk1",
-                    method = "key",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                ),
-            )
-
-            repository.save(
-                DidRecord(
-                    id = "record-2",
-                    did = "did:key:z6Mk2",
-                    method = "key",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = true, // Deactivated
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                ),
-            )
-
-            // Default filter excludes deactivated
-            val activeRecords = repository.findAll(DidRecordFilter())
-            assertTrue(activeRecords.isOk)
-            assertEquals(1, activeRecords.getOrThrow().size)
-
-            // Include deactivated
-            val allRecords = repository.findAll(DidRecordFilter(includeDeactivated = true))
-            assertTrue(allRecords.isOk)
-            assertEquals(2, allRecords.getOrThrow().size)
-        }
-
-    /**
-     * Test key mapping operations.
-     */
-    @Test
-    fun shouldManageKeyMappings(): TestResult =
-        runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            val record =
-                DidRecord(
-                    id = "record-1",
-                    did = "did:key:z6Mk123",
-                    method = "key",
-                    alias = null,
-                    documentJson = null,
-                    role = DidRole.MANAGED,
-                    deactivated = false,
-                    createdAt = "2025-01-01T00:00:00Z",
-                    updatedAt = "2025-01-01T00:00:00Z",
-                )
-            repository.save(record)
-
-            val mapping =
+            val km =
                 DidKeyMappingRecord(
-                    id = "mapping-1",
-                    didRecordId = record.id,
-                    verificationMethodId = "#key-1",
-                    kmsKeyAlias = "my-key-alias",
-                    kmsProviderId = "local",
-                    purposesJson = """["authentication","assertionMethod"]""",
+                    id = "km-1",
+                    didRecordId = rec.id,
+                    verificationMethodId = vmId,
+                    verificationMethodDidUrl = "did:example:123#key-1",
+                    kmsProviderId = "kms",
+                    kmsKeyAlias = "alias-1",
+                    purposesJson = "[\"authentication\"]",
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            val ctrl =
+                DidControllerRecord(
+                    id = "ctrl-1",
+                    didRecordId = rec.id,
+                    controllerDid = "did:example:ctrl",
+                    ordinal = 0,
+                    createdAt = now,
+                    updatedAt = now,
                 )
 
-            // Save mapping
-            val saveResult = repository.saveKeyMapping(record.id, mapping)
-            assertTrue(saveResult.isOk, "Save key mapping should succeed")
+            val saved =
+                repo.save(
+                    DidDetail(
+                        record = rec,
+                        controller = listOf(ctrl),
+                        verificationMethod = listOf(vm),
+                        verificationRelationship = listOf(rel),
+                        service = listOf(svc),
+                        keyMapping = listOf(km),
+                    )
+                )
+            assertTrue(saved is Ok)
 
-            // Get mappings
-            val getMappingsResult = repository.getKeyMappings(record.id)
-            assertTrue(getMappingsResult.isOk)
-            val mappings = getMappingsResult.getOrThrow()
-            assertEquals(1, mappings.size)
-            assertEquals(mapping.id, mappings.first().id)
-
-            // Delete mapping
-            val deleteResult = repository.deleteKeyMapping(mapping.id)
-            assertTrue(deleteResult.isOk, "Delete key mapping should succeed")
-
-            // Verify deleted
-            val afterDelete = repository.getKeyMappings(record.id)
-            assertTrue(afterDelete.isOk)
-            assertEquals(0, afterDelete.getOrThrow().size)
+            val loaded = (repo.findByDid(tenant, "did:example:123") as Ok).value
+            assertNotNull(loaded)
+            assertEquals(rec.id, loaded.record.id)
+            assertEquals(1, loaded.verificationMethod.size)
+            assertEquals(vmId, loaded.verificationMethod[0].id)
+            assertEquals("did:example:123#key-1", loaded.verificationRelationship[0].entryRefDidUrl)
+            assertNull(loaded.verificationRelationship[0].entryEmbeddedVmId)
+            assertEquals(1, loaded.service.size)
+            assertEquals(1, loaded.keyMapping.size)
+            assertEquals(1, loaded.controller.size)
         }
 
-    /**
-     * Test clear operation.
-     */
     @Test
-    fun shouldClearAllData(): TestResult =
+    fun saveReplacesChildRows(): TestResult =
         runTest {
-            val repository = MemoryDidRepositoryImpl()
-
-            // Add some records
-            repeat(3) { i ->
-                repository.save(
-                    DidRecord(
-                        id = "record-$i",
-                        did = "did:key:z6Mk$i",
-                        method = "key",
-                        alias = null,
-                        documentJson = null,
-                        role = DidRole.MANAGED,
-                        deactivated = false,
-                        createdAt = "2025-01-01T00:00:00Z",
-                        updatedAt = "2025-01-01T00:00:00Z",
-                    ),
+            val repo = MemoryDidRepositoryImpl()
+            val rec = record()
+            val firstVm =
+                DidVerificationMethodRecord(
+                    id = "vm-1",
+                    didRecordId = rec.id,
+                    vmId = "did:example:123#k",
+                    type = "JsonWebKey2020",
+                    controller = "did:example:123",
+                    kmsProviderId = "kms",
+                    kmsKeyAlias = "a1",
+                    ordinal = 0,
+                    createdAt = now,
+                    updatedAt = now,
                 )
-            }
+            repo.save(DidDetail(record = rec, verificationMethod = listOf(firstVm)))
+            val replacement = firstVm.copy(id = "vm-2", kmsKeyAlias = "a2")
+            repo.save(DidDetail(record = rec, verificationMethod = listOf(replacement)))
 
-            assertEquals(3, repository.count())
+            val loaded = (repo.findByDid(tenant, "did:example:123") as Ok).value!!
+            assertEquals(1, loaded.verificationMethod.size)
+            assertEquals("a2", loaded.verificationMethod[0].kmsKeyAlias)
+        }
 
-            repository.clear()
+    @Test
+    fun softDeleteHidesUnlessIncludeDeleted(): TestResult =
+        runTest {
+            val repo = MemoryDidRepositoryImpl()
+            val rec = record()
+            repo.save(DidDetail(record = rec))
+            assertTrue(repo.softDelete(tenant, rec.did, now, deletedBy = null) is Ok)
 
-            assertEquals(0, repository.count())
+            assertNull((repo.findByDid(tenant, rec.did, includeDeleted = false) as Ok).value)
+            val visible = (repo.findByDid(tenant, rec.did, includeDeleted = true) as Ok).value
+            assertNotNull(visible)
+            assertNotNull(visible.record.deletedAt)
+        }
+
+    @Test
+    fun deleteCascadesChildRows(): TestResult =
+        runTest {
+            val repo = MemoryDidRepositoryImpl()
+            val rec = record()
+            val vm =
+                DidVerificationMethodRecord(
+                    id = "vm-h",
+                    didRecordId = rec.id,
+                    vmId = "did:example:123#k",
+                    type = "JsonWebKey2020",
+                    controller = "did:example:123",
+                    kmsProviderId = "kms",
+                    kmsKeyAlias = "a",
+                    ordinal = 0,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            repo.save(DidDetail(record = rec, verificationMethod = listOf(vm)))
+            assertTrue(repo.delete(tenant, rec.did) is Ok)
+            assertNull((repo.findByDid(tenant, rec.did, includeDeleted = true) as Ok).value)
+        }
+
+    @Test
+    fun findAllRespectsFilter(): TestResult =
+        runTest {
+            val repo = MemoryDidRepositoryImpl()
+            repo.save(DidDetail(record = record(did = "did:example:a", alias = "alias-a")))
+            repo.save(DidDetail(record = record(did = "did:example:b", alias = "alias-b")))
+            val filtered = (repo.findAll(DidRecordFilter(tenantId = tenant, alias = "alias-b")) as Ok).value
+            assertEquals(1, filtered.size)
+            assertEquals("did:example:b", filtered[0].record.did)
+        }
+
+    @Test
+    fun relationshipInvariantRejectsBothEntryFieldsNull(): TestResult =
+        runTest {
+            val err =
+                runCatching {
+                    DidVerificationRelationshipRecord(
+                        id = "rel",
+                        didRecordId = "r",
+                        purpose = "authentication",
+                        entryEmbeddedVmId = null,
+                        entryRefDidUrl = null,
+                        ordinal = 0,
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                }.exceptionOrNull()
+            assertNotNull(err)
         }
 }

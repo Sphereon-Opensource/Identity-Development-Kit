@@ -16,10 +16,13 @@
 
 package com.sphereon.openid.oid4vci.rest
 
+import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vc.common.SessionError
+import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
+import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -86,6 +89,25 @@ data class CreateCredentialOfferInput(
      */
     @SerialName("ttl_seconds")
     val ttlSeconds: Long? = null,
+    /**
+     * Controls whether the offer URI is single-use (default) or stays alive across multiple
+     * wallet fetches, minting a fresh offer on each GET.
+     */
+    @SerialName("uri_lifecycle")
+    val uriLifecycle: OfferUriLifecycle = OfferUriLifecycle.SINGLE_USE,
+    /**
+     * Lookup keys seeded into the pipeline session at offer-creation time so attribute
+     * sources can start resolving subject data before the wallet presents a proof.
+     */
+    @SerialName("initial_lookup_keys")
+    @JsExportIgnoreCompat
+    val initialLookupKeys: List<LookupKey> = emptyList(),
+    /**
+     * Rate-limit applied to a reusable offer URI. Mandatory when
+     * [uriLifecycle] is [OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH].
+     */
+    @SerialName("rate_limit")
+    val rateLimit: OfferRateLimit? = null,
 )
 
 /**

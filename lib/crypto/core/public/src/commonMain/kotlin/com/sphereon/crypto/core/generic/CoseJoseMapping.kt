@@ -1053,12 +1053,15 @@ sealed class Curve(
      * This object maps the P-256 elliptic curve to its corresponding COSE and JWA curve identifiers.
      * It extends the CurveMapping class using P-256 values from both COSE and JWA curve enumerations.
      */
+    @Serializable
     @SerialName("P-256")
     object P_256 : Curve(CoseCurve.P_256, JwaCurve.P_256)
 
     /**
      * Represents the P-384 elliptic curve mapping between COSE (CBOR Object Signing and Encryption) and JOSE (JSON Object Signing and Encryption).
      */
+    @Serializable
+    @SerialName("P-384")
     object P_384 : Curve(CoseCurve.P_384, JwaCurve.P_384)
 
     /**
@@ -1072,6 +1075,8 @@ sealed class Curve(
      * @see CoseCurve
      * @see JwaCurve
      */
+    @Serializable
+    @SerialName("P-521")
     object P_521 : Curve(CoseCurve.P_521, JwaCurve.P_521)
 
     /**
@@ -1081,6 +1086,8 @@ sealed class Curve(
      *
      * The Secp256k1 curve is widely used in cryptocurrencies and decentralized applications.
      */
+    @Serializable
+    @SerialName("secp256k1")
     object Secp256k1 : Curve(CoseCurve.secp256k1, JwaCurve.Secp256k1)
 
     /**
@@ -1089,6 +1096,8 @@ sealed class Curve(
      * This object is part of the `CurveMapping` hierarchy and it specifically maps the COSE curve `Ed25519` to
      * the corresponding JWA curve `Ed25519`.
      */
+    @Serializable
+    @SerialName("Ed25519")
     object Ed25519 : Curve(CoseCurve.Ed25519, JwaCurve.Ed25519)
 
     /**
@@ -1100,6 +1109,8 @@ sealed class Curve(
      * Represents the X25519 curve mapping for both COSE and JWA standards.
      * This object is used to map the X25519 curve within the `CurveMapping` sealed class.
      */
+    @Serializable
+    @SerialName("X25519")
     object X25519 : Curve(CoseCurve.X25519, JwaCurve.X25519)
 
     /**

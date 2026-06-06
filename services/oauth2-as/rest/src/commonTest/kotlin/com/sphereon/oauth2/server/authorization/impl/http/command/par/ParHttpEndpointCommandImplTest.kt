@@ -27,6 +27,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.PushedAuthorizationResponse
 import com.sphereon.oauth2.server.authorization.command.par.HandlePushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.par.HandlePushedAuthorizationRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import kotlinx.coroutines.test.runTest
@@ -72,6 +73,7 @@ class ParHttpEndpointCommandImplTest {
                             Err(IdkError.fromString(code = "server_error", message = "test marker"))
                         },
                     configProvider = parEnabledConfig(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =
@@ -106,6 +108,7 @@ class ParHttpEndpointCommandImplTest {
                                 servers = mapOf("default" to OAuth2ServerInstanceConfig(par = FeaturePolicy.DISABLED)),
                             ),
                         ),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =
@@ -130,6 +133,7 @@ class ParHttpEndpointCommandImplTest {
                     handlePushedAuthorizationRequestCommand =
                         FakeParCommand { Err(IdkError.fromString(code = "invalid_request", message = "bad form")) },
                     configProvider = parEnabledConfig(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =

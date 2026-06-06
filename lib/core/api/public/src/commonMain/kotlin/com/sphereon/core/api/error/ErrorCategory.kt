@@ -64,4 +64,11 @@ enum class ErrorCategory {
 
     /** Protocol-level issue such as unsupported operation */
     PROTOCOL,
+
+    /**
+     * Request was syntactically valid but cannot be processed for semantic reasons —
+     * e.g. an operation is not supported by the target's capabilities (DID method does
+     * not allow verification-method addition). Maps to HTTP 422 Unprocessable Entity.
+     */
+    UNPROCESSABLE_ENTITY,
 }

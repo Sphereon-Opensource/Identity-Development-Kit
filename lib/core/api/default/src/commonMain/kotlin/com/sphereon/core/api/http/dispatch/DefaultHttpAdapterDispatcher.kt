@@ -19,6 +19,7 @@ package com.sphereon.core.api.http.dispatch
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.TenantPathMode
@@ -82,7 +83,8 @@ class DefaultHttpAdapterDispatcher(
                     .thenByDescending { it.score.basePathSegments }
                     .thenByDescending { it.score.bestEndpointLiteralSegments }
                     .thenByDescending { it.score.bestEndpointTotalSegments }
-                    .thenByDescending { it.score.tenantMatchRank },
+                    .thenByDescending { it.score.tenantMatchRank }
+                    .thenBy { it.score.tenantPolicyPeelDepth },
             )
 
         val best = sorted.first()
@@ -121,57 +123,54 @@ private fun candidatesFor(
     val serverSegments = splitSegments(serverPrefix)
 
     val mountMatches = mountMatches(requestSegments, serverSegments, mount)
-    return mountMatches.mapNotNull { match ->
-        val remainingSegments = match.remainingSegments
-        if (!startsWithSegments(remainingSegments, baseSegments)) {
-            return@mapNotNull null
+    return mountMatches.flatMap { match ->
+        routePolicyMatches(match.remainingSegments, baseSegments, mount.tenantPathPolicy).mapNotNull inner@{ policyMatch ->
+            val normalizedReqForMatching = request.copy(path = policyMatch.matchingPath)
+
+            // Multi-pattern descriptors expose the same handler at multiple URLs;
+            // collect every (descriptor, matchedPattern) pair so the specificity score
+            // reflects the actual pattern that matched the incoming request, not just
+            // the descriptor's primary pattern.
+            val matchingEndpoints =
+                description.endpoints
+                    .asSequence()
+                    .filter { it.method.name.equals(request.method, ignoreCase = true) }
+                    .flatMap { endpoint ->
+                        endpoint.pathPatterns
+                            .asSequence()
+                            .filter { normalizedReqForMatching.matches(request.method, it) }
+                    }.toList()
+
+            if (matchingEndpoints.isEmpty()) {
+                return@inner null
+            }
+
+            val bestEndpointScore =
+                matchingEndpoints
+                    .map { endpointSpecificity(it) }
+                    .maxWith(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second })
+
+            Candidate(
+                description = description,
+                tenantMatch = match.tenantMatch,
+                tenantIdFromPath = match.tenantIdFromPath,
+                normalizedPath = policyMatch.dispatchPath,
+                score =
+                    CandidateScore(
+                        serverPrefixSegments = serverSegments.size,
+                        basePathSegments = baseSegments.size,
+                        bestEndpointLiteralSegments = bestEndpointScore.first,
+                        bestEndpointTotalSegments = bestEndpointScore.second,
+                        tenantMatchRank =
+                            when (match.tenantMatch) {
+                                TenantMatch.NONE -> 0
+                                TenantMatch.AFTER_SERVER_PREFIX -> 1
+                                TenantMatch.BEFORE_SERVER_PREFIX -> 1
+                            },
+                        tenantPolicyPeelDepth = policyMatch.peelDepth,
+                    ),
+            )
         }
-
-        val normalizedPath = "/" + remainingSegments.joinToString("/")
-        val normalizedReqForMatching = request.copy(path = normalizedPath)
-
-        // Multi-pattern descriptors expose the same handler at multiple URLs;
-        // collect every (descriptor, matchedPattern) pair so the specificity score
-        // reflects the actual pattern that matched the incoming request, not just
-        // the descriptor's primary pattern.
-        val matchingEndpoints =
-            description.endpoints
-                .asSequence()
-                .filter { it.method.name.equals(request.method, ignoreCase = true) }
-                .flatMap { endpoint ->
-                    endpoint.pathPatterns
-                        .asSequence()
-                        .filter { normalizedReqForMatching.matches(request.method, it) }
-                }.toList()
-
-        if (matchingEndpoints.isEmpty()) {
-            return@mapNotNull null
-        }
-
-        val bestEndpointScore =
-            matchingEndpoints
-                .map { endpointSpecificity(it) }
-                .maxWith(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second })
-
-        Candidate(
-            description = description,
-            tenantMatch = match.tenantMatch,
-            tenantIdFromPath = match.tenantIdFromPath,
-            normalizedPath = normalizedPath,
-            score =
-                CandidateScore(
-                    serverPrefixSegments = serverSegments.size,
-                    basePathSegments = baseSegments.size,
-                    bestEndpointLiteralSegments = bestEndpointScore.first,
-                    bestEndpointTotalSegments = bestEndpointScore.second,
-                    tenantMatchRank =
-                        when (match.tenantMatch) {
-                            TenantMatch.NONE -> 0
-                            TenantMatch.AFTER_SERVER_PREFIX -> 1
-                            TenantMatch.BEFORE_SERVER_PREFIX -> 1
-                        },
-                ),
-        )
     }
 }
 
@@ -206,7 +205,73 @@ private data class CandidateScore(
     val bestEndpointLiteralSegments: Int,
     val bestEndpointTotalSegments: Int,
     val tenantMatchRank: Int,
+    val tenantPolicyPeelDepth: Int,
 )
+
+private data class RoutePolicyMatch(
+    val dispatchPath: String,
+    val matchingPath: String,
+    val peelDepth: Int,
+)
+
+private fun routePolicyMatches(
+    remainingSegments: List<String>,
+    baseSegments: List<String>,
+    tenantPathPolicy: TenantPathPolicy,
+): List<RoutePolicyMatch> {
+    fun pathOf(segments: List<String>): String = if (segments.isEmpty()) "/" else "/" + segments.joinToString("/")
+
+    val matches = mutableListOf<RoutePolicyMatch>()
+
+    fun addIfBaseMatches(
+        candidateSegments: List<String>,
+        dispatchSegments: List<String>,
+        peelDepth: Int,
+    ) {
+        if (startsWithSegments(candidateSegments, baseSegments)) {
+            matches +=
+                RoutePolicyMatch(
+                    dispatchPath = pathOf(dispatchSegments),
+                    matchingPath = pathOf(candidateSegments),
+                    peelDepth = peelDepth,
+                )
+        }
+    }
+
+    when (tenantPathPolicy) {
+        TenantPathPolicy.None -> {
+            addIfBaseMatches(remainingSegments, remainingSegments, 0)
+        }
+
+        is TenantPathPolicy.LeadingSlug -> {
+            if (!tenantPathPolicy.required) {
+                addIfBaseMatches(remainingSegments, remainingSegments, 0)
+            }
+            for (peelDepth in 1..minOf(tenantPathPolicy.maxDepth, remainingSegments.size)) {
+                addIfBaseMatches(
+                    candidateSegments = remainingSegments.drop(peelDepth),
+                    dispatchSegments = remainingSegments,
+                    peelDepth = peelDepth,
+                )
+            }
+        }
+
+        is TenantPathPolicy.WellKnownSuffix -> {
+            if (!tenantPathPolicy.required) {
+                addIfBaseMatches(remainingSegments, remainingSegments, 0)
+            }
+            for (peelDepth in 1..minOf(tenantPathPolicy.maxDepth, remainingSegments.size)) {
+                addIfBaseMatches(
+                    candidateSegments = remainingSegments.dropLast(peelDepth),
+                    dispatchSegments = remainingSegments,
+                    peelDepth = peelDepth,
+                )
+            }
+        }
+    }
+
+    return matches
+}
 
 private enum class TenantMatch {
     NONE,

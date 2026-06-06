@@ -45,6 +45,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlin.time.Clock
 
 private const val SUBJECT_PREFIX_LEN = 6
@@ -158,10 +159,22 @@ class HandleFederationOutcomeCommandImpl(
         val userId: String = linked.localIdentityId
 
         val claimsAsJson: Map<String, JsonElement> = mergedClaims.mapValues { (_, v) -> v.toJsonElement() }
+
+        // Synthetic upstream-identity claims injected so they flow through
+        // CreateAccessTokenCommandImpl.additionalClaims into the minted access token and are
+        // readable on ValidatedTokenContext (upstream_sub, upstream_iss, upstream_acr, upstream_amr).
+        val upstreamClaims =
+            buildMap<String, JsonElement> {
+                put("upstream_sub", JsonPrimitive(upstreamSub))
+                put("upstream_iss", JsonPrimitive(providerConfig.issuerUrl))
+                exchange.upstreamAcr?.let { put("upstream_acr", JsonPrimitive(it)) }
+                exchange.upstreamAmr?.let { amr -> put("upstream_amr", buildJsonArray { amr.forEach { add(JsonPrimitive(it)) } }) }
+            }
+
         val cached =
             CachedUserInfo(
                 userId = userId,
-                claims = claimsAsJson,
+                claims = claimsAsJson + upstreamClaims,
                 cachedAt = clock.now(),
             )
         val completeResult =

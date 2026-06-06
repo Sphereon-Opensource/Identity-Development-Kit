@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.decodeFromBase64
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.api.http.percentDecode
 import com.sphereon.oauth2.server.authorization.command.clientauth.ClientCertificateExtractor
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 
@@ -83,9 +84,12 @@ class XForwardedClientCertExtractorImpl(
      *  3. Raw base64 DER (single string, no headers)
      */
     private fun decodeForwardedCert(value: String): ByteArray {
+        // RFC 3986 path/query-component semantics: `+` is literal (base64 alphabet uses `+`,
+        // so the form-encoded `+ -> space` translation would corrupt raw DER payloads). Only
+        // %HH sequences need decoding here; nginx encodes PEM line breaks as `%0A`.
         val decoded =
             if (value.contains('%')) {
-                decodePercentEncoded(value)
+                value.percentDecode(plusAsSpace = false)
             } else {
                 value
             }
@@ -100,27 +104,6 @@ class XForwardedClientCertExtractorImpl(
         } else {
             trimmed.replace("\\s".toRegex(), "").decodeFromBase64()
         }
-    }
-
-    /**
-     * Minimal RFC 3986 percent decode for the forwarded-cert use case (PEM line breaks only).
-     */
-    private fun decodePercentEncoded(value: String): String {
-        val sb = StringBuilder(value.length)
-        var i = 0
-        while (i < value.length) {
-            val c = value[i]
-            if (c == '%' && i + 2 < value.length) {
-                val hex = value.substring(i + 1, i + 3)
-                val byte = hex.toInt(16).toChar()
-                sb.append(byte)
-                i += 3
-            } else {
-                sb.append(c)
-                i += 1
-            }
-        }
-        return sb.toString()
     }
 
     companion object {

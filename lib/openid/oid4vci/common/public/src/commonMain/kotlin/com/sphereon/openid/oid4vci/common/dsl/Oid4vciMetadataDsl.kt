@@ -371,28 +371,38 @@ class CredentialConfigurationBuilder(
                     }
                 }.takeIf { it.isNotEmpty() }
 
-        // Per OID4VCI 1.0 final §12.2.3 / §A.3.2 + Appendix A schema, the location of the
-        // claims metadata depends on the credential format:
-        //   - dc+sd-jwt, jwt_vc_json: top-level `claims` array on the credential
-        //     configuration. The §A.4 / §A.6 format branches define `claims` as a sibling
-        //     of `vct`/`credential_definition` and the schema rejects it elsewhere.
-        //   - mso_mdoc: top-level `claims` is NOT defined (the §A.3 branch only allows
-        //     `doctype` + `credential_signing_alg_values_supported`). Claims metadata
-        //     instead lives inside `credential_metadata.claims` per the spec's normative
-        //     mso_mdoc example, with paths shaped as [namespace, elementId].
-        // Route the accumulated `claims` list into the right slot here so callers don't
-        // have to know the §A.x rules.
-        val accumulatedClaims = claims?.toList()
-        val (topLevelClaims, mdocCredentialMetadata) =
-            if (isMdoc && accumulatedClaims != null) {
-                val mergedMetadata =
-                    mergeMdocCredentialMetadata(
-                        existing = credentialMetadata?.build(),
-                        mdocClaims = accumulatedClaims,
-                    )
-                null to mergedMetadata
+        // Per OID4VCI 1.0 final §12.2.4 (#credential-issuer-parameters), credential-level
+        // `display` and `claims` are NOT top-level members of the credential configuration
+        // object — they live inside `credential_metadata`, for EVERY Credential Format.
+        // The §A.x format profiles only ADD format-specific members (`vct` for dc+sd-jwt,
+        // `doctype` for mso_mdoc, `credential_definition` for jwt_vc_json/ldp_vc) "in addition
+        // to those defined in (#credential-issuer-parameters)"; none of them defines a
+        // top-level `claims` or `display`. The spec's own normative examples — all named
+        // `credential_metadata_<format>.json` — place both `display` and `claims` under
+        // `credential_metadata`.
+        //
+        // So fold the convenience `display { }` and `claim(...)` accumulators into
+        // `credential_metadata`, merged with any explicitly-authored `credentialMetadata { }`
+        // block, and leave the top-level `display`/`claims` fields unset. (The DSL's top-level
+        // `CredentialClaim` carries `valueType`, but the §B.3 claims-description object for
+        // issuer metadata only defines `path`/`mandatory`/`display`, so `valueType` is dropped
+        // on the move into `credential_metadata`.)
+        val explicitMetadata = credentialMetadata?.build()
+        val convertedClaims =
+            claims?.map { c ->
+                CredentialMetadataClaim(
+                    path = c.path.map { JsonPrimitive(it) },
+                    mandatory = c.mandatory,
+                    display = c.display,
+                )
+            }
+        val mergedDisplay = (explicitMetadata?.display.orEmpty() + displayEntries).takeIf { it.isNotEmpty() }
+        val mergedClaims = (explicitMetadata?.claims.orEmpty() + convertedClaims.orEmpty()).takeIf { it.isNotEmpty() }
+        val mergedCredentialMetadata =
+            if (mergedDisplay != null || mergedClaims != null) {
+                CredentialMetadata(display = mergedDisplay, claims = mergedClaims)
             } else {
-                accumulatedClaims to credentialMetadata?.build()
+                null
             }
         return CredentialConfigurationSupported(
             format = format.value,
@@ -400,45 +410,16 @@ class CredentialConfigurationBuilder(
             cryptographicBindingMethodsSupported = cryptographicBindingMethods.takeIf { it.isNotEmpty() },
             credentialSigningAlgValuesSupported = signingAlgValues,
             proofTypesSupported = proofTypes.toMap().takeIf { it.isNotEmpty() },
-            display = displayEntries.takeIf { it.isNotEmpty() },
+            display = null,
             credentialDefinition = credentialDefinition,
             vct = vct,
-            claims = topLevelClaims,
+            claims = null,
             doctype = doctype,
             order = order,
             credentialResponseEncryption = responseEncryption,
-            credentialMetadata = mdocCredentialMetadata,
+            credentialMetadata = mergedCredentialMetadata,
         )
     }
-}
-
-/**
- * For `mso_mdoc` configurations, fold the accumulated top-level claim entries into the
- * spec-correct location at `credential_metadata.claims`, preserving any existing
- * `credential_metadata.display` block that the caller authored explicitly.
- *
- * The DSL's top-level `CredentialClaim.path` is `List<String>` (claims-path-pointer per
- * §A.5 with two segments for mdoc); `CredentialMetadataClaim.path` is `List<JsonElement>`
- * because §A.5 also permits integer indices. For our string-segment paths the conversion
- * is a straight wrap into JsonPrimitive.
- */
-private fun mergeMdocCredentialMetadata(
-    existing: CredentialMetadata?,
-    mdocClaims: List<com.sphereon.openid.oid4vci.common.model.CredentialClaim>,
-): CredentialMetadata {
-    val converted =
-        mdocClaims.map { c ->
-            CredentialMetadataClaim(
-                path = c.path.map { JsonPrimitive(it) },
-                mandatory = c.mandatory,
-                display = c.display,
-            )
-        }
-    val combinedClaims = (existing?.claims.orEmpty()) + converted
-    return CredentialMetadata(
-        display = existing?.display,
-        claims = combinedClaims.takeIf { it.isNotEmpty() },
-    )
 }
 
 /**

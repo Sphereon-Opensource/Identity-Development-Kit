@@ -21,17 +21,40 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.compat.Uuid
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
+import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
+import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.IssuerSigned
+import com.sphereon.mdoc.data.device.IssuerSignedCborCodec
+import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
+import com.sphereon.mdoc.oid4vp.MdocOid4vpService
+import com.sphereon.mdoc.oid4vp.Oid4VPConstraintField
+import com.sphereon.mdoc.oid4vp.Oid4VPConstraints
+import com.sphereon.mdoc.oid4vp.Oid4VPFormat
+import com.sphereon.mdoc.oid4vp.Oid4VPInputDescriptor
+import com.sphereon.mdoc.oid4vp.Oid4VPPresentationDefinition
+import com.sphereon.mdoc.oid4vp.Oid4VPSupportedAlgorithm
 import com.sphereon.oauth2.common.model.AuthorizationResponse
+import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationResponse
+import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommandService
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
+import com.sphereon.sdjwt.PresentSdJwtArgs
+import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 
@@ -61,6 +84,23 @@ import dev.zacsweers.metro.SingleIn
 @SingleIn(SessionScope::class)
 class CreateAuthorizationResponseCommandImpl(
     execution: SessionExecution,
+    /**
+     * SD-JWT presentation command (`sdjwt.jwt.present`), used to produce a Key Binding JWT
+     * (RFC 9901 §4.3) for `dc+sd-jwt` / `vc+sd-jwt` credentials that carry a holder key.
+     */
+    private val presentSdJwtCommand: PresentSdJwtCommand,
+    /**
+     * mdoc OID4VP presentation service (ISO 18013-5 / 18013-7). Builds the ISO
+     * `DeviceResponse` with a `DeviceAuth` COSE_Sign1 over the OID4VP §B.2.6
+     * `OpenID4VPHandover` SessionTranscript for `mso_mdoc` credentials.
+     */
+    private val mdocOid4vpService: MdocOid4vpService,
+    /** Decodes the stored `mso_mdoc` credential (base64url(CBOR(IssuerSigned))). */
+    private val issuerSignedCborCodec: IssuerSignedCborCodec,
+    /** Encodes the produced ISO `DeviceResponse` to CBOR for the vp_token entry. */
+    private val deviceResponseCborCodec: DeviceResponseCborCodec,
+    /** Reads the issued MSO (docType + device key) out of the stored `IssuerSigned`. */
+    private val mobileSecurityObjectCborCodec: MobileSecurityObjectCborCodec,
 ) : TypedServiceCommandAdapter<CreateAuthorizationResponseArgs, AuthorizationResponse, IdkError>(
         commandId = CreateAuthorizationResponseCommand.COMMAND_ID,
         execution = execution,
@@ -98,9 +138,13 @@ class CreateAuthorizationResponseCommandImpl(
             )
         }
 
-        // Build VP token from selected credentials
-        // The SelectedCredential already contains the presentation string (JWT, SD-JWT, or mdoc)
-        val vpToken = buildVpToken(selectedCredentials)
+        // Build VP token from selected credentials. For SD-JWT credentials that carry a holder
+        // key, the holder produces a Key Binding JWT (RFC 9901 §4.3) binding the presentation to
+        // the verifier (audience = client_id) and the request nonce; other formats pass through.
+        val vpToken =
+            buildVpToken(request, selectedCredentials).getOrElse { error ->
+                return Err(error)
+            }
 
         log.info("Created VP token with ${selectedCredentials.size} presentation(s)")
 
@@ -119,7 +163,7 @@ class CreateAuthorizationResponseCommandImpl(
     /**
      * Build VP token from selected credentials.
      *
-     * OpenID4VP 1.0 Final Section 6.4 (DCQL Format):
+     * OpenID4VP 1.0 Final §8.1 (DCQL Format):
      * - vp_token is a JSON object where keys are credential query IDs
      * - Values are single presentation strings or arrays of strings
      *
@@ -131,18 +175,297 @@ class CreateAuthorizationResponseCommandImpl(
      * }
      * ```
      *
-     * Note: SelectedCredential.credentialQueryId maps the presentation to its
-     * DCQL credential query. Multiple credentials can satisfy the same query.
+     * For `dc+sd-jwt` / `vc+sd-jwt` credentials that carry a [SelectedCredential.holderKeyAlias],
+     * the holder appends a freshly signed Key Binding JWT (RFC 9901 §4.3) so the verifier's
+     * holder-binding check (KB-JWT signature + nonce + aud + sd_hash) passes. The KB-JWT is bound
+     * to the verifier `client_id` (audience) and the authorization request `nonce`.
+     *
+     * Note: SelectedCredential.credentialQueryId maps the presentation to its DCQL credential
+     * query. Multiple credentials can satisfy the same query.
      */
-    private fun buildVpToken(credentials: List<SelectedCredential>): VpToken {
-        // Group presentations by credential query ID
+    private suspend fun buildVpToken(
+        request: ResolvedOid4vpRequest,
+        credentials: List<SelectedCredential>,
+    ): IdkResult<VpToken, IdkError> {
+        val withPresentations = mutableListOf<Pair<String, String>>()
+        for (credential in credentials) {
+            val presentation =
+                resolvePresentation(request, credential).getOrElse { return Err(it) }
+            withPresentations += credential.credentialQueryId to presentation
+        }
+
         val grouped =
-            credentials
-                .groupBy { it.credentialQueryId }
-                .mapValues { (_, credentialList) ->
-                    credentialList.map { it.presentation }
+            withPresentations
+                .groupBy({ it.first }, { it.second })
+
+        return Ok(VpToken.fromStrings(grouped))
+    }
+
+    /**
+     * Resolve the wire presentation for a selected credential.
+     *
+     * - `mso_mdoc`: the stored credential is the issued `IssuerSigned` (base64url(CBOR)). The
+     *   holder decodes it, builds an ISO `DeviceResponse` whose `DeviceAuth` COSE_Sign1 is signed
+     *   over the OID4VP §B.2.6 `OpenID4VPHandover` SessionTranscript (bound to `client_id`,
+     *   `nonce`, `response_uri`) using the holder's device key, and submits base64url(CBOR) of
+     *   that `DeviceResponse`. See [resolveMdocPresentation].
+     * - `dc+sd-jwt` / `vc+sd-jwt` with a holder key: a Key Binding JWT (RFC 9901 §4.3) is
+     *   appended via [PresentSdJwtCommand].
+     * - everything else (and SD-JWT without a holder key): submitted as stored.
+     */
+    private suspend fun resolvePresentation(
+        request: ResolvedOid4vpRequest,
+        credential: SelectedCredential,
+    ): IdkResult<String, IdkError> {
+        val format = CredentialFormat.fromValueLenient(credential.format)
+        val holderKeyAlias = credential.holderKeyAlias
+
+        if (format?.isMdoc == true) {
+            return resolveMdocPresentation(request, credential)
+        }
+
+        if (format?.isSdJwt != true || holderKeyAlias.isNullOrBlank()) {
+            return Ok(credential.presentation)
+        }
+
+        val nonce =
+            request.request.nonce
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Cannot create SD-JWT Key Binding JWT for query '${credential.credentialQueryId}': " +
+                                "authorization request has no nonce",
+                    ),
+                )
+        val audience = request.verifierInfo.clientId
+
+        // disclosureSelection = null discloses all disclosures present on the issued SD-JWT.
+        // The DCQL claim filtering happens verifier-side; the holder here binds the credential to
+        // the verifier and nonce. holderKey embeds the holder public JWK in the KB-JWT header
+        // (PresentSdJwtCommandImpl uses JwsIdentifierMode.JWK) so the verifier can verify it
+        // against the issuer SD-JWT `cnf.jwk`.
+        val presentResult =
+            presentSdJwtCommand.execute(
+                PresentSdJwtArgs(
+                    sdJwt = credential.presentation,
+                    audience = audience,
+                    nonce = nonce,
+                    holderKey = ManagedOptsKeyInfo(identifier = KeyInfo<Nothing>(alias = holderKeyAlias)),
+                ),
+            )
+        return presentResult.map { it.presentation }
+    }
+
+    /**
+     * Build the `mso_mdoc` OID4VP presentation: an ISO 18013-5/-7 `DeviceResponse`.
+     *
+     * The stored [SelectedCredential.presentation] is the issued `IssuerSigned`
+     * (base64url(CBOR), OID4VCI §A.4). A bare `IssuerSigned` is NOT a `DeviceResponse`, so the
+     * verifier's `DeviceResponseCborCodec` rejects it; the holder must wrap it and add holder
+     * binding. Steps:
+     *
+     *  1. base64url-decode + CBOR-decode the stored `IssuerSigned`; read the issued MSO to learn
+     *     the `docType` (and, via the MSO `deviceKeyInfo.deviceKey`, the device key the holder
+     *     binds against — resolved inside [MdocOid4vpService]).
+     *  2. wrap it in a [Document] (the device-signed half is produced by the signer).
+     *  3. derive an ISO 18013-7 presentation definition whose input-descriptor `id` is the
+     *     `docType` and whose constraint fields cover every issued element (`$['ns']['element']`),
+     *     so all held elements are disclosed for this single-credential request.
+     *  4. match document <-> descriptor (derives the device key from the MSO) and call
+     *     [MdocOid4vpService.createDeviceResponse], which signs `DeviceAuth` over the §B.2.6
+     *     `OpenID4VPHandover` SessionTranscript built from `client_id` + `nonce` + `response_uri`
+     *     (jwkThumbprint = null for the unencrypted `direct_post`). The verifier reconstructs the
+     *     SAME transcript via `SessionTranscript.fromOid4vpClientIdAndResponseUri(...)`, so the
+     *     two agree and `DeviceAuth` verifies.
+     *  5. submit base64url(CBOR(DeviceResponse)) as the vp_token entry (the form the verifier's
+     *     `DeviceResponseCborCodec` decodes; `CredentialFormat.detectFormat` reads it as mso_mdoc).
+     */
+    private suspend fun resolveMdocPresentation(
+        request: ResolvedOid4vpRequest,
+        credential: SelectedCredential,
+    ): IdkResult<String, IdkError> {
+        val nonce =
+            request.request.nonce
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Cannot create mdoc DeviceResponse for query '${credential.credentialQueryId}': " +
+                                "authorization request has no nonce",
+                    ),
+                )
+        // The verifier reconstructs the §B.2.6 handover from the request's client_id +
+        // response_uri; the holder MUST use the identical values or DeviceAuth fails.
+        val clientId = request.request.clientId
+        val responseUri =
+            request.request.responseUri
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Cannot create mdoc DeviceResponse for query '${credential.credentialQueryId}': " +
+                                "authorization request has no response_uri",
+                    ),
+                )
+
+        val issuerSignedBytes =
+            try {
+                credential.presentation.decodeFromBase64Url()
+            } catch (expected: Exception) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Stored mso_mdoc credential for query '${credential.credentialQueryId}' is not valid " +
+                                "base64url: ${expected.message}",
+                    ),
+                )
+            }
+
+        val issuerSigned: IssuerSigned =
+            issuerSignedCborCodec
+                .decode(issuerSignedBytes)
+                .getOrElse {
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message =
+                                "Failed to CBOR-decode stored IssuerSigned for query " +
+                                    "'${credential.credentialQueryId}': ${it.message.defaultMessage}",
+                        ),
+                    )
+                }.value
+
+        val msoPayload =
+            issuerSigned.issuerAuth.payload?.value
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Stored mso_mdoc credential for query '${credential.credentialQueryId}' has no MSO payload",
+                    ),
+                )
+        val mso =
+            mobileSecurityObjectCborCodec
+                .decode(msoPayload)
+                .getOrElse {
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message = "Failed to decode MSO for query '${credential.credentialQueryId}': ${it.message.defaultMessage}",
+                        ),
+                    )
+                }.value
+        val docType = mso.docType
+
+        val document = Document(docType = docType, issuerSigned = issuerSigned, deviceSigned = null, original = null)
+
+        // Build the presentation definition: id = docType, constraint fields = every issued
+        // element. limit_disclosure="required" (mandatory per ISO 18013-7), so the holder
+        // discloses exactly what the definition lists; listing all held elements guarantees the
+        // verifier's requested subset is present in the response.
+        val constraintFields =
+            (issuerSigned.nameSpaces ?: emptyMap()).flatMap { (nameSpace, items) ->
+                items.map { encoded ->
+                    Oid4VPConstraintField(
+                        path = arrayOf("$['$nameSpace']['${encoded.data().elementIdentifier}']"),
+                        intent_to_retain = false,
+                    )
+                }
+            }
+        if (constraintFields.isEmpty()) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Stored mso_mdoc credential for query '${credential.credentialQueryId}' discloses no elements",
+                ),
+            )
+        }
+
+        val presentationDefinition =
+            Oid4VPPresentationDefinition(
+                id = credential.credentialQueryId,
+                input_descriptors =
+                    arrayOf(
+                        Oid4VPInputDescriptor(
+                            id = docType,
+                            format = Oid4VPFormat(mso_mdoc = Oid4VPSupportedAlgorithm(alg = arrayOf("ES256"))),
+                            constraints = Oid4VPConstraints(fields = constraintFields.toTypedArray()),
+                        ),
+                    ),
+            )
+
+        // mdocGeneratedNonce is NOT part of the OID4VP 1.0 final §B.2.6 OpenID4VPHandover
+        // (the transcript is [client_id, nonce, jwkThumbprint|null, response_uri]); it only
+        // tags the per-document match result and never enters the signed transcript, so a fresh
+        // value is fine here.
+        val matchResults =
+            mdocOid4vpService.matchDocumentsAndDescriptors(
+                mdocNonce = Uuid.v4String(),
+                applicableDocuments = arrayOf(document),
+                presentationDefinition = presentationDefinition,
+            )
+
+        // The match result derives the device key from the MSO `deviceKeyInfo.deviceKey`, which is
+        // a PUBLIC key carrying only a kid — not the KMS alias/providerId needed to locate the
+        // holder's PRIVATE device key for DeviceAuth signing. Overlay the wallet's holder key
+        // alias (the same one the proof-of-possession bound at issuance) so the COSE signer can
+        // resolve the managed private key. Without this the signer fails with "Need to provide an
+        // alias".
+        val holderKeyAlias = credential.holderKeyAlias
+        val signableMatchResults =
+            if (!holderKeyAlias.isNullOrBlank()) {
+                matchResults
+                    .map { match ->
+                        if (match.document != null && match.documentError == null) {
+                            match.copy(
+                                deviceKeyInfo =
+                                    KeyInfo(
+                                        alias = holderKeyAlias,
+                                        keyVisibility = KeyVisibility.PRIVATE,
+                                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                                    ),
+                            )
+                        } else {
+                            match
+                        }
+                    }.toTypedArray()
+            } else {
+                matchResults
+            }
+
+        val deviceResponse =
+            try {
+                mdocOid4vpService.createDeviceResponse(
+                    matchingDocuments = signableMatchResults,
+                    presentationDefinition = presentationDefinition,
+                    clientId = clientId,
+                    responseUri = responseUri,
+                    authorizationRequestNonce = nonce,
+                )
+            } catch (expected: Exception) {
+                return Err(
+                    IdkError.UNKNOWN_ERROR(
+                        message = "Failed to build mdoc DeviceResponse for query '${credential.credentialQueryId}': ${expected.message}",
+                    ),
+                )
+            }
+
+        if (deviceResponse.documents.isNullOrEmpty()) {
+            return Err(
+                IdkError.UNKNOWN_ERROR(
+                    message =
+                        "mdoc DeviceResponse for query '${credential.credentialQueryId}' has no documents " +
+                            "(documentErrors=${deviceResponse.documentErrors})",
+                ),
+            )
+        }
+
+        val deviceResponseBytes =
+            deviceResponseCborCodec
+                .encode(deviceResponse)
+                .getOrElse {
+                    return Err(
+                        IdkError.UNKNOWN_ERROR(
+                            message =
+                                "Failed to CBOR-encode mdoc DeviceResponse for query " +
+                                    "'${credential.credentialQueryId}': ${it.message.defaultMessage}",
+                        ),
+                    )
                 }
 
-        return VpToken(grouped)
+        return Ok(deviceResponseBytes.encodeToBase64Url())
     }
 }

@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.http.describe
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
@@ -31,6 +32,7 @@ import com.sphereon.oauth2.server.authorization.impl.http.OAuth2EndSessionHttpAd
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2FederationHttpAdapter
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2InternalHttpAdapter
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2LoginHttpAdapter
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2OpenidDiscoveryPathIssuerHttpAdapter
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2TokenHttpAdapter
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2UserInfoHttpAdapter
 import dev.zacsweers.metro.AppScope
@@ -39,7 +41,24 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
-private val ROOT_MOUNT = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/")
+private val LEADING_SLUG_MOUNT =
+    HttpAdapterMount(
+        serverPrefix = "",
+        adapterBasePath = "/",
+        tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
+    )
+private val WELL_KNOWN_SUFFIX_MOUNT =
+    HttpAdapterMount(
+        serverPrefix = "",
+        adapterBasePath = "/",
+        tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
+    )
+private val REQUIRED_LEADING_SLUG_MOUNT =
+    HttpAdapterMount(
+        serverPrefix = "",
+        adapterBasePath = "/",
+        tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2, required = true),
+    )
 
 /**
  * AppScope descriptor for [OAuth2DiscoveryHttpAdapter]. Lets the [com.sphereon.core.api.http.dispatch.HttpAdapterCatalog]
@@ -54,7 +73,7 @@ class OAuth2DiscoveryHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvid
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = WELL_KNOWN_SUFFIX_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -92,6 +111,32 @@ class OAuth2DiscoveryHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvid
 }
 
 /**
+ * OIDC Discovery 1.0 descriptor for path-bearing issuers:
+ * `/<issuer-path>/.well-known/openid-configuration`.
+ */
+@Inject
+@SingleIn(AppScope::class)
+@ContributesIntoSet(AppScope::class, binding = binding<HttpAdapterDescriptorProvider>())
+class OAuth2OpenidDiscoveryPathIssuerDescriptorProvider : HttpAdapterDescriptorProvider {
+    override val id: String = OAuth2OpenidDiscoveryPathIssuerHttpAdapter.ID
+
+    override fun describe(): HttpAdapterDescription =
+        HttpAdapterDescription(
+            id = id,
+            mount = REQUIRED_LEADING_SLUG_MOUNT,
+            endpoints =
+                listOf(
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.GET,
+                        pathPattern = "/.well-known/openid-configuration",
+                        produces = setOf(MediaType.ApplicationJson),
+                        operationId = "openidConfigurationLegacyPrefix",
+                    ),
+                ),
+        )
+}
+
+/**
  * AppScope descriptor for [OAuth2TokenHttpAdapter].
  */
 @Inject
@@ -103,7 +148,7 @@ class OAuth2TokenHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -150,7 +195,7 @@ class OAuth2AuthorizationHttpAdapterDescriptorProvider : HttpAdapterDescriptorPr
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -194,7 +239,7 @@ class OAuth2UserInfoHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvide
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -225,7 +270,7 @@ class OAuth2FederationHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvi
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -274,7 +319,7 @@ class OAuth2InternalHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvide
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -302,7 +347,7 @@ class OAuth2EndSessionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvi
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -340,7 +385,7 @@ class OAuth2AttestationHttpAdapterDescriptorProvider : HttpAdapterDescriptorProv
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -373,7 +418,7 @@ class OAuth2LoginHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -422,7 +467,7 @@ class OAuth2DeviceAuthorizationHttpAdapterDescriptorProvider : HttpAdapterDescri
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -452,7 +497,7 @@ class OAuth2DeviceVerificationHttpAdapterDescriptorProvider : HttpAdapterDescrip
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = ROOT_MOUNT,
+            mount = LEADING_SLUG_MOUNT,
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(

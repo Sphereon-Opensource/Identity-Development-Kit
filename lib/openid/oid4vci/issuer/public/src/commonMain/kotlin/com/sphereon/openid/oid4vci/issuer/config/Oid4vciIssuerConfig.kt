@@ -26,6 +26,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.statuslist.StatusListBinding
 
 /**
  * Configuration provider for the OID4VCI issuer.
@@ -109,6 +110,17 @@ interface Oid4vciIssuerConfigProvider {
      */
     @JsExportIgnoreCompat
     val credentialSigningConfigs: Map<String, CredentialSigningConfig>
+        get() = emptyMap()
+
+    /**
+     * Per-credential binding to a status list defined in the standalone, protocol-neutral
+     * `statuslists` namespace (see `StatusListDefinitionsProvider`) — status lists are NOT an OID4VCI
+     * concept. When present (and a `CredentialStatusEnricher` is on the classpath), issuance allocates
+     * a status entry and embeds the status claim into that credential before signing. Keyed by
+     * credential configuration ID; the value's `statusListCorrelationId` references the hosted list.
+     */
+    @JsExportIgnoreCompat
+    val statusListBindings: Map<String, StatusListBinding>
         get() = emptyMap()
 
     /**

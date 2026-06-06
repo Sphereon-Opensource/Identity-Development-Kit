@@ -20,7 +20,10 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.RoutableSlugLookup
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetIssuerMetadataEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.Oid4vciErrorRenderer
@@ -43,6 +46,8 @@ import dev.zacsweers.metro.binding
 @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
 class Oid4vciIssuerMetadataHttpAdapter(
     execution: SessionExecution,
+    slugLookup: RoutableSlugLookup,
+    tenantIdProvider: MutableResolvedTenantIdProvider,
     private val getMetadataCommand: GetIssuerMetadataEndpointCommand,
 ) : CommandBackedHttpAdapter(
         id = ID,
@@ -52,8 +57,12 @@ class Oid4vciIssuerMetadataHttpAdapter(
                 serverPrefix = "",
                 adapterBasePath = "",
             ),
+        tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
         errorRenderer = Oid4vciErrorRenderer(),
     ) {
+    override val routableSlugLookup: RoutableSlugLookup = slugLookup
+    override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = tenantIdProvider
+
     companion object {
         const val ID: String = "OID4VCI_ISSUER_METADATA"
     }

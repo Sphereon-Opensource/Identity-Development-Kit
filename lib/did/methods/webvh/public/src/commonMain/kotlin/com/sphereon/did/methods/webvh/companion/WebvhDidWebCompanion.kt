@@ -72,7 +72,7 @@ object WebvhDidWebCompanion {
             DidDocument(
                 context = webvhDocument.context,
                 id = didWebDid,
-                controller = webvhDocument.controller?.let { rewriteIdentifier(it, webvhDid, didWebDid) },
+                controller = webvhDocument.controller.map { rewriteIdentifier(it, webvhDid, didWebDid) },
                 alsoKnownAs = mergedAlsoKnownAs.takeIf { it.isNotEmpty() },
                 verificationMethod = rewrittenVerificationMethods,
                 authentication = webvhDocument.authentication?.map { ref -> rewriteVerificationRef(ref, webvhDid, didWebDid) },

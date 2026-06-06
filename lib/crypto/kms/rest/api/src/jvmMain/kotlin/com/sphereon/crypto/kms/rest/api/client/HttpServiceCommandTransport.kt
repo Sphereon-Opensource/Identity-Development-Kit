@@ -280,14 +280,14 @@ class HttpServiceCommandTransport(
 
     /**
      * Extracts the request body for POST/PUT requests.
-     * For wrapped inputs (like GenerateKeyInput.generateKey), unwraps to the inner object.
+     * For wrapped inputs (like GenerateKeyGlobal.generateKey), unwraps to the inner object.
      */
     private fun extractRequestBody(input: Any): String {
         val inputJson = encodeToJson(input)
         val inputMap = json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(inputJson)
 
         // Check if input has a single nested object field (wrapper pattern)
-        // e.g., GenerateKeyInput { generateKey: GenerateKeyGlobal }
+        // e.g., GenerateKeyGlobal { generateKey: GenerateKeyGlobal }
         // In this case, send just the inner object
         if (inputMap.size == 1) {
             val singleValue = inputMap.values.first()

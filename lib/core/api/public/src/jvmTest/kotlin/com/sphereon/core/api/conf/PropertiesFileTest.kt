@@ -17,6 +17,7 @@
 package com.sphereon.core.api.conf
 
 import kotlinx.io.files.Path
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -26,7 +27,9 @@ class PropertiesFileTest {
         val resource =
             this::class.java.classLoader.getResource(name)
                 ?: throw IllegalArgumentException("Resource not found: $name")
-        return Path(resource.path)
+        // Go via URI/File so spaces and other percent-encoded characters in the path
+        // (e.g. ".../Sphereon%20IDTech/...") are decoded back to the real filesystem path.
+        return Path(File(resource.toURI()).absolutePath)
     }
 
     @Test
@@ -176,7 +179,7 @@ class PropertiesFilePropertySourceTest {
         val resource =
             this::class.java.classLoader.getResource(name)
                 ?: throw IllegalArgumentException("Resource not found: $name")
-        return Path(resource.path)
+        return Path(File(resource.toURI()).absolutePath)
     }
 
     @Test

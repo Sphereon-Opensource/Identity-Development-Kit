@@ -32,12 +32,11 @@ import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequest
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestCommand
 import com.sphereon.oauth2.server.authorization.command.token.TokenHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
-import com.sphereon.oauth2.server.authorization.impl.http.buildFullUrl
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.isBasicAuthorizationHeaderInternal
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.http.withWwwAuthenticateIfBasicInternal
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -59,6 +58,7 @@ class TokenHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handleTokenRequestCommand: HandleTokenRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val dpopNonceManager: DpopNonceManager,
     private val clientCertificateExtractor: ClientCertificateExtractor,
     private val auditEmitter: OAuth2AuditEmitter,
@@ -83,8 +83,12 @@ class TokenHttpEndpointCommandImpl(
             parseFormBody(request.body)
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing or invalid request body", json))
 
-        val httpUrl = request.buildFullUrl(configProvider)
-        val baseUrlOverride = request.resolveBaseUrl(configProvider)
+        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(request, configProvider)
+        // DPoP `htu` (RFC 9449 §4.2) must match the URL the wallet computed from the AS's
+        // advertised discovery metadata. Discovery emits `${baseUrl}/token` via the resolver,
+        // so reconstruction here uses the same resolver + fixed `/token` suffix — picks up the
+        // EDK tenant-public-endpoint overlay's binding-derived base URL automatically.
+        val httpUrl = "$baseUrlOverride/token"
         val clientCertificateDer =
             clientCertificateExtractor
                 .extractCertificate(request)

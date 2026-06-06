@@ -93,88 +93,130 @@ class VcLdJsonJwtFormatHandler(
         request: CredentialRequest,
         context: IssuanceContext,
     ): IdkResult<CredentialEnvelope, IdkError> {
-        val credentialTypes =
-            context.credentialConfiguration.credentialDefinition?.type
-                ?: listOf(WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL)
-        val primaryType =
-            credentialTypes.firstOrNull { it != WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL }
-                ?: credentialTypes.first()
-
+        val credentialTypes = resolveCredentialTypes(context)
+        val primaryType = pickPrimaryType(credentialTypes)
         val now = Clock.System.now()
         val nowEpochSeconds = now.epochSeconds
-        val expiry: Instant? =
-            context.expirationInDays?.let { days ->
-                Instant.fromEpochSeconds(nowEpochSeconds + days.toLong() * SECONDS_PER_DAY)
-            }
+        val expiry: Instant? = computeExpiry(context, nowEpochSeconds)
 
         val vcBody =
             buildVcBody(
-                credentialTypes = credentialTypes,
-                issuer = context.issuerIdentifier,
-                subject = context.subject,
-                attributes = context.attributes,
-                validFrom = now,
-                validUntil = expiry,
-                extraContexts = additionalContextsFor(context),
+                BuildVcBodyInputs(
+                    credentialTypes = credentialTypes,
+                    issuer = context.issuerIdentifier,
+                    subject = context.subject,
+                    attributes = context.attributes,
+                    validFrom = now,
+                    validUntil = expiry,
+                    extraContexts = additionalContextsFor(context),
+                ),
             )
 
-        // Validate @context chain (UNTP 0.7.0 @vocab MUST-NOT).
-        val contextValidation =
+        validateContextChain(vcBody).getOrElse { return Err(it) }
+        validateAgainstSchema(vcBody, primaryType).getOrElse { return Err(it) }
+
+        val jwtPayload = buildJwtPayload(vcBody, context, nowEpochSeconds)
+        return signEnvelope(jwtPayload, context)
+    }
+
+    private fun resolveCredentialTypes(context: IssuanceContext): List<String> =
+        context.credentialConfiguration.credentialDefinition?.type
+            ?: listOf(WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL)
+
+    private fun pickPrimaryType(credentialTypes: List<String>): String =
+        credentialTypes.firstOrNull { it != WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL }
+            ?: credentialTypes.first()
+
+    private fun computeExpiry(
+        context: IssuanceContext,
+        nowEpochSeconds: Long,
+    ): Instant? =
+        context.expirationInDays?.let { days ->
+            Instant.fromEpochSeconds(nowEpochSeconds + days.toLong() * SECONDS_PER_DAY)
+        }
+
+    /**
+     * Validate @context chain (UNTP 0.7.0 @vocab MUST-NOT).
+     */
+    private suspend fun validateContextChain(vcBody: JsonObject): IdkResult<Unit, IdkError> {
+        val verdict =
             contextValidator.validate(
                 ValidateJsonLdContextInput(context = vcBody["@context"] ?: JsonArray(emptyList())),
             )
-        if (contextValidation.isErr) return Err(IdkError.fromDTO(contextValidation.error))
+        if (verdict.isErr) {
+            return Err(IdkError.fromDTO(verdict.error))
+        }
+        return Ok(Unit)
+    }
 
-        // Validate JSON Schema for the primary credential type. Unknown
-        // types (no schema in the registry) are a soft pass: experimental
-        // or non-UNTP credentials issue without schema enforcement. Schema
-        // mismatches and malformed schemas abort issuance.
-        val schemaValidation =
+    /**
+     * Validate JSON Schema for the primary credential type. Unknown types (no schema in
+     * the registry) are a soft pass: experimental or non-UNTP credentials issue without
+     * schema enforcement. Schema mismatches and malformed schemas abort issuance.
+     */
+    private suspend fun validateAgainstSchema(
+        vcBody: JsonObject,
+        primaryType: String,
+    ): IdkResult<Unit, IdkError> {
+        val verdict =
             schemaValidator.validate(
                 ValidateJsonLdSchemaInput(payload = vcBody, credentialType = primaryType),
             )
-        if (schemaValidation.isErr && schemaValidation.error !is JsonLdError.NoSchemaRegistered) {
-            return Err(IdkError.fromDTO(schemaValidation.error))
+        return when {
+            verdict.isOk -> Ok(Unit)
+            verdict.error is JsonLdError.NoSchemaRegistered -> Ok(Unit)
+            else -> Err(IdkError.fromDTO(verdict.error))
         }
+    }
 
-        // Build JWT payload: VC body fields at the root + JWT registered claims.
-        val jwtPayload =
-            buildJsonObject {
-                // Spread VC body keys at the root.
-                for ((k, v) in vcBody) put(k, v)
+    /**
+     * Build JWT payload: VC body fields at the root + JWT registered claims
+     * (`iss`/`iat`/`exp`/`sub`/`cnf`). VC-JOSE-COSE §3.1.1 treats the entire VC document
+     * as the JWT payload — there is no `vc` wrapper claim.
+     */
+    private fun buildJwtPayload(
+        vcBody: JsonObject,
+        context: IssuanceContext,
+        nowEpochSeconds: Long,
+    ): JsonObject =
+        buildJsonObject {
+            // Spread VC body keys at the root.
+            for ((k, v) in vcBody) put(k, v)
 
-                put("iss", context.issuerIdentifier)
-                val holderKid = context.holderKeyId
-                val didKid = if (holderKid != null && holderKid.startsWith("did:")) holderKid else null
-                val sub = didKid?.substringBefore('#') ?: context.subject
-                put("sub", sub)
-                // iat shifted backward by clock-skew tolerance.
-                val iat = nowEpochSeconds - context.issuanceClockSkewInSeconds
-                put("iat", iat)
-                context.expirationInDays?.let { days ->
-                    put("exp", iat + days.toLong() * SECONDS_PER_DAY)
-                }
-                // Holder binding: cnf carries EITHER kid (DID VM URL) OR jwk,
-                // never both — wallet libs (credo-ts and others) misbehave when
-                // both are present.
-                context.holderBindingKey?.let { key ->
-                    putJsonObject("cnf") {
-                        if (didKid != null) {
-                            put("kid", JsonPrimitive(didKid))
-                        } else {
-                            put("jwk", key)
-                        }
+            put("iss", context.issuerIdentifier)
+            val didKid = context.holderKeyId?.takeIf { it.startsWith("did:") }
+            val sub = didKid?.substringBefore('#') ?: context.subject
+            put("sub", sub)
+            // iat shifted backward by clock-skew tolerance.
+            val iat = nowEpochSeconds - context.issuanceClockSkewInSeconds
+            put("iat", iat)
+            context.expirationInDays?.let { days ->
+                put("exp", iat + days.toLong() * SECONDS_PER_DAY)
+            }
+            // Holder binding: cnf carries EITHER kid (DID VM URL) OR jwk,
+            // never both — wallet libs (credo-ts and others) misbehave when
+            // both are present.
+            context.holderBindingKey?.let { key ->
+                putJsonObject("cnf") {
+                    if (didKid != null) {
+                        put("kid", JsonPrimitive(didKid))
+                    } else {
+                        put("jwk", key)
                     }
                 }
             }
+        }
 
+    private suspend fun signEnvelope(
+        jwtPayload: JsonObject,
+        context: IssuanceContext,
+    ): IdkResult<CredentialEnvelope, IdkError> {
         val issuerKey = ManagedOptsAlias(identifier = context.credentialConfigurationId)
         val signed =
             jwtService
                 .createJwsCompact(
                     CreateJwsArgs(issuer = issuerKey, payload = jwtPayload),
                 ).getOrElse { return Err(it) }
-
         return Ok(
             CredentialEnvelope(
                 credential = JsonPrimitive(signed.jwt),
@@ -183,32 +225,40 @@ class VcLdJsonJwtFormatHandler(
         )
     }
 
-    private fun buildVcBody(
-        credentialTypes: List<String>,
-        issuer: String,
-        subject: String,
-        attributes: Map<String, kotlinx.serialization.json.JsonElement>,
-        validFrom: Instant,
-        validUntil: Instant?,
-        extraContexts: List<String>,
-    ): JsonObject =
+    /**
+     * Grouped inputs for [buildVcBody] — avoids LongParameterList while keeping the
+     * builder a pure function over its inputs. Internal-only, not serialized.
+     */
+    private data class BuildVcBodyInputs(
+        val credentialTypes: List<String>,
+        val issuer: String,
+        val subject: String,
+        val attributes: Map<String, kotlinx.serialization.json.JsonElement>,
+        val validFrom: Instant,
+        val validUntil: Instant?,
+        val extraContexts: List<String>,
+    )
+
+    private fun buildVcBody(inputs: BuildVcBodyInputs): JsonObject =
         buildJsonObject {
             putJsonArray("@context") {
                 // VCDM 2.0 base @context is mandatory and first.
                 add(JsonPrimitive(WellKnownContexts.VCDM_2_0))
-                for (ctx in extraContexts) {
-                    if (ctx != WellKnownContexts.VCDM_2_0) add(JsonPrimitive(ctx))
+                for (ctx in inputs.extraContexts) {
+                    if (ctx != WellKnownContexts.VCDM_2_0) {
+                        add(JsonPrimitive(ctx))
+                    }
                 }
             }
             putJsonArray("type") {
-                credentialTypes.forEach { add(JsonPrimitive(it)) }
+                inputs.credentialTypes.forEach { add(JsonPrimitive(it)) }
             }
-            put("issuer", issuer)
-            put("validFrom", validFrom.toString())
-            validUntil?.let { put("validUntil", it.toString()) }
+            put("issuer", inputs.issuer)
+            put("validFrom", inputs.validFrom.toString())
+            inputs.validUntil?.let { put("validUntil", it.toString()) }
             putJsonObject("credentialSubject") {
-                put("id", subject)
-                for ((name, value) in attributes) {
+                put("id", inputs.subject)
+                for ((name, value) in inputs.attributes) {
                     put(name, value)
                 }
             }

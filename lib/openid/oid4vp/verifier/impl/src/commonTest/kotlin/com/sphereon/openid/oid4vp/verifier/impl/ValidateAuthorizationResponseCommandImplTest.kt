@@ -109,6 +109,52 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun `test revoked credential is rejected by default status policy`() =
+        runTest {
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt")),
+                )
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse =
+                        ParsedAuthorizationResponse(
+                            vpToken = vpTokenOf("identity_credential", sdJwt),
+                            state = "state123",
+                            rawVpToken = """{"identity_credential":"$sdJwt"}""",
+                        ),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "state123",
+                        ),
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce123",
+                )
+
+            // A revoked status with no per-query policy uses the strict default → reject + discard.
+            val command = createTestCommand(setOf(FixedStatusVerifier(value = 1)))
+            val result = command.validateAuthorizationResponse(args)
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid)
+            // Short, user-facing message naming the credential + state; the misleading "not found" for a
+            // submitted-but-discarded credential is suppressed, and the technical status-list URI/index
+            // never leaks into the returned error (it goes to logs + an event instead).
+            assertTrue(result.value.errors.any { it == "identity_credential is revoked" })
+            assertTrue(result.value.errors.none { it.contains("not found") })
+            assertTrue(result.value.errors.none { it.contains("status list") || it.contains("https://") })
+
+            // An active status passes the same default policy.
+            val activeResult = createTestCommand(setOf(FixedStatusVerifier(value = 0))).validateAuthorizationResponse(args)
+            assertIs<Ok<*>>(activeResult)
+            assertTrue(activeResult.value.valid)
+            assertEquals(1, activeResult.value.matchedCredentials.size)
+        }
+
+    @Test
     fun `test validate response with matching mDoc credential`() =
         runTest {
             // Given: DCQL query requesting mDoc credential
@@ -219,7 +265,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             val parsedResponse =
                 ParsedAuthorizationResponse(
                     vpToken =
-                        VpToken(
+                        VpToken.fromStrings(
                             mapOf(
                                 "identity_cred" to listOf(sdJwt),
                                 "mdl_cred" to listOf(mdoc),
@@ -567,7 +613,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         return "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
     }
 
-    private fun createTestCommand(): ValidateAuthorizationResponseCommandImpl {
+    private fun createTestCommand(credentialStatusVerifiers: Set<com.sphereon.statuslist.spi.CredentialStatusVerifier> = emptySet(),): ValidateAuthorizationResponseCommandImpl {
         // Validators wired through the built-in W3C/UNTP @context bundle so
         // VCDM 2.0 references resolve from the JAR (no network). For
         // non-VCDM-2.0 presentations the validator path is skipped entirely
@@ -589,8 +635,29 @@ class ValidateAuthorizationResponseCommandImplTest {
                     com.sphereon.jsonld.command
                         .MapBackedJsonLdSchemaRegistry(emptyMap()),
                 ),
+            deviceResponseCborCodec =
+                com.sphereon.mdoc.data.device
+                    .DeviceResponseCborCodecImpl(),
+            credentialStatusVerifiers = credentialStatusVerifiers,
         )
     }
+}
+
+/**
+ * Test verifier that always reports one status reference and resolves it to a fixed [value],
+ * independent of the credential claims — lets the integration tests drive the verifier's status
+ * decision without hand-crafting a parseable signed status-list token.
+ */
+private class FixedStatusVerifier(
+    private val value: Int,
+) : com.sphereon.statuslist.spi.CredentialStatusVerifier {
+    override val mechanism: String = "test"
+
+    override fun references(credentialClaims: kotlinx.serialization.json.JsonObject) =
+        listOf(com.sphereon.statuslist.CredentialStatusReference(mechanism = "test", uri = "https://issuer.example.com/sl", index = 0))
+
+    override suspend fun resolve(reference: com.sphereon.statuslist.CredentialStatusReference) =
+        Ok(com.sphereon.statuslist.ResolvedStatus(value = value, valid = value == 0, statusListUri = reference.uri))
 }
 
 /**

@@ -22,6 +22,8 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.defaults.context.DefaultResolvedTenantIdProvider
+import com.sphereon.core.defaults.http.NoOpRoutableSlugLookup
 import com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceResolver
 import com.sphereon.oauth2.common.config.FeaturePolicy
@@ -43,6 +45,7 @@ import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestCo
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestArgs
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.JwksHttpEndpointCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.http.command.discovery.OAuth2ServerMetadataHttpEndpointCommandImpl
@@ -207,8 +210,10 @@ private fun discoveryAdapter(configProvider: OAuth2ServersConfigProvider): OAuth
         execution = exec,
         asInstanceResolver = resolverFor(configProvider),
         asInstanceIdProvider = idProvider(),
-        oauth2ServerMetadataCommand = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider),
-        openidDiscoveryCommand = OpenidDiscoveryHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider),
+        slugLookup = NoOpRoutableSlugLookup(),
+        tenantIdProvider = DefaultResolvedTenantIdProvider(),
+        oauth2ServerMetadataCommand = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, DefaultOAuth2ServerBaseUrlResolver()),
+        openidDiscoveryCommand = OpenidDiscoveryHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, DefaultOAuth2ServerBaseUrlResolver()),
         jwksCommand = JwksHttpEndpointCommandImpl(exec, FakeHandleJwksRequestCommand()),
     )
 }
@@ -219,12 +224,15 @@ private fun userInfoAdapter(configProvider: OAuth2ServersConfigProvider): OAuth2
         execution = exec,
         asInstanceResolver = resolverFor(configProvider),
         asInstanceIdProvider = idProvider(),
+        slugLookup = NoOpRoutableSlugLookup(),
+        tenantIdProvider = DefaultResolvedTenantIdProvider(),
         userInfoEndpointCommand =
             UserInfoHttpEndpointCommandImpl(
                 execution = exec,
                 handleUserInfoRequestCommand = FakeHandleUserInfoRequestCommand(),
                 validateAccessTokenCommand = FakeRejectingValidateAccessToken,
                 configProvider = configProvider,
+                baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 dpopNonceManager = FakeNoOpDpopNonceManager,
                 clientCertificateExtractor = FakeNoOpClientCertExtractor,
             ),

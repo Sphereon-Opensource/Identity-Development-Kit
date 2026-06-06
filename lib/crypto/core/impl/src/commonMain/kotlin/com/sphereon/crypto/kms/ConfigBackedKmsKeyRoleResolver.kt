@@ -88,9 +88,27 @@ class ConfigBackedKmsKeyRoleResolver(
     private fun parseAlgorithm(raw: String): SignatureAlgorithm =
         when (raw.uppercase()) {
             "ED25519", "EDDSA" -> SignatureAlgorithm.ED25519
+
             "ES256" -> SignatureAlgorithm.ECDSA_SHA256
+
             "ES384" -> SignatureAlgorithm.ECDSA_SHA384
+
             "ES512" -> SignatureAlgorithm.ECDSA_SHA512
+
+            // RSA PKCS#1 v1.5 (JOSE RS*) and RSA-PSS (JOSE PS*). The software KMS
+            // supports RSA; this parser previously omitted the mappings.
+            "RS256" -> SignatureAlgorithm.RSA_SHA256
+
+            "RS384" -> SignatureAlgorithm.RSA_SHA384
+
+            "RS512" -> SignatureAlgorithm.RSA_SHA512
+
+            "PS256" -> SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1
+
+            "PS384" -> SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1
+
+            "PS512" -> SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1
+
             else -> error("unsupported signature algorithm: $raw (for role config)")
         }
 

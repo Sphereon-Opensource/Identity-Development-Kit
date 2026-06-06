@@ -61,11 +61,14 @@ kotlin {
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)
             }
         }
-        // Kache doesn't support wasmJs, so KacheCacheBackend lives in nonWasmMain
+        // Kache doesn't support wasmJs, so KacheCacheBackend lives in nonWasmMain.
+        // libsodium-bindings (ChaCha20-Poly1305 AEAD for ChaCha20Poly1305EncryptionService)
+        // also has no wasmJs artifact, so its actual lives here too; the wasmJs actual throws.
         val nonWasmMain by creating {
             dependsOn(commonMain)
             dependencies {
                 implementation(sphereonlib.com.mayakapps.kache.kache)
+                implementation(sphereonlib.com.ionspin.kotlin.multiplatform.crypto.libsodium.bindings)
             }
         }
         val jvmMain by getting { dependsOn(nonWasmMain) }

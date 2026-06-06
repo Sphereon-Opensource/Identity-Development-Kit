@@ -73,6 +73,13 @@ data class LoginPageContext(
     val tabId: String? = null,
     val sessionCode: String? = null,
     /**
+     * Optional informational notice rendered above the credential form (e.g. a demo deployment
+     * advertising its seeded test account, or a maintenance banner). Null or blank renders
+     * nothing, so production deployments that never set it carry no extra markup. The renderer
+     * MUST escape this value before interpolation — it is treated as plain text, not HTML.
+     */
+    val notice: String? = null,
+    /**
      * Federated identity providers offered as alternative sign-in options on the login page.
      * The renderer emits one button per entry, posting the visitor to the federation
      * authorize endpoint with `provider=<id>`. Empty list = render the password form only.

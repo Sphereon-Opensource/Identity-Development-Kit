@@ -30,8 +30,7 @@ import com.sphereon.oauth2.server.authorization.storage.PendingFederation
  * Federated authentication ServiceCommand contracts. Command interfaces live here so LOCAL
  * vs SERVER routing works (the `@GenerateRoutedCommands` plumbing sees them in `-public`),
  * and so transport-routed callers (gRPC) can reference Args/Result types without a hard
- * dependency on the `-impl` module. Tenant is intentionally NOT part of any Args: impls
- * read it from `SessionExecution.sessionContext.context.tenant.tenantId` at the use site.
+ * dependency on the `-impl` module. Tenant is intentionally NOT part of any Args: impls read it from `SessionExecution.sessionContext.context.tenant.tenantId` at the use site.
  */
 
 // ============================================================================

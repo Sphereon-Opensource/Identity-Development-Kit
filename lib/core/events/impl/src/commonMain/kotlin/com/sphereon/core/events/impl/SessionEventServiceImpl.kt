@@ -47,6 +47,7 @@ import dev.zacsweers.metro.binding
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<SessionEventService>())
+@ContributesBinding(SessionScope::class, binding = binding<SessionEventService?>())
 @ContributesIntoSet(SessionScope::class, binding = binding<EventService>())
 class SessionEventServiceImpl(
     override val parent: UserEventService,

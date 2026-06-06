@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.di.session.SessionScope
@@ -113,6 +114,7 @@ class JwkDidProviderImpl(
             IdkError.fromString(
                 message = "did:jwk does not support updates. DIDs are immutable and derived from the JWK.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -126,6 +128,7 @@ class JwkDidProviderImpl(
             IdkError.fromString(
                 message = "did:jwk does not support deactivation. DIDs are immutable and always valid.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -139,6 +142,7 @@ class JwkDidProviderImpl(
             IdkError.fromString(
                 message = "did:jwk does not support adding keys. Each DID corresponds to exactly one JWK.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -146,12 +150,14 @@ class JwkDidProviderImpl(
     override suspend fun removeKey(
         did: String,
         keyId: String,
+        currentDocument: com.sphereon.did.models.DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> {
         // did:jwk supports only a single key per DID
         return Err(
             IdkError.fromString(
                 message = "did:jwk does not support removing keys. Each DID corresponds to exactly one JWK.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -159,12 +165,14 @@ class JwkDidProviderImpl(
     override suspend fun addService(
         did: String,
         service: DidService,
+        currentDocument: com.sphereon.did.models.DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> {
         // did:jwk does not support services
         return Err(
             IdkError.fromString(
                 message = "did:jwk does not support services. Use did:web for DIDs with services.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }
@@ -172,12 +180,14 @@ class JwkDidProviderImpl(
     override suspend fun removeService(
         did: String,
         serviceId: String,
+        currentDocument: com.sphereon.did.models.DidDocument?,
     ): IdkResult<DidUpdateResult, IdkError> {
         // did:jwk does not support services
         return Err(
             IdkError.fromString(
                 message = "did:jwk does not support services.",
                 code = "UNSUPPORTED_OPERATION",
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
             ),
         )
     }

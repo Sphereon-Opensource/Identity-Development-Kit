@@ -30,11 +30,11 @@ import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType
 import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.revocation.RevocationHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.isBasicAuthorizationHeaderInternal
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.http.withWwwAuthenticateIfBasicInternal
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -54,6 +54,7 @@ class RevocationHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handleRevocationRequestCommand: HandleRevocationRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val auditEmitter: OAuth2AuditEmitter,
 ) : HttpEndpointCommandAdapter(
         id = RevocationHttpEndpointCommand.COMMAND_ID,
@@ -81,7 +82,7 @@ class RevocationHttpEndpointCommandImpl(
                 HandleRevocationRequestArgs(
                     requestBody = requestBody,
                     requestHeaders = request.headers,
-                    httpUrl = "${request.resolveBaseUrl(configProvider)}/revoke",
+                    httpUrl = "${baseUrlResolver.resolveBaseUrl(request, configProvider)}/revoke",
                 ),
             )
         val basicAuthWasAttempted = isBasicAuthorizationHeaderInternal(request.headers)

@@ -29,10 +29,10 @@ import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.par.HandlePushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.par.HandlePushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.par.ParHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -52,6 +52,7 @@ class ParHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handlePushedAuthorizationRequestCommand: HandlePushedAuthorizationRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = ParHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -77,7 +78,7 @@ class ParHttpEndpointCommandImpl(
             parseFormBody(request.body)
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing or invalid request body", json))
 
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val result =
             handlePushedAuthorizationRequestCommand.execute(
                 HandlePushedAuthorizationRequestArgs(

@@ -86,6 +86,9 @@ kotlin {
                 // (OID4VCI 1.0 §7.2 — KeyAttestationVerifier)
                 implementation(projects.libTrustX509)
 
+                // Issuance pipeline configuration (for NoOpPipelineConfigurationResolver)
+                implementation(projects.libCredentialIssuancePipelinePublic)
+
                 // Konform for validation
                 api(sphereonlib.io.konform.konform)
 
@@ -100,6 +103,7 @@ kotlin {
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(projects.libCryptoCorePublic)
                 implementation(projects.libCryptoCoreImpl)
+                implementation(projects.libCoreEventsImpl)
             }
         }
     }

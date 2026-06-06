@@ -64,5 +64,11 @@ data class EncryptedBlob(
     companion object {
         /** Algorithm string for AES-256-GCM (matches JWE / RFC 7518 §5.3 naming). */
         const val ALG_AES_256_GCM: String = "A256GCM"
+
+        /**
+         * Algorithm string for ChaCha20-Poly1305 (matches JWE / draft-amringer-jose-chacha §2 naming,
+         * also commonly seen as `C20P` in OpenID specs). 32-byte key, 12-byte nonce, 16-byte Poly1305 tag.
+         */
+        const val ALG_CHACHA20_POLY1305: String = "C20P"
     }
 }

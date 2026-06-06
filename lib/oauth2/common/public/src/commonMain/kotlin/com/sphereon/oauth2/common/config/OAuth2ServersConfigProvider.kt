@@ -17,6 +17,9 @@
 package com.sphereon.oauth2.common.config
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.OptionalBinding
 
 /**
  * Provider for OAuth2 authorization server configuration.
@@ -56,4 +59,19 @@ interface OAuth2ServersConfigProvider {
         serverId: String,
         tenantId: String,
     ): String
+}
+
+/**
+ * Exposes [OAuth2ServersConfigProvider] as an optional graph accessor so that consumers declaring
+ * `OAuth2ServersConfigProvider? = null` constructor parameters resolve cleanly under the Metro
+ * `nullable type key`. The IDK
+ * [com.sphereon.oauth2.server.authorization.impl.config.OAuth2ServersConfigBinder] adds a second
+ * `@ContributesBinding(SessionScope::class, binding = binding<OAuth2ServersConfigProvider?>())`
+ * so this default `null` body is overridden whenever the oauth2-server-impl module is on the
+ * classpath.
+ */
+@ContributesTo(SessionScope::class)
+interface OAuth2ServersConfigProviderOptionalProvider {
+    @OptionalBinding
+    val optionalOAuth2ServersConfigProvider: OAuth2ServersConfigProvider? get() = null
 }

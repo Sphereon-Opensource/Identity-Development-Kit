@@ -22,6 +22,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.statuslist.StatusListBinding
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -83,6 +84,12 @@ data class IssuanceContext(
      * YAML: `sphereon.oid4vci.issuer.credentials.[<id>].expiration-in-days`.
      */
     val expirationInDays: Int? = null,
+    /**
+     * Optional binding to a credential status list. When set (and a `CredentialStatusEnricher` is
+     * available), the format handler allocates a status entry and embeds the status claim into the
+     * credential before signing. Null means no status list for this credential.
+     */
+    val statusListBinding: StatusListBinding? = null,
 )
 
 /**

@@ -239,7 +239,10 @@ val readsGeneratedSources: (org.gradle.api.Task) -> Boolean = { task ->
     name.startsWith("compileKotlin") ||
         name.startsWith("compileCommonMain") ||
         name.startsWith("runKtlintCheck") ||
-        name.startsWith("runKtlintFormat")
+        name.startsWith("runKtlintFormat") ||
+        name.startsWith("detekt") ||
+        name.endsWith("SourcesJar") ||
+        name == "sourcesJar"
 }
 tasks.matching(readsGeneratedSources).configureEach {
     dependsOn(generateBundledContexts)

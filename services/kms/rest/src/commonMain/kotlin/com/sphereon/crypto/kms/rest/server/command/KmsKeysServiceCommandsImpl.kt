@@ -31,7 +31,6 @@ import com.sphereon.crypto.key.persistence.impl.ManagedKeyReferenceRegistrar
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyOutput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
@@ -40,11 +39,12 @@ import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceInput
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceResponse
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyInput
 import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
 import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
@@ -165,21 +165,20 @@ class ListKeysServiceCommandImpl(
 class StoreKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<StoreKeyInput, StoreKeyResponse, IdkError>(
+) : TypedServiceCommandAdapter<StoreKey, StoreKeyResponse, IdkError>(
         commandId = StoreKeyServiceCommand.COMMAND_ID,
         execution = execution,
-        inputTypeToken = typeToken<StoreKeyInput>(),
+        inputTypeToken = typeToken<StoreKey>(),
         outputTypeToken = typeToken<StoreKeyResponse>(),
     ),
     StoreKeyServiceCommand {
     override val commandId = StoreKeyServiceCommand.COMMAND_ID
 
     override suspend fun doExecute(
-        args: StoreKeyInput,
-        applyDuring: (StoreKeyInput) -> StoreKeyInput,
+        args: StoreKey,
+        applyDuring: (StoreKey) -> StoreKey,
     ): IdkResult<StoreKeyResponse, IdkError> {
-        val input = applyDuring(args)
-        val storeKeyRequest = input.storeKey
+        val storeKeyRequest = applyDuring(args)
 
         val key =
             try {
@@ -212,21 +211,20 @@ class StoreKeyServiceCommandImpl(
 class GenerateKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<GenerateKeyInput, GenerateKeyResponse, IdkError>(
+) : TypedServiceCommandAdapter<GenerateKeyGlobal, GenerateKeyResponse, IdkError>(
         commandId = GenerateKeyServiceCommand.COMMAND_ID,
         execution = execution,
-        inputTypeToken = typeToken<GenerateKeyInput>(),
+        inputTypeToken = typeToken<GenerateKeyGlobal>(),
         outputTypeToken = typeToken<GenerateKeyResponse>(),
     ),
     GenerateKeyServiceCommand {
     override val commandId = GenerateKeyServiceCommand.COMMAND_ID
 
     override suspend fun doExecute(
-        args: GenerateKeyInput,
-        applyDuring: (GenerateKeyInput) -> GenerateKeyInput,
+        args: GenerateKeyGlobal,
+        applyDuring: (GenerateKeyGlobal) -> GenerateKeyGlobal,
     ): IdkResult<GenerateKeyResponse, IdkError> {
-        val input = applyDuring(args)
-        val generateRequest = input.generateKey
+        val generateRequest = applyDuring(args)
 
         val keyPair =
             try {

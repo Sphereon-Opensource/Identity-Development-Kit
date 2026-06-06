@@ -31,7 +31,7 @@ import kotlinx.serialization.json.putJsonObject
  *
  * **Response envelopes:**
  * - **Single resource:** the bare entity, JSON-encoded — see [okWithData], [createdWithData].
- * - **Paginated list:** `{ "data": [...], "pagination": { limit, offset, total, hasMore } }` — see [paginated].
+ * - **Paginated list:** `{ "data": [...], "pagination": { limit, offset, page, size, total, totalPages, hasMore } }` — see [paginated].
  * - **Non-paginated list (nested resources):** `{ "data": [...] }` — see [list].
  * - **Error:** `{ "error": { "code", "message", "details"? } }` — see [error] and the per-status helpers.
  * - **Binary content:** raw bytes with explicit content type, optional `ETag` / `Cache-Control` — see [bytesResponse].
@@ -146,7 +146,12 @@ object ResponseBuilder {
 
     /**
      * Build a paginated list response with the canonical envelope:
-     * `{ "data": [...], "pagination": { "limit", "offset", "total", "hasMore" } }`.
+     * `{ "data": [...], "pagination": { "limit", "offset", "page", "size", "total", "totalPages", "hasMore" } }`.
+     *
+     * The `pagination` object is the unified superset matching the `PageMeta` schema in the
+     * canonical shared `common-components.yml`. The legacy fields (`limit`, `offset`, `total`,
+     * `hasMore`) are preserved exactly; `page`, `size`, and `totalPages` are additive and
+     * derived from [Page].
      */
     inline fun <reified T> paginated(page: Page<T>): GenericHttpResponse {
         val body =
@@ -159,7 +164,10 @@ object ResponseBuilder {
                 putJsonObject("pagination") {
                     put("limit", page.limit)
                     put("offset", page.offset)
+                    put("page", page.pageNumber)
+                    put("size", page.limit)
                     put("total", page.totalCount)
+                    put("totalPages", page.totalPages)
                     put("hasMore", page.hasMore)
                 }
             }

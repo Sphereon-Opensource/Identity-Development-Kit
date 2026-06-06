@@ -134,6 +134,7 @@ internal fun encodeCoseHeaderStructure(value: CoseHeaderCbor): CborMap<NumberLab
                 ?.let { put(CoseHeaderCbor.ALG, it) }
             value.crit?.let { put(CoseHeaderCbor.CRIT, it) }
             value.contentType?.let { put(CoseHeaderCbor.CONTENT_TYPE, it) }
+            value.typ?.let { put(CoseHeaderCbor.TYP, it) }
             value.kid?.let { put(CoseHeaderCbor.KID, it) }
             value.iv?.let { put(CoseHeaderCbor.IV, it) }
             value.partialIv?.let { put(CoseHeaderCbor.PARTIAL_IV, it) }
@@ -175,6 +176,7 @@ internal fun decodeCoseHeader(m: CborMap<NumberLabel, CborItem<*>>): CoseHeaderC
         iv = CoseHeaderCbor.IV.optional(m),
         partialIv = CoseHeaderCbor.PARTIAL_IV.optional(m),
         x5chain = x5Chain as? CborArray<CborByteString>,
+        typ = CoseHeaderCbor.TYP.optional(m),
     )
 }
 

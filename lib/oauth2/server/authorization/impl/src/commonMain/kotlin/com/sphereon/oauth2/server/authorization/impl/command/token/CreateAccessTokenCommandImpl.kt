@@ -32,7 +32,6 @@ import com.sphereon.core.events.SessionEventService
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
@@ -40,6 +39,7 @@ import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.model.AccessTokenData
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -89,7 +89,7 @@ class CreateAccessTokenCommandImpl(
     private val tokenStorage: TokenStorage,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
-    @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
+    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<CreateAccessTokenArgs, StringResult, IdkError>(
         commandId = CreateAccessTokenCommand.COMMAND_ID,
@@ -193,6 +193,7 @@ class CreateAccessTokenCommandImpl(
         additionalClaims: Map<String, Any>,
         issuerUrl: String,
     ): IdkResult<String, AuthorizationServerError> {
+        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         return try {
             val now = Clock.System.now()
             val expiresAt = now + expiresInSeconds.seconds

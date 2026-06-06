@@ -436,7 +436,13 @@ class CompiledPathPattern private constructor(
     }
 
     /**
-     * Extract path parameters from a path.
+     * Extract path parameters from a path. Captured parameter values are percent-decoded
+     * (see [percentDecode]) so clients that follow RFC 3986 / OpenAPI codegen norms by
+     * encoding reserved characters (e.g. `did%3Ajwk%3A...` for `did:jwk:...`) match the
+     * same record as clients that send the unencoded form. Without this, the captured
+     * group is the raw URL segment and the downstream lookup misses on every encoded
+     * request — a 404 that's invisible to local-curl smoke-tests but trivially reproducible
+     * with any generated client.
      */
     fun extractParams(path: String): Map<String, String> {
         val pathSegments = splitPath(path)
@@ -449,7 +455,7 @@ class CompiledPathPattern private constructor(
                 .zip(segments)
                 .mapNotNull { (pathSeg, patternSeg) ->
                     when (patternSeg) {
-                        is Segment.Parameter -> patternSeg.name to pathSeg
+                        is Segment.Parameter -> patternSeg.name to pathSeg.percentDecode()
                         is Segment.Literal -> null
                         is Segment.TailWildcard -> null
                     }
@@ -460,6 +466,9 @@ class CompiledPathPattern private constructor(
             return emptyMap()
         }
         // Validate leading literals before extracting; mismatched literal => no params.
+        // Literals are compared in their wire (encoded) form because pattern declarations
+        // never carry encoded reserved chars in practice — decoding only applies to
+        // captured parameter values.
         for (i in 0 until tailWildcardIndex) {
             val patternSeg = segments[i]
             if (patternSeg is Segment.Literal && pathSegments[i] != patternSeg.value) {
@@ -470,11 +479,13 @@ class CompiledPathPattern private constructor(
         for (i in 0 until tailWildcardIndex) {
             val patternSeg = segments[i]
             if (patternSeg is Segment.Parameter) {
-                params[patternSeg.name] = pathSegments[i]
+                params[patternSeg.name] = pathSegments[i].percentDecode()
             }
         }
         val tail = segments[tailWildcardIndex] as Segment.TailWildcard
-        params[tail.name] = pathSegments.drop(tailWildcardIndex).joinToString("/")
+        // Tail-wildcard captures multiple segments; decode each one independently so a `/`
+        // inside an individual encoded segment doesn't get mistaken for a separator.
+        params[tail.name] = pathSegments.drop(tailWildcardIndex).joinToString("/") { it.percentDecode() }
         return params
     }
 

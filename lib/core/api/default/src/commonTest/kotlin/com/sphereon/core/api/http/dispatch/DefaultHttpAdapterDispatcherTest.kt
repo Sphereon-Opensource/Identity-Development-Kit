@@ -20,6 +20,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.RoutedHttpAdapter
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
@@ -535,6 +536,75 @@ class DefaultHttpAdapterDispatcherTest {
 
             assertEquals(200, response.statusCode)
             assertTrue(response.body?.contains("tenantId=customTenant") == true)
+        }
+
+    @Test
+    fun dispatchMatchesCatalogLeadingSlugPolicyAndKeepsSlugForRuntimeAdapter() =
+        runTest {
+            var capturedPath: String? = null
+            val adapter =
+                TestAdapter(
+                    id = "OID4VP",
+                    adapterMount =
+                        HttpAdapterMount(
+                            serverPrefix = "",
+                            adapterBasePath = "/",
+                            tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 1),
+                        ),
+                    routeSpecs = listOf(HttpMethod.GET to "/{tenantSlug}/oid4vp/request-uri/{id}"),
+                    captureNormalizedPath = { capturedPath = it },
+                )
+            val provider =
+                TestDescriptorProvider(
+                    id = "OID4VP",
+                    mount =
+                        HttpAdapterMount(
+                            serverPrefix = "",
+                            adapterBasePath = "/oid4vp",
+                            tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 1),
+                        ),
+                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/oid4vp/request-uri/{id}")),
+                )
+
+            val catalog = createCatalog(setOf(provider))
+            val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/acme/oid4vp/request-uri/123"))
+
+            assertEquals(200, response.statusCode)
+            assertEquals("/acme/oid4vp/request-uri/123", capturedPath)
+        }
+
+    @Test
+    fun dispatchMatchesCatalogWellKnownSuffixPolicyAndKeepsSuffixForRuntimeAdapter() =
+        runTest {
+            var capturedPath: String? = null
+            val adapter =
+                TestAdapter(
+                    id = "OAUTH2_DISCOVERY",
+                    adapterMount =
+                        HttpAdapterMount(
+                            serverPrefix = "",
+                            adapterBasePath = "/",
+                            tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 1),
+                        ),
+                    routeSpecs = listOf(HttpMethod.GET to "/.well-known/openid-configuration/{tenantSlug}"),
+                    captureNormalizedPath = { capturedPath = it },
+                )
+            val provider =
+                TestDescriptorProvider(
+                    id = "OAUTH2_DISCOVERY",
+                    mount = adapter.describe().mount,
+                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/.well-known/openid-configuration")),
+                )
+
+            val catalog = createCatalog(setOf(provider))
+            val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/.well-known/openid-configuration/acme"))
+
+            assertEquals(200, response.statusCode)
+            assertEquals("/.well-known/openid-configuration/acme", capturedPath)
         }
 
     // ========== Specificity scoring tests ==========

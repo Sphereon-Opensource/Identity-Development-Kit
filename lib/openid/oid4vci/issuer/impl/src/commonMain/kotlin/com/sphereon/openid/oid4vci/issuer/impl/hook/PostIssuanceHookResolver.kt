@@ -60,7 +60,18 @@ internal object PostIssuanceHookResolver {
                 }
             }
         return if (sessionAllowList != null) {
-            deploymentResolved.intersect(sessionAllowList.toSet())
+            // The per-session allow-list (e.g. an issuance session's
+            // postIssuanceHookAllowList) is authoritative explicit opt-in: fire
+            // exactly these hook ids. We do NOT intersect with the app-scope
+            // `discovery` here, because a hook can legitimately be SESSION-scoped
+            // (needs per-request session deps) and so be absent from the app-scope
+            // ServiceCommandRegistry's `listCommandIds()` — intersecting would
+            // silently drop it. Execution stays gated downstream: the dispatcher
+            // only fires ids that `sessionCommands.get(id)` resolves AND whose
+            // `supports(args)` is true, so unknown/unsupported ids drop safely.
+            // Deployment discovery (explicit + patterns) applies only when no
+            // session allow-list is provided.
+            sessionAllowList.toSet()
         } else {
             deploymentResolved
         }

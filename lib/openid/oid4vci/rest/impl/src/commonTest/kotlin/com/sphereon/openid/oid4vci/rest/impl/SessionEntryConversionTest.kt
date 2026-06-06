@@ -16,6 +16,11 @@
 
 package com.sphereon.openid.oid4vci.rest.impl
 
+import com.sphereon.attribute.flow.AttributeProvenanceRef
+import com.sphereon.attribute.flow.PipelinePhase
+import com.sphereon.attribute.pipeline.LookupKey
+import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
+import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSession
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus
 import com.sphereon.openid.oid4vci.rest.IssuanceCallbackConfig
@@ -23,6 +28,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class SessionEntryConversionTest {
     @Test
@@ -141,5 +148,62 @@ class SessionEntryConversionTest {
         assertNull(restored.callbackConfig)
         assertNull(restored.state)
         assertNull(restored.expiresAt)
+    }
+
+    @Test
+    fun staticOfferFieldsRoundTripWithReusableLifecycleAndRateLimit() {
+        val lookupKey =
+            LookupKey(
+                name = "email",
+                value = "user@example.com",
+                producedBy = AttributeProvenanceRef("test-source"),
+                phase = PipelinePhase.SESSION_INIT,
+                timestamp = Instant.fromEpochSeconds(1000),
+            )
+        val rateLimit = OfferRateLimit(maxPerWindow = 10, windowSeconds = 60)
+        val session =
+            CredentialOfferSession(
+                correlationId = "corr-reusable",
+                offerId = "offer-reusable",
+                status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
+                createdAt = 3000000L,
+                lastUpdatedAt = 3000000L,
+                uriLifecycle = OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,
+                rateLimit = rateLimit,
+                initialLookupKeys = listOf(lookupKey),
+            )
+
+        val entry = KvCredentialOfferSessionStore.CredentialOfferSessionEntry.fromPublic(session)
+        val restored = entry.toPublic()
+
+        assertEquals(OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH, restored.uriLifecycle)
+        assertNotNull(restored.rateLimit)
+        assertEquals(10, restored.rateLimit!!.maxPerWindow)
+        assertEquals(60L, restored.rateLimit!!.windowSeconds)
+        assertEquals(1, restored.initialLookupKeys.size)
+        assertEquals("email", restored.initialLookupKeys[0].name)
+        assertEquals("user@example.com", restored.initialLookupKeys[0].value)
+    }
+
+    @Test
+    fun staticOfferFieldsRoundTripWithSingleUseAndNullRateLimit() {
+        val session =
+            CredentialOfferSession(
+                correlationId = "corr-single",
+                offerId = "offer-single",
+                status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
+                createdAt = 4000000L,
+                lastUpdatedAt = 4000000L,
+                uriLifecycle = OfferUriLifecycle.SINGLE_USE,
+                rateLimit = null,
+                initialLookupKeys = emptyList(),
+            )
+
+        val entry = KvCredentialOfferSessionStore.CredentialOfferSessionEntry.fromPublic(session)
+        val restored = entry.toPublic()
+
+        assertEquals(OfferUriLifecycle.SINGLE_USE, restored.uriLifecycle)
+        assertNull(restored.rateLimit)
+        assertTrue(restored.initialLookupKeys.isEmpty())
     }
 }

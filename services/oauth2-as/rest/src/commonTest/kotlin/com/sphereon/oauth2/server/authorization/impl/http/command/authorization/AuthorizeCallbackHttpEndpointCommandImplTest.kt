@@ -28,6 +28,7 @@ import com.sphereon.oauth2.server.authorization.command.AuthorizationResponseDat
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackArgs
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeCallbackCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestMutableOidcLoginSessionIdProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
@@ -60,6 +61,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = NoopRedirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand =
                         FakeCallbackCommand {
                             Ok(
@@ -95,6 +97,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = NoopRedirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand =
                         FakeCallbackCommand {
                             Ok(
@@ -132,6 +135,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = NoopRedirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand = FakeCallbackCommand { error("Should not be called") },
                 )
 
@@ -152,6 +156,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = NoopRedirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand =
                         FakeCallbackCommand { Err(IdkError.fromString(code = "invalid_request", message = "session not found")) },
                 )
@@ -189,6 +194,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = redirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand =
                         FakeCallbackCommand {
                             Err(
@@ -231,6 +237,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = NoopRedirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand =
                         FakeCallbackCommand {
                             Err(
@@ -273,6 +280,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = redirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand =
                         FakeCallbackCommand {
                             Err(
@@ -360,6 +368,7 @@ class AuthorizeCallbackHttpEndpointCommandImplTest {
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                     configProvider = TestOAuth2ServersConfigProvider(),
                     requiredActionsRedirectHandler = redirectHandler,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     handleAuthorizeCallbackCommand = FakeCallbackCommand { Err(errorWithoutMeta) },
                 )
 

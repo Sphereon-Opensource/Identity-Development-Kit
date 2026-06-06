@@ -30,11 +30,11 @@ import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestArgs
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestCommand
 import com.sphereon.oauth2.server.authorization.command.introspection.IntrospectionHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.isBasicAuthorizationHeaderInternal
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.http.withWwwAuthenticateIfBasicInternal
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -55,6 +55,7 @@ class IntrospectionHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val handleIntrospectionRequestCommand: HandleIntrospectionRequestCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val auditEmitter: OAuth2AuditEmitter,
 ) : HttpEndpointCommandAdapter(
         id = IntrospectionHttpEndpointCommand.COMMAND_ID,
@@ -82,7 +83,7 @@ class IntrospectionHttpEndpointCommandImpl(
                 HandleIntrospectionRequestArgs(
                     requestBody = requestBody,
                     requestHeaders = request.headers,
-                    httpUrl = "${request.resolveBaseUrl(configProvider)}/introspect",
+                    httpUrl = "${baseUrlResolver.resolveBaseUrl(request, configProvider)}/introspect",
                 ),
             )
         val basicAuthWasAttempted = isBasicAuthorizationHeaderInternal(request.headers)

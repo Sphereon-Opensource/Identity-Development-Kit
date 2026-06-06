@@ -18,7 +18,6 @@
 package com.sphereon.crypto.core.x509
 
 import at.asitplus.awesn1.Asn1Element
-import at.asitplus.awesn1.Asn1EncapsulatingOctetString
 import at.asitplus.awesn1.Asn1Primitive
 import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.crypto.pki.X509CertificateExtension
@@ -81,31 +80,21 @@ internal fun getSubjectAlternativeName(extensions: List<X509CertificateExtension
  * SubjectAltName ::= GeneralNames
  * GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
  *
- * @param extensionValue The ASN.1 element containing the SAN extension value
+ * In awesn1 0.3.0 [X509CertificateExtension.value] is the raw extnValue OCTET STRING content,
+ * i.e. the DER encoding of the GeneralNames SEQUENCE.
+ *
+ * @param extensionValue The raw DER bytes of the SAN extension value
  * @return The parsed SubjectAlternativeName
  */
-internal fun parseSubjectAlternativeNameExtension(extensionValue: Asn1Element): SubjectAlternativeName {
+internal fun parseSubjectAlternativeNameExtension(extensionValue: ByteArray): SubjectAlternativeName {
     val names = mutableListOf<GeneralName>()
 
-    // The extension value is typically wrapped in an OCTET STRING
+    // The extension value holds the DER encoding of the GeneralNames SEQUENCE
     val content =
-        when (extensionValue) {
-            is Asn1EncapsulatingOctetString -> {
-                // Parse the content of the OCTET STRING as ASN.1
-                try {
-                    Asn1Element.parse(extensionValue.content)
-                } catch (_: Exception) {
-                    return SubjectAlternativeName.EMPTY
-                }
-            }
-
-            is Asn1Sequence -> {
-                extensionValue
-            }
-
-            else -> {
-                return SubjectAlternativeName.EMPTY
-            }
+        try {
+            Asn1Element.parse(extensionValue)
+        } catch (_: Exception) {
+            return SubjectAlternativeName.EMPTY
         }
 
     // The content should be a SEQUENCE of GeneralName

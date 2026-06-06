@@ -28,6 +28,8 @@ import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.server.authorization.impl.config.DefaultAsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.DependencyGraph
@@ -37,15 +39,18 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
 
 /**
- * Test-specific override: use opaque tokens (no signing key required).
- * Replaces the jvmMain DefaultOAuth2ConfigModule which tries to auto-create a signing key.
+ * Test-specific override: resolve no AS signing identifier, so commands fall back to opaque tokens
+ * or surface their "not configured" branch without a real signing key. Replaces
+ * [DefaultAsServerSigningIdentifierResolver], which would otherwise auto-seed one.
  */
-@ContributesTo(SessionScope::class, replaces = [com.sphereon.oauth2.server.authorization.impl.config.DefaultOAuth2ConfigModule::class])
+@ContributesTo(SessionScope::class, replaces = [DefaultAsServerSigningIdentifierResolver::class])
 interface TestOAuth2ConfigModule {
     @Provides
     @SingleIn(SessionScope::class)
-    @Named("oauth2.serverIdentifier")
-    fun provideTestServerIdentifier(): ManagedIdentifierOptsOrResult? = null
+    fun provideTestSigningIdentifierResolver(): AsServerSigningIdentifierResolver =
+        object : AsServerSigningIdentifierResolver {
+            override suspend fun resolveSigningIdentifier(): ManagedIdentifierOptsOrResult? = null
+        }
 }
 
 /**

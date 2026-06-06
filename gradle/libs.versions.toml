@@ -1,5 +1,5 @@
 [versions]
-app-platform = "0.0.12SPH-SNAPSHOT"
+app-platform = "0.0.15SPH-SNAPSHOT"
 
 [libraries]
 amz-metro-public = { module = "software.amazon.app.platform:metro-public", version.ref = "app-platform"}

@@ -19,6 +19,7 @@ package com.sphereon.did.models
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
@@ -38,6 +39,9 @@ import kotlin.native.ObjCName
  * @property kmsProviderId KMS provider ID
  * @property verificationMethodId Fragment ID (e.g., "key-1") used in the DID Document
  * @property purposes List of verification purposes this key serves
+ * @property valueVerificationRelation Verification relationship that embeds this VM by value
+ * @property referenceVerificationRelations Verification relationships that reference this VM by DID URL
+ * @property extensionProperties Unknown DID 1.1 properties to attach to this verification method
  * @property type The verification method type to use (defaults to JsonWebKey2020)
  * @property controller Override controller if needed (defaults to DID subject)
  * @property publicKeyJwk The resolved public key JWK (populated by DSL processor from KMS)
@@ -53,6 +57,9 @@ data class VerificationMethodConfig
         val kmsProviderId: String,
         val verificationMethodId: String,
         val purposes: List<VerificationPurpose>,
+        val valueVerificationRelation: VerificationPurpose? = null,
+        val referenceVerificationRelations: List<VerificationPurpose> = if (valueVerificationRelation != null) purposes.filter { it != valueVerificationRelation } else purposes,
+        val extensionProperties: Map<String, JsonElement> = emptyMap(),
         val type: VerificationMethodType = VerificationMethodType.JSON_WEB_KEY_2020,
         val controller: String? = null,
         val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,

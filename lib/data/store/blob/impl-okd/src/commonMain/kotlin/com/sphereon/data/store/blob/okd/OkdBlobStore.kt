@@ -73,7 +73,7 @@ class OkdBlobStore(
     private val http: HttpClient,
     private val execution: SessionExecution?,
 ) : BlobStore {
-    override val storeId: String = OkdBlobStoreConfig.BACKEND_ID
+    override val schemeId: String = OkdBlobStoreConfig.BACKEND_ID
 
     override val capabilities: BlobStoreCapabilities =
         BlobStoreCapabilities(
@@ -161,7 +161,7 @@ class OkdBlobStore(
             val descriptor =
                 BlobDescriptor(
                     path = path,
-                    storeId = storeId,
+                    storeId = schemeId,
                     sizeBytes = data.size.toLong(),
                     contentType = responseContentType,
                     filename = path,
@@ -216,7 +216,7 @@ class OkdBlobStore(
                 return Err(mapHttpError(response.status, path))
             }
             val okdMeta = response.body<com.sphereon.data.store.okd.generated.models.DocumentMetadata>()
-            Ok(OkdBlobMapping.fromOkdMetadata(okdMeta, storeId))
+            Ok(OkdBlobMapping.fromOkdMetadata(okdMeta, schemeId))
         } catch (expected: Exception) {
             Err(IdkError.fromString(message = "OKD stat failed for $path: ${expected.message}", exception = expected, code = "BLOB_OKD_STAT_FAILED"))
         }

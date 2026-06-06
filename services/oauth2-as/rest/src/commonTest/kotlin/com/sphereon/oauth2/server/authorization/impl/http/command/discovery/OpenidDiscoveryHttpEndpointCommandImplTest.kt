@@ -27,6 +27,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import kotlinx.coroutines.test.runTest
@@ -70,6 +71,7 @@ class OpenidDiscoveryHttpEndpointCommandImplTest {
                             )
                         },
                     configProvider = configProvider,
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =
@@ -94,6 +96,7 @@ class OpenidDiscoveryHttpEndpointCommandImplTest {
                     execution = TestSessionExecution(),
                     handleDiscoveryRequestCommand = FakeDiscoveryCommand { error("Should not be called") },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                 )
 
             val request =

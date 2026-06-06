@@ -92,6 +92,10 @@ kotlin {
                 implementation(projects.libOpenidOid4vpVerifierImpl)
                 implementation(projects.libOpenidOid4vpDcql)
 
+                // DCQL query store (DcqlQueryConfigurationStore, DcqlQueryResolver bindings)
+                implementation(projects.libOpenidOid4vpDcqlStorePublic)
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
+
                 // OID4VP holder
                 implementation(projects.libOpenidOid4vpHolderPublic)
                 implementation(projects.libOpenidOid4vpHolderImpl)
@@ -137,6 +141,13 @@ kotlin {
                 // Ktor client (mock engine for in-process HTTP E2E tests)
                 implementation(sphereonlib.io.ktor.client.core)
                 implementation(sphereonlib.io.ktor.client.mock)
+
+                // Wallet facade (lib-wallet-impl contributes WalletImpl + WalletGraph to SessionScope)
+                implementation(projects.libWalletImpl)
+
+                // In-memory blob backing store (BlobWalletDocumentStore used by WalletImpl)
+                implementation(projects.libDataStoreBlobImpl)
+                implementation(projects.libDataStoreBlobImplMemory)
 
                 // DI
                 implementation(libs.bundles.app.platform.di)

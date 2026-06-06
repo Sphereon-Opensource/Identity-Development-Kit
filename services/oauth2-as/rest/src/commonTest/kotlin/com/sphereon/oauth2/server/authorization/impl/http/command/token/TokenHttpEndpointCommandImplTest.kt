@@ -27,6 +27,7 @@ import com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestCommand
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import kotlinx.coroutines.test.runTest
@@ -61,6 +62,7 @@ class TokenHttpEndpointCommandImplTest {
                             Ok(TokenResponse(accessToken = "at", tokenType = "Bearer", expiresIn = 3600))
                         },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     dpopNonceManager = TokenTestNonceManager,
                     clientCertificateExtractor = NoOpClientCertificateExtractor,
                     auditEmitter = NoOpOAuth2AuditEmitter,
@@ -105,6 +107,7 @@ class TokenHttpEndpointCommandImplTest {
                             error("Should not be called when body is missing")
                         },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     dpopNonceManager = TokenTestNonceManager,
                     clientCertificateExtractor = NoOpClientCertificateExtractor,
                     auditEmitter = NoOpOAuth2AuditEmitter,
@@ -129,6 +132,7 @@ class TokenHttpEndpointCommandImplTest {
                             Err(IdkError.fromString(code = "invalid_client", message = "bad creds"))
                         },
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     dpopNonceManager = TokenTestNonceManager,
                     clientCertificateExtractor = NoOpClientCertificateExtractor,
                     auditEmitter = NoOpOAuth2AuditEmitter,

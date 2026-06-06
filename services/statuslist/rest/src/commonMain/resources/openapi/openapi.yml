@@ -1,0 +1,107 @@
+openapi: 3.0.3
+info:
+  title: Credential Status List Hosting API
+  version: 0.1.0
+  description: |
+    PUBLIC, unauthenticated, cacheable hosting surface for signed credential status-list tokens
+    (IETF Token Status List and W3C Bitstring Status List). This is the URI a verifier resolves: each
+    endpoint returns the RAW signed token string with the token's own media type
+    (`application/statuslist+jwt`, `application/statuslist+cwt`, or `application/vc+jwt`) and a
+    `Cache-Control` header derived from the token's TTL. The body is the bare token, never a JSON
+    envelope.
+
+    There is NO authentication on this surface and NO tenant header: the status-list URI is public by
+    design, and the response carries no tenant-private data beyond the published, signed list. The
+    admin / authenticated management of status lists lives in a SEPARATE API
+    (`Credential Status List Management`), so a deployment may host these public tokens without
+    exposing the management surface.
+servers:
+  - url: http://localhost:8080
+    description: Local development (public mount, unversioned).
+paths:
+  /statuslists/{id}:
+    get:
+      tags: [Status List Hosting]
+      summary: Resolve the signed status-list token by id
+      operationId: getStatusListToken
+      description: |
+        Returns the RAW signed status-list token for the list with technical id `{id}`. The response
+        `Content-Type` is the token's own media type and a `Cache-Control: public, max-age=<ttl>`
+        header is set from the token's TTL hint.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Technical id of the status list.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The signed status-list token.
+          headers:
+            Cache-Control:
+              description: Cache directive derived from the token TTL.
+              schema:
+                type: string
+          content:
+            application/statuslist+jwt:
+              schema:
+                $ref: '#/components/schemas/StatusListTokenBody'
+            application/statuslist+cwt:
+              schema:
+                type: string
+                format: binary
+            application/vc+jwt:
+              schema:
+                $ref: '#/components/schemas/StatusListTokenBody'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /statuslists/by/{correlationId}:
+    get:
+      tags: [Status List Hosting]
+      summary: Resolve the signed status-list token by correlation id
+      operationId: getStatusListTokenByCorrelationId
+      description: |
+        Returns the RAW signed status-list token for the list with business correlation id
+        `{correlationId}`. Identical response shape and caching behaviour to the by-id endpoint.
+      parameters:
+        - name: correlationId
+          in: path
+          required: true
+          description: Business correlation id of the status list.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The signed status-list token.
+          headers:
+            Cache-Control:
+              description: Cache directive derived from the token TTL.
+              schema:
+                type: string
+          content:
+            application/statuslist+jwt:
+              schema:
+                $ref: '#/components/schemas/StatusListTokenBody'
+            application/statuslist+cwt:
+              schema:
+                type: string
+                format: binary
+            application/vc+jwt:
+              schema:
+                $ref: '#/components/schemas/StatusListTokenBody'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  schemas:
+    StatusListTokenBody:
+      type: string
+      description: |
+        The compact, signed status-list token (e.g. a compact JWS for `application/statuslist+jwt`
+        or `application/vc+jwt`). The body is the bare token string, not a JSON object.

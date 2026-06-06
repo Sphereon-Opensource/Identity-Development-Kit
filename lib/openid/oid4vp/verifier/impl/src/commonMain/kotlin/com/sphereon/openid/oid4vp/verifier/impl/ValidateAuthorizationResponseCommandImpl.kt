@@ -35,6 +35,7 @@ import com.sphereon.jsonld.command.JsonLdContextValidator
 import com.sphereon.jsonld.command.JsonLdSchemaValidator
 import com.sphereon.jsonld.command.ValidateJsonLdContextInput
 import com.sphereon.jsonld.command.ValidateJsonLdSchemaInput
+import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
@@ -46,6 +47,12 @@ import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.sdjwt.SdJwtCodec
+import com.sphereon.statuslist.CredentialStatusDecision
+import com.sphereon.statuslist.CredentialStatusEvaluation
+import com.sphereon.statuslist.CredentialStatusPolicy
+import com.sphereon.statuslist.describeStatus
+import com.sphereon.statuslist.evaluateCredentialStatus
+import com.sphereon.statuslist.spi.CredentialStatusVerifier
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
@@ -82,6 +89,15 @@ class ValidateAuthorizationResponseCommandImpl(
     private val verifyHolderBindingCommand: VerifyHolderBindingCommand,
     private val jsonLdContextValidator: JsonLdContextValidator,
     private val jsonLdSchemaValidator: JsonLdSchemaValidator,
+    private val deviceResponseCborCodec: DeviceResponseCborCodec,
+    /**
+     * Optional, possibly-empty set of credential-status mechanisms. Populated only when status-list
+     * implementations (e.g. `lib-statuslist-impl`) are on the verifier's classpath. Empty ⇒ no status
+     * checking runs at all; non-empty ⇒ each matched credential is evaluated against its per-query
+     * [CredentialStatusPolicy]. The set is declared `allowEmpty` by `CredentialStatusVerifierMultibinds`
+     * in lib-statuslist-public, so the graph resolves even with zero implementations.
+     */
+    private val credentialStatusVerifiers: Set<CredentialStatusVerifier>,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
@@ -104,6 +120,38 @@ class ValidateAuthorizationResponseCommandImpl(
         val result = doExecuteInternal(args, applyDuring)
         emitOutcome(result)
         return result
+    }
+
+    /**
+     * Emit the technical credential-status rejection detail (status list URI / index / value) as an
+     * event for ops/audit. Deliberately separate from the short user-facing error so the URI and index
+     * never leak into the verification result returned to the wallet/relying party UI.
+     */
+    private suspend fun emitStatusRejected(
+        queryId: String,
+        evaluation: CredentialStatusEvaluation,
+    ) {
+        val es = eventService ?: return
+        val rejected = evaluation.rejectedStatus
+        es.emit(
+            es
+                .eventBuilder()
+                .type(EventTypes.OID4VP_CREDENTIAL_STATUS_REJECTED)
+                .subsystem(EventSubsystems.OID4VP)
+                .category(EventCategories.SECURITY)
+                .origin(ValidateAuthorizationResponseCommand.COMMAND_ID)
+                .payload(
+                    buildJsonObject {
+                        put("credentialQueryId", queryId)
+                        rejected?.let {
+                            put("statusValue", it.value)
+                            put("status", describeStatus(it))
+                            put("statusListUri", it.statusListUri)
+                        }
+                        evaluation.reason?.let { put("detail", it) }
+                    },
+                ).build(),
+        )
     }
 
     private suspend fun emitOutcome(result: IdkResult<ValidationResult, IdkError>,) {
@@ -138,16 +186,39 @@ class ValidateAuthorizationResponseCommandImpl(
 
         val errors = mutableListOf<String>()
         val matchedCredentials = mutableListOf<MatchedCredential>()
+        // Query IDs the wallet actually submitted a presentation for. A required credential that WAS
+        // submitted but then discarded (status rejection, holder-binding failure, ...) must not also be
+        // reported as "not found" — the specific discard reason is already in `errors`.
+        val submittedQueryIds = mutableSetOf<String>()
+
+        // Per-DCQL-query credential status policies, pinned on the session at create time. Loaded only
+        // to drive status acceptance; absence (no session / no map) falls back to the strict default
+        // per query, and matters only when status verifiers are actually wired (see the loop below).
+        val statusPolicies: Map<String, CredentialStatusPolicy> =
+            if (credentialStatusVerifiers.isEmpty()) {
+                emptyMap()
+            } else {
+                originalRequest.state
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { authorizationSessionStore.getByCorrelationId(it).getOrNull()?.credentialStatusPolicies }
+                    ?: emptyMap()
+            }
 
         // Validate state parameter
         if (originalRequest.state != null && parsedResponse.state != originalRequest.state) {
             errors.add("State mismatch: expected '${originalRequest.state}', got '${parsedResponse.state}'")
         }
 
-        // Validate each presentation in the VP token (DCQL format: Map of queryId -> presentations)
+        // Validate each presentation in the VP token (DCQL format: Map of queryId -> presentations).
+        //
+        // OID4VP §8.1: each Presentation value is Credential-Format dependent — a JSON string
+        // for compact formats (dc+sd-jwt, jwt_vc_json, mso_mdoc) or a JSON object for the W3C
+        // Data Integrity formats (ldp_vc/ldp_vp). We branch on the element shape and NEVER
+        // blanket-cast to jsonPrimitive.
         val vpToken = parsedResponse.vpToken
 
-        for ((queryId, presentationList) in vpToken.presentations) {
+        for ((queryId, presentationElements) in vpToken.presentationElements) {
+            submittedQueryIds.add(queryId)
             // Validate the credential query ID exists in the DCQL query
             val credentialQueries = dcqlQuery.credentials ?: emptyList()
             val matchingQuery = credentialQueries.find { it.id == queryId }
@@ -158,7 +229,22 @@ class ValidateAuthorizationResponseCommandImpl(
             }
 
             // Validate each presentation for this query ID
-            for ((presentationIndex, presentation) in presentationList.withIndex()) {
+            for ((presentationIndex, presentationElement) in presentationElements.withIndex()) {
+                // ldp_vc/ldp_vp Data Integrity presentations arrive as a JSON object. The
+                // verifier's holder-binding/claim-extraction pipeline below only supports the
+                // compact string formats (SD-JWT KB-JWT, mdoc DeviceAuth, JWT proof). Surface a
+                // clean validation error for the LDP object form rather than letting a downstream
+                // `.jsonPrimitive` cast blow up.
+                if (presentationElement !is JsonPrimitive || !presentationElement.isString) {
+                    errors.add(
+                        "Presentation for query '$queryId' at index $presentationIndex is a JSON object " +
+                            "(ldp_vc/ldp_vp Data Integrity format). Cryptographic verification of W3C Data " +
+                            "Integrity presentations is not supported by this verifier; only compact formats " +
+                            "(dc+sd-jwt, jwt_vc_json, mso_mdoc) can be verified.",
+                    )
+                    continue
+                }
+                val presentation = presentationElement.content
                 val detectedFormat = CredentialFormat.detectFormat(presentation)
 
                 if (detectedFormat == null) {
@@ -285,6 +371,26 @@ class ValidateAuthorizationResponseCommandImpl(
                     }
                 }
 
+                // Credential status (revocation/suspension) check. Runs only when status verifiers are
+                // wired; otherwise skipped entirely. `extractDisclosedClaims` strips the `status` claim,
+                // so we read the full credential payload separately. A REJECT discards the presentation
+                // per OID4VP §10, the same as a holder-binding failure.
+                if (credentialStatusVerifiers.isNotEmpty()) {
+                    val statusClaims = credentialClaimsForStatus(presentation, detectedFormat) ?: JsonObject(emptyMap())
+                    val policy = statusPolicies[queryId] ?: CredentialStatusPolicy()
+                    val evaluation = evaluateCredentialStatus(credentialStatusVerifiers, statusClaims, policy)
+                    if (evaluation.decision == CredentialStatusDecision.REJECT) {
+                        // User-facing: just the credential and its state ("EuPid is revoked"). The status
+                        // list URI / index are operator diagnostics — logged and emitted as an event, not
+                        // returned to the end user.
+                        val word = evaluation.rejectedStatus?.let { describeStatus(it) }
+                        errors.add(if (word != null) "$queryId is $word" else "$queryId could not be validated")
+                        log.warn("Credential '$queryId' rejected by status check: ${evaluation.reason}")
+                        emitStatusRejected(queryId, evaluation)
+                        continue
+                    }
+                }
+
                 // Extract disclosed claims from the presentation
                 val disclosedClaims = extractDisclosedClaims(presentation, detectedFormat)
 
@@ -308,7 +414,12 @@ class ValidateAuthorizationResponseCommandImpl(
 
         for (required in requiredCredentials) {
             if (matchedCredentials.none { it.credentialQueryId == required.id }) {
-                errors.add("Required credential '${required.id}' not found in response")
+                // Only "not found" when the wallet never submitted it. If it was submitted but
+                // discarded (e.g. revoked status), the specific rejection error already explains why,
+                // so adding "not found" on top would just confuse the end user.
+                if (required.id !in submittedQueryIds) {
+                    errors.add("Required credential '${required.id}' not found in response")
+                }
             }
         }
 
@@ -431,9 +542,19 @@ class ValidateAuthorizationResponseCommandImpl(
 
     /**
      * Extract disclosed claims from a credential presentation.
-     * For SD-JWT: parses the compact serialization and resolves all disclosures.
+     *
+     * - SD-JWT: parses the compact serialization and resolves all disclosures into native values.
+     * - mso_mdoc: CBOR-decodes the `DeviceResponse` and walks each document's issuer-signed
+     *   namespaces, surfacing every disclosed `IssuerSignedItem` as a claim.
+     *
+     * Claim-key shape: mdoc data elements are namespace-qualified, so keys are
+     * `<namespace>.<elementIdentifier>` (e.g. `org.iso.18013.5.1.given_name`). This mirrors the
+     * mdoc DCQL `claims[].path` representation `[namespace, elementIdentifier]` (a two-segment
+     * path joined by `.`), keeping the verifier's normalized claims map aligned with the query
+     * paths used to request them. Values are kept consistent with the SD-JWT mapping: primitives
+     * (String/Long/Boolean/Double) pass through; anything richer is rendered via toString().
      */
-    private fun extractDisclosedClaims(
+    internal fun extractDisclosedClaims(
         presentation: String,
         format: CredentialFormat,
     ): Map<String, Any?> =
@@ -459,10 +580,100 @@ class ValidateAuthorizationResponseCommandImpl(
                 )
             }
 
+            CredentialFormat.MSO_MDOC -> {
+                extractMdocClaims(presentation)
+            }
+
             else -> {
                 log.debug("Claim extraction not implemented for format: ${format.value}")
                 emptyMap()
             }
+        }
+
+    /**
+     * Full credential payload (including the `status` / `credentialStatus` claims that
+     * [extractDisclosedClaims] deliberately strips) for status-list verification. SD-JWT → the
+     * resolved full payload; compact JWT-VC → the decoded JWT body; mdoc and other shapes → null (no
+     * status read wired yet, handled as "no reference" by the evaluator).
+     */
+    private fun credentialClaimsForStatus(
+        presentation: String,
+        format: CredentialFormat,
+    ): JsonObject? =
+        when (format) {
+            CredentialFormat.SD_JWT_DC, CredentialFormat.SD_JWT_VC -> {
+                SdJwtCodec
+                    .parse(presentation)
+                    .getOrNull()
+                    ?.payload
+                    ?.fullPayload
+            }
+
+            CredentialFormat.JWT_VC_JSON, CredentialFormat.VC_LD_JSON_JWT -> {
+                decodeJwtPayloadOrNull(presentation)
+            }
+
+            else -> {
+                null
+            }
+        }
+
+    /**
+     * Extract the disclosed issuer-signed data elements from an mso_mdoc presentation.
+     *
+     * The presentation wire form is base64url(CBOR(DeviceResponse)) per ISO 18013-7 §B.3.
+     * Holder binding has already been verified by the time this runs, so the CBOR decode is a
+     * pure structural read. Every `IssuerSignedItem` across every document and namespace is
+     * surfaced under the `<namespace>.<elementIdentifier>` key.
+     */
+    private fun extractMdocClaims(presentation: String): Map<String, Any?> {
+        val deviceResponseBytes =
+            try {
+                presentation.decodeFromBase64Url()
+            } catch (expected: IllegalArgumentException) {
+                log.warn("Failed to base64url-decode mso_mdoc presentation for claim extraction: ${expected.message}")
+                return emptyMap()
+            }
+
+        val deviceResponse =
+            deviceResponseCborCodec
+                .decode(deviceResponseBytes)
+                .getOrElse { error ->
+                    log.warn("Failed to CBOR-decode DeviceResponse for claim extraction: ${error.message.defaultMessage}")
+                    return emptyMap()
+                }.value
+
+        val documents = deviceResponse.documents
+        if (documents.isNullOrEmpty()) {
+            log.debug("mso_mdoc DeviceResponse contains no documents; no claims to extract")
+            return emptyMap()
+        }
+
+        val claims = mutableMapOf<String, Any?>()
+        documents.forEach { document ->
+            val nameSpaces = document.issuerSigned.getNameSpaces() ?: return@forEach
+            nameSpaces.forEach { nameSpace ->
+                val items = document.issuerSigned.getIssuerSignedItems(nameSpace.toString()) ?: return@forEach
+                items.forEach { item ->
+                    val key = "$nameSpace.${item.elementIdentifier}"
+                    claims[key] = unwrapMdocElementValue(item.elementValue)
+                }
+            }
+        }
+        return claims
+    }
+
+    /**
+     * Render a CBOR-decoded mdoc element value into a serialization-friendly value consistent
+     * with how SD-JWT claims land in the map. The codec already unwraps each CBOR item to its
+     * underlying Kotlin value, so native primitives pass through; richer structures (nested
+     * maps/arrays, byte strings, tagged dates) are rendered via toString().
+     */
+    private fun unwrapMdocElementValue(value: Any?): Any? =
+        when (value) {
+            null -> null
+            is String, is Boolean, is Long, is Int, is Double, is Float -> value
+            else -> value.toString()
         }
 
     private companion object {

@@ -19,6 +19,8 @@ package com.sphereon.openid.oid4vp.verifier.impl
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.openid.oid4vp.common.store.StoreMetadata
+import com.sphereon.openid.oid4vp.common.store.StoredEntry
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
@@ -26,8 +28,6 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCreateArgs
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionError
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
-import com.sphereon.openid.oid4vp.verifier.store.StoreMetadata
-import com.sphereon.openid.oid4vp.verifier.store.StoredEntry
 import kotlin.time.Clock
 
 /**

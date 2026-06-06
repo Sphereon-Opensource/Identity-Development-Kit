@@ -194,7 +194,7 @@ abstract class CommandBackedHttpAdapter(
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
-            mount = mount,
+            mount = mount.copy(tenantPathPolicy = tenantPathPolicy),
             endpoints =
                 enabledEndpoints.map { endpoint ->
                     // Prepend adapter base path for catalog/dispatcher matching.
@@ -399,8 +399,23 @@ abstract class CommandBackedHttpAdapter(
             resolvedTenantIdProvider.setCurrentTenantId(winner.descendedTenantId!!)
         }
 
+        // Extract `{placeholder}` path parameters from the matched endpoint pattern and merge
+        // them onto the request before executing. The Ktor catch-all route ("{...}") and
+        // `toGenericHttpRequest` deliberately do NOT populate per-pattern path params (Ktor only
+        // yields a tailcard), and the dispatcher matches by pattern without extracting — so without
+        // this step `requirePathParam("catalogId")` etc. fail with "Missing required path parameter".
+        // Pick the first of the endpoint's patterns that matches this (already base-path-stripped)
+        // request; multi-pattern descriptors expose the same handler at several URLs.
+        val matchedPattern =
+            winner.endpoint.endpoint.pathPatterns
+                .firstOrNull { winner.strippedRequest.matches(winner.endpoint.endpoint.method.name, it) }
+        val requestWithParams =
+            matchedPattern
+                ?.let { winner.strippedRequest.withExtractedParams(it) }
+                ?: winner.strippedRequest
+
         return try {
-            winner.endpoint.execute(winner.strippedRequest)
+            winner.endpoint.execute(requestWithParams)
         } catch (expected: Exception) {
             log.error("[$id] Error executing endpoint: ${expected.message}", expected)
             Err(IdkError.UNKNOWN_ERROR(message = expected.message ?: "Internal error", exception = expected))
@@ -612,7 +627,7 @@ abstract class CommandBackedHttpAdapter(
             return request
         }
         val path = request.path
-        return if (path.startsWith(basePath)) {
+        if (path.startsWith(basePath)) {
             val relativePath =
                 path.removePrefix(basePath).let {
                     if (it.isEmpty()) {
@@ -621,11 +636,31 @@ abstract class CommandBackedHttpAdapter(
                         it
                     }
                 }
-            request.copy(path = relativePath)
-        } else {
-            request
+            return request.copy(path = relativePath)
         }
+
+        val policy = tenantPathPolicy
+        if (policy !is TenantPathPolicy.LeadingSlug) {
+            return request
+        }
+
+        val baseSegments = basePath.split('/').filter { it.isNotEmpty() }
+        val pathSegments = path.split('/').filter { it.isNotEmpty() }
+        val maxDepth = policy.maxDepth
+        for (peelDepth in 1..minOf(maxDepth, pathSegments.size)) {
+            val afterSlug = pathSegments.drop(peelDepth)
+            if (!afterSlug.startsWithSegments(baseSegments)) {
+                continue
+            }
+            val relativeSegments = pathSegments.take(peelDepth) + afterSlug.drop(baseSegments.size)
+            val relativePath = if (relativeSegments.isEmpty()) "/" else "/" + relativeSegments.joinToString("/")
+            return request.copy(path = relativePath)
+        }
+
+        return request
     }
+
+    private fun List<String>.startsWithSegments(prefix: List<String>): Boolean = size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
     override fun getById(commandId: String): Command<GenericHttpRequest, GenericHttpResponse, IdkError>? {
         @Suppress("UNCHECKED_CAST")

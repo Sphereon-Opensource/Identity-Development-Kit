@@ -57,7 +57,7 @@ class FileSystemBlobStore(
 ) : BlobStore {
     private val mutex = Mutex()
 
-    override val storeId: String = BlobStoreSchemes.FILESYSTEM
+    override val schemeId: String = BlobStoreSchemes.FILESYSTEM
 
     override val capabilities: BlobStoreCapabilities = BlobStoreCapabilities.SIMPLE
 
@@ -349,7 +349,7 @@ class FileSystemBlobStore(
         val effectiveMetadata = metadata ?: BlobMetadata(contentType = sidecar?.contentType)
         return BlobDescriptor(
             path = path,
-            storeId = storeId,
+            storeId = schemeId,
             sizeBytes = fsMetadata.size ?: 0L,
             contentType = sidecar?.contentType ?: effectiveMetadata.contentType,
             filename = path.substringAfterLast('/'),

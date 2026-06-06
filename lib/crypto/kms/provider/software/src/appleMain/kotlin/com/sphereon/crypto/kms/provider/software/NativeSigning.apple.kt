@@ -17,10 +17,7 @@
 
 package com.sphereon.crypto.kms.provider.software
 
-import at.asitplus.awesn1.Asn1Element
-import at.asitplus.awesn1.Asn1Sequence
-import at.asitplus.awesn1.crypto.EcdsaSignatureValue
-import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.crypto.X509SignatureValue
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.kms.keystore.software.getNativeKeychainKey
@@ -127,10 +124,9 @@ internal actual suspend fun signWithNativeKey(
                 )
 
         if (isEcdsa) {
-            val seq = Asn1Element.parse(derSignature) as Asn1Sequence
-            val ecdsaSig = EcdsaSignatureValue.decodeFromTlv(seq)
-            val rBytes = ecdsaSig.r.magnitude
-            val sBytes = ecdsaSig.s.magnitude
+            val (r, s) = X509SignatureValue(derSignature).decodeRS()
+            val rBytes = r.magnitude
+            val sBytes = s.magnitude
 
             val coordSize =
                 when (signatureAlgorithm) {

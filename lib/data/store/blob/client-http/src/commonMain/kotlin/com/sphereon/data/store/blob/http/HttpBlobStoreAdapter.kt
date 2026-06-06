@@ -41,7 +41,7 @@ class HttpBlobStoreAdapter(
     private val client: HttpBlobServiceClient,
     private val tenantId: String,
 ) : BlobStore {
-    override val storeId: String = HttpBlobServiceClientConfig.BACKEND_ID
+    override val schemeId: String = HttpBlobServiceClientConfig.BACKEND_ID
 
     override val capabilities: BlobStoreCapabilities =
         BlobStoreCapabilities(

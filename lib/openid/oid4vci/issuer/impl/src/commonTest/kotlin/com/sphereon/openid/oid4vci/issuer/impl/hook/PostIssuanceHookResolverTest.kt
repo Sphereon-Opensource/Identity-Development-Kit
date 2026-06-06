@@ -92,7 +92,7 @@ class PostIssuanceHookResolverTest {
     }
 
     @Test
-    fun sessionAllowListIntersectsDeploymentSet() {
+    fun sessionAllowListIsTheResolvedSetWhenNoDeploymentConfig() {
         val ids =
             PostIssuanceHookResolver.resolveHookIds(
                 hookPointId = "oid4vci.after-credential-issued",
@@ -103,14 +103,16 @@ class PostIssuanceHookResolverTest {
         assertEquals(
             setOf("hook.post-issuance.redemption-consume"),
             ids,
-            "per-session allow-list narrows the deployment set to the intersection",
+            "a per-session allow-list is authoritative: it is the resolved set verbatim",
         )
     }
 
     @Test
-    fun sessionAllowListCannotExpandDeploymentSet() {
-        // The allow-list names a command the pattern does not match — it must
-        // NOT be added; allow-list is a narrower, not a broader.
+    fun sessionAllowListIsAuthoritativeOverDeploymentPatterns() {
+        // A per-session allow-list is an explicit opt-in and is authoritative: it fires exactly the
+        // listed hook ids regardless of the deployment patterns (which apply only when no allow-list
+        // is given). Execution stays gated downstream (the dispatcher only fires ids that resolve and
+        // whose supports(args) is true).
         val ids =
             PostIssuanceHookResolver.resolveHookIds(
                 hookPointId = "oid4vci.after-credential-issued",
@@ -122,13 +124,13 @@ class PostIssuanceHookResolverTest {
                 sessionAllowList =
                     listOf(
                         "hook.post-issuance.siem-fanout",
-                        "hook.post-issuance.redemption-consume", // not in deployment set
+                        "hook.post-issuance.redemption-consume", // not in the deployment pattern, but allow-listed
                     ),
             )
         assertEquals(
-            setOf("hook.post-issuance.siem-fanout"),
+            setOf("hook.post-issuance.siem-fanout", "hook.post-issuance.redemption-consume"),
             ids,
-            "allow-list only narrows; commands outside the deployment set stay excluded",
+            "the session allow-list is authoritative; deployment patterns do not narrow it",
         )
     }
 

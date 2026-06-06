@@ -50,6 +50,7 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.app.cash.sqldelight.jdbc.driver)
                 implementation(sphereonlib.org.xerial.sqlite.jdbc)
+                implementation(sphereonlib.com.zaxxer.hikaricp)
             }
         }
         val commonTest by getting {
@@ -61,7 +62,6 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test.junit5)
-                implementation(sphereonlib.com.zaxxer.hikaricp)
             }
         }
     }

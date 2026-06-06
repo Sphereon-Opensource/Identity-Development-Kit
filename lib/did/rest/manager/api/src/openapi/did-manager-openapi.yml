@@ -139,8 +139,8 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 100
-            default: 20
+            maximum: 1000
+            default: 100
         - name: sort
           in: query
           description: Sort field.
@@ -1662,16 +1662,19 @@ components:
     DidCreateRequest:
       type: object
       description: |
-        Request body for creating a new DID. References an existing
-        KMS-managed key for the initial verification method via `keyInfo`.
-        `keyInfo.providerId` and at least one of `keyInfo.alias` or
-        `keyInfo.kid` must be provided.
+        Request body for creating a new DID. References an existing,
+        already-registered KMS key for the initial verification method via
+        `keyInfo`. `keyInfo.providerId` and at least one of `keyInfo.alias`
+        or `keyInfo.kid` must be provided — the KMS lookup resolves the
+        canonical alias + public JWK regardless of which one the caller
+        supplied.
 
-        For DID methods that encode the public key into the DID identifier
-        (did:key, did:jwk), the public JWK is resolved server-side from KMS
-        using `keyInfo` — the caller does NOT supply key material. The KMS
-        must hold the key before this request is issued (use the KMS API to
-        generate or store the key first).
+        The caller does **not** supply key material on this endpoint. For
+        DID methods that encode the public key into the DID identifier
+        (did:key, did:jwk) the server resolves the public JWK from KMS
+        using `keyInfo`; for did:web the same lookup feeds the document
+        generator. Register the key with the KMS API first (e.g. via the
+        KMS keys endpoint), then reference it here.
       required:
         - method
         - keyInfo

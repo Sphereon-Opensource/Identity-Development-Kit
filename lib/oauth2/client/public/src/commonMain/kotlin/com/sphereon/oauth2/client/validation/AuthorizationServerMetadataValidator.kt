@@ -40,7 +40,7 @@ private val httpsOrLocalHttpUrlPattern: Regex
         if (allowInsecureHttp) {
             "https?://.*".toRegex()
         } else {
-            "https://.*|http://(localhost|127\\.0\\.0\\.1|\\[::1]).*".toRegex()
+            "https://.*|http://(localhost|127\\.0\\.0\\.1|\\[::1\\]).*".toRegex()
         }
 
 /**

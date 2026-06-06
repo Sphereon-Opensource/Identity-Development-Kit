@@ -21,7 +21,6 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyOutput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
@@ -30,7 +29,6 @@ import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceInput
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceResponse
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyInput
 import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.facade.KmsKeysServiceFacade
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
@@ -70,9 +68,9 @@ class KmsKeysServiceFacadeImpl(
 
     override suspend fun listKeys(providerId: String?): IdkResult<ListKeysResponse, IdkError> = listKeysCommand.execute(ListKeysInput(providerId = providerId))
 
-    override suspend fun storeKey(storeKey: StoreKey): IdkResult<StoreKeyResponse, IdkError> = storeKeyCommand.execute(StoreKeyInput(storeKey = storeKey))
+    override suspend fun storeKey(storeKey: StoreKey): IdkResult<StoreKeyResponse, IdkError> = storeKeyCommand.execute(storeKey)
 
-    override suspend fun generateKey(generateKey: GenerateKeyGlobal): IdkResult<GenerateKeyResponse, IdkError> = generateKeyCommand.execute(GenerateKeyInput(generateKey = generateKey))
+    override suspend fun generateKey(generateKey: GenerateKeyGlobal): IdkResult<GenerateKeyResponse, IdkError> = generateKeyCommand.execute(generateKey)
 
     override suspend fun deleteKey(
         aliasOrKid: String,

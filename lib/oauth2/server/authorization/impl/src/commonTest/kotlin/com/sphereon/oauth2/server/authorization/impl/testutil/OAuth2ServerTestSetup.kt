@@ -20,9 +20,12 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.core.api.session.CommandLifecycleInterceptorChain
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
@@ -30,8 +33,11 @@ import com.sphereon.crypto.core.kms.KmsProviderRegistryGraph
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.app.AppGraph
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
@@ -45,6 +51,7 @@ import com.sphereon.oauth2.server.authorization.impl.command.authorization.Creat
 import com.sphereon.oauth2.server.authorization.impl.command.authorization.CreateAuthorizationResponseCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.discovery.BuildServerMetadataCommandImpl
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 
 expect fun createOAuth2ServerTestAppGraph(testInstance: Any): AppGraph
@@ -80,16 +87,16 @@ class OAuth2ServerTestContext(
 
 /**
  * Centralised constructor for [BuildServerMetadataCommandImpl] that all discovery tests share.
- * Wires `serverIdentifier = null` because the standard discovery tests don't exercise key
- * derivation; the new alg-derivation path only fires when a config has
+ * Wires a null-resolving signing identifier because the standard discovery tests don't exercise
+ * key derivation; the alg-derivation path only fires when a config has
  * `idTokenSigningAlgValuesSupported = null` AND a key is wired, which the RSA-derivation test
- * sets up explicitly via the full constructor.
+ * sets up explicitly with a [fixedSigningIdentifierResolver] carrying an alias.
  */
 fun OAuth2ServerTestContext.newBuildServerMetadataCommand(configProvider: OAuth2ServersConfigProvider,): BuildServerMetadataCommandImpl =
     BuildServerMetadataCommandImpl(
         execution = this.execution,
         configProvider = configProvider,
-        serverIdentifier = null,
+        signingIdentifierResolver = fixedSigningIdentifierResolver(),
         identifierService = this.identifierService,
         grantHandlers = emptySet(),
         kmsProviderRegistry = this.kmsProviderRegistry,
@@ -98,6 +105,16 @@ fun OAuth2ServerTestContext.newBuildServerMetadataCommand(configProvider: OAuth2
         // a clear failure instead of silently producing an unsigned response.
         buildSignedMetadata = StubBuildSignedAuthorizationServerMetadataCommand(this.execution),
     )
+
+/**
+ * Wraps a fixed [ManagedIdentifierOptsOrResult] (or `null` for "no AS signing key") in an
+ * [AsServerSigningIdentifierResolver], so command tests that construct the AS sign commands
+ * directly can pin the resolved identifier without standing up a real SigningKeyStore.
+ */
+fun fixedSigningIdentifierResolver(identifier: ManagedIdentifierOptsOrResult? = null,): AsServerSigningIdentifierResolver =
+    object : AsServerSigningIdentifierResolver {
+        override suspend fun resolveSigningIdentifier(): ManagedIdentifierOptsOrResult? = identifier
+    }
 
 /**
  * Stub [com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorizationServerMetadataCommand]
@@ -248,7 +265,7 @@ fun OAuth2ServerTestContext.newCreateAuthorizationResponseCommand(): CreateAutho
         configProvider = StubOAuth2ServersConfigProvider(),
         clientRegistry = StubClientRegistry(),
         createJarmResponse = StubCreateJarmResponseCommand(this.execution),
-        serverIdentifier = null,
+        signingIdentifierResolver = fixedSigningIdentifierResolver(),
     )
 
 /**
@@ -260,5 +277,26 @@ fun OAuth2ServerTestContext.newCreateAuthorizationErrorResponseCommand(): Create
         configProvider = StubOAuth2ServersConfigProvider(),
         clientRegistry = StubClientRegistry(),
         createJarmResponse = StubCreateJarmResponseCommand(this.execution),
-        serverIdentifier = null,
+        signingIdentifierResolver = fixedSigningIdentifierResolver(),
     )
+
+/**
+ * Test-only [SessionExecution] decorator that overrides [tenantId] with an explicit value.
+ *
+ * Delegates every other member to the wrapped real execution so the command under test
+ * sees a fully functional session (real KMS, real command registry, real log service)
+ * while the tenant resolves to whatever the test specifies. Mirrors the
+ * [com.sphereon.oauth2.server.authorization.impl.command.admin.FailingGenerateKeyManagerService]
+ * delegation pattern used in [RotateSigningKeyCommandImplTest].
+ */
+class TenantOverrideSessionExecution(
+    private val delegate: SessionExecution,
+    private val overrideTenantId: String,
+) : SessionExecution by delegate {
+    override val tenantId: String get() = overrideTenantId
+    override val sessionContextManager: SessionContextManager get() = delegate.sessionContextManager
+    override val sessionContext: SessionContext get() = delegate.sessionContext
+    override val log: SessionLogService get() = delegate.log
+    override val conf: ContextConfig get() = delegate.conf
+    override val interceptorChain: CommandLifecycleInterceptorChain get() = delegate.interceptorChain
+}

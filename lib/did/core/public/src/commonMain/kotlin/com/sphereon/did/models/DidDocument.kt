@@ -17,9 +17,12 @@
 
 package com.sphereon.did.models
 
+import com.sphereon.core.api.json.StringOrStringListSerializer
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.did.serializers.DidDocumentWithExtensionsSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
@@ -36,7 +39,11 @@ import kotlin.native.ObjCName
  *
  * @property context The JSON-LD context(s) for this DID Document
  * @property id The DID that this document describes
- * @property controller The DID of the controller of this DID Document
+ * @property controller Zero or more controllers of this DID Document. W3C DID 1.1 allows
+ *           this field to appear on the wire as either a single string or a JSON array —
+ *           the [com.sphereon.did.serializers.StringOrStringListSerializer] normalizes both
+ *           forms to a list and re-collapses on output. Empty list ⇒ `getPrimaryController()`
+ *           falls back to [id] per DID Core §5.
  * @property alsoKnownAs Alternative identifiers for this DID subject
  * @property verificationMethod Verification methods (public keys) defined in this document
  * @property authentication Verification methods for authentication purposes
@@ -45,20 +52,24 @@ import kotlin.native.ObjCName
  * @property capabilityInvocation Verification methods for capability invocation
  * @property capabilityDelegation Verification methods for capability delegation
  * @property service Service endpoints for interacting with the DID subject
+ * @property extensions Unknown top-level JSON properties captured verbatim so the document
+ *           round-trips losslessly under DID 1.1. Must not hold keys defined by the W3C DID
+ *           Core schema — those belong in their typed slots.
  *
  * @see <a href="https://www.w3.org/TR/did-core/">W3C DID Core Specification</a>
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DidDocument", exact = true)
 @JsExportCompat
-@Serializable
+@Serializable(with = DidDocumentWithExtensionsSerializer::class)
 data class DidDocument
     @JvmOverloads
     constructor(
         @SerialName("@context")
         val context: List<String> = listOf(DEFAULT_CONTEXT),
         val id: String,
-        val controller: String? = null,
+        @Serializable(with = StringOrStringListSerializer::class)
+        val controller: List<String> = emptyList(),
         val alsoKnownAs: List<String>? = null,
         val verificationMethod: List<VerificationMethod>? = null,
         val authentication: List<VerificationMethodOrReference>? = null,
@@ -67,6 +78,7 @@ data class DidDocument
         val capabilityInvocation: List<VerificationMethodOrReference>? = null,
         val capabilityDelegation: List<VerificationMethodOrReference>? = null,
         val service: List<DidService>? = null,
+        val extensions: Map<String, JsonElement> = emptyMap(),
     ) {
         companion object {
             /**
@@ -173,12 +185,14 @@ data class DidDocument
         }
 
         /**
-         * Gets services by their type.
+         * Gets services whose `type` array contains [type]. Under DID 1.1 a single service
+         * may advertise multiple types; a service matches when [type] appears anywhere in
+         * [DidService.type].
          *
-         * @param type The service type to search for
-         * @return List of services with the specified type
+         * @param type The service type to search for (case-sensitive, matched via list contains)
+         * @return List of services that advertise the specified type
          */
-        fun getServicesByType(type: String): List<DidService> = service?.filter { it.type == type } ?: emptyList()
+        fun getServicesByType(type: String): List<DidService> = service?.filter { it.type.contains(type) } ?: emptyList()
 
         /**
          * Checks if the document has any verification methods.
@@ -192,7 +206,8 @@ data class DidDocument
 
         /**
          * Gets the primary controller of this DID Document.
-         * Returns the controller if set, otherwise returns the DID itself.
+         * Returns the first controller if any, otherwise returns the DID itself
+         * (W3C DID 1.1 §5 — when `controller` is absent, the subject controls the document).
          */
-        fun getPrimaryController(): String = controller ?: id
+        fun getPrimaryController(): String = controller.firstOrNull() ?: id
     }

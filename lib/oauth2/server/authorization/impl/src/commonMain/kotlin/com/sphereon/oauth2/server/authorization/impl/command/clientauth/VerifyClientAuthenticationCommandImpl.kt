@@ -44,6 +44,7 @@ import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticati
 import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthArgs
 import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.authorization.resolvePublicClientFallback
 import com.sphereon.oauth2.server.authorization.impl.resolver.ClientJwksResolver
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
@@ -130,6 +131,13 @@ class VerifyClientAuthenticationCommandImpl(
                     clientRegistry
                         .getClient(args.clientId)
                         .getOrElse { return Err(it) }
+                        // Public clients (token_endpoint_auth_method = none) that aren't pre-registered
+                        // are accepted when the server permits any public client (publicClients.allowAny
+                        // / allowedClientIds + permissiveRedirectUri). Mirrors the authorization
+                        // endpoint's fallback so the PAR/token client-auth path agrees with it.
+                        ?: (auth as? ClientAuthenticationConfig.None)?.let {
+                            resolvePublicClientFallback(args.clientId, configProvider)
+                        }
                         ?: return Err(AuthorizationServerError.InvalidClient(details = "Unknown client '${args.clientId}'"))
 
                 enforceRegisteredAuthMethod(auth, resolved)?.let { return Err(it) }

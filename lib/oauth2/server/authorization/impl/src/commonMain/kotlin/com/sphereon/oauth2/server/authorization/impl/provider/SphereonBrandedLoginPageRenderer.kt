@@ -95,6 +95,13 @@ class SphereonBrandedLoginPageRenderer : LoginPageRenderer {
         // button list disappear from the DOM (no orphan separator label, no empty
         // `<div class="federation-list"></div>` to style around).
         val federationBlock = renderFederationBlock(ctx, msg)
+        // Optional informational notice (demo test-account hint, maintenance banner, …). Blank or
+        // null → empty string so the marker vanishes and no empty `<div>` is left to style around.
+        val noticeBlock =
+            ctx.notice
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "<div class=\"login-notice\">${escapeHtml(it)}</div>" }
+                .orEmpty()
         // Path-prefixed deployment support: when the AS sits behind a reverse proxy that mounts
         // it under a public sub-path (Caddy `handle_path /auth/* {…}` for the demo), a bare
         // `/login` form action posts to the proxy's root and 404s. `returnUrl` is already the
@@ -114,6 +121,7 @@ class SphereonBrandedLoginPageRenderer : LoginPageRenderer {
                 "msg.passwordPlaceholder" to escapeHtml(msg.getValue("passwordPlaceholder")),
                 "msg.doLogIn" to escapeHtml(msg.getValue("doLogIn")),
                 "msg.doCancel" to escapeHtml(msg.getValue("doCancel")),
+                "noticeBlockOrEmpty" to noticeBlock,
                 "errorBlockOrEmpty" to errorBlock,
                 "formAction" to escapeHtml("$basePath$FORM_ACTION"),
                 "cancelAction" to escapeHtml("$basePath$CANCEL_ACTION"),

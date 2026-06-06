@@ -28,7 +28,6 @@ import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionScope
@@ -41,6 +40,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.discovery.keyAlgorithmToJwsAlg
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.provider.SessionParticipationRecorder
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionIdProvider
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -69,7 +69,7 @@ class CreateIdTokenCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val configProvider: OAuth2ServersConfigProvider,
-    @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
+    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val identifierService: MultiManagedIdentifierService,
     private val sessionParticipationRecorders: Set<SessionParticipationRecorder>,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
@@ -93,6 +93,7 @@ class CreateIdTokenCommandImpl(
     }
 
     private suspend fun executeInternal(args: CreateIdTokenArgs): IdkResult<String, AuthorizationServerError> {
+        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         if (serverIdentifier == null) {
             return Err(
                 AuthorizationServerError.ServerError(

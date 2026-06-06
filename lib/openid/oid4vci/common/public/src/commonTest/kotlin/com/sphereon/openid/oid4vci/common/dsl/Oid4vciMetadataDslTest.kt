@@ -87,7 +87,10 @@ class Oid4vciMetadataDslTest {
         assertEquals(listOf("ES256"), uniDegree.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.content })
         assertEquals(listOf("ES256"), uniDegree.proofTypesSupported?.get("jwt")?.proofSigningAlgValuesSupported)
 
-        val uniDisplay = uniDegree.display?.firstOrNull()
+        // Per OID4VCI 1.0 final §12.2.4, credential-level display lives under credential_metadata,
+        // never at the top level of the credential configuration object.
+        assertNull(uniDegree.display)
+        val uniDisplay = uniDegree.credentialMetadata?.display?.firstOrNull()
         assertNotNull(uniDisplay)
         assertEquals("University Degree", uniDisplay.name)
         assertEquals("en-US", uniDisplay.locale)
@@ -160,7 +163,8 @@ class Oid4vciMetadataDslTest {
         // mso_mdoc encodes credential_signing_alg_values_supported as integers (COSE ids); ES256 → -7
         assertEquals(listOf(-7), config.credentialSigningAlgValuesSupported?.map { it.jsonPrimitive.int })
 
-        val display = config.display?.firstOrNull()
+        assertNull(config.display)
+        val display = config.credentialMetadata?.display?.firstOrNull()
         assertNotNull(display)
         assertEquals("Mobile Driving Licence", display.name)
         assertEquals("en-GB", display.locale)
@@ -251,7 +255,13 @@ class Oid4vciMetadataDslTest {
 
         assertEquals("vc+sd-jwt", config.format)
 
-        val display = config.display?.firstOrNull()
+        // §12.2.4: display and claims live under credential_metadata, not at the top level.
+        assertNull(config.display)
+        assertNull(config.claims)
+        val meta = config.credentialMetadata
+        assertNotNull(meta)
+
+        val display = meta.display?.firstOrNull()
         assertNotNull(display)
         assertEquals("Personal ID", display.name)
         assertEquals("en-US", display.locale)
@@ -262,14 +272,17 @@ class Oid4vciMetadataDslTest {
         assertEquals("#003087", display.backgroundColor)
         assertEquals("#FFFFFF", display.textColor)
 
-        assertNotNull(config.claims)
-        assertEquals(3, config.claims?.size)
-        val givenName = config.claims?.firstOrNull { it.path == listOf("given_name") }
+        assertNotNull(meta.claims)
+        assertEquals(3, meta.claims?.size)
+        val givenName = meta.claims?.firstOrNull { it.path.map { p -> p.jsonPrimitive.content } == listOf("given_name") }
         assertNotNull(givenName)
         assertEquals(true, givenName.mandatory)
-        assertEquals("string", givenName.valueType)
+        // value_type is not a field of the §B.3 issuer-metadata claims-description object.
         assertEquals("Given Name", givenName.display?.firstOrNull()?.name)
-        assertEquals(false, config.claims?.firstOrNull { it.path == listOf("birth_date") }?.mandatory)
+        assertEquals(
+            false,
+            meta.claims?.firstOrNull { it.path.map { p -> p.jsonPrimitive.content } == listOf("birth_date") }?.mandatory,
+        )
 
         assertNotNull(config.proofTypesSupported?.get("jwt"))
     }
@@ -304,13 +317,15 @@ class Oid4vciMetadataDslTest {
                 }
             }
 
-        assertEquals(3, config.display?.size)
-        assertEquals("University Diploma", config.display?.get(0)?.name)
-        assertEquals("en-US", config.display?.get(0)?.locale)
-        assertEquals("Universitätsdiplom", config.display?.get(1)?.name)
-        assertEquals("de-DE", config.display?.get(1)?.locale)
-        assertEquals("Diplôme universitaire", config.display?.get(2)?.name)
-        assertEquals("fr-FR", config.display?.get(2)?.locale)
+        assertNull(config.display)
+        val display = config.credentialMetadata?.display
+        assertEquals(3, display?.size)
+        assertEquals("University Diploma", display?.get(0)?.name)
+        assertEquals("en-US", display?.get(0)?.locale)
+        assertEquals("Universitätsdiplom", display?.get(1)?.name)
+        assertEquals("de-DE", display?.get(1)?.locale)
+        assertEquals("Diplôme universitaire", display?.get(2)?.name)
+        assertEquals("fr-FR", display?.get(2)?.locale)
     }
 
     // -----------------------------------------------------------------------
@@ -419,7 +434,16 @@ class Oid4vciMetadataDslTest {
         assertEquals(origConfig.vct, decodedConfig.vct)
         assertEquals(origConfig.cryptographicBindingMethodsSupported, decodedConfig.cryptographicBindingMethodsSupported)
         assertEquals(origConfig.credentialSigningAlgValuesSupported, decodedConfig.credentialSigningAlgValuesSupported)
-        assertEquals(origConfig.display?.firstOrNull()?.name, decodedConfig.display?.firstOrNull()?.name)
+        assertEquals(
+            origConfig.credentialMetadata
+                ?.display
+                ?.firstOrNull()
+                ?.name,
+            decodedConfig.credentialMetadata
+                ?.display
+                ?.firstOrNull()
+                ?.name,
+        )
     }
 
     // -----------------------------------------------------------------------

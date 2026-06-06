@@ -11,6 +11,7 @@ export interface UseInputProps {
   errorMessage?: string
   'aria-label'?: string
   onChange?: (value: string) => void
+  onBlur?: () => void
 }
 
 export interface UseInputReturn {
@@ -35,7 +36,17 @@ export interface UseInputReturn {
  * ```
  */
 export function useInput(props: UseInputProps = {}): UseInputReturn {
-  const { id: providedId, name, isDisabled = false, isReadOnly = false, isRequired = false, isInvalid = false, errorMessage, onChange } = props
+  const {
+    id: providedId,
+    name,
+    isDisabled = false,
+    isReadOnly = false,
+    isRequired = false,
+    isInvalid = false,
+    errorMessage,
+    onChange,
+    onBlur,
+  } = props
   const ariaLabel = props['aria-label']
   const autoId = useStableId('input')
   const inputId = providedId ?? autoId
@@ -60,6 +71,7 @@ export function useInput(props: UseInputProps = {}): UseInputReturn {
       'aria-required': isRequired || undefined,
       'aria-label': ariaLabel,
       onChange: handleChange,
+      onBlur,
     },
     labelProps: {
       htmlFor: inputId,

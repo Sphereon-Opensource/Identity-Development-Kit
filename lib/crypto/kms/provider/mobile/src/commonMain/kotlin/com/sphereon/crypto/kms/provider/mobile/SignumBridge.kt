@@ -21,6 +21,7 @@
 
 package com.sphereon.crypto.kms.provider.mobile
 
+import at.asitplus.awesn1.serialization.DER
 import at.asitplus.signum.indispensable.CryptoPublicKey
 import at.asitplus.signum.indispensable.ECCurve
 import com.sphereon.core.api.encodeToBase64Url
@@ -32,6 +33,7 @@ import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import kotlinx.serialization.encodeToByteArray
 import at.asitplus.signum.indispensable.Digest as SignumDigest
 import at.asitplus.signum.indispensable.SignatureAlgorithm as SignumSignatureAlgorithm
 
@@ -75,7 +77,7 @@ internal fun DigestAlg.toSignumAlgorithm(): SignumDigest =
         else -> throw IllegalArgumentException("Algorithm $this not supported by signum library")
     }
 
-internal fun Jwk.toSignumPublicKey(): CryptoPublicKey = CryptoPublicKey.decodeFromDer(toSubjectPublicKeyInfo().encodeToTlv().derEncoded)
+internal fun Jwk.toSignumPublicKey(): CryptoPublicKey = CryptoPublicKey.decodeFromDer(DER.encodeToByteArray(toSubjectPublicKeyInfo()))
 
 internal fun CryptoPublicKey.toJwk(
     x5c: Array<String>? = null,

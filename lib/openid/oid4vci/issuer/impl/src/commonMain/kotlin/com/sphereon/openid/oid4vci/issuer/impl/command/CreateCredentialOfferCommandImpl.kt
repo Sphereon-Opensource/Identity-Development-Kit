@@ -34,12 +34,14 @@ import com.sphereon.openid.oid4vci.common.model.CredentialOffer
 import com.sphereon.openid.oid4vci.common.model.CredentialOfferGrants
 import com.sphereon.openid.oid4vci.common.model.PreAuthorizedCodeOfferGrant
 import com.sphereon.openid.oid4vci.common.model.TxCodeConfig
+import com.sphereon.openid.oid4vci.issuer.bridge.CreateAuthContextArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
-import com.sphereon.openid.oid4vci.issuer.config.CredentialIssuancePolicyResolver
+import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
+import com.sphereon.openid.oid4vci.issuer.impl.pipeline.OfferPipelineInitializer
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
@@ -65,8 +67,15 @@ class CreateCredentialOfferCommandImpl(
     private val asBridge: Oid4vciAuthorizationServerBridge,
     private val offerStore: CredentialOfferStore,
     private val sessionStore: CredentialIssuanceSessionStore,
-    private val policyResolver: CredentialIssuancePolicyResolver? = null,
     private val eventService: SessionEventService? = null,
+    /**
+     * Pre-flight coordinator: per-credential grant-policy validation, pipeline-configuration
+     * resolution, §6.5 wallet-auth invariant validation, and pipeline-session initialisation.
+     * An initializer whose internal collaborators are all absent (pure-IDK / no-pipeline
+     * deployment) is a graceful no-op: grant validation accepts everything, no pipeline is
+     * resolved, and the wallet-auth invariant is skipped, matching the prior inlined behaviour.
+     */
+    private val pipelineInitializer: OfferPipelineInitializer,
 ) : TypedServiceCommandAdapter<CreateCredentialOfferArgs, CreatedCredentialOffer, IdkError>(
         commandId = CreateCredentialOfferCommand.COMMAND_ID,
         execution = execution,
@@ -91,7 +100,9 @@ class CreateCredentialOfferCommandImpl(
         args: CreateCredentialOfferArgs,
         result: IdkResult<CreatedCredentialOffer, IdkError>,
     ) {
-        if (!result.isOk) return
+        if (!result.isOk) {
+            return
+        }
         val payload =
             buildJsonObject {
                 put(
@@ -120,169 +131,33 @@ class CreateCredentialOfferCommandImpl(
     ): IdkResult<CreatedCredentialOffer, IdkError> {
         val applied = applyDuring(args)
 
-        if (applied.credentialConfigurationIds.isEmpty()) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "At least one credential_configuration_id is required"))
-        }
-
-        // Validate grant types against per-credential policy (most restrictive across all configs).
-        if (policyResolver != null) {
-            for (configId in applied.credentialConfigurationIds) {
-                val policy = policyResolver.resolve(configId)
-
-                if (applied.preAuthorizedCodeGrant && !policy.preAuthorizedCodeAllowed) {
-                    return Err(
-                        IdkError.ILLEGAL_ARGUMENT_ERROR(
-                            message = "Pre-authorized code grant is not allowed for credential configuration '$configId'",
-                        ),
-                    )
-                }
-
-                if (applied.authorizationCodeGrant && !policy.authorizationCodeAllowed) {
-                    return Err(
-                        IdkError.ILLEGAL_ARGUMENT_ERROR(
-                            message = "Authorization code grant is not allowed for credential configuration '$configId'",
-                        ),
-                    )
-                }
-            }
-        }
+        validateRequestShape(applied).getOrElse { return Err(it) }
+        pipelineInitializer.validateGrants(applied).getOrElse { return Err(it) }
 
         val now = Clock.System.now()
         val offerId = Uuid.random().toString()
         val sessionId = Uuid.random().toString()
 
-        // Create session (issuerState = sessionId for auth-code grant linkage).
-        // preAuthCode is filled in after the AS bridge registers the code below.
-        val session =
-            IssuanceSession(
-                sessionId = sessionId,
-                issuerId = applied.issuerId,
-                credentialConfigurationIds = applied.credentialConfigurationIds,
-                issuerState =
-                    if (applied.authorizationCodeGrant) {
-                        sessionId
-                    } else {
-                        null
-                    },
-                status = IssuanceSessionStatus.OFFER_CREATED,
-                preSeededAttributes = applied.preSeededAttributes,
-                boundUsageToken = applied.boundUsageToken,
-                postIssuanceHookAllowList = applied.postIssuanceHookAllowList,
-                createdAt = now.epochSeconds,
-                expiresAt = now.epochSeconds + applied.offerTtlSeconds,
-            )
+        // Resolve a pipeline configuration and initialise a pipeline session when one is
+        // configured. A failure here does not block offer creation; the session is
+        // created without a pipeline link instead.
+        val pipelineCorrelationId = pipelineInitializer.initializePipeline(applied)
+
+        val session = buildSession(applied, sessionId, pipelineCorrelationId, now.epochSeconds)
         sessionStore.create(session).getOrElse { return Err(it) }
 
-        // Build grants
-        var preAuthGrant: PreAuthorizedCodeOfferGrant? = null
-        var authCodeGrant: AuthorizationCodeOfferGrant? = null
-        var txCode: String? = null
-
-        if (applied.preAuthorizedCodeGrant) {
-            val registered =
-                asBridge
-                    .registerPreAuthorizedCode(
-                        RegisterPreAuthCodeArgs(
-                            sessionId = sessionId,
-                            credentialConfigurationIds = applied.credentialConfigurationIds,
-                            txCodeRequired = applied.txCodeRequired,
-                            issuerIdentifier = applied.issuerId,
-                            // OID4VCI 1.0 §5.1.2 / §8.2.1.1: when the AS includes
-                            // `credential_identifiers` in the token's authorization_details,
-                            // the wallet MUST send one in the credential request, so the
-                            // issuer can resolve the IssuanceSession by stable identifier
-                            // rather than falling back to a single configId→sessionId
-                            // index in the session store. The fallback breaks under multi-
-                            // recipient batch issuance (each new mint for the same
-                            // credential_configuration_id overwrites the previous mapping,
-                            // so only the last-minted holder gets the right credential).
-                            useCredentialIdentifiers = true,
-                        ),
-                    ).getOrElse { return Err(it) }
-
-            txCode = registered.txCode
-            preAuthGrant =
-                PreAuthorizedCodeOfferGrant(
-                    preAuthorizedCode = registered.code,
-                    txCode =
-                        if (applied.txCodeRequired) {
-                            TxCodeConfig()
-                        } else {
-                            null
-                        },
-                )
-            // Stash the registered pre-auth code on the session so post-issuance
-            // hooks can correlate the signed credential to the code that
-            // authorized it (audit + downstream pre-auth lookup).
-            sessionStore
-                .update(session.copy(preAuthCode = registered.code))
-                .getOrElse { return Err(it) }
-        }
-
-        if (applied.authorizationCodeGrant) {
-            val authContext =
-                asBridge
-                    .createAuthorizationContext(
-                        com.sphereon.openid.oid4vci.issuer.bridge.CreateAuthContextArgs(
-                            issuerState = sessionId,
-                            credentialConfigurationIds = applied.credentialConfigurationIds,
-                        ),
-                    ).getOrElse { return Err(it) }
-
-            authCodeGrant =
-                AuthorizationCodeOfferGrant(
-                    issuerState = authContext.issuerState,
-                )
-        }
-
-        val grants =
-            if (preAuthGrant != null || authCodeGrant != null) {
-                CredentialOfferGrants(
-                    authorizationCode = authCodeGrant,
-                    preAuthorizedCode = preAuthGrant,
-                )
-            } else {
-                null
-            }
+        val grantsAndTxCode = buildGrants(applied, sessionId, session).getOrElse { return Err(it) }
 
         val offer =
             CredentialOffer(
                 credentialIssuer = applied.issuerId,
                 credentialConfigurationIds = applied.credentialConfigurationIds,
-                grants = grants,
+                grants = grantsAndTxCode.grants,
             )
 
         offerStore.store(offerId, offer, applied.offerTtlSeconds, sessionId = sessionId).getOrElse { return Err(it) }
 
-        // Per OID4VCI §11.2.2, issuer endpoints are served relative to the Credential Issuer
-        // Identifier. The /credentials/offers endpoint is mounted on the protocol adapter whose
-        // base path is relative to the issuer identifier (so issuerId is expected to be the
-        // full identifier URL, e.g. "${BASE}/oid4vci" when hosted under a sub-path).
-        //
-        // OID4VCI 1.0 §4.1.3 requires `credential_offer_uri` to be an absolute HTTPS URL the
-        // wallet can dereference; relative paths produce QR codes wallets silently fail on.
-        // Fail loud on missing/relative issuerId rather than emit a broken offer URI.
-        val issuerBase = applied.issuerId.trimEnd('/')
-        require(issuerBase.startsWith("http://") || issuerBase.startsWith("https://")) {
-            "Issuer identifier must be an absolute http(s) URL to produce a dereferenceable " +
-                "credential_offer_uri (OID4VCI 1.0 §4.1.3); got '${applied.issuerId}'. " +
-                "Configure 'oid4vci.issuer.identifier' (or the equivalent tenant-scoped key)."
-        }
-        // Outer deeplink prefix the wallet listens on (OID4VCI 1.0 §4.1.1). Caller-supplied
-        // `scheme` lets the demo / production deployment switch between bare-scheme deeplinks
-        // (`openid-credential-offer://`, `haip://`) and full universal-link / app-link URLs
-        // (`https://wallet.example.com/credential_offer`). When the scheme already carries a
-        // query string (e.g. a custom URL with `?source=demo`), append with `&` instead of `?`
-        // so the resulting URI stays parseable.
-        val scheme = applied.scheme?.takeIf { it.isNotBlank() } ?: "openid-credential-offer://"
-        val separator = if (scheme.contains("?")) "&" else "?"
-        // Per RFC 3986 §3.4, query-component values must percent-encode reserved characters.
-        // The full URL `https://issuer.example/credentials/offers/<uuid>` carries `:` and `/`
-        // (reserved per §2.2) and the bare `?` `&` separators below would otherwise corrupt
-        // any wallet that strictly tokenises by `&`. Encode the value, never the surrounding
-        // `key=` pair.
-        val offerEndpoint = "$issuerBase/credentials/offers/$offerId"
-        val offerUri = "$scheme${separator}credential_offer_uri=${percentEncodeQueryComponent(offerEndpoint)}"
+        val offerUri = buildOfferUri(applied, offerId)
 
         return Ok(
             CreatedCredentialOffer(
@@ -290,8 +165,187 @@ class CreateCredentialOfferCommandImpl(
                 sessionId = sessionId,
                 offer = offer,
                 offerUri = offerUri,
-                txCode = txCode,
+                txCode = grantsAndTxCode.txCode,
             ),
         )
+    }
+
+    private fun validateRequestShape(args: CreateCredentialOfferArgs): IdkResult<Unit, IdkError> {
+        if (args.credentialConfigurationIds.isEmpty()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "At least one credential_configuration_id is required"))
+        }
+        if (args.uriLifecycle != OfferUriLifecycle.SINGLE_USE && args.rateLimit == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "rate_limit is mandatory for a reusable offer"))
+        }
+        return Ok(Unit)
+    }
+
+    /**
+     * Create session (issuerState = sessionId for auth-code grant linkage). `preAuthCode`
+     * is filled in after the AS bridge registers the code in [buildGrants].
+     */
+    private fun buildSession(
+        args: CreateCredentialOfferArgs,
+        sessionId: String,
+        pipelineCorrelationId: String?,
+        nowEpochSeconds: Long,
+    ): IssuanceSession =
+        IssuanceSession(
+            sessionId = sessionId,
+            issuerId = args.issuerId,
+            credentialConfigurationIds = args.credentialConfigurationIds,
+            issuerState =
+                if (args.authorizationCodeGrant) {
+                    sessionId
+                } else {
+                    null
+                },
+            status = IssuanceSessionStatus.OFFER_CREATED,
+            preSeededAttributes = args.preSeededAttributes,
+            boundUsageToken = args.boundUsageToken,
+            postIssuanceHookAllowList = args.postIssuanceHookAllowList,
+            pipelineCorrelationId = pipelineCorrelationId,
+            createdAt = nowEpochSeconds,
+            expiresAt = nowEpochSeconds + args.offerTtlSeconds,
+        )
+
+    /**
+     * Result of [buildGrants]: optional grants envelope and (when pre-authorized-code is
+     * issued) the wallet-facing transaction code.
+     */
+    private data class GrantsAndTxCode(
+        val grants: CredentialOfferGrants?,
+        val txCode: String?,
+    )
+
+    private suspend fun buildGrants(
+        args: CreateCredentialOfferArgs,
+        sessionId: String,
+        session: IssuanceSession,
+    ): IdkResult<GrantsAndTxCode, IdkError> {
+        val preAuthResult =
+            if (args.preAuthorizedCodeGrant) {
+                registerPreAuthorizedGrant(args, sessionId, session).getOrElse { return Err(it) }
+            } else {
+                PreAuthGrantResult(grant = null, txCode = null)
+            }
+        val authCodeGrant =
+            if (args.authorizationCodeGrant) {
+                createAuthorizationGrant(args, sessionId).getOrElse { return Err(it) }
+            } else {
+                null
+            }
+
+        val grants =
+            if (preAuthResult.grant != null || authCodeGrant != null) {
+                CredentialOfferGrants(
+                    authorizationCode = authCodeGrant,
+                    preAuthorizedCode = preAuthResult.grant,
+                )
+            } else {
+                null
+            }
+        return Ok(GrantsAndTxCode(grants = grants, txCode = preAuthResult.txCode))
+    }
+
+    /**
+     * Result of [registerPreAuthorizedGrant]: the registered pre-authorised-code grant and
+     * the wallet-facing transaction code (when the AS issued one).
+     */
+    private data class PreAuthGrantResult(
+        val grant: PreAuthorizedCodeOfferGrant?,
+        val txCode: String?,
+    )
+
+    private suspend fun registerPreAuthorizedGrant(
+        args: CreateCredentialOfferArgs,
+        sessionId: String,
+        session: IssuanceSession,
+    ): IdkResult<PreAuthGrantResult, IdkError> {
+        val registered =
+            asBridge
+                .registerPreAuthorizedCode(
+                    RegisterPreAuthCodeArgs(
+                        sessionId = sessionId,
+                        credentialConfigurationIds = args.credentialConfigurationIds,
+                        txCodeRequired = args.txCodeRequired,
+                        txCodeLength = args.txCodeLength,
+                        txCodeInputMode = args.txCodeInputMode,
+                        issuerIdentifier = args.issuerId,
+                        // OID4VCI 1.0 §5.1.2 / §8.2.1.1: when the AS includes
+                        // `credential_identifiers` in the token's authorization_details,
+                        // the wallet MUST send one in the credential request, so the
+                        // issuer can resolve the IssuanceSession by stable identifier
+                        // rather than falling back to a single configId→sessionId
+                        // index in the session store. The fallback breaks under multi-
+                        // recipient batch issuance (each new mint for the same
+                        // credential_configuration_id overwrites the previous mapping,
+                        // so only the last-minted holder gets the right credential).
+                        useCredentialIdentifiers = true,
+                    ),
+                ).getOrElse { return Err(it) }
+
+        val grant =
+            PreAuthorizedCodeOfferGrant(
+                preAuthorizedCode = registered.code,
+                txCode =
+                    if (args.txCodeRequired) {
+                        TxCodeConfig(inputMode = args.txCodeInputMode ?: "numeric", length = args.txCodeLength)
+                    } else {
+                        null
+                    },
+            )
+        // Stash the registered pre-auth code on the session so post-issuance
+        // hooks can correlate the signed credential to the code that
+        // authorized it (audit + downstream pre-auth lookup).
+        sessionStore
+            .update(session.copy(preAuthCode = registered.code))
+            .getOrElse { return Err(it) }
+        return Ok(PreAuthGrantResult(grant = grant, txCode = registered.txCode))
+    }
+
+    private suspend fun createAuthorizationGrant(
+        args: CreateCredentialOfferArgs,
+        sessionId: String,
+    ): IdkResult<AuthorizationCodeOfferGrant, IdkError> {
+        val authContext =
+            asBridge
+                .createAuthorizationContext(
+                    CreateAuthContextArgs(
+                        issuerState = sessionId,
+                        credentialConfigurationIds = args.credentialConfigurationIds,
+                    ),
+                ).getOrElse { return Err(it) }
+        return Ok(AuthorizationCodeOfferGrant(issuerState = authContext.issuerState))
+    }
+
+    /**
+     * Build the wallet-facing offer URI per OID4VCI 1.0 §4.1.1 / §4.1.3 / §11.2.2.
+     *
+     * - The `/credentials/offers/{offerId}` endpoint is mounted relative to the credential
+     *   issuer identifier, which must be an absolute http(s) URL.
+     * - The outer scheme (deeplink or universal/app link) carries `credential_offer_uri` as a
+     *   percent-encoded query parameter; when the scheme already includes a query string the
+     *   separator becomes `&`.
+     */
+    private fun buildOfferUri(
+        args: CreateCredentialOfferArgs,
+        offerId: String,
+    ): String {
+        val issuerBase = args.issuerId.trimEnd('/')
+        require(issuerBase.startsWith("http://") || issuerBase.startsWith("https://")) {
+            "Issuer identifier must be an absolute http(s) URL to produce a dereferenceable " +
+                "credential_offer_uri (OID4VCI 1.0 §4.1.3); got '${args.issuerId}'. " +
+                "Configure 'oid4vci.issuer.identifier' (or the equivalent tenant-scoped key)."
+        }
+        val scheme = args.scheme?.takeIf { it.isNotBlank() } ?: "openid-credential-offer://"
+        val separator =
+            if (scheme.contains("?")) {
+                "&"
+            } else {
+                "?"
+            }
+        val offerEndpoint = "$issuerBase/credentials/offers/$offerId"
+        return "$scheme${separator}credential_offer_uri=${percentEncodeQueryComponent(offerEndpoint)}"
     }
 }

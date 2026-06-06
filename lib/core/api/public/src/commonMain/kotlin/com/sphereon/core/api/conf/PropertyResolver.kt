@@ -20,7 +20,9 @@ package com.sphereon.core.api.conf
 import com.sphereon.core.compat.JsExportCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.OptionalBinding
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.concurrent.Volatile
@@ -493,4 +495,20 @@ interface IPropertyValueConversion<T : Any> {
     fun supports(value: Any): Boolean
 
     fun convert(value: Any): T
+}
+
+/**
+ * Exposes [PropertyResolver] as an optional graph accessor so that consumers declaring
+ * `PropertyResolver? = null` constructor parameters resolve cleanly under the Metro
+ * `nullable type key`. No IDK supplier publishes a Metro binding for [PropertyResolver]
+ * (it is held by [com.sphereon.core.defaults.conf.AbstractConfigEnvironment] and reached
+ * via `execution.conf` rather than DI), so consumers receive `null` here. EDK / VDX
+ * deployments that DO bind [PropertyResolver] in the Metro graph add a second
+ * `@ContributesBinding(AppScope::class, binding = binding<PropertyResolver?>())` so this
+ * default `null` body is overridden whenever a real binding is present.
+ */
+@ContributesTo(AppScope::class)
+interface PropertyResolverOptionalProvider {
+    @OptionalBinding
+    val optionalPropertyResolver: PropertyResolver? get() = null
 }

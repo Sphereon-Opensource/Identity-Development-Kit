@@ -68,6 +68,25 @@ private const val ASCII_TABLE_SIZE = 128
 private const val HEX_PAD_LENGTH = 4
 private const val BASE64_PAD_DIVISOR = 4
 private const val SHIFT_8 = 8
+private val URL_PERCENT_HEX =
+    charArrayOf(
+        '0',
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6',
+        '7',
+        '8',
+        '9',
+        'A',
+        'B',
+        'C',
+        'D',
+        'E',
+        'F',
+    )
 
 private const val BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -378,6 +397,31 @@ fun ByteArray.encodeTo(encoding: Encoding): String =
     }
 
 /**
+ * Percent-encode a value for use as a URI path segment or query parameter
+ * value according to RFC 3986. Unreserved characters (`ALPHA / DIGIT / - . _ ~`)
+ * are left as-is; all other Unicode code points are encoded as UTF-8 bytes.
+ */
+@JsExportCompat
+fun String.encodeUrlComponent(): String {
+    val builder = StringBuilder(length)
+    for (byte in encodeToByteArray()) {
+        val value = byte.toInt() and BYTE_MASK
+        if (value.isUrlUnreservedByte()) {
+            builder.append(value.toChar())
+        } else {
+            builder.append('%')
+            builder.append(URL_PERCENT_HEX[(value ushr 4) and BASE64_LOW_4_BITS])
+            builder.append(URL_PERCENT_HEX[value and BASE64_LOW_4_BITS])
+        }
+    }
+    return builder.toString()
+}
+
+private fun Int.isUrlUnreservedByte(): Boolean =
+    this in 'A'.code..'Z'.code || this in 'a'.code..'z'.code || this in '0'.code..'9'.code ||
+        this == '-'.code || this == '_'.code || this == '.'.code || this == '~'.code
+
+/**
  * Decode URL-encoded (percent-encoded) string.
  *
  * Handles common percent-encoded characters according to RFC 3986.
@@ -418,31 +462,7 @@ fun String.decodeUrlGraph(): String =
  * Note: The percent character (%) must be encoded first to avoid double-encoding.
  */
 @JsExportCompat
-fun String.encodeUrlGraph(): String =
-    this
-        .replace("%", "%25") // MUST be first to avoid double-encoding
-        .replace(" ", "%20")
-        .replace("!", "%21")
-        .replace("\"", "%22")
-        .replace("#", "%23")
-        .replace("$", "%24")
-        .replace("&", "%26")
-        .replace("'", "%27")
-        .replace("(", "%28")
-        .replace(")", "%29")
-        .replace("*", "%2A")
-        .replace("+", "%2B")
-        .replace(",", "%2C")
-        .replace("/", "%2F")
-        .replace(":", "%3A")
-        .replace(";", "%3B")
-        .replace("=", "%3D")
-        .replace("?", "%3F")
-        .replace("@", "%40")
-        .replace("[", "%5B")
-        .replace("]", "%5D")
-        .replace("{", "%7B")
-        .replace("}", "%7D")
+fun String.encodeUrlGraph(): String = encodeUrlComponent()
 
 /**
  * Serializer that can be used in Kotlin's serialization support to convert byte arrays into base64 strings and vice versa.

@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribution
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributor
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
@@ -27,7 +28,6 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlinx.serialization.json.JsonElement
 
 /**
  * No-op attribute contributor for IDK baseline.
@@ -43,5 +43,5 @@ class NoOpCredentialAttributeContributor : CredentialAttributeContributor {
         session: IssuanceSession,
         tokenContext: ValidatedTokenContext,
         credentialConfigurationId: String,
-    ): IdkResult<Map<String, JsonElement>, IdkError> = Ok(emptyMap())
+    ): IdkResult<CredentialAttributeContribution, IdkError> = Ok(CredentialAttributeContribution(attributes = emptyMap()))
 }

@@ -143,10 +143,14 @@ class DidExternalIdentifierResolutionServiceImpl(
                             ),
                         didDocumentMetadata =
                             buildMap {
-                                resolutionResult.didDocumentMetadata.created?.let { put("created", it) }
-                                resolutionResult.didDocumentMetadata.updated?.let { put("updated", it) }
+                                resolutionResult.didDocumentMetadata.created?.let { put("created", it.toString()) }
+                                resolutionResult.didDocumentMetadata.updated?.let { put("updated", it.toString()) }
                                 resolutionResult.didDocumentMetadata.deactivated?.let { put("deactivated", it.toString()) }
                                 resolutionResult.didDocumentMetadata.versionId?.let { put("versionId", it) }
+                                resolutionResult.didDocumentMetadata.nextVersionId?.let { put("nextVersionId", it) }
+                                resolutionResult.didDocumentMetadata.nextUpdate?.let { put("nextUpdate", it.toString()) }
+                                resolutionResult.didDocumentMetadata.equivalentId?.let { put("equivalentId", it) }
+                                resolutionResult.didDocumentMetadata.canonicalId?.let { put("canonicalId", it) }
                             },
                     ),
                 didParsed = parsedDid,
@@ -267,11 +271,13 @@ class DidExternalIdentifierResolutionServiceImpl(
             capabilityInvocation = doc.capabilityInvocation?.mapNotNull { it.reference ?: it.embedded?.id },
             capabilityDelegation = doc.capabilityDelegation?.mapNotNull { it.reference ?: it.embedded?.id },
             service =
-                doc.service?.map { svc ->
+                doc.service?.mapNotNull { svc ->
+                    if (svc.type.isEmpty()) return@mapNotNull null
+                    val endpoint = svc.serviceEndpointAsStringOrNull() ?: return@mapNotNull null
                     Service(
                         id = svc.id,
-                        type = svc.type,
-                        serviceEndpoint = svc.serviceEndpoint,
+                        type = svc.type.first(),
+                        serviceEndpoint = endpoint,
                     )
                 },
         )

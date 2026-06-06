@@ -18,7 +18,6 @@
 package com.sphereon.crypto.core.x509
 
 import at.asitplus.awesn1.Asn1Element
-import at.asitplus.awesn1.Asn1EncapsulatingOctetString
 import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.crypto.pki.X509Certificate
 import at.asitplus.awesn1.encoding.parse
@@ -49,9 +48,9 @@ private suspend fun downloadExtraCertificatesInternal(
             it.oid.toString() == X509ExtensionOids.AUTHORITY_INFORMATION_ACCESS
         } ?: return emptyList()
 
-    val octet = aiaExt.value as? Asn1EncapsulatingOctetString ?: error("AuthorityInfoAccess extension is not an OCTET STRING")
-
-    val seqElement = Asn1Element.parse(octet.content) as? Asn1Sequence ?: error("AuthorityInfoAccess content is not a valid ASN.1 sequence")
+    // In awesn1 0.3.0 the extension value is the raw extnValue OCTET STRING content,
+    // i.e. the DER encoding of the AuthorityInfoAccess SEQUENCE.
+    val seqElement = Asn1Element.parse(aiaExt.value) as? Asn1Sequence ?: error("AuthorityInfoAccess content is not a valid ASN.1 sequence")
 
     val downloaded = mutableListOf<Certificate>()
 

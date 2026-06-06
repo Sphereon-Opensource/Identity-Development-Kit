@@ -49,8 +49,6 @@ cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
 # shellcheck source=lib/resolve-base-url.sh
 source "${SCRIPT_DIR}/lib/resolve-base-url.sh"
-# shellcheck source=lib/template-vcts.sh
-source "${SCRIPT_DIR}/lib/template-vcts.sh"
 # shellcheck source=lib/generate-keystores.sh
 source "${SCRIPT_DIR}/lib/generate-keystores.sh"
 # shellcheck source=lib/resolve-profile.sh
@@ -70,7 +68,6 @@ EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
 IDK_VERSION=${IDK_VERSION}
 EOF
 
-template_vct_files "${EXTERNAL_BASE_URL}"
 
 echo "Building fat JARs from ${IDK_ROOT}..."
 (cd "${IDK_ROOT}" && ./gradlew \

@@ -58,7 +58,6 @@ if not defined IDK_VERSION (
     echo IDK_VERSION=%IDK_VERSION%
 ) > .env
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lib\template-vcts.ps1" -BaseUrl "%EXTERNAL_BASE_URL%"
 if errorlevel 1 exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lib\generate-keystores.ps1"
 if errorlevel 1 exit /b 1

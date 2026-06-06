@@ -19,8 +19,10 @@ package com.sphereon.oauth2.server.authorization.impl.http
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.RoutableSlugLookup
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
@@ -47,6 +49,8 @@ class OAuth2AuthorizationHttpAdapter(
     execution: SessionExecution,
     asInstanceResolver: OAuth2ServerInstanceResolver,
     asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider,
+    slugLookup: RoutableSlugLookup,
+    tenantIdProvider: MutableResolvedTenantIdProvider,
     private val authorizeEndpointCommand: AuthorizeHttpEndpointCommand,
     private val authorizeCallbackEndpointCommand: AuthorizeCallbackHttpEndpointCommand,
     private val iaeEndpointCommand: IaeHttpEndpointCommand,
@@ -56,6 +60,8 @@ class OAuth2AuthorizationHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
         asInstanceResolver = asInstanceResolver,
         asInstanceIdProvider = asInstanceIdProvider,
+        slugLookup = slugLookup,
+        tenantIdProvider = tenantIdProvider,
         // /authorize, /authorize/callback, /iae are issuer-path-prefixed:
         //   https://saas.com/<tenantOrAsSlug>/authorize
         // Leading peel up to depth 2 covers (tenantSlug, asInstanceSlug) pairs.

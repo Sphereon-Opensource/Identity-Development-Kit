@@ -18,6 +18,7 @@ package com.sphereon.identity.reconciliation.api
 
 import com.sphereon.attribute.flow.AttributeBag
 import com.sphereon.attribute.flow.AttributePath
+import com.sphereon.attribute.flow.AttributeProvenanceRef
 import com.sphereon.identity.idv.model.AttributePredicate
 import com.sphereon.identity.idv.model.MatchOperator
 import com.sphereon.identity.reconciliation.model.FailClosed
@@ -36,6 +37,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.time.Instant
 
 class ReconciliationSelectorTest {
     private val ruleVersion = "2026-03-17"
@@ -298,9 +300,11 @@ class ReconciliationSelectorTest {
     @Test
     fun claimPredicateMatching() {
         val claims =
-            AttributeBag
-                .empty()
-                .with(AttributePath("affiliation"), JsonPrimitive("student"))
+            AttributeBag.of(
+                values = mapOf(AttributePath("affiliation") to JsonPrimitive("student")),
+                sourceId = AttributeProvenanceRef("test"),
+                timestamp = Instant.fromEpochSeconds(0),
+            )
 
         val rules =
             listOf(
@@ -326,9 +330,11 @@ class ReconciliationSelectorTest {
     @Test
     fun claimPredicateNoMatchSkipsRule() {
         val claims =
-            AttributeBag
-                .empty()
-                .with(AttributePath("affiliation"), JsonPrimitive("employee"))
+            AttributeBag.of(
+                values = mapOf(AttributePath("affiliation") to JsonPrimitive("employee")),
+                sourceId = AttributeProvenanceRef("test"),
+                timestamp = Instant.fromEpochSeconds(0),
+            )
 
         val rules =
             listOf(
@@ -386,9 +392,11 @@ class ReconciliationSelectorTest {
     @Test
     fun multiRuleMatchHighestPrioritySelected() {
         val claims =
-            AttributeBag
-                .empty()
-                .with(AttributePath("affiliation"), JsonPrimitive("student"))
+            AttributeBag.of(
+                values = mapOf(AttributePath("affiliation") to JsonPrimitive("student")),
+                sourceId = AttributeProvenanceRef("test"),
+                timestamp = Instant.fromEpochSeconds(0),
+            )
 
         val rules =
             listOf(

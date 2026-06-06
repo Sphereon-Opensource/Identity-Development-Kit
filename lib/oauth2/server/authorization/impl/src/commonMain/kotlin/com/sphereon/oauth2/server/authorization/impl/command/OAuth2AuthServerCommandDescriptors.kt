@@ -43,6 +43,7 @@ import com.sphereon.oauth2.server.authorization.command.ParseRevocationRequestCo
 import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand
 import com.sphereon.oauth2.server.authorization.command.RetrieveAuthorizationRequestByUriCommand
 import com.sphereon.oauth2.server.authorization.command.RevokeTokenCommand
+import com.sphereon.oauth2.server.authorization.command.RotateSigningKeyCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand
@@ -67,6 +68,7 @@ import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocat
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestCommand
 import com.sphereon.oauth2.server.authorization.command.token.VerifyDeviceCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.command.admin.RotateSigningKeyCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.attestation.CreateAttestationChallengeCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.authorization.CreateAuthorizationCodeCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.authorization.CreateAuthorizationErrorResponseCommandImpl
@@ -321,4 +323,12 @@ interface OAuth2AuthServerCommandDescriptors {
     @Provides @IntoMap
     @StringKey(HandleJwksRequestCommand.COMMAND_ID)
     fun handleJwksRequest(impl: HandleJwksRequestCommand): ServiceCommand<*, *, *> = impl
+
+    // Admin commands — first-boot signing-key provisioning + operator-triggered rotation.
+    // Without this descriptor, AppCommandInvoker.resolve(RotateSigningKeyCommand.COMMAND_ID)
+    // returns null even though the typed binding exists; the bridge's signing-key bootstrap
+    // (and any future admin-rotation endpoint) cannot find the command at runtime.
+    @Provides @IntoMap
+    @StringKey(RotateSigningKeyCommand.COMMAND_ID)
+    fun rotateSigningKey(impl: RotateSigningKeyCommandImpl): ServiceCommand<*, *, *> = impl
 }

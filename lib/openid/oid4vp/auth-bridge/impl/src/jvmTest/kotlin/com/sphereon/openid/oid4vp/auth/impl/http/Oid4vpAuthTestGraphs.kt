@@ -196,15 +196,10 @@ class TestRequestObjectSigningConfig
         override val expirationSeconds: Long = 60
     }
 
-/**
- * Provides Clock binding for the verifier module dependencies.
- */
-@ContributesTo(SessionScope::class)
-interface Oid4vpAuthTestClockModule {
-    @Provides
-    @SingleIn(SessionScope::class)
-    fun provideClock(): Clock = Clock.System
-}
+// Clock is provided app-wide by ClockModule (lib-core-api-default) at AppScope; SessionScope
+// consumers resolve through the parent scope, so this test graph does not re-declare it. The
+// SessionScope binding contributed by DidManagerRuntimeProviders (lib-did-manager-impl) is
+// equivalent and would also satisfy the same consumers, but is not load-bearing for this test.
 
 // ============================================================
 // Test-specific OIDC discovery binding (for reconciliation)

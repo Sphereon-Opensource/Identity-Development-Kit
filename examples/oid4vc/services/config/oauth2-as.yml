@@ -11,6 +11,12 @@ kms:
     software:
       type: software
       enabled: true
+      # The AS self-seeds its signing key on first use (see the SigningKeyStore seeder). The
+      # software KMS persists keys into a PKCS12 keystore, whose entries are certificate-based, so
+      # storing a freshly generated bare signing key requires a certificate. With this enabled the
+      # provider mints a self-signed certificate (alias as CN) for every generated key, letting the
+      # AS create its ES256 signing key without an externally supplied chain.
+      autoCreateCertificate: true
       keystore:
         type: pkcs12
         id: software
@@ -78,6 +84,11 @@ oauth2:
       mode: HOSTED
       issuer: "${env:EXTERNAL_BASE_URL}/auth"
       oidc: SUPPORTED
+      # Demo convenience: the AS login page (shown during the authorization_code flow) renders
+      # this notice above the credential form so testers know which seeded account to use. The
+      # `testuser`/`testpass` account is defined under `oauth2.users.accounts` above. Production
+      # deployments leave `login-notice` unset so no hint is shown.
+      login-notice: "Demo account. Username: testuser, password: testpass"
       # PKCE is REQUIRED by default (FAPI2-SP §5.3.2.1, RFC 9700). The OIDC Basic Profile
       # Authorization Server certification predates PKCE and runs without it — flip via
       # OAUTH2_PKCE_POLICY=SUPPORTED for that test (profile: conformance-oidc-basic).
@@ -116,6 +127,11 @@ oauth2:
       token-endpoint-auth-methods-supported: "${env:OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS:client_secret_basic,client_secret_post}"
       public-clients:
         allow-any: true
+        # Demo: accept any public client's redirect URI (wallets use loopback / custom-scheme
+        # URIs the AS can't pre-register). Required for the allow-any fallback to engage — without
+        # it the fallback is disabled and unregistered public clients are rejected at PAR/token.
+        # OIDF conformance deployments leave this false.
+        permissive-redirect-uri: true
       internal-clients:
         issuer:
           client-id: issuer-service

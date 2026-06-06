@@ -17,6 +17,7 @@
 package com.sphereon.data.store.credential.design.model
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.credential.issuance.pipeline.SemanticAttributeSetRef
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
@@ -52,6 +53,15 @@ data class CredentialDesignRecord
         val derivedRenderHintsId: Uuid? = null,
         val sourceSnapshotIds: List<Uuid> = emptyList(),
         val contentHash: String? = null,
+        /** Optional OCA semantic attribute set this design draws from. When present, the OCA-backed
+         *  credential-design resolution derives selective-disclosure and mandatory flags from it. */
+        val semanticAttributeSetRef: SemanticAttributeSetRef? = null,
+        /** Optional attribute-profile this design draws from. When present, credential-design
+         *  resolution derives selective-disclosure and mandatory flags from the profile's resolved
+         *  effective projection in preference to [semanticAttributeSetRef]. The id and pinned
+         *  version are held as primitives so this IDK contract stays free of the EDK profile types. */
+        val attributeProfileId: Uuid? = null,
+        val attributeProfileVersion: Long? = null,
         val createdAt: Instant,
         val updatedAt: Instant,
     )

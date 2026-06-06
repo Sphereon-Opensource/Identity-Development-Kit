@@ -43,6 +43,7 @@ fun categoryToHttpStatus(category: ErrorCategory): Int =
         ErrorCategory.NOT_FOUND -> HTTP_NOT_FOUND
         ErrorCategory.CONFLICT -> HTTP_CONFLICT
         ErrorCategory.PRECONDITION_FAILED -> HTTP_PRECONDITION_FAILED
+        ErrorCategory.UNPROCESSABLE_ENTITY -> HTTP_UNPROCESSABLE_ENTITY
         ErrorCategory.RATE_LIMITED -> HTTP_TOO_MANY_REQUESTS
         ErrorCategory.UNAVAILABLE -> HTTP_SERVICE_UNAVAILABLE
         ErrorCategory.INTERNAL -> HTTP_INTERNAL_SERVER_ERROR
@@ -55,6 +56,7 @@ private const val HTTP_FORBIDDEN = 403
 private const val HTTP_NOT_FOUND = 404
 private const val HTTP_CONFLICT = 409
 private const val HTTP_PRECONDITION_FAILED = 412
+private const val HTTP_UNPROCESSABLE_ENTITY = 422
 private const val HTTP_TOO_MANY_REQUESTS = 429
 private const val HTTP_INTERNAL_SERVER_ERROR = 500
 private const val HTTP_NOT_IMPLEMENTED = 501

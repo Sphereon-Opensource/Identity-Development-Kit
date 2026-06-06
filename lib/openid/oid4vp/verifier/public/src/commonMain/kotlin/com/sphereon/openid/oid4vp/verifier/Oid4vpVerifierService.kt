@@ -16,10 +16,10 @@
 
 package com.sphereon.openid.oid4vp.verifier
 
+import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriHandler
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
-import com.sphereon.openid.oid4vp.verifier.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName

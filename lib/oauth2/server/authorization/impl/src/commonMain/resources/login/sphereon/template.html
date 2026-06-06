@@ -18,6 +18,7 @@
     </header>
     <main class="login-card">
       <h1 class="login-title">{{msg.loginAccountTitle}}</h1>
+      {{noticeBlockOrEmpty}}
       {{errorBlockOrEmpty}}
       <form class="form-sections" method="post" action="{{formAction}}" autocomplete="on">
         <input type="hidden" name="session_id" value="{{sessionId}}">

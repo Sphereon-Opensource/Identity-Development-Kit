@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.verifier.store
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.openid.oid4vp.common.store.ConfigurationStore
 import com.sphereon.openid.oid4vp.verifier.model.ClientMetadataConfiguration
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName

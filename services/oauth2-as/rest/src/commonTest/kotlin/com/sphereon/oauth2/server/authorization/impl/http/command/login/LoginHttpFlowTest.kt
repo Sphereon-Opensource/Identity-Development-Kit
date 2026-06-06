@@ -29,6 +29,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfKeyProvider
@@ -88,6 +89,7 @@ class LoginHttpFlowTest {
             loginPageRenderer = StubLoginPageRenderer(staticAssets = staticAssets),
             asInstanceIdProvider = StubAsInstanceIdProvider(),
             configProvider = TestOAuth2ServersConfigProvider(),
+            baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
             csrfTokenizer = csrfTokenizer,
             listEnabledFederationProvidersCommand = NoopListEnabledFederationProvidersCommand,
         )

@@ -62,6 +62,9 @@ data class DidDocumentMetadataResponse(
     val deactivated: Boolean? = null,
     val versionId: String? = null,
     val nextVersionId: String? = null,
+    val nextUpdate: String? = null,
+    val equivalentId: List<String>? = null,
+    val canonicalId: String? = null,
 )
 
 /**
@@ -99,10 +102,13 @@ fun DidResolutionResult.toResponse(): DidResolutionResponse =
             ),
         didDocumentMetadata =
             DidDocumentMetadataResponse(
-                created = didDocumentMetadata.created,
-                updated = didDocumentMetadata.updated,
+                created = didDocumentMetadata.created?.toString(),
+                updated = didDocumentMetadata.updated?.toString(),
                 deactivated = didDocumentMetadata.deactivated,
                 versionId = didDocumentMetadata.versionId,
                 nextVersionId = didDocumentMetadata.nextVersionId,
+                nextUpdate = didDocumentMetadata.nextUpdate?.toString(),
+                equivalentId = didDocumentMetadata.equivalentId,
+                canonicalId = didDocumentMetadata.canonicalId,
             ),
     )

@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.holder
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
@@ -71,6 +72,7 @@ interface Oid4vciHolderService {
         signingAlgorithm: String = "ES256",
         clientId: String? = null,
         count: Int = 1,
+        keyInclusionMode: JwsIdentifierMode = JwsIdentifierMode.JWK,
     ): IdkResult<CreatedProof, IdkError>
 
     suspend fun requestCredential(

@@ -26,7 +26,8 @@ import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.createGraphFactory
 
 /**
- * Native test implementation for [AbstractAppGraph].
+ * Native test implementation for [AbstractAppGraph]. The DidRepository binding now flows
+ * from `DidRepositorySelectorModule` + `MemoryDidPersistenceModule`; defaults to memory.
  */
 @DependencyGraph(AppScope::class)
 abstract class NativeDidManagerTestAppGraph : AbstractAppGraph() {

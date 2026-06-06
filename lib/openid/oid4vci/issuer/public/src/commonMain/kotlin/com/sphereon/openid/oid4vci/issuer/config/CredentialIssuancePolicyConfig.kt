@@ -17,6 +17,9 @@
 package com.sphereon.openid.oid4vci.issuer.config
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.OptionalBinding
 import kotlinx.serialization.Serializable
 
 /**
@@ -87,4 +90,18 @@ interface CredentialIssuancePolicyResolver {
      * Never throws — returns a config with all defaults when no properties are configured.
      */
     suspend fun resolve(credentialConfigurationId: String): CredentialIssuancePolicyConfig
+}
+
+/**
+ * Exposes [CredentialIssuancePolicyResolver] as an optional graph accessor so that consumers
+ * declaring `CredentialIssuancePolicyResolver? = null` constructor parameters resolve cleanly
+ * under the Metro `nullable type key`. The IDK
+ * [com.sphereon.openid.oid4vci.issuer.impl.config.DefaultCredentialIssuancePolicyResolver] adds a
+ * second `@ContributesBinding(SessionScope::class, binding = binding<CredentialIssuancePolicyResolver?>())`
+ * so this default `null` body is overridden whenever the issuer-impl module is on the classpath.
+ */
+@ContributesTo(SessionScope::class)
+interface CredentialIssuancePolicyResolverOptionalProvider {
+    @OptionalBinding
+    val optionalCredentialIssuancePolicyResolver: CredentialIssuancePolicyResolver? get() = null
 }

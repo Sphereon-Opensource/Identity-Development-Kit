@@ -74,6 +74,7 @@ dependencies {
         api("com.sphereon.idk:lib-openid-oid4vp-holder-impl:$version")
         api("com.sphereon.idk:lib-openid-oid4vp-verifier-public:$version")
         api("com.sphereon.idk:lib-openid-oid4vp-verifier-impl:$version")
+        api("com.sphereon.idk:lib-openid-oid4vp-verifier-rest:$version")
         api("com.sphereon.idk:lib-openid-oid4vp-universal-public:$version")
         api("com.sphereon.idk:lib-openid-oid4vp-universal-impl:$version")
 

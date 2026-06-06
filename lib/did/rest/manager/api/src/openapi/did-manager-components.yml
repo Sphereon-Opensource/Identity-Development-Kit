@@ -290,9 +290,10 @@ components:
         needs to identify a key — request bodies (DID create, VM create,
         key-mapping create), patch bodies (VM update), and read responses
         (VM, KeyMapping). The wire shape carries metadata only — raw key
-        material is never transferred via this object; clients pass keys via
-        the dedicated `publicKeyJwk` field on creation requests where
-        applicable.
+        material is never transferred via this object. For creation flows
+        (DID create, VM create) the server resolves the public JWK from
+        the registered KMS key referenced here; callers must register the
+        key with the KMS first.
 
         At least one of `providerId` plus `alias` or `kid` is required for
         operations that need to resolve a key. Read responses populate

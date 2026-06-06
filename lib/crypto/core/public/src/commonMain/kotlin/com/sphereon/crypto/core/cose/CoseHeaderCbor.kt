@@ -74,6 +74,8 @@ CoseHeaderJson
         val iv: String? = null,
         val partialIv: String? = null,
         val x5chain: Array<String>? = null,
+        /** COSE `typ` (RFC 9596, label 16): the media type of the complete COSE object, e.g. a CWT type. */
+        val typ: String? = null,
     ) : JsonView() {
         /**
          * Converts the current instance of `CoseHeaderJson` to a JSON string.
@@ -99,6 +101,7 @@ CoseHeaderJson
                 partialIv = partialIv?.toCborByteString(Encoding.UTF8),
                 iv = iv?.toCborByteString(Encoding.UTF8),
                 x5chain = x5chain?.encodeToCborByteArray(Encoding.BASE64), // base64 not url
+                typ = typ?.toCborString(),
             )
 
         // TODO: To JOSE
@@ -136,6 +139,8 @@ CoseHeaderCbor
         val iv: CborByteString? = null,
         val partialIv: CborByteString? = null,
         var x5chain: CborArray<CborByteString>? = null,
+        /** COSE `typ` (RFC 9596, label 16): the media type of the complete COSE object, e.g. a CWT type. */
+        var typ: CborString? = null,
     ) {
         /**
          * Converts the COSE header to a JSON representation.
@@ -152,6 +157,7 @@ CoseHeaderCbor
                 iv = iv?.encodeValueTo(Encoding.UTF8),
                 partialIv = partialIv?.encodeValueTo(Encoding.UTF8),
                 x5chain = x5chain?.encodeToBase64Array(),
+                typ = typ?.toString(),
             )
 
         /**
@@ -159,7 +165,8 @@ CoseHeaderCbor
          *
          * @return true if all properties are null; false otherwise.
          */
-        fun isEmpty(): Boolean = this.x5chain == null && this.alg == null && this.partialIv == null && this.kid == null && this.iv == null && this.crit == null && this.contentType == null
+        fun isEmpty(): Boolean =
+            this.x5chain == null && this.alg == null && this.partialIv == null && this.kid == null && this.iv == null && this.crit == null && this.contentType == null && this.typ == null
 
         /**
          * Checks if this CoseHeaderCbor object is equal to another object.
@@ -198,6 +205,9 @@ CoseHeaderCbor
             if (x5chain != other.x5chain) {
                 return false
             }
+            if (typ != other.typ) {
+                return false
+            }
 
             return true
         }
@@ -215,6 +225,7 @@ CoseHeaderCbor
             result = 31 * result + (iv?.hashCode() ?: 0)
             result = 31 * result + (partialIv?.hashCode() ?: 0)
             result = 31 * result + (x5chain?.hashCode() ?: 0)
+            result = 31 * result + (typ?.hashCode() ?: 0)
             return result
         }
 
@@ -223,7 +234,7 @@ CoseHeaderCbor
          *
          * @return a string that includes the values of `alg`, `crit`, `contentType`, `kid`, `iv`, `partialIv`, and `x5chain`
          */
-        override fun toString(): String = "CoseHeaderCbor(alg=$alg, crit=$crit, contentType=$contentType, kid=$kid, iv=$iv, partialIv=$partialIv, x5chain=$x5chain)"
+        override fun toString(): String = "CoseHeaderCbor(alg=$alg, crit=$crit, contentType=$contentType, kid=$kid, iv=$iv, partialIv=$partialIv, x5chain=$x5chain, typ=$typ)"
 
         /**
          * Utility object containing static properties and methods for handling COSE headers.
@@ -249,6 +260,9 @@ CoseHeaderCbor
 
             @JvmStatic
             val X5CHAIN = NumberLabel(33)
+
+            @JvmStatic
+            val TYP = NumberLabel(16)
 
             /**
              * Copies the given `CoseHeaderCbor` object or initializes a new one if the provided object is null.

@@ -106,6 +106,15 @@ object EventTypes {
     val OID4VCI_TOKEN_ISSUED = EventType("oid4vci.token.issued")
     val OID4VCI_CREDENTIAL_ISSUED = EventType("oid4vci.credential.issued")
     val OID4VCI_CREDENTIAL_FAILED = EventType("oid4vci.credential.failed")
+
+    /**
+     * Emitted by the issuer's `/credential` endpoint when the request is accepted but the
+     * credential is not yet ready: the response is the OID4VCI 1.0 §8.3.4 deferred envelope
+     * (carries `transaction_id` + `interval`, no `credentials`). Distinct from
+     * [OID4VCI_CREDENTIAL_DEFERRED_ISSUED], which fires later from the `/deferred_credential`
+     * endpoint when a poll finally returns the actual credential.
+     */
+    val OID4VCI_CREDENTIAL_DEFERRED = EventType("oid4vci.credential.deferred")
     val OID4VCI_CREDENTIAL_DEFERRED_ISSUED = EventType("oid4vci.credential.deferred_issued")
     val OID4VCI_NOTIFICATION_RECEIVED = EventType("oid4vci.notification.received")
 
@@ -114,6 +123,9 @@ object EventTypes {
     val OID4VP_RESPONSE_RECEIVED = EventType("oid4vp.response.received")
     val OID4VP_RESPONSE_VERIFIED = EventType("oid4vp.response.verified")
     val OID4VP_RESPONSE_FAILED = EventType("oid4vp.response.failed")
+
+    /** A received credential was discarded because its status list reported it revoked/suspended. */
+    val OID4VP_CREDENTIAL_STATUS_REJECTED = EventType("oid4vp.credential.status_rejected")
 
     /**
      * Helper to create custom types with version.

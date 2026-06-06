@@ -19,13 +19,22 @@ package com.sphereon.data.store.blob.impl
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobMetadata
+import com.sphereon.data.store.blob.BlobStoreSchemes
+import com.sphereon.data.store.blob.InMemoryBlobStoreConfig
 import com.sphereon.data.store.blob.MetadataSearchQuery
 import com.sphereon.data.store.blob.PutOptions
+import com.sphereon.data.store.blob.memory.InMemoryBlobBackingStorageImpl
+import com.sphereon.data.store.blob.memory.InMemoryBlobStoreFactoryImpl
+import com.sphereon.data.store.kv.InMemoryKvStoreConfig
+import com.sphereon.data.store.kv.KvStoreScopeBinding
+import com.sphereon.data.store.kv.memory.InMemoryKvBackingStorageImpl
+import com.sphereon.data.store.kv.memory.InMemoryKvStoreFactoryImpl
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -414,6 +423,79 @@ class DefaultBlobServiceTest {
 
             val getResult = retainedService.getBlob(info = BlobInfo(tenantId = "t1", path = "retained.txt"))
             assertTrue(getResult.isOk, "Blob should still exist after denied delete")
+        }
+
+    /**
+     * Creates a blob service whose CONFIGURED registry id ("default") deliberately differs from the
+     * backend SCHEME id ([BlobStoreSchemes.MEMORY] = "memory"). This is the configuration that
+     * surfaced the original leak: a caller-facing descriptor stamped with the scheme id would fail
+     * the next getBlob with "Blob store config not found for store ID: memory".
+     */
+    private fun createServiceWithConfiguredId(configuredId: String): DefaultBlobService {
+        val blobBackingStorage = InMemoryBlobBackingStorageImpl()
+        val blobFactory = InMemoryBlobStoreFactoryImpl(blobBackingStorage)
+        val memoryStore = blobFactory.create(InMemoryBlobStoreConfig(id = configuredId))
+
+        val kvBackingStorage = InMemoryKvBackingStorageImpl()
+        val kvFactory = InMemoryKvStoreFactoryImpl(kvBackingStorage)
+        val kvStore =
+            kvFactory.create(
+                InMemoryKvStoreConfig(id = KvBlobMetadataIndex.STORE_ID, scopeBinding = KvStoreScopeBinding.APP),
+            )
+
+        return DefaultBlobService(
+            blobStoreService = TestBlobStoreService(memoryStore, storeId = configuredId),
+            metadataIndex = KvBlobMetadataIndex(TestKvStoreService(kvStore)),
+            retentionPolicyService = DefaultRetentionPolicyService(),
+            tempUrlPolicy =
+                com.sphereon.data.store.blob
+                    .DefaultTempUrlPolicy(),
+            eventService = TestSessionEventService(),
+            execution = TestSessionExecution(),
+        )
+    }
+
+    @Test
+    fun configuredStoreIdRoundTrips() =
+        runTest {
+            // Configured id "default" differs from the backend scheme id "memory".
+            assertNotEquals(BlobStoreSchemes.MEMORY, "default")
+            val service = createServiceWithConfiguredId("default")
+
+            val storeResult =
+                service.storeBlob(
+                    target = BlobInfo(storeId = "default", tenantId = "t1", path = "round-trip.txt"),
+                    data = "round trip me".encodeToByteArray(),
+                )
+            assertTrue(storeResult.isOk, "storeBlob should succeed: ${if (storeResult.isErr) storeResult.error else ""}")
+
+            // The returned descriptor must carry the CONFIGURED id, NOT the backend scheme id.
+            val descriptor = storeResult.value
+            assertEquals("default", descriptor.storeId, "descriptor must carry the configured id, not the scheme id")
+            assertNotEquals(BlobStoreSchemes.MEMORY, descriptor.storeId)
+            assertEquals("round-trip.txt", descriptor.path, "descriptor path must be the logical (unscoped) path")
+
+            // Round-trip: getBlob using the returned descriptor's storeId/path must resolve the store.
+            val getResult =
+                service.getBlob(info = BlobInfo(storeId = descriptor.storeId, tenantId = "t1", path = descriptor.path))
+            assertTrue(getResult.isOk, "getBlob round-trip should succeed: ${if (getResult.isErr) getResult.error else ""}")
+            assertEquals("round trip me", getResult.value.data.decodeToString())
+            assertEquals("default", getResult.value.descriptor.storeId, "resolved descriptor must carry the configured id")
+
+            // findByMetadata descriptors must also carry the configured id and round-trip.
+            val findResult =
+                service.findByMetadata(
+                    info = BlobInfo(storeId = "default", tenantId = "t1"),
+                    query = MetadataSearchQuery(pathPrefix = "round-trip"),
+                )
+            assertTrue(findResult.isOk)
+            assertEquals(1, findResult.value.size)
+            val found = findResult.value.first()
+            assertEquals("default", found.storeId, "search descriptor must carry the configured id")
+            assertEquals("round-trip.txt", found.path)
+            val refetch =
+                service.getBlob(info = BlobInfo(storeId = found.storeId, tenantId = "t1", path = found.path))
+            assertTrue(refetch.isOk, "search descriptor must round-trip through getBlob")
         }
 
     @Test

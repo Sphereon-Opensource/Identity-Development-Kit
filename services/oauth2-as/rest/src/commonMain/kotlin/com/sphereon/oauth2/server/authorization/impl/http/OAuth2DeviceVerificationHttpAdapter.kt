@@ -19,8 +19,10 @@ package com.sphereon.oauth2.server.authorization.impl.http
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.RoutableSlugLookup
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
@@ -59,6 +61,8 @@ class OAuth2DeviceVerificationHttpAdapter(
     execution: SessionExecution,
     asInstanceResolver: OAuth2ServerInstanceResolver,
     asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider,
+    slugLookup: RoutableSlugLookup,
+    tenantIdProvider: MutableResolvedTenantIdProvider,
     private val deviceEntryEndpointCommand: DeviceVerificationEntryHttpEndpointCommand,
     private val deviceSubmitEndpointCommand: DeviceVerificationSubmitHttpEndpointCommand,
     private val deviceApprovalEndpointCommand: DeviceVerificationApprovalHttpEndpointCommand,
@@ -69,6 +73,8 @@ class OAuth2DeviceVerificationHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
         asInstanceResolver = asInstanceResolver,
         asInstanceIdProvider = asInstanceIdProvider,
+        slugLookup = slugLookup,
+        tenantIdProvider = tenantIdProvider,
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {

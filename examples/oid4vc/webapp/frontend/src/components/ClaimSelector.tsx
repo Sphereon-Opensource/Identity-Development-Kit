@@ -25,7 +25,6 @@ export function ClaimSelector({ claims, selectedPaths, onSelectionChange }: Clai
 
   return (
     <div className="claim-selector">
-      <h3>{t('verifier.selectClaims')}</h3>
       <p className="claim-selector-hint">{t('verifier.sdHint')}</p>
       <div className="claim-selector-list">
         {claims.map(claim => {

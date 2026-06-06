@@ -1,0 +1,4 @@
+# Build-generated copy of the canonical shared components spec.
+# Source of truth: IDK lib-core-api-public common-components.yml.
+# Synced here by the `syncOpenApiCommonComponents` Gradle task.
+common-components.yml

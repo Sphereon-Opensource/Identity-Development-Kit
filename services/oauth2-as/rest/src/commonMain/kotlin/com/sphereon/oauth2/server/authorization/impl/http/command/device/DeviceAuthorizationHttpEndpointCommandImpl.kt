@@ -29,10 +29,10 @@ import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.device.DeviceAuthorizationHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.command.device.IssueDeviceAuthorizationArgs
 import com.sphereon.oauth2.server.authorization.command.device.IssueDeviceAuthorizationCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -67,6 +67,7 @@ class DeviceAuthorizationHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val issueDeviceAuthorizationCommand: IssueDeviceAuthorizationCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = DeviceAuthorizationHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -125,7 +126,7 @@ class DeviceAuthorizationHttpEndpointCommandImpl(
         val resource = requestBody["resource"]?.takeIf { it.isNotEmpty() }
         val audience = requestBody["audience"]?.takeIf { it.isNotEmpty() }
 
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
 
         val result =
             issueDeviceAuthorizationCommand.execute(

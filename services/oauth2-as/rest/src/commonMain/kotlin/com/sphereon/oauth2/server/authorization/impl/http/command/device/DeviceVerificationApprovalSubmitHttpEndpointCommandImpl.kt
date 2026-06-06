@@ -29,9 +29,9 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.device.DeviceVerificationApprovalSubmitHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultOutcome
@@ -69,6 +69,7 @@ class DeviceVerificationApprovalSubmitHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val renderer: DeviceVerificationPageRenderer,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val storage: DeviceAuthorizationStorage,
     private val loginSessionStore: OidcLoginSessionStore,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
@@ -116,7 +117,7 @@ class DeviceVerificationApprovalSubmitHttpEndpointCommandImpl(
             form["action"]?.firstOrNull()?.takeIf { it.isNotBlank() }
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing required form field: action", json))
 
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val locale = negotiateLocale(request.headers["accept-language"] ?: request.headers["Accept-Language"])
 
         val sessionId = loginSessionIdProvider.currentLoginSessionId()

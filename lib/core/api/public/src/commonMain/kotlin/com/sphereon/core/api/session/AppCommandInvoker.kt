@@ -86,6 +86,7 @@ class AppCommandInvokerImpl(
 
     override fun listCommandIds(): List<String> = backgroundExecutor().listCommandIds()
 
+    @Suppress("UNCHECKED_CAST")
     override suspend fun <TInput : Any, TOutput : Any, TError : IdkErrorType> execute(
         tenantInput: TenantInput,
         principalInput: PrincipalInput,
@@ -102,7 +103,14 @@ class AppCommandInvokerImpl(
                 .createOrGetFromId(sessionId = sessionId, correlationId = resolvedCorrelationId, makeActive = false)
         val executor = (sessionInstance.graph as CommandInvokerGraph).commandInvoker
         return try {
-            executor.execute(command, input)
+            // Re-resolve the command from the freshly opened session's executor so
+            // any SessionScope-bound state (e.g. SessionExecution captured in the
+            // constructor of a @SingleIn(SessionScope::class) ServiceCommand) refers
+            // to THIS session — not the background session the caller used to
+            // resolve the passed-in instance. Falls back to the supplied instance
+            // when the new session has no binding for this id (e.g. ad-hoc commands).
+            val effective = executor.resolve(command.commandId) as? ServiceCommand<TInput, TOutput, TError> ?: command
+            executor.execute(effective, input)
         } finally {
             sessionContextManager.destroyById(sessionId)
         }

@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.http.config
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.TenantPathMode
@@ -39,6 +40,11 @@ data class UniversalHttpDefaults(
      * OFF means tenant is resolved from headers/JWT only.
      */
     val tenantPathMode: TenantPathMode = TenantPathMode.OFF,
+    /**
+     * Default protocol-style tenant path policy.
+     * None means catalog matching does not synthesize leading/suffix slug variants.
+     */
+    val tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None,
     /**
      * Default tenant segment pattern (e.g., "/t/{tenantId}").
      */
@@ -77,6 +83,10 @@ data class UniversalHttpAdapterOverride(
      * Override the tenant-in-path mode for this adapter.
      */
     val tenantPathMode: TenantPathMode? = null,
+    /**
+     * Override the protocol-style tenant path policy for this adapter.
+     */
+    val tenantPathPolicy: TenantPathPolicy? = null,
     /**
      * Override the tenant segment pattern for this adapter.
      */
@@ -155,6 +165,13 @@ data class UniversalHttpConfig(
                         declaredMount.tenantPathMode
                     } else {
                         defaults.tenantPathMode
+                    },
+            tenantPathPolicy =
+                override?.tenantPathPolicy
+                    ?: if (declaredMount.tenantPathPolicy != TenantPathPolicy.None) {
+                        declaredMount.tenantPathPolicy
+                    } else {
+                        defaults.tenantPathPolicy
                     },
             tenantSegmentPattern =
                 override?.tenantSegmentPattern

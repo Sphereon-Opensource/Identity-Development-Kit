@@ -15,6 +15,8 @@ import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationMethodOrReference
 import com.sphereon.did.models.VerificationMethodType
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -52,8 +54,8 @@ class WebvhDidWebCompanionTest {
                 listOf(
                     com.sphereon.did.models.DidService(
                         id = "$webvhDid#domain",
-                        type = "LinkedDomains",
-                        serviceEndpoint = "https://example.com",
+                        type = listOf("LinkedDomains"),
+                        serviceEndpoint = JsonPrimitive("https://example.com"),
                     ),
                 ),
         )
@@ -101,7 +103,7 @@ class WebvhDidWebCompanionTest {
         val svc = result.value.service?.firstOrNull()
         assertNotNull(svc)
         assertEquals("$webDid#domain", svc.id, "service id must be rewritten")
-        assertEquals("https://example.com", svc.serviceEndpoint)
+        assertEquals("https://example.com", svc.serviceEndpoint.jsonPrimitive.content)
     }
 
     @Test

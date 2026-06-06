@@ -65,6 +65,7 @@ kotlin {
                 api(projects.libDidResolverPublic)
                 api(projects.libDidManagerPublic)
                 api(projects.libDidPersistenceApi)
+                api(projects.libCryptoKeyPersistenceApi)
                 // DID method modules are NOT direct dependencies - they are discovered via DI multibinding
                 // Include method modules in your application's dependency list to have them auto-registered
                 api(projects.libCoreApiPublic)
@@ -98,21 +99,11 @@ kotlin {
         }
         val jvmTest by getting {
             dependencies {
-                // Test infrastructure for DI-based E2E tests
-                implementation(projects.libCoreTest)
-                implementation(projects.libCoreApiDefault)
-                implementation(projects.libCryptoCoreImpl)
-                implementation(projects.libDataLinkHttpClientImpl)
-                implementation(projects.libDidResolverImpl)
-                implementation(projects.libDidMethodsKey)
-                implementation(projects.libDidMethodsJwk)
-                implementation(projects.libDidPersistenceMemory)
-                implementation(projects.libDidMethodsWeb)
-                implementation(projects.libDidMethodsWeb)
-                implementation(projects.libDidPersistenceMemory)
-                implementation(projects.libDidMethodsWeb)
-                implementation(projects.libCryptoKmsProviderSoftware)
-                implementation(sphereonlib.software.amazon.app.platform.metro.impl)
+                // SQLite KeyReferenceStore (in-memory default) — replaces NoOpKeyReferenceStore
+                // so tests that exercise findKeyReferenceId (DID create with MANAGED VMs)
+                // actually resolve to a backing record. JVM-only project, scoped to jvmTest
+                // so that the module still configures cleanly under kmp.targets=all.
+                implementation(projects.libCryptoKeyPersistenceSqlite)
             }
         }
     }

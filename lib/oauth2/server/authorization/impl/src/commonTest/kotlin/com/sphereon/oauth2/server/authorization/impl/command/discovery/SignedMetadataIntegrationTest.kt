@@ -31,6 +31,7 @@ import com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorization
 import com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorizationServerMetadataCommand
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -181,7 +182,7 @@ class SignedMetadataIntegrationTest {
         return BuildServerMetadataCommandImpl(
             execution = ctx.execution,
             configProvider = provider,
-            serverIdentifier = signingKeyAlias?.let { ManagedOptsAlias(identifier = it) },
+            signingIdentifierResolver = fixedSigningIdentifierResolver(signingKeyAlias?.let { ManagedOptsAlias(identifier = it) }),
             identifierService = ctx.identifierService,
             grantHandlers = emptySet(),
             kmsProviderRegistry = ctx.kmsProviderRegistry,

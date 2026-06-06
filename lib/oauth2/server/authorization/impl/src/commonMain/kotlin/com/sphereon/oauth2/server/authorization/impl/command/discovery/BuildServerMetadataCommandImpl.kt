@@ -24,7 +24,6 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
@@ -38,6 +37,7 @@ import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
@@ -87,7 +87,7 @@ import kotlin.native.ObjCName
 class BuildServerMetadataCommandImpl(
     execution: SessionExecution,
     private val configProvider: OAuth2ServersConfigProvider,
-    @Named("oauth2.serverIdentifier") private val serverIdentifier: ManagedIdentifierOptsOrResult?,
+    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val identifierService: MultiManagedIdentifierService,
     private val grantHandlers: Set<GrantHandler>,
     private val kmsProviderRegistry: KmsProviderRegistry,
@@ -116,6 +116,7 @@ class BuildServerMetadataCommandImpl(
         serverId: String?,
         baseUrlOverride: String?,
     ): IdkResult<AuthorizationServerMetadata, AuthorizationServerError> {
+        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         val config =
             if (serverId != null) {
                 configProvider.getServer(serverId)
@@ -452,6 +453,7 @@ class BuildServerMetadataCommandImpl(
     }
 
     private suspend fun deriveSigningAlgsFromKey(): List<String> {
+        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         if (serverIdentifier == null) {
             log.warn(
                 "OIDC is enabled but the OAuth2 SigningKeyStore has no ACTIVE key for the default tenant; " +

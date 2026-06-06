@@ -31,6 +31,7 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.response.jsonResponse
+import com.sphereon.core.api.http.util.ResponseUtils
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobService
 import com.sphereon.data.store.blob.PutOptions
@@ -121,7 +122,7 @@ class OkdGetDocumentCommandImpl(
                 headers =
                     buildMap {
                         put("Content-Type", content.descriptor.contentType ?: "application/octet-stream")
-                        content.descriptor.filename?.let { put("Content-Disposition", "attachment; filename=\"$it\"") }
+                        content.descriptor.filename?.let { put("Content-Disposition", ResponseUtils.contentDisposition(it)) }
                     },
                 bodyContent = GenericHttpBody.Bytes(content.data),
             ),

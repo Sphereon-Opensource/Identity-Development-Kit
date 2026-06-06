@@ -299,6 +299,50 @@ class ParseAuthorizationResponseCommandImplTest {
             assertIs<Err<*>>(result)
         }
 
+    @Test
+    fun `test parse DCQL vp_token with string and JSON-object presentation values`() =
+        runTest {
+            // OID4VP §8.1: a DCQL vp_token is a JSON object keyed by credential-query id whose
+            // Presentation values are Credential-Format dependent: a STRING for compact formats
+            // (dc+sd-jwt here) and a JSON OBJECT for the W3C Data Integrity formats (ldp_vc/ldp_vp).
+            // Parsing MUST handle both shapes without a `.jsonPrimitive` ClassCastException.
+            val compactSdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.sig~WyJhYmMiLCJnaXZlbl9uYW1lIiwiQWxpY2UiXQ~"
+            val dcqlVpToken =
+                """{
+                    "compact_query": "$compactSdJwt",
+                    "ldp_query": { "@context": ["https://www.w3.org/ns/credentials/v2"], "type": "VerifiablePresentation", "proof": { "type": "DataIntegrityProof" } }
+                }"""
+
+            val args =
+                ParseAuthorizationResponseArgs(
+                    responseParams =
+                        mapOf(
+                            "vp_token" to dcqlVpToken,
+                            "state" to "mixed-state",
+                        ),
+                )
+
+            val result = command.parseAuthorizationResponse(args)
+
+            // Parsing succeeds for both presentation shapes (no crash on the JSON object).
+            assertIs<Ok<*>>(result)
+            val parsed = result.value
+            assertEquals(2, parsed.vpToken.presentations.size)
+            assertEquals("mixed-state", parsed.state)
+
+            // The compact (string) presentation round-trips as its raw content.
+            assertEquals(compactSdJwt, parsed.vpToken.getSinglePresentation("compact_query"))
+
+            // The ldp_vp presentation is preserved as a JSON object element (not a string),
+            // accessible via the shape-preserving accessor.
+            val ldpElement = parsed.vpToken.getSinglePresentationElement("ldp_query")
+            assertIs<kotlinx.serialization.json.JsonObject>(ldpElement)
+            assertEquals(
+                "VerifiablePresentation",
+                ldpElement["type"]?.let { (it as kotlinx.serialization.json.JsonPrimitive).content },
+            )
+        }
+
     private fun createTestCommand(): ParseAuthorizationResponseCommandImpl {
         val mockJarmCommand = MockVerifyJarmResponseCommand()
         return ParseAuthorizationResponseCommandImpl(

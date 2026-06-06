@@ -24,10 +24,13 @@ import at.asitplus.awesn1.crypto.Pkcs8PrivateKeyInfo
 import at.asitplus.awesn1.crypto.SubjectPublicKeyInfo
 import at.asitplus.awesn1.encoding.asAsn1BitString
 import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.serialization.DER
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.interop.encodeToPem
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.x509.Certificate
+import kotlinx.serialization.decodeFromByteArray
+import kotlinx.serialization.encodeToByteArray
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
@@ -110,8 +113,7 @@ class PublicPlatformKey(
     override fun publicKeyPem(): String {
         val derBytes =
             checkNotNull(delegate.encoded) { "Public key encoding not available" }
-        val seq = Asn1Element.parse(derBytes) as Asn1Sequence
-        val spki = SubjectPublicKeyInfo.decodeFromTlv(seq)
+        val spki = DER.decodeFromByteArray<SubjectPublicKeyInfo>(derBytes)
         return spki.encodeToPem()
     }
 }
@@ -247,8 +249,7 @@ class PrivatePlatformKey(
                     // Fallback for RSA keys without CRT parameters (rare) or other key types
                     val derBytes =
                         checkNotNull(delegate.encoded) { "Private key encoding not available for ${delegate.algorithm}" }
-                    val seq = Asn1Element.parse(derBytes) as Asn1Sequence
-                    val pkcs8 = Pkcs8PrivateKeyInfo.decodeFromTlv(seq)
+                    val pkcs8 = DER.decodeFromByteArray<Pkcs8PrivateKeyInfo>(derBytes)
                     val rsaKey =
                         try {
                             pkcs8.decodeRsaPrivateKey()
@@ -260,7 +261,7 @@ class PrivatePlatformKey(
                             rsaKey.modulus as Asn1Integer.Positive,
                             rsaKey.publicExponent as Asn1Integer.Positive,
                         )
-                    val publicKeyDer = spki.encodeToTlv().derEncoded
+                    val publicKeyDer = DER.encodeToByteArray(spki)
                     val keyFactory = KeyFactory.getInstance(delegate.algorithm)
                     keyFactory.generatePublic(java.security.spec.X509EncodedKeySpec(publicKeyDer))
                 }

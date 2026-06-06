@@ -29,7 +29,17 @@ export interface CredentialConfiguration {
   // `Array<string | number>` so both shapes round-trip without lossy normalisation.
   credential_signing_alg_values_supported?: Array<string | number>
   proof_types_supported?: Record<string, { proof_signing_alg_values_supported: string[] }>
-  display?: Array<{ name: string; locale?: string; description?: string }>
+  display?: Array<{
+    name: string
+    locale?: string
+    description?: string
+    // OID4VCI 1.0 §11.2.2 branding — present for configs (e.g. mso_mdoc) that advertise it
+    // in metadata rather than via an SD-JWT VCT.
+    logo?: { uri: string; alt_text?: string }
+    background_image?: { uri: string }
+    background_color?: string
+    text_color?: string
+  }>
   // OID4VCI 1.0 final §12.2.3 / §A.5: array of claim-description objects each with a
   // claims-path-pointer. Per the schema, top-level `claims` is only valid for JWS-based
   // formats (dc+sd-jwt, jwt_vc_json). For mso_mdoc the spec puts claims inside
@@ -40,8 +50,22 @@ export interface CredentialConfiguration {
     value_type?: string
     display?: Array<{ name: string; locale?: string }>
   }>
+  // OID4VCI 1.0 final §12.2.4 (#credential-issuer-parameters): credential-level `display`
+  // and `claims` live here — NOT at the top level of the configuration — for every format.
+  // The top-level `display`/`claims` fields above are retained only to parse pre-final /
+  // non-compliant issuers.
   credential_metadata?: {
-    display?: Array<{ name?: string; locale?: string; description?: string }>
+    display?: Array<{
+      name?: string
+      locale?: string
+      description?: string
+      // §12.2.4 branding — the display object carries the same logo/colour/background members
+      // as the issuer- and (legacy) top-level display objects.
+      logo?: { uri: string; alt_text?: string }
+      background_image?: { uri: string }
+      background_color?: string
+      text_color?: string
+    }>
     claims?: Array<{
       path: Array<string | number>
       mandatory?: boolean
@@ -109,6 +133,18 @@ export interface DcqlCredentialQuery {
   claims: Array<{ path: string[] }>
 }
 
+/**
+ * Verifier-side credential status policy for one DCQL credential query (NOT part of the wire DCQL).
+ * Defaults are strict: status optional, reject revoked + suspended, fail closed on unresolvable.
+ */
+export interface CredentialStatusPolicy {
+  requireStatus?: boolean
+  acceptRevoked?: boolean
+  acceptSuspended?: boolean
+  acceptStatusValues?: number[]
+  rejectOnUnresolvable?: boolean
+}
+
 export interface CreateAuthRequestInput {
   dcql_query: { credentials: DcqlCredentialQuery[] }
   // HTTPS base URL where the wallet fetches the signed JAR (OID4VP §5.10 `request_uri`).
@@ -123,6 +159,8 @@ export interface CreateAuthRequestInput {
   request_uri_method?: 'get' | 'post'
   response_mode?: 'direct_post' | 'direct_post.jwt'
   transaction_data?: string[]
+  // Per-DCQL-credential-query credential status policy, keyed by the credential query id.
+  credential_status_policies?: Record<string, CredentialStatusPolicy>
   qr_code?: { size?: number }
 }
 
@@ -146,6 +184,24 @@ export interface AuthRequestStatus {
       claims: Record<string, unknown>
     }>
   }
+}
+
+/** Correlation id of the status list the example issuer hosts and binds its credentials to. */
+export const DEFAULT_STATUS_LIST_ID = 'revocation'
+
+/**
+ * Operator view of a single status-list index, returned by the issuer's status-list admin routes.
+ * A status list only encodes a bit per index, so this is just the status value: a non-revoked index
+ * reads VALID whether or not a credential was ever issued there (the list deliberately can't tell you).
+ */
+export interface StatusListEntryStatus {
+  correlationId: string
+  index: number
+  length: number
+  value: number
+  /** 'VALID' | 'REVOKED' | 'SUSPENDED' | 'UNKNOWN'. */
+  status: string
+  revoked: boolean
 }
 
 export interface DemoConfig {
@@ -181,4 +237,25 @@ export const api = {
   }),
 
   getAuthRequestStatus: (id: string) => fetchJson<AuthRequestStatus>(`/verifier/requests/${id}/status`),
+
+  // Status-list admin routes are served directly by the issuer at the root path (like VCT),
+  // not through the webapp BFF proxy.
+  getStatusListEntry: async (listId: string, index: number): Promise<StatusListEntryStatus> => {
+    const res = await fetch(`/statuslists/${encodeURIComponent(listId)}/entries/${index}`)
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+    return res.json()
+  },
+
+  revokeStatusListEntry: async (listId: string, index: number): Promise<StatusListEntryStatus> => {
+    const res = await fetch(`/statuslists/${encodeURIComponent(listId)}/entries/${index}/revoke`, { method: 'POST' })
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+    return res.json()
+  },
+
+  // Reset the list to all-valid (drops every revocation). Demo convenience for the in-memory list.
+  clearStatusList: async (listId: string): Promise<{ correlationId: string; length: number; cleared: boolean }> => {
+    const res = await fetch(`/statuslists/${encodeURIComponent(listId)}/clear`, { method: 'POST' })
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+    return res.json()
+  },
 }

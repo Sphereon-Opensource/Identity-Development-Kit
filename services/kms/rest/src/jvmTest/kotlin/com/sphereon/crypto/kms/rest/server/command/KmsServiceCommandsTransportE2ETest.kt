@@ -32,12 +32,12 @@ import com.sphereon.crypto.kms.provider.rest.RestClientKmsProviderConfig
 import com.sphereon.crypto.kms.provider.rest.RestClientKmsProviderImpl
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
+import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.server.TestApiAppGraph
 import com.sphereon.crypto.kms.rest.server.createTestApiAppGraph
 import com.sphereon.di.session.SessionContext
@@ -292,7 +292,7 @@ class KmsServiceCommandsTransportE2ETest {
                 override val inputTypeToken get() = throw UnsupportedOperationException()
                 override val outputTypeToken get() = throw UnsupportedOperationException()
 
-                override suspend fun execute(args: GenerateKeyInput) = throw UnsupportedOperationException()
+                override suspend fun execute(args: GenerateKeyGlobal) = throw UnsupportedOperationException()
             }
         assertEquals(HttpMethod.POST, generateKey.httpEndpoint.method)
         assertEquals("/keys/generate", generateKey.httpEndpoint.pathPattern)

@@ -28,7 +28,6 @@ import com.sphereon.crypto.kms.rest.api.client.ListKeysServiceCommandClient
 import com.sphereon.crypto.kms.rest.api.client.SessionBoundKmsCommandTransport
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.GenerateKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
@@ -175,13 +174,10 @@ class KmsServiceCommandClientE2ETest {
     fun clientGenerateKeyServiceCommandSameAsServer() =
         runTest {
             val input =
-                GenerateKeyInput(
-                    generateKey =
-                        GenerateKeyGlobal(
-                            alias = "client-interface-test-${System.currentTimeMillis()}",
-                            use = JwkUse.sig,
-                            alg = SignatureAlgorithm.ECDSA_SHA256,
-                        ),
+                GenerateKeyGlobal(
+                    alias = "client-interface-test-${System.currentTimeMillis()}",
+                    use = JwkUse.sig,
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
                 )
 
             val result = generateKeyCommand.execute(input)
@@ -195,11 +191,8 @@ class KmsServiceCommandClientE2ETest {
     fun clientListKeysServiceCommandSameAsServer() =
         runTest {
             val generateInput =
-                GenerateKeyInput(
-                    generateKey =
-                        GenerateKeyGlobal(
-                            alias = "client-list-test-${System.currentTimeMillis()}",
-                        ),
+                GenerateKeyGlobal(
+                    alias = "client-list-test-${System.currentTimeMillis()}",
                 )
             generateKeyCommand.execute(generateInput)
 
@@ -214,7 +207,7 @@ class KmsServiceCommandClientE2ETest {
     fun clientGetKeyServiceCommandSameAsServer() =
         runTest {
             val alias = "client-get-test-${System.currentTimeMillis()}"
-            generateKeyCommand.execute(GenerateKeyInput(generateKey = GenerateKeyGlobal(alias = alias)))
+            generateKeyCommand.execute(GenerateKeyGlobal(alias = alias))
 
             val getInput = GetKeyInput(aliasOrKid = alias)
             val result = getKeyCommand.execute(getInput)
@@ -227,7 +220,7 @@ class KmsServiceCommandClientE2ETest {
     fun clientDeleteKeyServiceCommandSameAsServer() =
         runTest {
             val alias = "client-delete-test-${System.currentTimeMillis()}"
-            generateKeyCommand.execute(GenerateKeyInput(generateKey = GenerateKeyGlobal(alias = alias)))
+            generateKeyCommand.execute(GenerateKeyGlobal(alias = alias))
 
             val deleteInput = DeleteKeyInput(aliasOrKid = alias)
             val result = deleteKeyCommand.execute(deleteInput)
@@ -247,13 +240,10 @@ class KmsServiceCommandClientE2ETest {
             // CREATE
             val createResult =
                 generateKeyCommand.execute(
-                    GenerateKeyInput(
-                        generateKey =
-                            GenerateKeyGlobal(
-                                alias = alias,
-                                use = JwkUse.sig,
-                                alg = SignatureAlgorithm.ECDSA_SHA384,
-                            ),
+                    GenerateKeyGlobal(
+                        alias = alias,
+                        use = JwkUse.sig,
+                        alg = SignatureAlgorithm.ECDSA_SHA384,
                     ),
                 )
             assertTrue(createResult.isOk, "CREATE should succeed")

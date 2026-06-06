@@ -29,10 +29,28 @@ export function useCredentialMetadata() {
           .then(vct => setVctCache(prev => ({ ...prev, [id]: vct })))
           .catch(() => {})
       } else {
-        const syntheticDisplay = config.display?.map(d => ({
+        // Per OID4VCI 1.0 final §12.2.4 credential-level `display` lives inside
+        // `credential_metadata` for every format; the top-level `display` is only present on
+        // pre-final / non-compliant issuers. Prefer the spec location, fall back for compat —
+        // mirroring how `claims` is sourced below.
+        const sourceDisplay = config.credential_metadata?.display ?? config.display
+        const syntheticDisplay = sourceDisplay?.map(d => ({
           locale: d.locale ?? 'en-US',
-          name: d.name,
+          name: d.name ?? id,
           description: d.description,
+          // Map OID4VCI metadata branding (§12.2.4) into the VCT-style `rendering.simple` the
+          // card component reads, so VCT-less configs (mso_mdoc) brand the same as SD-JWTs.
+          rendering:
+            d.logo || d.background_image || d.background_color || d.text_color
+              ? {
+                  simple: {
+                    logo: d.logo,
+                    background_image: d.background_image,
+                    background_color: d.background_color,
+                    text_color: d.text_color,
+                  },
+                }
+              : undefined,
         }))
         // Per OID4VCI 1.0 final the claims metadata's location is format-dependent:
         //   - dc+sd-jwt / jwt_vc_json → top-level `claims` array.
@@ -55,6 +73,10 @@ export function useCredentialMetadata() {
           path: c.path,
           display: c.display?.map(d => ({ locale: d.locale ?? 'en-US', label: d.name })),
           mandatory: c.mandatory,
+          // mso_mdoc data elements are each individually selectively-disclosable, so expose
+          // every claim as toggleable in the DCQL claim selector (SD-JWT VCTs carry their own
+          // per-claim `sd` flags, so this synthetic flag only applies to VCT-less configs).
+          sd: 'always',
         }))
         setVctCache(prev => ({ ...prev, [id]: { vct: id, display: syntheticDisplay, claims: syntheticClaims } }))
       }

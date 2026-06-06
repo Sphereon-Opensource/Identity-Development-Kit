@@ -192,6 +192,88 @@ class ConfigBackedUserAuthenticationProviderTest {
         }
 
     @Test
+    fun authenticatesWithEmailUsername() =
+        runTest {
+            val hasher = PasswordHasher(deploymentSalt, iterations)
+            val email = "employee@acme.example"
+            val emailHash = hasher.hash(email, "Demo1234!")
+
+            val provider =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.[$email].password" to emailHash,
+                        "oauth2.users.accounts.[$email].sub" to "employee-sub",
+                    ),
+                )
+
+            val ok =
+                provider.authenticateWithCredentials(
+                    UserCredentials.UsernamePassword(username = email, password = "Demo1234!"),
+                )
+            assertTrue(ok.isOk)
+            assertEquals("employee-sub", ok.value)
+
+            val wrong =
+                provider.authenticateWithCredentials(
+                    UserCredentials.UsernamePassword(username = email, password = "nope"),
+                )
+            assertTrue(wrong.isOk)
+            assertNull(wrong.value)
+        }
+
+    @Test
+    fun getUserInfoReturnsClaimsForEmailUsername() =
+        runTest {
+            val email = "employee@acme.example"
+            val provider =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.[$email].password" to "ignored-here",
+                        "oauth2.users.accounts.[$email].sub" to "employee-sub",
+                        "oauth2.users.accounts.[$email].email" to email,
+                        "oauth2.users.accounts.[$email].email-verified" to "true",
+                        "oauth2.users.accounts.[$email].claims.[given_name]" to "Anneke",
+                        "oauth2.users.accounts.[$email].claims.[job_title]" to "Senior Engineer",
+                    ),
+                )
+
+            val result = provider.getUserInfo("employee-sub")
+            assertTrue(result.isOk)
+            val info = result.value
+            assertEquals("employee-sub", info.userId)
+            assertEquals(email, info.username)
+            assertEquals(email, info.email)
+            assertEquals(true, info.emailVerified)
+            assertEquals("Anneke", info.attributes["given_name"])
+            assertEquals("Senior Engineer", info.attributes["job_title"])
+        }
+
+    @Test
+    fun getUserInfoResolvesEmailAccountByKeyWhenSubAbsent() =
+        runTest {
+            val email = "employee@acme.example"
+            val provider =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.[$email].password" to "ignored-here",
+                        "oauth2.users.accounts.[$email].email" to email,
+                    ),
+                )
+
+            val result = provider.getUserInfo(email)
+            assertTrue(result.isOk)
+            assertEquals(email, result.value.userId)
+            assertEquals(email, result.value.username)
+            assertEquals(email, result.value.email)
+        }
+
+    @Test
     fun getUserInfoUnknownUserReturnsErr() =
         runTest {
             val provider =

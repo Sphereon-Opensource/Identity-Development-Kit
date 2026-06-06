@@ -28,6 +28,7 @@ import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationError
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseCommand
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestArgs
 import com.sphereon.oauth2.server.authorization.command.authorization.HandleAuthorizeRequestCommand
+import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestMutableOidcLoginSessionIdProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
@@ -84,6 +85,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -120,6 +122,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -153,6 +156,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -189,6 +193,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -225,6 +230,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                     handleAuthorizeRequestCommands = emptySet(),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -249,6 +255,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
             assertTrue(command.supports(GenericHttpRequest(method = "GET", path = "/authorize")))
@@ -273,6 +280,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -288,6 +296,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 
@@ -349,6 +358,7 @@ class AuthorizeHttpEndpointCommandImplTest {
                         ),
                     createAuthorizationErrorResponseCommand = FakeCreateErrorResponseCommand(),
                     configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
                     loginSessionIdProvider = TestMutableOidcLoginSessionIdProvider(),
                 )
 

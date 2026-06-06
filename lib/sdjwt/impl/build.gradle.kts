@@ -48,6 +48,8 @@ kotlin {
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
                 api(projects.libSdjwtPublic)
                 api(projects.libCryptoCore)
+                // Credential status list resolver SPI for status checking during verification
+                api(projects.libStatuslistPublic)
                 // DID resolution for CNF kid with DID values
                 api(projects.libDidResolverPublic)
                 api(libs.bundles.app.platform.di)

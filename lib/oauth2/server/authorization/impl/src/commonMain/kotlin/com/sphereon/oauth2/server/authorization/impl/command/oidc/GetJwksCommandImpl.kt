@@ -33,6 +33,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.JwksResult
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.Inject
@@ -42,7 +43,7 @@ import kotlin.native.ObjCName
 
 /**
  * Default tenant identifier the JWKS publication uses when no per-request tenant has been
- * threaded through the session. Mirrors the constant in `DefaultOAuth2ConfigModule`; lifted
+ * threaded through the session. Mirrors the constant in `DefaultAsServerSigningIdentifierResolver`; lifted
  * here as a private const rather than a shared one because the two consumers are in different
  * source sets (commonMain vs jvmMain).
  */
@@ -68,6 +69,7 @@ class GetJwksCommandImpl(
     execution: SessionExecution,
     private val signingKeyStore: SigningKeyStore,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
+    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
 ) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult, IdkError>(
         commandId = GetJwksCommand.COMMAND_ID,
         execution = execution,
@@ -88,7 +90,13 @@ class GetJwksCommandImpl(
     }
 
     private suspend fun executeInternal(): IdkResult<JwksResult, IdkError> {
-        val publishableResult = signingKeyStore.listPublishable(DEFAULT_SIGNING_KEY_TENANT)
+        val tenantId = execution.tenantId.takeIf { it.isNotBlank() } ?: DEFAULT_SIGNING_KEY_TENANT
+        // Ensure the store is seeded for hosted-AS deployments before publishing. The resolver
+        // self-seeds the default signing key on first use (a no-op when this process does not host
+        // an AS, or once a key already exists), so a JWKS request that lands before any token has
+        // been signed still publishes the active key instead of an empty set.
+        signingIdentifierResolver.resolveSigningIdentifier()
+        val publishableResult = signingKeyStore.listPublishable(tenantId)
         if (!publishableResult.isOk) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to list publishable signing keys: ${publishableResult.error}"))
         }
@@ -122,7 +130,7 @@ class GetJwksCommandImpl(
      */
     private suspend fun OAuth2SigningKey.resolveAsPublicJwk(): Jwk? {
         // Prefer addressing by alias (matches the sign-path identifier construction in
-        // DefaultOAuth2ConfigModule); fall back to kid when no alias is configured.
+        // DefaultAsServerSigningIdentifierResolver); fall back to kid when no alias is configured.
         val identifier: ManagedIdentifierOpts =
             keyInfo.alias?.let { ManagedOptsAlias(identifier = it) }
                 ?: ManagedOptsKid(identifier = keyInfo.kid ?: kid)

@@ -14,12 +14,17 @@
  * limitations under the License.
  */
 
+@file:OptIn(ExperimentalTime::class)
+
 package com.sphereon.openid.oid4vci.issuer.bridge
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * Bridge interface abstracting the AS topology from the OID4VCI issuer.
@@ -50,6 +55,10 @@ data class RegisterPreAuthCodeArgs(
     val sessionId: String,
     val credentialConfigurationIds: List<String>,
     val txCodeRequired: Boolean,
+    /** Number of digits/characters to generate for the tx_code (PIN). Null = issuer default. */
+    val txCodeLength: Int? = null,
+    /** tx_code input mode ("numeric" | "text"); drives the generated PIN alphabet. Null = numeric. */
+    val txCodeInputMode: String? = null,
     val issuerIdentifier: String? = null,
     val useCredentialIdentifiers: Boolean = true,
 )
@@ -117,6 +126,20 @@ data class ValidatedTokenContext(
      * `null` for plain bearer tokens.
      */
     val cnfJkt: String? = null,
+    /** Userinfo claims surfaced by the AS (when it embeds userinfo in the token or via a userinfo lookup).
+     *  Null when the AS does not provide them or tenant config has not opted in. */
+    val userinfoClaims: Map<String, JsonElement>? = null,
+    /** Authentication-context-class reference, for assurance-level decisions. */
+    val acr: String? = null,
+    /**
+     * Authentication time. Source is the `auth_time` claim (OIDC Core §2); value is
+     * epoch-seconds in the token converted to an [Instant]. Null when the claim is absent.
+     */
+    val authTime: Instant? = null,
+    /** Upstream IdP subject when the AS federated authentication to an enterprise IdP. Null for local auth. */
+    val upstreamSubject: String? = null,
+    /** Upstream IdP issuer when the AS federated authentication. Null for local auth. */
+    val upstreamIssuer: String? = null,
 )
 
 @JsExportCompat

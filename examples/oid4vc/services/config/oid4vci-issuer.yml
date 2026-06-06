@@ -17,6 +17,41 @@ kms:
         password: "${env:KEYSTORE_PASSWORD}"
         path: /app/keystore/keystore.p12
 
+# Credential status lists — standalone, protocol-neutral (NOT nested under oid4vci). Each list is
+# provisioned at startup and hosted at its own root path (GET /statuslists/{id}); the `uri` here is
+# the externally reachable address issued credentials embed and verifiers dereference. A credential
+# type opts in via `oid4vci.issuer.credentials.[<id>].status-list-id` below.
+statuslists:
+  # Hosting driver config. `base-path` is the configurable mount for the public token-hosting REST
+  # surface (default /statuslists; e.g. /public/statuslists). With `external-base-url` set, the `rest`
+  # publisher derives a list's `uri` as <external-base-url><base-path>/<id>, so a list may omit `uri`.
+  hosting:
+    base-path: /statuslists
+    external-base-url: "${env:EXTERNAL_BASE_URL}"
+  ids: revocation
+  "[revocation]":
+    # Explicit `uri` (takes precedence). Could be omitted here since `hosting.external-base-url` +
+    # `publisher: rest` derive the same value (${EXTERNAL_BASE_URL}/statuslists/revocation).
+    uri: "${env:EXTERNAL_BASE_URL}/statuslists/revocation"
+    # Hosting driver: `rest` (this deployment serves it, default), `export` (self-host elsewhere),
+    # or the github-pages/cdn seams. See StatusListPublisher.
+    publisher: rest
+    spec: token_status_list
+    # Proof envelope: `jwt` (default for token_status_list, `application/statuslist+jwt`) or `cwt`
+    # (binary COSE_Sign1, `application/statuslist+cwt`).
+    proof-format: jwt
+    purposes: revocation
+    # The status list MUST be signed with the same issuer key + mechanism as the credentials that
+    # reference it, or wallets reject it (trust anchor / signing method mismatch). The demo uses one
+    # issuer identity (the CA-signed `PID` key) for its SD-JWT credentials and this list, so the list
+    # carries the same DID `kid` (did:jwk mode) or the same `x5c` chain (haip/x509 mode) as the VC.
+    signing-key-alias: PID
+    signing-key-mode: "${env:OID4VCI_SIGNING_MODE}"
+    # Short cache lifetime for the demo: drives both the token `ttl` claim and the hosted
+    # `Cache-Control: max-age`, so a wallet/verifier sees a revocation within seconds instead of the
+    # default 5 minutes. Production deployments keep this at minutes for the caching benefit.
+    ttl-seconds: 5
+
 oid4vci:
   issuer:
     identifier: "${env:EXTERNAL_BASE_URL}/oid4vci"
@@ -71,8 +106,15 @@ oid4vci:
         format: "dc+sd-jwt"
         vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential"
         scope: test_credential
-        signing-key-alias: TestCredential
-        signing-key-mode: "did:jwk"
+        # Embed a Token Status List reference (status.status_list) into each issued credential,
+        # allocating an entry in the `revocation` list defined above.
+        status-list-id: revocation
+        # One issuer identity for the demo's SD-JWT credentials AND their status list (see the
+        # `statuslists.[revocation]` note): the CA-signed `PID` key, did:jwk by default and x5c under
+        # the HAIP/x509 profiles. Keeping the credential and its status list on the same key+mode is
+        # what lets a wallet trust the status list.
+        signing-key-alias: PID
+        signing-key-mode: "${env:OID4VCI_SIGNING_MODE}"
         signing-algorithms: ES256
         # Emits an `exp` claim on issued credentials. Omit to issue with no
         # expiration (both SD-JWT VC §3.2.2 and RFC 7519 §4.1.4 treat exp as OPTIONAL).
@@ -84,23 +126,162 @@ oid4vci:
         claims:
           "[given_name]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Given Name"
+                description: "First name of the holder"
+              "[de-DE]":
+                label: "Vorname"
+                description: "Vorname des Inhabers"
+              "[es-ES]":
+                label: "Nombre"
+                description: "Nombre del titular"
+              "[nl-NL]":
+                label: "Voornaam"
+                description: "Voornaam van de houder"
+              "[fr-FR]":
+                label: "Prénom"
+                description: "Prénom du titulaire"
+              "[zh-CN]":
+                label: "名字"
+                description: "持有人名字"
+              "[ja-JP]":
+                label: "名"
+                description: "保持者の名"
           "[family_name]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Family Name"
+                description: "Last name of the holder"
+              "[de-DE]":
+                label: "Nachname"
+                description: "Nachname des Inhabers"
+              "[es-ES]":
+                label: "Apellido"
+                description: "Apellido del titular"
+              "[nl-NL]":
+                label: "Achternaam"
+                description: "Achternaam van de houder"
+              "[fr-FR]":
+                label: "Nom de famille"
+                description: "Nom du titulaire"
+              "[zh-CN]":
+                label: "姓氏"
+                description: "持有人姓氏"
+              "[ja-JP]":
+                label: "姓"
+                description: "保持者の姓"
           "[email]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Email"
+                description: "Email address of the holder"
+              "[de-DE]":
+                label: "E-Mail"
+                description: "E-Mail-Adresse des Inhabers"
+              "[es-ES]":
+                label: "Correo electrónico"
+                description: "Dirección de correo electrónico del titular"
+              "[nl-NL]":
+                label: "E-mail"
+                description: "E-mailadres van de houder"
+              "[fr-FR]":
+                label: "E-mail"
+                description: "Adresse e-mail du titulaire"
+              "[zh-CN]":
+                label: "电子邮箱"
+                description: "持有人电子邮箱地址"
+              "[ja-JP]":
+                label: "メール"
+                description: "保持者のメールアドレス"
         display:
-          name: Test Credential
-          locale: en-US
-          description: A test SD-JWT verifiable credential for E2E testing
+          "[en-US]":
+            name: "Test Credential"
+            description: "A simple test credential containing basic identity claims"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
+          "[de-DE]":
+            name: "Testnachweis"
+            description: "Ein einfacher Testnachweis mit grundlegenden Identitätsdaten"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
+          "[es-ES]":
+            name: "Credencial de Prueba"
+            description: "Una credencial verificable de prueba con datos de identidad básicos"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
+          "[nl-NL]":
+            name: "Testcredential"
+            description: "Een eenvoudige testcredential met basisidentiteitsgegevens"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
+          "[fr-FR]":
+            name: "Justificatif de test"
+            description: "Un justificatif vérifiable de test contenant des informations d'identité basiques"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
+          "[zh-CN]":
+            name: "测试凭证"
+            description: "包含基本身份声明的简单测试凭证"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
+          "[ja-JP]":
+            name: "テストクレデンシャル"
+            description: "基本的なID情報を含むシンプルなテストクレデンシャル"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-logo.png"
+              alt-text: "Sphereon"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/sphereon-background.png"
+            background-color: "#1a56db"
+            text-color: "#ffffff"
       "[EuPid]":
         format: "dc+sd-jwt"
         vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/EuPid"
         scope: eu_pid
+        status-list-id: revocation
         signing-key-alias: PID
-        # HAIP §4.3: the credential issuer MUST convey the issuer certificate via the JOSE
-        # `x5c` header. The PID signing key in the keystore is CA-signed, so the chain is
-        # served straight from the KMS-stored JWK's x5c attribute.
-        signing-key-mode: "x5c"
+        # Signing-key mode is profile-driven (docker-compose passes OID4VCI_SIGNING_MODE, defaulting
+        # to did:jwk — the issuer-wide mode shared by every SD-JWT credential and the status list).
+        # The plain `default` demo uses did:jwk so any wallet can verify the credential self-contained,
+        # with no out-of-band CA trust. The conformance x509/HAIP profiles set it to x5c: HAIP §4.3
+        # requires the issuer to convey its certificate via the JOSE `x5c` header. The PID signing key
+        # in the keystore is CA-signed (IDK E2E CA), so the chain is served straight from the KMS-stored
+        # JWK's x5c attribute — but the wallet must then trust that CA out-of-band (the CA is NOT
+        # bundled in x5c, per HAIP §5).
+        signing-key-mode: "${env:OID4VCI_SIGNING_MODE}"
         signing-algorithms: ES256
         # HAIP §6.1-2.2 RECOMMENDS limiting validity via `exp`, status claim, or both. PID
         # credentials get a 1-year window; tune per deployment policy.
@@ -130,36 +311,414 @@ oid4vci:
         claims:
           "[family_name]":
             mandatory: true
+            sd: "allowed"
+            display:
+              "[en-US]":
+                label: "Family Name"
+                description: "Last name"
+              "[de-DE]":
+                label: "Nachname"
+                description: "Familienname"
+              "[es-ES]":
+                label: "Apellido"
+                description: "Apellido del titular"
+              "[nl-NL]":
+                label: "Achternaam"
+                description: "Achternaam"
+              "[fr-FR]":
+                label: "Nom de famille"
+                description: "Nom"
+              "[zh-CN]":
+                label: "姓氏"
+                description: "姓"
+              "[ja-JP]":
+                label: "姓"
+                description: "苗字"
           "[given_name]":
             mandatory: true
+            sd: "allowed"
+            display:
+              "[en-US]":
+                label: "Given Name"
+                description: "First name"
+              "[de-DE]":
+                label: "Vorname"
+                description: "Vorname"
+              "[es-ES]":
+                label: "Nombre"
+                description: "Nombre de pila"
+              "[nl-NL]":
+                label: "Voornaam"
+                description: "Voornaam"
+              "[fr-FR]":
+                label: "Prénom"
+                description: "Prénom"
+              "[zh-CN]":
+                label: "名字"
+                description: "名"
+              "[ja-JP]":
+                label: "名"
+                description: "名前"
           "[birth_date]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Date of Birth"
+                description: "Birth date"
+              "[de-DE]":
+                label: "Geburtsdatum"
+                description: "Geburtsdatum"
+              "[es-ES]":
+                label: "Fecha de Nacimiento"
+                description: "Fecha de nacimiento"
+              "[nl-NL]":
+                label: "Geboortedatum"
+                description: "Geboortedatum"
+              "[fr-FR]":
+                label: "Date de naissance"
+                description: "Date de naissance"
+              "[zh-CN]":
+                label: "出生日期"
+                description: "出生日期"
+              "[ja-JP]":
+                label: "生年月日"
+                description: "生年月日"
           "[age_over_18]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Age Over 18"
+                description: "Age attestation: 18 or older"
+              "[de-DE]":
+                label: "Alter über 18"
+                description: "Altersnachweis: 18 oder älter"
+              "[es-ES]":
+                label: "Mayor de 18"
+                description: "Verificación de edad: 18 o más"
+              "[nl-NL]":
+                label: "Ouder dan 18"
+                description: "Leeftijdsverificatie: 18 of ouder"
+              "[fr-FR]":
+                label: "Plus de 18 ans"
+                description: "Attestation d'âge : 18 ans ou plus"
+              "[zh-CN]":
+                label: "年满18岁"
+                description: "年龄证明：18岁及以上"
+              "[ja-JP]":
+                label: "18歳以上"
+                description: "年齢証明：18歳以上"
           "[nationality]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Nationality"
+                description: "Country of citizenship"
+              "[de-DE]":
+                label: "Staatsangehörigkeit"
+                description: "Land der Staatsangehörigkeit"
+              "[es-ES]":
+                label: "Nacionalidad"
+                description: "País de ciudadanía"
+              "[nl-NL]":
+                label: "Nationaliteit"
+                description: "Land van nationaliteit"
+              "[fr-FR]":
+                label: "Nationalité"
+                description: "Pays de citoyenneté"
+              "[zh-CN]":
+                label: "国籍"
+                description: "公民身份国家"
+              "[ja-JP]":
+                label: "国籍"
+                description: "市民権を有する国"
           "[resident_country]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Country of Residence"
+                description: "Country of residence"
+              "[de-DE]":
+                label: "Wohnsitzland"
+                description: "Land des Wohnsitzes"
+              "[es-ES]":
+                label: "País de Residencia"
+                description: "País de residencia"
+              "[nl-NL]":
+                label: "Woonland"
+                description: "Land van woonplaats"
+              "[fr-FR]":
+                label: "Pays de résidence"
+                description: "Pays de résidence"
+              "[zh-CN]":
+                label: "居住国家"
+                description: "居住国家"
+              "[ja-JP]":
+                label: "居住国"
+                description: "居住国"
           "[resident_city]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "City"
+                description: "City of residence"
+              "[de-DE]":
+                label: "Stadt"
+                description: "Wohnort"
+              "[es-ES]":
+                label: "Ciudad"
+                description: "Ciudad de residencia"
+              "[nl-NL]":
+                label: "Woonplaats"
+                description: "Woonplaats"
+              "[fr-FR]":
+                label: "Ville"
+                description: "Ville de résidence"
+              "[zh-CN]":
+                label: "城市"
+                description: "居住城市"
+              "[ja-JP]":
+                label: "市区町村"
+                description: "居住市区町村"
           "[resident_postal_code]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Postal Code"
+                description: "Postal code"
+              "[de-DE]":
+                label: "Postleitzahl"
+                description: "Postleitzahl"
+              "[es-ES]":
+                label: "Código Postal"
+                description: "Código postal"
+              "[nl-NL]":
+                label: "Postcode"
+                description: "Postcode"
+              "[fr-FR]":
+                label: "Code postal"
+                description: "Code postal"
+              "[zh-CN]":
+                label: "邮政编码"
+                description: "邮政编码"
+              "[ja-JP]":
+                label: "郵便番号"
+                description: "郵便番号"
           "[resident_street]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Street Address"
+                description: "Street and number"
+              "[de-DE]":
+                label: "Straße"
+                description: "Straße und Hausnummer"
+              "[es-ES]":
+                label: "Dirección"
+                description: "Calle y número"
+              "[nl-NL]":
+                label: "Straat"
+                description: "Straat en huisnummer"
+              "[fr-FR]":
+                label: "Adresse"
+                description: "Rue et numéro"
+              "[zh-CN]":
+                label: "街道地址"
+                description: "街道和门牌号"
+              "[ja-JP]":
+                label: "住所"
+                description: "番地"
           "[issuing_authority]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Issuing Authority"
+                description: "Authority that issued the credential"
+              "[de-DE]":
+                label: "Ausstellende Behörde"
+                description: "Ausstellende Behörde"
+              "[es-ES]":
+                label: "Autoridad Emisora"
+                description: "Autoridad que emitió la credencial"
+              "[nl-NL]":
+                label: "Uitgevende Instantie"
+                description: "Instantie die het bewijs heeft uitgegeven"
+              "[fr-FR]":
+                label: "Autorité émettrice"
+                description: "Autorité ayant délivré le justificatif"
+              "[zh-CN]":
+                label: "签发机构"
+                description: "签发该凭证的机构"
+              "[ja-JP]":
+                label: "発行機関"
+                description: "クレデンシャルを発行した機関"
           "[issuing_country]":
             mandatory: true
+            sd: "allowed"
+            display:
+              "[en-US]":
+                label: "Issuing Country"
+                description: "Country of issuance"
+              "[de-DE]":
+                label: "Ausstellungsland"
+                description: "Land der Ausstellung"
+              "[es-ES]":
+                label: "País Emisor"
+                description: "País de emisión"
+              "[nl-NL]":
+                label: "Uitgevend Land"
+                description: "Land van uitgifte"
+              "[fr-FR]":
+                label: "Pays émetteur"
+                description: "Pays d'émission"
+              "[zh-CN]":
+                label: "签发国家"
+                description: "签发国家"
+              "[ja-JP]":
+                label: "発行国"
+                description: "発行国"
           "[document_number]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Document Number"
+                description: "ID document number"
+              "[de-DE]":
+                label: "Dokumentennummer"
+                description: "Ausweisnummer"
+              "[es-ES]":
+                label: "Número de Documento"
+                description: "Número de documento de identidad"
+              "[nl-NL]":
+                label: "Documentnummer"
+                description: "Documentnummer"
+              "[fr-FR]":
+                label: "Numéro de document"
+                description: "Numéro du document d'identité"
+              "[zh-CN]":
+                label: "证件号码"
+                description: "身份证件号码"
+              "[ja-JP]":
+                label: "書類番号"
+                description: "身分証明書番号"
           "[gender]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Gender"
+                description: "Gender"
+              "[de-DE]":
+                label: "Geschlecht"
+                description: "Geschlecht"
+              "[es-ES]":
+                label: "Género"
+                description: "Género"
+              "[nl-NL]":
+                label: "Geslacht"
+                description: "Geslacht"
+              "[fr-FR]":
+                label: "Genre"
+                description: "Genre"
+              "[zh-CN]":
+                label: "性别"
+                description: "性别"
+              "[ja-JP]":
+                label: "性別"
+                description: "性別"
           "[birth_place]":
             mandatory: false
+            display:
+              "[en-US]":
+                label: "Place of Birth"
+                description: "Place of birth"
+              "[de-DE]":
+                label: "Geburtsort"
+                description: "Geburtsort"
+              "[es-ES]":
+                label: "Lugar de Nacimiento"
+                description: "Lugar de nacimiento"
+              "[nl-NL]":
+                label: "Geboorteplaats"
+                description: "Geboorteplaats"
+              "[fr-FR]":
+                label: "Lieu de naissance"
+                description: "Lieu de naissance"
+              "[zh-CN]":
+                label: "出生地"
+                description: "出生地点"
+              "[ja-JP]":
+                label: "出生地"
+                description: "出生地"
         display:
-          name: EU Personal ID
-          locale: en-US
-          description: Personal identification data per EU Digital Identity Wallet ARF
+          "[en-US]":
+            name: "EU Personal ID"
+            description: "Personal identification credential for EU citizens"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "European Union"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
+          "[de-DE]":
+            name: "EU Personalausweis"
+            description: "Personenidentifikationsnachweis für EU-Bürger"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "Europäische Union"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
+          "[es-ES]":
+            name: "Identificación Personal UE"
+            description: "Credencial de identificación personal para ciudadanos de la UE"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "Unión Europea"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
+          "[nl-NL]":
+            name: "EU Persoons-ID"
+            description: "Persoonlijk identificatiebewijs voor EU-burgers"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "Europese Unie"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
+          "[fr-FR]":
+            name: "Identifiant personnel UE"
+            description: "Justificatif d'identification personnelle pour les citoyens de l'UE"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "Union européenne"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
+          "[zh-CN]":
+            name: "欧盟个人身份证"
+            description: "欧盟公民个人身份凭证"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "欧盟"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
+          "[ja-JP]":
+            name: "EU個人識別情報"
+            description: "EU市民向けの個人識別クレデンシャル"
+            logo:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eudiw-logo.png"
+              alt-text: "欧州連合"
+            background-image:
+              uri: "${env:EXTERNAL_BASE_URL}/assets/eu-background.jpg"
+            background-color: "#003399"
+            text-color: "#ffffff"
       "[AgeOver18]":
         format: "mso_mdoc"
         doctype: "eu.europa.ec.av.1"
@@ -177,10 +736,66 @@ oid4vci:
         claims:
           "[age_over_18]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Age Over 18"
+              "[de-DE]":
+                label: "Alter über 18"
+              "[es-ES]":
+                label: "Mayor de 18"
+              "[nl-NL]":
+                label: "Ouder dan 18"
+              "[fr-FR]":
+                label: "Plus de 18 ans"
+              "[zh-CN]":
+                label: "年满18岁"
+              "[ja-JP]":
+                label: "18歳以上"
         display:
-          name: EU Age Verification
-          locale: en-US
-          description: Age over 18 attestation per EU Digital Identity Wallet
+          "[en-US]":
+            name: "EU Age Verification"
+            description: "Age over 18 attestation per EU Digital Identity Wallet"
+            logo: &age18_logo
+              uri: "data:image/png;base64,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"
+              alt-text: "EU Age Verification"
+            background-color: "#003399"
+            text-color: "#FFFFFF"
+          "[de-DE]":
+            name: "EU-Altersnachweis"
+            description: "Altersnachweis (über 18) gemäß EU Digital Identity Wallet"
+            logo: *age18_logo
+            background-color: "#003399"
+            text-color: "#FFFFFF"
+          "[es-ES]":
+            name: "Verificación de edad UE"
+            description: "Atestación de mayoría de edad (más de 18) según la cartera de identidad digital de la UE"
+            logo: *age18_logo
+            background-color: "#003399"
+            text-color: "#FFFFFF"
+          "[nl-NL]":
+            name: "EU-leeftijdsverificatie"
+            description: "Attestatie ouder dan 18 conform de EU Digital Identity Wallet"
+            logo: *age18_logo
+            background-color: "#003399"
+            text-color: "#FFFFFF"
+          "[fr-FR]":
+            name: "Vérification d'âge UE"
+            description: "Attestation de majorité (plus de 18 ans) selon le portefeuille d'identité numérique de l'UE"
+            logo: *age18_logo
+            background-color: "#003399"
+            text-color: "#FFFFFF"
+          "[zh-CN]":
+            name: "欧盟年龄验证"
+            description: "符合欧盟数字身份钱包的年满18岁证明"
+            logo: *age18_logo
+            background-color: "#003399"
+            text-color: "#FFFFFF"
+          "[ja-JP]":
+            name: "EU年齢確認"
+            description: "EUデジタルIDウォレットに準拠した18歳以上の証明"
+            logo: *age18_logo
+            background-color: "#003399"
+            text-color: "#FFFFFF"
       # ISO 18013-5 mobile Driver's License. doctype = "org.iso.18013.5.1.mDL",
       # data elements live in the "org.iso.18013.5.1" namespace per ISO 18013-5
 
@@ -207,30 +822,236 @@ oid4vci:
         claims:
           "[org.iso.18013.5.1.family_name]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Family Name"
+              "[de-DE]":
+                label: "Nachname"
+              "[es-ES]":
+                label: "Apellido"
+              "[nl-NL]":
+                label: "Achternaam"
+              "[fr-FR]":
+                label: "Nom de famille"
+              "[zh-CN]":
+                label: "姓氏"
+              "[ja-JP]":
+                label: "姓"
           "[org.iso.18013.5.1.given_name]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Given Name"
+              "[de-DE]":
+                label: "Vorname"
+              "[es-ES]":
+                label: "Nombre"
+              "[nl-NL]":
+                label: "Voornaam"
+              "[fr-FR]":
+                label: "Prénom"
+              "[zh-CN]":
+                label: "名字"
+              "[ja-JP]":
+                label: "名"
           "[org.iso.18013.5.1.birth_date]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Date of Birth"
+              "[de-DE]":
+                label: "Geburtsdatum"
+              "[es-ES]":
+                label: "Fecha de Nacimiento"
+              "[nl-NL]":
+                label: "Geboortedatum"
+              "[fr-FR]":
+                label: "Date de naissance"
+              "[zh-CN]":
+                label: "出生日期"
+              "[ja-JP]":
+                label: "生年月日"
           "[org.iso.18013.5.1.issue_date]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Issue Date"
+              "[de-DE]":
+                label: "Ausstellungsdatum"
+              "[es-ES]":
+                label: "Fecha de emisión"
+              "[nl-NL]":
+                label: "Datum van afgifte"
+              "[fr-FR]":
+                label: "Date de délivrance"
+              "[zh-CN]":
+                label: "签发日期"
+              "[ja-JP]":
+                label: "発行日"
           "[org.iso.18013.5.1.expiry_date]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Expiry Date"
+              "[de-DE]":
+                label: "Ablaufdatum"
+              "[es-ES]":
+                label: "Fecha de caducidad"
+              "[nl-NL]":
+                label: "Vervaldatum"
+              "[fr-FR]":
+                label: "Date d'expiration"
+              "[zh-CN]":
+                label: "有效期至"
+              "[ja-JP]":
+                label: "有効期限"
           "[org.iso.18013.5.1.issuing_country]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Issuing Country"
+              "[de-DE]":
+                label: "Ausstellungsland"
+              "[es-ES]":
+                label: "País Emisor"
+              "[nl-NL]":
+                label: "Uitgevend Land"
+              "[fr-FR]":
+                label: "Pays émetteur"
+              "[zh-CN]":
+                label: "签发国家"
+              "[ja-JP]":
+                label: "発行国"
           "[org.iso.18013.5.1.issuing_authority]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Issuing Authority"
+              "[de-DE]":
+                label: "Ausstellende Behörde"
+              "[es-ES]":
+                label: "Autoridad Emisora"
+              "[nl-NL]":
+                label: "Uitgevende Instantie"
+              "[fr-FR]":
+                label: "Autorité émettrice"
+              "[zh-CN]":
+                label: "签发机构"
+              "[ja-JP]":
+                label: "発行機関"
           "[org.iso.18013.5.1.document_number]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Document Number"
+              "[de-DE]":
+                label: "Dokumentennummer"
+              "[es-ES]":
+                label: "Número de Documento"
+              "[nl-NL]":
+                label: "Documentnummer"
+              "[fr-FR]":
+                label: "Numéro de document"
+              "[zh-CN]":
+                label: "证件号码"
+              "[ja-JP]":
+                label: "書類番号"
           "[org.iso.18013.5.1.portrait]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Portrait"
+              "[de-DE]":
+                label: "Lichtbild"
+              "[es-ES]":
+                label: "Fotografía"
+              "[nl-NL]":
+                label: "Pasfoto"
+              "[fr-FR]":
+                label: "Photographie"
+              "[zh-CN]":
+                label: "肖像"
+              "[ja-JP]":
+                label: "顔写真"
           "[org.iso.18013.5.1.driving_privileges]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Driving Privileges"
+              "[de-DE]":
+                label: "Fahrberechtigungen"
+              "[es-ES]":
+                label: "Permisos de conducción"
+              "[nl-NL]":
+                label: "Rijbevoegdheden"
+              "[fr-FR]":
+                label: "Catégories de permis"
+              "[zh-CN]":
+                label: "准驾车型"
+              "[ja-JP]":
+                label: "運転資格"
           "[org.iso.18013.5.1.un_distinguishing_sign]":
             mandatory: true
+            display:
+              "[en-US]":
+                label: "Distinguishing Sign"
+              "[de-DE]":
+                label: "Unterscheidungszeichen"
+              "[es-ES]":
+                label: "Signo distintivo"
+              "[nl-NL]":
+                label: "Onderscheidingsteken"
+              "[fr-FR]":
+                label: "Signe distinctif"
+              "[zh-CN]":
+                label: "国家识别标志"
+              "[ja-JP]":
+                label: "識別記号"
         display:
-          name: ISO mDL
-          locale: en-US
-          description: ISO 18013-5 mobile Driver's License
+          "[en-US]":
+            name: "ISO mDL"
+            description: "ISO 18013-5 mobile Driver's License"
+            logo: &mdl_logo
+              uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAADwCAYAAAA+VemSAAA640lEQVR42u2deZTlVXXvP/t3bw1dPTKjiU9FEZRukBlpJgUSRAGJE5hkJXFExRdx4GVwPXUtjQn6FAOGyenFAScUwYE8cYKmmSFAI6CiRpPIDN3VNd97z/vj7EPvOn1udTV17+8Odc5atbrr9u2q3/39zvfsvb/7u/eGvPLKK6+88sorr7zyyiuvvPLKK6+88sorr7zyyiuvvPLKK6+88sorr7zyyiuvvPLKK6+88sorr7zyyiuvEpfkW9D7yzn3lJ6jiLh89zKA8yoXnJX4LSJSX8DPr0YvNQCXQZ4BnNdTB6sAxXzB6Zxbou+f968CKiIyup0gr2dgZwDnNRuwAhQiUpsDnBUF3QBwKjBorGTqtW2tBjAC3AzcqeCv6Ws3AXfpdUkzkDvnKvqeegZ0BnAGrP/3lcAMsB9wsP79lcCQgq4Ado+srQM2bwd47f8b1p/tjHv+BLBJX1uigN6gAL9Mr8mJyHgzQGcwZwD3G2grKXfYObccWAMcBDwXOBQYB1bpVw0Yi8A5nQBr5Sk++4Z+2VU1P8+CvAH83lzD5XptlwNTCUBXQzydAZ0B3JOgja2sc24E2B84ANhTAVsFdlTgThm3tNYEnNLEmrby+bsEyEXd9PD6Mn3fg8CkAfQVIvJowjq7DOYM4F5wj2dtUufcTsDJuuFPAXYGVhrANhSshX65xHOxm76eeIaDT/Gy7UERlr2OeI/E1xF+dwB0HdgI3AD8ErgVuN1aZwVzIwM5A7ibgFtY99g5tzNwkrrGBytgKxqr1iLANrN+9YRLG4AiESH1QMIV3tZzd8AKddXr5vUptagSuezNDhgXAXpAXe4RBfNDwL8B64E7ApibHXh5ZQCXBdzCbj7n3FJgX+D1GtfuoJt6QgHrFIgyD7AKsFS/D6RSoeD6lhJJ4flNR6/NZxUK+DXAIeoNhJh1Xz10wmu7m989aX6nm+MQCm53+Dwr9TM8CnwV+IaIPJatcgZwx91k59yOwKuA1wI7KekzpqCVOTa4M+5nAOvjaqVngG+oNZuV6hGRiRI+5wq9/kE8C14FVivYJ4GnR6AOYUClidtd138bwDPbj+NTVZ8F7hSRsQzkDOCy3eS1wF8aazuhwGuk1FK6iau68Yd1MwcC6LIIrIRNPUf+lTni4u15/kUkr6zNcR+W6/tfpZ9ljVrrqt6DjcbtTh1ezljmpfrZHwW+BlwqIpvsQSkijbz7MoAXCt5KAG7kJh+u92/CxLTNLE9V3cjHFeS3ArcA3wYmUlbVALV0aWMk36zMBWy11i8A1gJ/rLHvbvo5J/XPFJjr+tqAgvk/gS8D3wwsdgZyBvCCYtywcXSTng68xrjJm0xcm9qYVRP7BSLnOuBnwdLMBdZudCMNsJOg1jTZMJ5tP0i/VkVcQLODbjhyrz8vIteZnHIWiGQAz5ucQkQaumHPAF4NPENj25SbnHINk+xrJHToeRniXOqyJmz8xDzu4RL9fj3waRG5McfIGcDzsi6GnFoL/BVwHPCYxnWVRAqnkbAes8iZxSJmsBY6AeYU2bfJAFkSOebgwVwCfFVENsbeUQZwXjjnqmHDKXD/QmM6UWKm2mSDLcMztb+L47esQJolI603SbcdboA8nXCv6yYN9Z/AV4Avi8hojo8zgOM4dyXwAeClahU2J2JcC1yAHwG3KXCfyAKFp8TkHwqcCDwLGMWnpqxFDjHykIYnDwN/LyI/iQ/fDOBFaHV1Y71FCardTPFAM+A6JaP+byBZcny24Fz6SnWtTwf+UA/PZkAeVo/oBuASEbnR8hYZwIuLpDoUeDNwrMa5tUSpnouA+68iss5alQzcBT2LwoQvK4DTIiDPNHkmIT7+DHCRiLjFaI1lMeZ0jdV9A14P/FgU58an/fVqcdfl/GT73esIyLvO4RUVwC7AD4GL1RrLYmowIIst3nXOHaLgPVbjqTid0WCLuCCOtzJwywVyipeQaN/O4MsxgzW+RA/pykJ6hWUAd5HV1Xir4Zw7GvhnPHP8hAI1LiwYwedwL8XL+zLj2eF6aiNbfZGGOVNNrPHuwDeB9+lz63uXWhaRy3wu8Eem0KAabYAh/boK+EDOOXZlbv4Y4MNGEEIi7FmKZ7PPFpF1cdVYBnDvusxH4oUWRfTQwYswNgJ/JyI/zfK97i3d1Pj4g8AJaolT1nhEAf7ZfneppV/TFAmXeeM2rO77RWTTYiNBeriw5GjgH5pY49ACKHap+86bkn6Md/VzfbyJyxxcrWUJq7soiI9+casja9zsOQeX+j0ist45Nygi0xnA3X06n4dX9zwSuczNTuZsdXvfGs/laQ3r39/eb3Gx9Jmq6mB89dCRbMntLsrYaDGpuubBdYRwaTp69j3vUksfgfdw4EJ8amhjE/AuGnZyEQt0QrZh3KSXLGG5O76H2DtDuNXLIJY+A29NT9lqVGO6M/CdxZQfXIwgNvn+YxTIgq/Nto3qZ/Ca9+/2A4ilz8BrtcxBYTUC/D/gXdllXlSKu7XAR4Hlao0rkXprF+B7vQ5i6WPwhgZyfy0iP10MLvP2zAnu8/sQQLwc+BDwcry6bqDfQCx9CN66Pqgq8FYRua5f8n8RQONukvWn4HKSqPLpC3CbuLhQd/pl/Qhi6UPwDuvnCuDt2XjX1M7KfECqTeUa5tlKCqDqiUzNE+CNXgV18Lr0PgQQx6nFngax9Bl4R6KkfU+B1wI2BVbn3LCZ4HBkRNbtATzfkDa7Jn7FQ2bTXsuWuUiDwL3Ar7SIYGwuQPcSmA2IC7aIe2KGumdBLH0C3hndsN/pNdncXKBVi/osYG/dcEepC+jwjeGshZlmS18p8OmS2AI/YN6/xMxIKvClepvVg7kH+LX+zmuAmdhi91IHkoS89pPRULlmIO56z0N6KJaZy/LujKYF9CF1PdOslkGiHlFD+LGjzwP+AN8wvYJnUht4EYozGy41ZSEAdLcEgB80/7+RmDFc0dcH9auBF0VMA+vUul/XpK9114M5Yqgv0M83nTAE3wXO6gWPQ3oEvC8EvqA3OAbvUnxzua53fZo0dhtW9zfMHlqln2nKDBGrJ4gr2cZc37ks8Fz/3zaYF9OpZIkpqr8X+DmwPpRdxrnYHvDm1mpcHN/PkCf+loi8u9vDMOkB1xLg0/hibquwCoTVOHCMiEx1q9ucagjgnFutFjaAdgQvyG+YJnrFPEBmLWhhnusuCQA/PIcFb3Y4uEhHXsHLEosIzNeKyOZe6FwSChqcc28C3g/8ltkzluv4VktvUtVe14JYutlS6befwFebWG2zHV35dm02V3Sb25xoEbNM49g9gf01nh03oC3mAE8zN9fGsOPmuT4z8bP+wxwAO0aDvFPu+VzTFcP1DOrneADfKfIeEdnQzUA2/aoHgH9k6zyxM+Nx3qqEaFeGZdLlrvP/AU7V2G0gAm/X5nkTwF0KvES/djWDvxoJ0NrxowPGfU0RTb9iNov8a/1/I8C/aOwcSuxGgbcpyAeAI/TPhmG1Y4JsOnLji8S+sdc6op9tA3BVNwPZOSdakhjyxKF6LTYSA8Cfi8i/dyOIpYvBe4S6zhsjLWs4Gd/WbXnebQB3FzMXSBKtUu2IkSH9eyCQrtHv7wPub5bqieLqzycA/JciMjnH/0Hfe5T+vmfjU1OBSNtsLHSzzyAK5AZwdzcDOZEnjj29Gr5hwPXAm7qR1JIuJ62mzA3u6tgkmvLQDLjFHNZrmYKspjHlfXjmd7qZ6CJSUznz5wi+Q2MM4DeoBY5FHk1FIiaVFUi2Ifws4DBxsNHkczEXkLsFBKFP+BxcS009kiuU1OoqKyxdGvde0oS02qXb2MGoQ8QIvl3tXMB1ZtMPm/jxRnU9f5OYZFiYnG3T/KRxC0fwda8xgF8vIuMpAKVkmom89JC660fgU102jk9Z5W0BuStCn4ThqEUN5etqid+ohqNrQCxdGveejJ/cXo3SRT8E3tUtrkxkdfdTN2ulGWydAq6NFW8HfgFcExjcOLe6PWKChQD4KQpNVquLfRg+bRVie9cEyCGWvxH4XLiWbhBMRHqDT0YYcSa06ap4WHog7g3jO8foonRRBJa/UvdyJjFlLwbuVmxtqyYZtgPATax0nMuO2XUxjHgM5ACEMe2McUe3WGPn3ICIzJj00u8MedqV8bB0edxrb85ZdEG6KJqtFKxuEF6kGNowsPphvODkR4m5wS3ZCO0G8DzVZKuVDNpHwTvR5L4M6NdNxhpXOvxsbXrpI/jZ0GPGmMTxcMcPHemifNz5+Jm8TxjXeQZ4BvBBEbmk03GvkeIJcCZ+8vxMYgBXsDTDyiTPAm67FEtlAzjBXzRME3YL5LoZkB6TbsEaXygiGzrtUpt7OAT8RA/nySgeXoHvv3Vtpw1K0WEDHMZn/Kmedo9Fce9y4BvAF0Oj9S4A797Ae/FzbccjaafT75eou3wzvrjiShEZc85VdIPU+6k/sYg4/UzOOVfoZ9wgIh/TeHJSNz2JcsdJvVdnOudOVovuIna41M+iB+y0PuepyBsM1/yPevi47Wmk0DcAVneppq7zW5mthAlKo03A/xKRiU5NSXDOiW7I4DK/F59S2ZRoWVtRF+tu4BwR+VQCuH3dRE9EGhGQ/x04G/iqGdVqZaBBMALwZ8DbnHMjer87BeK6Gpd1wMVsEd/Y610JfFgP4sUFYD2xnHNuCfAO81DFnHLDwN8A0wp218EcoTjnzsQz4DW8oMG6g8Hqbga+DHwscgcX3YgWC2QRGReRK9Ua36HPtjAeVbDGDwMHAh91zu0TKss69BHq6vV9EbhaD+a6kZCOAyc6547q5GHTKQscGNc/N65zJSrM/56IXNOsuL3EFFGIdw9PzKkNedldgFvUXb7CbNxF37LWpNkqInKPutXn6j1cFoVFVXVPh4F3OedWm7Y4pbvSylNMAOfp4VxEgpkp4CM6IYJOuNJFh6xvaLT9Ombnexumu/7fG6lbp+LdJaofPkzJqErkMocKli8C/xLcZbtx89rilqpbXWjq6KN44cqKJi51A3inc26/QByWDRC95qqGARckXOlJfe01+rwri8ECBwb0Q+aGpFznKfPesmPzhnNuH+Bj6tLFjeIbppTxfBG5IpAZuWXtNt3qhoL4XgXxjepxiSG4gntdV0t8ZtgjHbBywZX+UhNXeiNwhnNuf31vpW8BHNInzrkDgJOiWDKorTrmOpuc9GqNd4ejFIIzsrpbdcrDhhCjZ5d5/kA2OeTz8L2qqqYLiFVAjWn4cuZTaZ/bJlfaDtELaaUzwnv72gLrh3xz5DY5fXgPqessZd8ItQoBvGcl2q2EB7YUWK8u83j4fxmWC7LGd+DrvkP8a0EcqrIOxROeIdUjHXSlV0VW+HHgSDVMrkwrXHTAuu2Pl92NRtZ3mbopU0rhu7LLypxzawx4U1MeKsDHReR84zLnWLcF1lhlpe9Rz2al6ZgZyK0nlIs4U0UWRcnudCDTvo6XWA5GRkaAt5RthYsOpI3enih/G1br+1UD6LLZ5qpONmSOKQ/nisgdgWHOLnPLQTyhjQhuUCsXg/gxPfyPC7nakj3HQnuAXaqxcM1Y4VFgbdlppaJExVUDnzY6PlGkXwX+VrsdlkZcmYNFFLwjkdtswfsJE+9mq9u+uNhprHljExA/CpykKaZayaRRsMJfAH6gnoLNZdfYklYqxc0vStKW1vRDnZ4oE1yOb1V6TZni8GjqwZn4+uOJeYA3x7ttzhnrSoFYDJDPUrFHaXliNSyinsKnomsSk1Y6Td9b6QcLXNEbfDq+MGE6+tAOuCjqQlmK96Eb5gwF7+NRCWMGb4e0yPMA8Ywe/u9xzj2nTJfVTLi8Hd/qaHlEaI0BpzvndlDDJT0L4GB99YO9iq3TRsu1mP02SkwbRYzzYVEFVChGz+DtLhCviPpjh331ypCS6kCO+OKo5VOwws8EXmqq7XrWAgemcE0T0YbTm1BaaaNRWT0Hn+udSJQCLlHCKoO3e0B8F7OllxU1CPtqDrZeFqcT3HY1PLEVFnwm5TD9DI1eBrAzeV+b35tlfcvKpQY3XU/sV6rVrUdN81YBN4jIXRm8XQHioCm/zIyOdRH7e1gHdNPSxAqHazreOXdAuwsyihIkiQfgqX/LPNsPX2ZjgeCmn6En9+Yo7l2Cb5lyoW6EzDZ3iYZaRO7HS1sbiTEyEyq5fG5Z8XDCCltGOlzbm6Pve8oCO+fcgILFKquC9f1BydY3uM77atw7GoF3CK9tvlDJrZzn7a4UU1VE7gauYLYeOcgZq8CpKvIoKx4Ov+fiSHIbrPCRzrnD2mmFizaSVw18XnVfBYaVJA4BN0StZMvI9w7iW6FMRU3nwnjOC4FaLgXsyhUKBa4Gfmpa1VrAHMQWkUcZrnRoIXQXWxpSuKjg5fB2eplFm1NHr8U3Aa8ZKzyMn9Hzff3w9RIroN6A1zLXorh3J+BKEbnLpJfy6r54uKFN7i9SozBkQFzFpwJPUVe67fGwarIDj/INtibZNuGL/tuWUiranDp6deRahDjzyyLyuLpFrkTX+UWJ61mqJ/rVthdzXt0JYgVlTb2l6ajIPuyv4EqXUbkU+ptdCvwm9MkybPQetDGl1I4TKvzM1fjU0bSxvuGU/FoZmmfTy2pECYWpqCtiBZ8DvkhP9kZ2nXtCrVWot3SlHsCNyOodBBwf3luGFVYZ8PeYna8OIH5Ru1JKRZvIqyq+UZ11cYK1uxMYKynODJ/vJfj00EzkOq8ErtZm3pUM3p5ZgWn+iR7Ag1FqaSNwrDbHq5dghcPvXq+AjcmsY9tFZhVtIq9WKHk1Zn5HaJVygbrYUoL1rav1PY6tdc5L8X2sfpBTRr0p8tA+2xebAntbVLCrHtyUYIVDSukG/PgfK+wIGY61ZsZV11rgcLqcoMTQjHGfB4D/xvdBogTAWOu7S2R9w7VeHib/ZevbsyWId+qeWhZJLceB40q0wkF1eL2GirHY5HglU1tKZhVtcG2qeOq8lhgL+oPQY6idgElY3/HI+o4A60XkF902HDyvp5Qi/LZ6WLbVzYwe3C8pSXUYWgdfha9bHoiu5Wkam7f0Woo2uM/L8YO+xhOxwLogkuiQ9bVE2mc60bonr7YQWr8ELte91+iEFTYM+Sb8RI6RhHR4baur7oo2uM+nmPIv6z7/XmPOtrrP87S+V4d5Rtl17gtCS/CpwIcSlq9MK1wov7M+4UZv1NByuJVudNGG3lLLI1LBus+uhNzvXNZ3AJ0SWEalSF6lFjyM6cE80ikrbGLwq9TLG4xaR43g89TdRWIZ8YYALzc6Y2cakrXdfTbWdzlwbDPra0ZZZuvbJ1ZY//yRHtCDCSt8rBqYoiQ3+npVHVqp7u5qhWmVqKNocWnVocBuEeMbOtjfVgL7HJjAQ6LrCNb3AX3IZOvbdwqtioiMqxUeiiY9TABHh2q0NlvhMHHzbjUYVtQxrXHwkHH9uwLAFaO+su1PgqD7dgVXWfXH+0SHSMj73pCtb99b4R8ze45RyAvvgJc1trt8NQB2Q9TpJRiy/Y38svMWOMw60lNlNbMnmoeG7ddpvrVtpJHRPL8APw7Fus/Blbq73fWZeXVcJz0J3K+xpo0/B/CFDpWSVFk3Ag8mKpSG1ENsyUFStJDOr+PzXHYg8qC6rVeVoH0OnTZWJ27aCHCriPws5337vwEAPi8ct2+aUAu8NAxLa3OFkgO+wxZVVjAiO+kebUkcXLQw/j0k0j5bt2GiDNmkfntQov54ELi7A50v8yp3hUP7V3gWuJqYYXRwSfLKBp7MdVGoOQasVo91wfF40eL418onw7iUy4DJNqePwk3Yy3TMjyWcN+XU0eIgs/S5/yQis8KeXG3e0+44+HLgvxIlhge1Kg4uWtQpYaBJ/Fstac5RcJ/XRHnAhh4iN4jIaCavFsVqKDB+bPajBc/e7XajzZqJDhEbBx/Uiji4aJF8cgk+hTQVWb7HdVhV29I2Cfd5zDCQQcK5IZNXi8oKh/7Md0c54ZrGpAeX0NSxUADfzOx88Aywo+JlwdfQqg8wxhbqnkg+dnObwRNOsOfrjalF5MUM8PMM4EW1QqPEXyfGldaBNeo1tmV+kVGHTasBW5KYe/xYN6SRLIG1YzSIKtys4ZL68z47KikLzfN+UVIOOi+6jsz6ddQ6OLjRexpXu92rEuEiELuHapPFBbnyRYsOgAPxifKYwPqGdt9oC4GlH7yhp+keUb+r4MbfJSIzZU497GBZXaEpDHu4WW+kqv8uiwTA90RstN0Xe7dZ1BEMyWV4EtUSWZMa7g0s9BBpmZAjcl1LI7AMs7xXQjr5KHBTP0snnXMSyDkRqauMr25ivnoYWC4im0SkFgicfvVKDBsNvjIoEJvhnqxUj62MoQIpIit4AgML/eHVFowNHcGPKdlsGL9SCCwD1r30dzaif5vWr361ukGUUtfh6Qfo1574SZATeh8KYMg5d6byFVeIyKM2BuxH70QPqvEIPEEb/ezQElb3smsjkXULvjou8ERTwNOBU4HPJdzs9gM4uiGD0U0K09TLIrD2wifpH9ObUVfi4Epguh9nHJmOm8uB1wGvUR5iFV7IMhnxDwK8U+/NW5xzdwGfF5HrosOAPtNGXwecaAoLwsH+fKDarn7NpsBi2jl3k17DpqhH3FDHLHB0oxqJGGRAQTRawsOqJ2SalaC9ds71W6wbwHsM8GF8udy4nvYPmvGoMfP5iP59AFiLH/3xfeD9IrKpT2WmtUhaa7MTlZKuYWkTI1ajC4Qcg4kbEXz8egm1v8P4UrGJRP73vn5KH5mYVZxznwQu0M3xmIn/q1ERxywSy4Q5o2oRjgeucs4dHmYQ9dlhV9N9ENcI74wfuldGp47JJkZuqJNSygDaU/GFylMRA/0tYKKEDhwuccIGAN/bLwA2/bsE+AS+ccIm3YxPhVmu6PMf00PgQufcWnUpq33UqaMG/KwJkVQpwTNEsfCAuYYw2/hUYMlC3PhWWeAiYYGnSyJGBpq49UtKyEGXmiLSr3OBl+H7P1VawKJW1ELUgAvUEtdKKLsrc61I3CdXogs93cQCD3ZUSrkN6yYldZ48gq17UA/ic4DT7WIYyzcoUgfOUcv7UCtSEAmxQQ24yDn3Qg1PKn2UDx41IVZgoo9yzg2X0KVDthM7iwLA1gJLHFsA96r7VPRDqsg5dxSeyXy4xeAlmpwxALxD01KupDm77QbwvZEiy4ZepR3C7QBx0QLXbjBxEY0O518bel39kipaAXwkmmvcjhV6Zh8H/Lky0v3gSg81uW+uJEPjzJC/VAq2XACbLpRLNBC3Io4hDdi/VcYEwiabutIPADZzlk/Hp4omS/AoqngF2+ntnGvbIRCnDM1UCfODJxQPy0wuegpP/p66kO4crShm6JQFDimPvaMyxqIfGOioVe+r8HneSkmu3jTwTOClrWyB2sHSwhmNgwejfuXLStBEB0a8LRa42osxcCCmtIjh+dHNCRT9fSH10qMWpHDONfB1o6nhbO0G8SS+Beo3gZketsIV9SLuww94D+2W6njV2t74NJP0Ygxc7QOWcVJP0vhkq4bJgz1qgZ0eUqFV7+9LJF1sC9SZHpeh1gzZ6RJ52qleBkA/qG4qCcVRAYz0eBpE9PrjVkWUTAS+yDl3WyTN7ClPRq97wOwNMX8vMoA7+3B2wbdJicsZLzQsY6/Fwfaan1kSeZX6/RXg7/CKr16d5GjLS6t44jUoBnfEq9AygDv8gCSywkXCre7FVdeYbagD4BEj7lhOfxT5NyJPrefbDPeNcD3xsGr0R0lc0eHDkT65l9CHnUj6FcDSJwKERhdsumqfVHP1ZU/wap88GJfovTvewzFwOIQac6iIyrq3m81B0g8xsN0TrtcPp2ofWKiH8Sxt3bDSE8D/prdTBKHA4A3AWfo5qyUCNyiI3hb12qZHWegTgFfjWx0XJoW0OQO4O4Bsuw7WgVFVMvWyDto55zYb+V3ZawLYLCKTfaArn4iILFeiFrqrAdxo4raURb7MMHucSjh1h51zY33g+n0bOMM07ZOS2O8dgS8AU6p4q/VwqrHRhMl3un/Kuo6Wx+XVFmyyJYlOB/V2TiQ0DcMmnXPXGteoYkY4HiEiV/Vwn6cw73YUuFPrnkdL1ENPAuv1Xjd6saY6art0ZNR2KbQdXldS2+GJRNlrRfFTbjWSGaY8xZbZLw1jEVfRouFN87TAktiAA9APnVGlhhelVEq0vjsA60TkBj0A+6Gj50CHLHAYPHCQHopiOIYnTOfWRtnVSIVOPLglGt5UUwAfXFLDsO1x7XtuWLUC6DZ8i9ylbS7PDM9wk/bI6pd5ys1cVVdC0U1w3w+OFHUDCuBbFlLU0Apwle5Cs3WdZ9Gk0R390RLLCfA+DROG2wjiGXzD8QtF5Hat5OkX65vaI0MlFvR3jwvN1tUeLuHCVktsl5Lqd3RkSf2OyuiuGArAzzYbstEG8O6Gn+XzJS2kqPeBVh6Nf5v1TZspoW9a0YS7qC/0ObbKAlcSVniiZABXt9FqtqdHhGg8vA6fl63qV62F7V52Bb4LnCUiEzq9r1864lea9E27p6S+aROJVKAzhRUdAXA4OW5WX74aT1/T4L3dsehwNH91Wy1ne3nOT1VHoZyh93ulWhW3wL7Fz1DwvjOw3302K6nSxEtcUZL2+iDlhWYMdoYVO1MLud9FCyzgLQrggagY/BBgKEzCa2O7lOmoXYqYVNJRHSbSWv2Zawri9cAb8ZP3nmZUW415yk7De1fp6x9WyxssfaNPGgKGoW9Hs6UTh53ccU+b2y4VZn72KlPy6hTAtygRXHTShR5OiCVEb1i9hEnsYXTGUGIKXV8NNDMgrojITQrif9IDdGd8CWXRpPpGjOu9M57RvhY4U0QuDIOm+3A20nRin4eJFGWN3hlLiHAa3TLcDJNGin/2UElsdEy4BNJnb+fcj4BanzR4j9NLDfw0hUuBP8EPWj/QzEeyTQ5CgccEXmF1o5lMWO1l2ek2lGx762HVSIQPg+3en+olxvgIXkDnAJwQcxzL7Pmnu+PnBn9mIfNP5xmHX4PvoDhsyIIZ4HmBjOmT1qgxsYVa4yeAzwKf1XGj++E7adSNaGAz8HZgTETGo0mH/QZe6308W2PdR/Q+1PX774nIRLtGz5r52cv0cI3nZy9YxNEKFzqIOW5NEEnVEl3YmUTbztAH6Xn9WsxtrLE456q6aUbxM3GfMDFfKPDYJCLjzrmBQJz0octsFVAVBfBEtNedeiNlrMkEiVbB5/RvWagLX7S49C2egn6gc24wxFft0kQreNexpaghiEmWA6v7SFHU9D4EK6qfdWmTka/VMHKzj4GLCZdGgH3M4R6s32N6yLVTsRf228H4bEE9IXYa7vRspHBRl+Hbng5FqaSDgYF2bxZ9WOOJiqTN+L7Kg70u6NjOe9Focqq7PksPbWtfH44n9mrRAT5VggY6XMOBeG35TDR+95vA2ELH7xYtZPpoMuR7oCTN83q2CDpcJLUcJK9FtZSfGYn2eEPBc6NOrqy080BTg1FPHCCF9tvuiumEdhyHROB9uhJZbRvPYci0cbwqayjKB+8IHGJm7ObV38ANo1hFLfC4ee5hn2xQ8Lg2j8VZih+LE09GrLfKAyhaNLxpHLhcY856B4is8NA2RIRBqI7ap50PLK+uZJ/30MO7FpXwPUp5+d+YwAoa7Adp0fC/ooVx1+ZEDDqBl1QOtYvISsg6rRsdTtwDnXMvUFVYtsL9b4UrwCmRHr6hFvEWk35zbT5EDsGnrOoJXEx13AJHJ8jlerIMRkTWAZqLbbS5Q0dQ19wbqbIC87hPP6eT8ppVfzsMPCcq4Qv74y59j2uzsAj8WJwdIwJrOb5N0uRCCaxWa4SnEvm2cDMPKEGTbN1oO0YyPLjDnHPLFwsbvUhXoQf5i/FkVSNynzeW5D7XNbTcJzEWtqGNAl1XWGATB0/qybLcqKFqeAp9bQm52GDhbwL+27hPYgrVM5m1OMirY6LB76F88Mftdp+NF7AcP850IqpBflC9VVrBDxUtzj/GLVAreEXQCcBwO6e9m0Z3o8ANkf41sOSZzOrfJbq39lCjUYuGvm8GfqzgapTgPp/C7AokW+Qz1c5WlwuJg78d1QaH02+EBbYO2c4Sx7ujtFYgsw5yzu2Zyay+FrGcFJFXoXTvfo07217rrHtrecRAh4HiV7Uq/m0pC21aoF5v+mQFy7e7WmHa2RY1AFNEfoZvxRr3iw4POK8+E23os98TX8gxltjb3253fy+T/xXg5aYNcIjBHweua6UX2EorVNGLv1uBUzduwwxwuMbKZWlwr0x81nFgP33QLlvhvlsnJXiREeAOEflFCT3CC9OBY/eo5XFodHFbKzXYRYv7CYNngZ8wpYoBOAcDK9rVoSNhhX8B3JGwwgAnLRJN8GK0vuOJfX1liXF4gW/Cb0VNIRtzu2HK6TYAB0DcCDyQYIF3LMONnqcVXuOc2zfHwr3PPOufQ8ArOml9I/f5eHxv7UqkRVgnIlNahttdLrRJJzngB5ECJaSUSnGjt2GFQ0L9zc65pabvcl69twIoj1e3dXMHra91n58WtbANJYz/1qr0EW0SVoQC8XXRCRQs3yHA0na70dt4gIFY2wE4Wk/CbIV70/o2tN78OLbMxupE7GsVfmsT7vMSvMx3U6tZ8KJNYopb8PNsB6ORKyuB16rbWumgFQ55wVc4556rGyGDmJ6bG+Xw85N3aDKC9coSRSQ159wOwInRYRLSWOvb0YO6aIOYIrjRX4+GngUW7tWBsS7ZChdRQr2uJ+MpZvpBXr1FXD03UTIYCubLtL4V3csvxQtJpoz7PAT8Cvh+q93ndmmT63rDvorPe1WjnPCuSiK1XdIYWeH10YFSUSu8xjm3OnR6zPDoCdc5sL1/kgBECNeuKNFAhCkWh0USTttA7/FWiTfaCuCoMujOSNIY6PS3lChpDCTVZ/SaqlG98BTwLufcczIr3TPEVR0/nWLfyPoG7f0VIvJLQ3K1tXRR980BeDJtNOJ+ptR4tKWAomjzXNsL9AMUUTe+I5xzh+kHr5QxHExEpoGLol68wZWuAq9U8Epmpbvada4751artbNgCdbuFuBq3VeNkgzEgB4oRNLJ5cAP2zlnuWhzZdAG4CG2Lqwe1tillPpc40rfiZd62hGdwZXeFzhDb3K2wl1YpK/P8TnAu5hd62unUn5Lc62uBM1zqDwaSXgDIf69vp3hYtHGyqDQTucbSipYwGwCTnTOrSiRzIpd6TgeHtWa4TU5Hu7aOUeF9lirRqxzHT8L69si8ssAdsqZCALwmkQF1DDwH8D39SCp9wyAIzLrUuB3ZrxEiDufBZxWljLLMM0zwIXM7hVsR6K+0zm3Jmulu4q0KlRt9XZgTdQkLljAn5bpOpvU0QrgdVEzi8CEX9ou8qrtAA5WWEQ2AV9m9uSGYPFOL9MK64FSiMhd+NTSTpFaLFzfGUA1k1pdscLok+Pw0yZjwcaQuq4Xqetc1lzjcA2n4cezTkapo98AX2lH6qgsC2wv/GtsnVKa0g9+Wsn66ECcXa2ndizwmNbXztBDJUstOxv31pS0OgnfUbJqYsyQmrxQB9iVMtc4sr6nNyHTvicim9ppfSkhD2t7Nsf1uZ2ywk5P6SllpcfxirFG1DXwRcA7YuF8XqWCNzDOZxngikkZ7QRcqR5VUeK4mNj6TiXKBteX0bq2KEnyFuJOl5jc8Ay8vFLKssLmYKnpdaEbxB4uj+PHsmQQdx68jai2toavbrum5JSR1WA3s77LgWvbmToqFcBmlu1tOlB6h4iRHgX+VOOG0jpGmmn0dwGf0HtRmEOmiq9rziDuPHhrEUG0At/37PyS494QkzfwzHNsfUO66OKyBuoVJTccu5AtVUqxvPJDZWuSg5BERDYA55IekZoCcSVDrS3grc4DvMuAu4DzokmEZTWMrzvn9lei84nI+i5Tl/42trQ57n0A6wepiMjtCuJVCSHFSSpHc2UCRDdMRS3xDaaTYBLEOsoz54lb7JYaYqgZeBsm/3tZKAMtu7OK/r4zTL27bRn7EPC+QH5SYhFyGSts+q/h88Lx9IQG5WqkiZjpQg+X65uAeCNwsHPubOfc3mq9qxl+LXGZnXppJwNn6vNPgbcCfExE7i8jvmzi2u8PHKkcSRz7fkld6kpZB0tR8slVaF740oQ6axTfAP6oDlhhZybZn49vC7QqmiAXrnEf4GytYKoF65Gh+NS1zfrtmcCfGZLKus0V/f4TInJ3iUqruAJqBC8miVtJDapR+mo7VVedtsAYkuor6m4MJyYJ/mOwzmUCIzoxz1MQ72qAHUA8pg/oTLUYYljtvLa/pndv59zZ2vTwYd0HViK5VK3vx0VkQ7CElC8mqeEVV8dHYpKQzrq0jLxvRwFsKoM2AX/bpLRvJfDhwBJ34PrCn+cDX2ySYgob6M+AtznnRgIhlq3xtoFrwLsf8F78ELBRk+u1bundwDnG8tY7JCZ5IfBWNTxVc40r8T3gvqCHeKnXV3SgD0qoDLoGuC5BaI3jCx1Kd6XZkiMWrWa5QoEsEXCDlXgYOBA4JzQFyNZ4XtU7zjn3DnxVUY2tB2DPKDBuFpFzROTesmPeyHVegs9C2IFpmH3xKRGZMG1++hfApNNKRURoTXbKlQ4gNlruDcDH9dRdmhhgPolXmJ3pnDvJWGPJQJ6ddtN7uhp4D57VH9fnbftHOQ1dbgTO0/tYasybcJ3/FK/FfjQirpbi00a3d+KA6RiAE2mlXQ1hFPTI1pXu1HXWdPPcDZyj7twKPYVddL2CT+6f45x7oR4CjcWcMw4HmLK3S51zbwfOxhOBm6I+ZQ0lg9DQ5XwT0tQ7qMO2rvNAdK0bKTlt1C0W2M5Q/RK+sGCnhCv9MufcESFX26nDRk/Xe4GPqmUYMd08rD53VIm5v3bOvdc59/yw+RZTfKxxrhhP5GTgQ0pUjeO15vZ51vS+jStwrwieVycmaJiG8RXgfzZxnYeBvwkdZzo16aPo8CQ5p7HDeRoHxSfZZuACtWidBHHIE4uInGdc6mVRvrii30/iOzT8tbrVS0183LdAtsCN3OXX6b2aMHJDjCezK3ArcLZhml0Hx98Ed/gc0jnfEXy10TWUpLjaVjPqTsvnas65NwIfwOfTBszJvBIvrnhT1AGw4+kP4GTgALxSK24QH1z/pUp2/Qj4kYiMWYKklbFdsFiar/wsnsWt6WEzCrxeRMZbadlSn0OBewKeXRZDUklkdZer1f0e8B1DcDa6QIt9BPDpRP3xsH6el2jo1MmDpisAHE7kQeAjShaMJfJsV4jIuwPguySHKfg61RP1VB5NbNS6HkhLFMg/BK7RVJqNFRe8EcoEcHzNzrlh4Dn43sj7mPauJA42wWcfblMS6J7glXT4cA7gfSHwBXWPXcIzPAufQZFOHjZ0SzNzs/GGgJ+o1ZpMVKC8SUTWdSiZ33QDO+eer0A+QIEyExE0zhAfQ/qe0Oz7fhGZjBhb91QA3U4Am4PWRdZ2Bb5Txkv09w3pAZwCLupKj6nVvTKEFV3wPK0g59P4evCNJuc7g68++qCIXNINhoRumkZgajrX4sv77DUG97SKl7JdZ+KUbil/C9b4xcAuGu+lgBzSJsPqgm1S93qWVTaHxJOtfrYFulYB2MTokorxNC+6h5lEsEw/S61JKIFp5nA38F1jdTtuxUwt+gA+fflS/DCyapQyuhovQJrRnm8uAzgdD78JeH8UD9v+R8eIyFSn46XYpda/L1Vr9JI5gGxdyapa5nHd3P8F/Bz4hda6JnOqkcTzSQHKfAE8F6GZOhjV0q7Vg+cI5SYG1VOqRxLIZsD9N636ohusrvlsgyIybfbdb01KK8S9Y2bfSbfMl5Yu7EAYTsJUPBxOwh8B7wzxSTeAON6U2wFka5UHjQu6ET/lcRLfCKEhIuPbOgD1Z40AlyQA/CY9KGQu90/jWTSm3Qv4A41rl5qWQ3VD1LEN4F6lghi6IdZtYjTW4mvCY88vjnuLbjl46MaBXol4eEQ3sQXxzsB3DYi7aUOIfcgJIE82cTVtWqWiX0v0+0cU2PcCv9TXf6ZxdHBDx6PruFR5gwDgTSJyuvn3IaOAq+LTJaFk7yj9+7AeAlPqItfNdTc7hEKZ6IYEcLvmsE2A9wK9/9PmuUwD/6Pb4t6uBnAiHv6Ubgh7Y2fwucPv6snY8fTSdgD5xQos636mcvLOWLMBU7Y2YMajjps2pvcAvzbve52+3jAzer6s93FA3eAB8+87GkBPmN9fj3K38fUVJgzYrIdKVwM34i4OR7tasnUZ487Ad/CCja6Je7sewFGqJuXaBBDvhh+l8e5uPB2bANmmW/ZQC9dQgM0FZokknJVojMegidsC2xuvzeb9E5GLOJOIh2MrG7yEislxj6eIuG4FbpN00UwCvE+GaiFl2G3gpdtn4m6DXEill7oSxHMIHlbiZ0Q9D9jbSPZC/tFav1S/MBc1pbffPz0BwP+ONNxz7QUXxbSBTAygfQK4SV3l+wPh1s3AtfpsXal0Ud3IOruKLO1FAMf0/suZLSq36aW3ich1AfS9UMwevRbAvJcCuhrFn9LESqaepah3EgP4wajqiyYHQMXEuSEOf1yvJYD2V1H+uui0KmmeoVm4vnPxajGbLrKte97ejaRVTwE4kWA/F696ejhKLz1509USd/1mSrnX5vUR4NmGAX6BgninRJxqCbD6dgB4INEWxsbXgTW3TPiMTW0tRHTS4QzBeRrCPJIAbxV4qxqDrrW8PQNge7rr9TYD8aBu8s8Cl5gqokYvDfFqkoMN1U9HmcPqyGhs64hxwQtg94Sg4gFDPj1m2ONAgt0fM9xabEIvgjbBNh+M7yh5ZBPLW9URs+u7ORzrOQDPE8RhM+0OfKsb88TbGy/PVemiaSAx+co9NI6eMgRTbIHHjL78WlNJVTTLMRvhSKOb0nVPAbyBbR6IYt6eBW9PAXg7QBzY6ZAnptMlX62qT92WWqpVnTOsyqvXANuEBA153pp6aX0B3p4D8DxBjIJ4F/xw5Xd0m3SvxaAm6tM139WYoytnP9yb0FDgCLyWoN6k13TPgrcnAbwdIA4DsK4FLhSRm51zAzpoLS/6frZSBS8dfb3hR/oKvD0L4CYgfhmzU0y2IcAMPs3UMwx1XguuDPtn4BV44o6o1/RAP4C3pwE8B4gfibS6NVO6ZxnqvnKpM3ifVO4dArwFzzQ/omCVSKQhbEkV9Sx4ex7AEYgLfK+qP8KraOqR1BA8Q/1N4H0iMtrrDy+vLWktBe/RankHI6bZ9rIaBd7T65a3bwCcIC2OBj5pKkuqBsRB4zqKb6C2zrQ+bWQ49OQ40po+/3P18B4zFVhxZuI75vAu+uGZS5+6USFtMDDHSTwBfA5PcLlsjXuy33TDOXco8GbTPTLuNS1GG3BWv4VP0senslXdNHuwu+CbzF0sIjdma9xzVvctwBvwBS2Pz3FQ96Q6b1ECOMFGNnOtUNdqR3w53GeAi4I17sbaz2x1t7K6x+LTh41oPEuzUKnvsg+SyY0nya5Z1rgfxR99ANxCgRus7mNR2tC6zIuCrJRFml54PNEWxlrjS/DDmjc2K//Lq5xS0gA85TX+Ct8nLba6c7nMfX0IyyJM8AeXekq/4k1QwYs/fgd8nS0kV46PO9PB5FDgjfhaaVEPaiDReGCJHr5nLybBjizifOE/KFAnonsRYqhBtchXA58Tket6oeNEHwF3JfBavBxyhQLXJQ7cIf26Cni/iGxaTBkFWaRDpp32Of4gvivDFFs6X1ogBymmw3dn+FcRWReV/GVZZmuBuwI4DTgd+EMFbj0BXFGXeSPwdyLy08UY7shi1szq34M13kVdsGabZVkKyLaLZgbygmYrxcDdbEKc1KFa4EfTBKsr/VZVlQE8j3I8Y41Pm4e7ZoG8XsmSO83EwaoCObvXc89Xahjg7gT8Cb4N7lzAnSusWbTZAsmbatZYlECYvMj0hpLEtEFRoE8CjwJfA75iWOutNuoiB21wk2vm9bXAXwJrgB2Ui5hMTHdsKGm1jK2JxUVpdTOAt52yOAL4CwVyrcnGCvnjsLl+g5+4d2OwDNHIk0UjDGnWEsg5t0qt7QH4JvcocGuJtF44KJfiy0Qv1UNyU07tZQDPNy47Bviwxsdjpt9UkZhQMKhWeQr4MXALfnzmIwkwN/qN/DItgF0E2hFgPz0MTwSehS8y2ZwIU5w5GJeZOPcDxrvJ4poM4O2a/btc47PT8PNh57v5Kvjm57fMAeZg1eutdAWj5uVbP/Qmlmu+rn80frSIUzYGtIcDf4wfgxO4hfkcgpPKMXzexLlZ3poBvKD4OOX+bTaKIEkMKRvAF5BXdPPegB9Oditwe6oTpG5UWg3qZum07ei9ZQd8p1rf7gScrIfXKfi5QgG0NcPux/cpjI1dngpDcpybAdzyfs2GgDlcN99oE8sSg3mILbnLR4Bv6yHwLbUuo3OMDbWxIc0a0qn1PUwPjkbE5E7jZYi/EZGZCJxO3du9gDv0faQEETqoDbWyBwHP1d+5UkG6GR0GlgBt7KkMKjl1KbPlq1kwkwHc9hTIWuDQRGyXssrW4oSGasvMzKJhtowtqQHf0N81Ok+VmZiJC+8FVhkiiMiK/h74joj8LPo5f4RXP50jIvdFYN0XOFiB+SpD3u2A74Aypf/mtvHZg7WdVq7gVuCbIvJETsVlAHeK7Aru9YH48aGDapVrkTAkZYlE3+8UxIO60X+vm/0m4E4F/JRaazv7ySWmJ7xb/3qebd6u1n8Pvcad8SmZX+q/1fEjR18M/JeCsaKfy4K1poSei1q1Fk1a19pQYgg/AnUrtj6LYTKAOwXkVH7zULxE05I3mCFlc40PtWCo4NMoQwqWGQW2KKALfBrm6/pv4XnulphGaBu2P8uMaDnIzEW6Dz9E/Dh1pacSYGWOAym4+OHahiMyL7a2OV+eAdy17rVNn5yg1m83BdqkgtVar+B6/qeCck982WMYSLYjfrhZqLp5QMGyg1pVzATDy/Tvr1IwxeAIQ8t+rnH8Hvr+O9TaH4afTG97ijUbP2q9CDQOflx/x60pBj67ya1b1XwLWnAKetDWjVUWZZivB653zl2o1ugUtXgHqsXbzcSPdf36jWFu71Vw1xQk+ytQbmFLy9wG8B8aowatcADXwyE3GwFvGHiaus8P4iWMlWh2cNWQYM5YYQxgRQ+QMPlwHPgiXi/+syC6SAhacu+xDOCuBXMjISEc1839OeBzmlteYxjcQxVAu6oFewg/zPwwBchGBe1d+szWKOgm9PXfqBXdIQJrtQmAnXoEA+oi16O9ELyDmmmCHsAaXP0H1ZP4tP6My4GpODVm87cZuBnAvWaVHdAw6ZqKiNSUWV6vXyig91EgD6mF/B94Bdgq4JnqNt+MZ4JX64GwUoF7s4J8lYlTMdbYNXF/C5PSqRpXfrn+7prGr6PqEl+s758OZFoTwD6pNMugzQDuFzAHQG0l8FdA3wDc4Jx7hVrev9VY8tUK6CVKiA3gc8gzRkccamOD5DP8/J0TMXCItR81LvJmE5sP4ic7ft2w4Hfp5xibI4VVb5Y3ziuTWIuFBBPglWph/0lENpv3HK7/dgle+FBR0KzR2PoBtYwNw0I/lLC+AdzD+OZvd+MbwIHvF3YCcL6I/HIb+eZ6VkhlC5zXlprkhv4ZAFFRYA+ahm0OGLeW0Dk3ru+5yogvzlaW96I5Do398JP7fmvqmaf0n5epK1xYUiwXEWQA57UdhlkBXdOGfI0I2BUTvzoDusAOi3NuSRQTBzd+CK/nHgXuiySVtrhgVvycdckZwHktENQG2OHPJwGnEwuKZgotQ5j9MV7McbWIPGC6doa3zeQcbQZwXk+dlyiavF6Z4/XYii51zp3KbMZ5GZ7R3hGffvqBsb7hPQ3gUOfcc6MUlFPrfquI/Gq+1Ux5ZQAvtjWNZ5dT6qlxBVjsEo9HrvKEgm0/42I7ff23eC3ybUY1ZlnyzcAfAM+OrqGhss7fAr8yAo+8Mgudl3FxBxR001GZYKhgmrburTLDA+r2BjXYoBFc2NWYi4jS31FpkjsOq57d67zy6oJ5Q3nllVcHWuHO9/VW/o5W/5688sorr7zyyiuvvPLKK6+88sorr7zyyiuvvPLKK6+88sqrbev/AwE4SZ9bwQpoAAAAAElFTkSuQmCC"
+              alt-text: "ISO mDL"
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
+          "[de-DE]":
+            name: "ISO mDL"
+            description: "Mobiler Führerschein nach ISO 18013-5"
+            logo: *mdl_logo
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
+          "[es-ES]":
+            name: "ISO mDL"
+            description: "Permiso de conducción móvil ISO 18013-5"
+            logo: *mdl_logo
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
+          "[nl-NL]":
+            name: "ISO mDL"
+            description: "Mobiel rijbewijs volgens ISO 18013-5"
+            logo: *mdl_logo
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
+          "[fr-FR]":
+            name: "ISO mDL"
+            description: "Permis de conduire mobile selon ISO 18013-5"
+            logo: *mdl_logo
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
+          "[zh-CN]":
+            name: "ISO mDL"
+            description: "ISO 18013-5 移动驾驶证"
+            logo: *mdl_logo
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
+          "[ja-JP]":
+            name: "ISO mDL"
+            description: "ISO 18013-5 モバイル運転免許証"
+            logo: *mdl_logo
+            background-color: "#1B2838"
+            text-color: "#FFFFFF"
     display:
       name: IDK Example Issuer
       locale: en-US

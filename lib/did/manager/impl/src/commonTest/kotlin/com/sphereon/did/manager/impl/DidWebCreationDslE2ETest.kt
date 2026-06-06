@@ -27,6 +27,7 @@ import com.sphereon.did.manager.impl.testutil.createDidManagerTestAppGraph
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationPurpose
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -326,6 +327,39 @@ class DidWebCreationDslE2ETest {
             )
         }
 
+    @Test
+    fun testCreateDidWebWithMultipleControllers() =
+        runTest {
+            val result =
+                dslProcessor.create {
+                    method("web")
+                    domain("controllers.example.com")
+                    alias("test-did-web-with-controllers")
+                    controllers("did:web:controller-a.example.com", "did:web:controller-b.example.com")
+
+                    autoGenerateKey {
+                        keyType(KeyTypeMapping.EC)
+                        curve(Curve.P_256)
+                        kmsProvider("softwaretest")
+                        purposes(VerificationPurpose.AUTHENTICATION)
+                    }
+                }
+
+            assertTrue(result.isOk, "DID creation should succeed: ${result.getErrorOrNull()}")
+            val managedDid = result.getOrThrow()
+            val document = managedDid.document
+            assertNotNull(document, "DID document should be present")
+            assertEquals(
+                listOf("did:web:controller-a.example.com", "did:web:controller-b.example.com"),
+                document.controller,
+            )
+            assertEquals(
+                "did:web:controller-a.example.com",
+                document.verificationMethod?.singleOrNull()?.controller,
+                "legacy VM controller field should follow the first requested controller",
+            )
+        }
+
     // ==================== did:web with Services ====================
 
     @Test
@@ -368,9 +402,9 @@ class DidWebCreationDslE2ETest {
             // Verify LinkedDomains service
             val linkedDomains = services.find { it.id == "linked-domains" }
             assertNotNull(linkedDomains, "LinkedDomains service should be present")
-            assertEquals("LinkedDomains", linkedDomains.type, "Service type should match")
+            assertEquals(listOf("LinkedDomains"), linkedDomains.type, "Service type should match")
             assertEquals(
-                "https://example.com/.well-known/did-configuration.json",
+                JsonPrimitive("https://example.com/.well-known/did-configuration.json"),
                 linkedDomains.serviceEndpoint,
                 "Service endpoint should match",
             )
@@ -378,9 +412,9 @@ class DidWebCreationDslE2ETest {
             // Verify DIDCommMessaging service
             val messaging = services.find { it.id == "messaging" }
             assertNotNull(messaging, "Messaging service should be present")
-            assertEquals("DIDCommMessaging", messaging.type, "Service type should match")
+            assertEquals(listOf("DIDCommMessaging"), messaging.type, "Service type should match")
             assertEquals(
-                "https://example.com/didcomm",
+                JsonPrimitive("https://example.com/didcomm"),
                 messaging.serviceEndpoint,
                 "Service endpoint should match",
             )
@@ -424,8 +458,8 @@ class DidWebCreationDslE2ETest {
             val newService =
                 DidService(
                     id = "hub",
-                    type = "IdentityHub",
-                    serviceEndpoint = "https://example.com/hub",
+                    type = listOf("IdentityHub"),
+                    serviceEndpoint = JsonPrimitive("https://example.com/hub"),
                 )
 
             val updateResult =
@@ -447,9 +481,9 @@ class DidWebCreationDslE2ETest {
             assertNotNull(services, "Services should be present after update")
             assertEquals(1, services.size, "Should have 1 service")
             assertEquals("hub", services[0].id, "Service ID should match")
-            assertEquals("IdentityHub", services[0].type, "Service type should match")
+            assertEquals(listOf("IdentityHub"), services[0].type, "Service type should match")
             assertEquals(
-                "https://example.com/hub",
+                JsonPrimitive("https://example.com/hub"),
                 services[0].serviceEndpoint,
                 "Service endpoint should match",
             )
@@ -558,7 +592,7 @@ class DidWebCreationDslE2ETest {
             assertNotNull(initialDoc, "Initial document should be present")
             val initialService = initialDoc.service?.find { it.id == "hub" }
             assertNotNull(initialService, "Initial service should be present")
-            assertEquals("https://old-endpoint.example.com/hub", initialService.serviceEndpoint)
+            assertEquals(JsonPrimitive("https://old-endpoint.example.com/hub"), initialService.serviceEndpoint)
 
             // First, remove the old service
             val removeResult =
@@ -580,8 +614,8 @@ class DidWebCreationDslE2ETest {
             val updatedService =
                 DidService(
                     id = "hub",
-                    type = "IdentityHub",
-                    serviceEndpoint = "https://new-endpoint.example.com/hub",
+                    type = listOf("IdentityHub"),
+                    serviceEndpoint = JsonPrimitive("https://new-endpoint.example.com/hub"),
                 )
 
             val addResult =
@@ -604,7 +638,7 @@ class DidWebCreationDslE2ETest {
             assertEquals(1, services.size, "Should have 1 service")
             assertEquals("hub", services[0].id, "Service ID should match")
             assertEquals(
-                "https://new-endpoint.example.com/hub",
+                JsonPrimitive("https://new-endpoint.example.com/hub"),
                 services[0].serviceEndpoint,
                 "Service endpoint should be updated",
             )
@@ -614,7 +648,7 @@ class DidWebCreationDslE2ETest {
             val persistedDoc = persisted.document
             assertNotNull(persistedDoc, "Persisted document should be present")
             assertEquals(
-                "https://new-endpoint.example.com/hub",
+                JsonPrimitive("https://new-endpoint.example.com/hub"),
                 persistedDoc.service?.get(0)?.serviceEndpoint,
                 "Persisted service endpoint should be updated",
             )
@@ -726,8 +760,8 @@ class DidWebCreationDslE2ETest {
             val newService =
                 DidService(
                     id = "oid4vp",
-                    type = "OID4VP",
-                    serviceEndpoint = "https://enterprise.example.com/oid4vp",
+                    type = listOf("OID4VP"),
+                    serviceEndpoint = JsonPrimitive("https://enterprise.example.com/oid4vp"),
                 )
 
             val addServiceResult =

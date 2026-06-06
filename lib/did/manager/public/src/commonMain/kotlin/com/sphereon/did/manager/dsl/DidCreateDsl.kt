@@ -26,6 +26,11 @@ import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethodType
 import com.sphereon.did.models.VerificationPurpose
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.jvm.JvmOverloads
 
 /**
@@ -267,7 +272,7 @@ class ServiceBuilder(
 ) {
     private var type: String? = null
     private var endpoint: String? = null
-    private var endpointMap: Map<String, Any>? = null
+    private var endpointMap: Map<String, Any?>? = null
 
     fun type(type: String) {
         this.type = type
@@ -277,16 +282,37 @@ class ServiceBuilder(
         this.endpoint = endpoint
     }
 
-    fun endpoint(endpoints: Map<String, Any>) {
+    fun endpoint(endpoints: Map<String, Any?>) {
         this.endpointMap = endpoints
     }
 
-    fun build(): DidService =
-        DidService(
+    fun build(): DidService {
+        val resolvedType = type ?: error("Service type is required")
+        val resolvedEndpoint: JsonElement =
+            when {
+                endpoint != null -> JsonPrimitive(endpoint)
+                endpointMap != null -> JsonObject(endpointMap!!.mapValues { (_, value) -> value.toJsonElement() })
+                else -> error("Service endpoint is required")
+            }
+        return DidService(
             id = id,
-            type = type ?: error("Service type is required"),
-            serviceEndpoint = endpoint ?: endpointMap?.toString() ?: error("Service endpoint is required"),
+            type = listOf(resolvedType),
+            serviceEndpoint = resolvedEndpoint,
         )
+    }
+
+    private fun Any?.toJsonElement(): JsonElement =
+        when (this) {
+            null -> JsonNull
+            is JsonElement -> this
+            is String -> JsonPrimitive(this)
+            is Boolean -> JsonPrimitive(this)
+            is Number -> JsonPrimitive(this)
+            is Map<*, *> -> JsonObject(entries.associate { (key, value) -> key.toString() to value.toJsonElement() })
+            is Iterable<*> -> JsonArray(map { it.toJsonElement() })
+            is Array<*> -> JsonArray(map { it.toJsonElement() })
+            else -> JsonPrimitive(toString())
+        }
 }
 
 /**
@@ -341,7 +367,7 @@ class DidCreateBuilder {
     private var alias: String? = null
     private var domain: String? = null
     private var path: List<String>? = null
-    private var controller: String? = null
+    private val controllers: MutableList<String> = mutableListOf()
     private val keyConfigs: MutableList<KeyConfig> = mutableListOf()
     private val services: MutableList<DidService> = mutableListOf()
     private var verificationMethodType: VerificationMethodType? = null
@@ -375,10 +401,17 @@ class DidCreateBuilder {
     }
 
     /**
-     * Sets the controller DID (defaults to the DID being created).
+     * Adds a controller DID to the document.
      */
     fun controller(controller: String) {
-        this.controller = controller
+        controllers += controller
+    }
+
+    /**
+     * Adds multiple DID document controllers.
+     */
+    fun controllers(vararg controllers: String) {
+        this.controllers += controllers
     }
 
     /**
@@ -482,7 +515,8 @@ class DidCreateBuilder {
                 publicKeyJwk = publicKeyJwk,
                 verificationMethodId = verificationMethodId,
                 verificationMethodType = verificationMethodType,
-                controller = controller,
+                controller = controllers.singleOrNull(),
+                controllers = controllers,
                 purposes = purposes,
                 services = services.takeIf { it.isNotEmpty() },
             )

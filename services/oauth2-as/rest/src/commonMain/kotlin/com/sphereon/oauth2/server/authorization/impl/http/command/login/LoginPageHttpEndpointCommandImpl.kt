@@ -29,11 +29,11 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersArgs
 import com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersCommand
 import com.sphereon.oauth2.server.authorization.command.login.LoginPageHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.ResponseCategory
 import com.sphereon.oauth2.server.authorization.impl.http.effectiveScheme
 import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookieHeader
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
-import com.sphereon.oauth2.server.authorization.impl.http.resolveBaseUrl
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
 import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
@@ -62,6 +62,7 @@ class LoginPageHttpEndpointCommandImpl(
     private val loginPageRenderer: LoginPageRenderer,
     private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val csrfTokenizer: LoginCsrfTokenizer,
     private val listEnabledFederationProvidersCommand: ListEnabledFederationProvidersCommand,
 ) : HttpEndpointCommandAdapter(
@@ -87,7 +88,7 @@ class LoginPageHttpEndpointCommandImpl(
         val sessionId =
             params["session_id"]
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing session_id parameter", json))
-        val baseUrl = request.resolveBaseUrl(configProvider)
+        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val returnUrl = params["return_url"] ?: "$baseUrl/authorize/callback?session_id=$sessionId"
         val errorParam = params["error"]
         val errorMessage = if (errorParam == "invalid_credentials") errorParam else null
@@ -114,6 +115,7 @@ class LoginPageHttpEndpointCommandImpl(
                 locale = locale,
                 tabId = csrf.tabId,
                 sessionCode = csrf.sessionCode,
+                notice = configProvider.serverConfig.loginNotice,
                 federationOptions = federationOptions,
             )
         val rendered = loginPageRenderer.render(ctx)

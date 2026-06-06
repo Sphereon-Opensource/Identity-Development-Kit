@@ -32,7 +32,7 @@ import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoR
 import com.sphereon.oauth2.server.authorization.command.userinfo.HandleUserInfoRequestCommand
 import com.sphereon.oauth2.server.authorization.command.userinfo.UserInfoHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
-import com.sphereon.oauth2.server.authorization.impl.http.buildFullUrl
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
@@ -74,6 +74,7 @@ class UserInfoHttpEndpointCommandImpl(
     private val handleUserInfoRequestCommand: HandleUserInfoRequestCommand,
     private val validateAccessTokenCommand: ValidateAccessTokenCommand,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val dpopNonceManager: DpopNonceManager,
     private val clientCertificateExtractor: ClientCertificateExtractor,
 ) : HttpEndpointCommandAdapter(
@@ -196,10 +197,15 @@ class UserInfoHttpEndpointCommandImpl(
             } else {
                 request.headers
             }
+        // DPoP `htu` (RFC 9449 §4.2) must match the URL the wallet computed from the AS's
+        // advertised discovery metadata. Discovery emits `${baseUrl}/userinfo` via the resolver,
+        // so reconstruction here uses the same resolver + fixed `/userinfo` suffix — picks up
+        // the EDK tenant-public-endpoint overlay's binding-derived base URL automatically.
+        val resourceUrl = "${baseUrlResolver.resolveBaseUrl(request, configProvider)}/userinfo"
         val resourceRequest =
             ResourceRequest(
                 method = request.method,
-                url = request.buildFullUrl(configProvider),
+                url = resourceUrl,
                 headers = resourceRequestHeaders,
                 clientCertificateDer = clientCertificateDer,
             )

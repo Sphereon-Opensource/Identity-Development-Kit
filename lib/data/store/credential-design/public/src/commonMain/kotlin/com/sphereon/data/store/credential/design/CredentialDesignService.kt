@@ -44,6 +44,9 @@ import com.sphereon.data.store.credential.design.model.UpdateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.UpdateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
 import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
+import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.OptionalBinding
 import kotlin.uuid.Uuid
 
 @JsExportCompat
@@ -256,4 +259,18 @@ interface CredentialDesignService {
         tenantId: String,
         input: GetDesignAssetInput,
     ): IdkResult<ResolvedDesignAsset, IdkError>
+}
+
+/**
+ * Exposes [CredentialDesignService] as an optional graph accessor so that consumers declaring
+ * `CredentialDesignService? = null` constructor parameters resolve cleanly under the Metro
+ * `nullable type key`. Suppliers (the IDK [DefaultCredentialDesignService] and the EDK
+ * [DefaultVersionedCredentialDesignService]) add a second
+ * `@ContributesBinding(SessionScope::class, binding = binding<CredentialDesignService?>())` so the
+ * default `null` body here is overridden whenever a real binding is present in the graph.
+ */
+@ContributesTo(SessionScope::class)
+interface CredentialDesignServiceOptionalProvider {
+    @OptionalBinding
+    val optionalCredentialDesignService: CredentialDesignService? get() = null
 }

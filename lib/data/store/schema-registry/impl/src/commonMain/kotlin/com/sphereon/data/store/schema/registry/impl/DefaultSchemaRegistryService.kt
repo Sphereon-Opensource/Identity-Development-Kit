@@ -32,6 +32,8 @@ import com.sphereon.data.store.schema.registry.ResolvedSchemaContent
 import com.sphereon.data.store.schema.registry.SchemaHostingMode
 import com.sphereon.data.store.schema.registry.SchemaRecord
 import com.sphereon.data.store.schema.registry.SchemaRecordFilter
+import com.sphereon.data.store.schema.registry.SchemaRecordOrigin
+import com.sphereon.data.store.schema.registry.SchemaRecordProvenance
 import com.sphereon.data.store.schema.registry.SchemaRegistryService
 import com.sphereon.data.store.schema.registry.UpdateSchemaInput
 import com.sphereon.data.store.schema.registry.persistence.SchemaRecordRepository
@@ -105,6 +107,7 @@ class DefaultSchemaRegistryService(
                 sizeBytes = descriptor.sizeBytes,
                 createdAt = now,
                 updatedAt = now,
+                provenance = input.provenance,
             )
         repository.create(record)
         return Ok(record)
@@ -245,6 +248,12 @@ class DefaultSchemaRegistryService(
         }
 
         val descriptor = storeResult.value
+        val resolvedProvenance =
+            input.provenance
+                ?: SchemaRecordProvenance(
+                    origin = SchemaRecordOrigin.EXTERNAL,
+                    sourceUrl = input.sourceUrl,
+                )
         val record =
             SchemaRecord(
                 id = schemaId,
@@ -261,6 +270,7 @@ class DefaultSchemaRegistryService(
                 sourceEtag = fetched.etag,
                 createdAt = now,
                 updatedAt = now,
+                provenance = resolvedProvenance,
             )
         repository.create(record)
         return Ok(record)

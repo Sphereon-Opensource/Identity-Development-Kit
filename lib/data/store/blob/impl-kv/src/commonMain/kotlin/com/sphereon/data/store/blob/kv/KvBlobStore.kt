@@ -69,7 +69,7 @@ class KvBlobStore(
     private val kvStore: KvStore,
     private val maxBlobSizeBytes: Long = 0,
 ) : BlobStore {
-    override val storeId: String = KvBlobStoreConfig.BACKEND_ID
+    override val schemeId: String = KvBlobStoreConfig.BACKEND_ID
 
     override val capabilities: BlobStoreCapabilities =
         BlobStoreCapabilities(
@@ -311,7 +311,7 @@ class KvBlobStore(
     ): BlobDescriptor =
         BlobDescriptor(
             path = path,
-            storeId = storeId,
+            storeId = schemeId,
             sizeBytes = entry.sizeBytes,
             contentType = entry.metadata.contentType,
             filename = path.substringAfterLast('/'),

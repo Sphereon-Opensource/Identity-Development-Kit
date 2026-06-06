@@ -349,7 +349,7 @@ class IssuerConformanceFixtureTest {
     fun jwtVcJsonIssuesMinimalCredential() =
         runTest {
             val fakeJwtService = FakeJwtService()
-            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService)
+            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService, kms = TestKmsMock(), issuerKeyIdResolver = StubIssuerKeyIdResolver)
 
             val config = makeJwtVcJsonConfig()
             val context =
@@ -375,7 +375,7 @@ class IssuerConformanceFixtureTest {
     fun jwtVcJsonIncludesCustomTypes() =
         runTest {
             val fakeJwtService = FakeJwtService()
-            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService)
+            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService, kms = TestKmsMock(), issuerKeyIdResolver = StubIssuerKeyIdResolver)
 
             val customTypes = listOf("VerifiableCredential", "UniversityDegreeCredential")
             val config = makeJwtVcJsonConfig(types = customTypes)
@@ -403,7 +403,7 @@ class IssuerConformanceFixtureTest {
     fun jwtVcJsonIncludesHolderBinding() =
         runTest {
             val fakeJwtService = FakeJwtService()
-            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService)
+            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService, kms = TestKmsMock(), issuerKeyIdResolver = StubIssuerKeyIdResolver)
 
             val holderKey =
                 buildJsonObject {
@@ -437,7 +437,7 @@ class IssuerConformanceFixtureTest {
     fun jwtVcJsonIncludesAttributes() =
         runTest {
             val fakeJwtService = FakeJwtService()
-            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService)
+            val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService, kms = TestKmsMock(), issuerKeyIdResolver = StubIssuerKeyIdResolver)
 
             val config = makeJwtVcJsonConfig(types = listOf("VerifiableCredential"))
             val context =

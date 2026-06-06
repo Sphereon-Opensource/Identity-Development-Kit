@@ -168,10 +168,7 @@ To modify: edit `config/oid4vci-issuer.yml`.
 
 Each SD-JWT credential type has a VCT (Verifiable Credential Type) URL that points to a type metadata document describing the credential's claims, display properties, and rendering. Per the SD-JWT VC spec (draft-ietf-oauth-sd-jwt-vc), wallets resolve this URL to get credential display information.
 
-In this demo, VCT metadata is served as static JSON files via Caddy at `/oid4vci/vct/{type}`. Both `start.sh` and `start-dev.sh` template the `vct` field with the actual `EXTERNAL_BASE_URL` before startup (shared helper: `lib/template-vcts.sh` / `lib/template-vcts.ps1`).
-
-- Source files: `vct/TestCredential.json`, `vct/EuPid.json`
-- Resolved files: `vct/resolved/*.json` (generated on every start)
+In this demo the issuer serves VCT metadata dynamically at `GET /oid4vci/vct/{type}`, derived from the same `oid4vci.issuer` credential configuration that drives the OID4VCI credential-issuer metadata. A single config block (per-locale credential `display` and per-claim `display`) is the one authoring source for both surfaces, so there are no static VCT files to keep in sync. The issuer builds the type metadata through the shared, source-agnostic `buildSdJwtVcTypeMetadata(...)` function via the optional `VctTypeMetadataProvider` SPI; an EDK/VDX semantic catalog can contribute the same input later. mso_mdoc types have no `vct` and so return 404.
 
 Included display locales per type (top-level `display` and per-claim `display`):
 

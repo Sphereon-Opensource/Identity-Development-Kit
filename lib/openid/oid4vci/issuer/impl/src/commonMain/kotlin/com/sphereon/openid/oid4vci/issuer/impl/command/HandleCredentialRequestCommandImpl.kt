@@ -30,22 +30,30 @@ import com.sphereon.core.api.service.ServiceCommandRegistry
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
+import com.sphereon.credential.issuance.pipeline.callback.CallbackCoordinator
+import com.sphereon.credential.issuance.pipeline.command.BindingCompletenessVerdict
+import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessArgs
+import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessCommand
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.data.store.credential.design.impl.mapper.Oid4vciDesignMapper
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
+import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribution
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributor
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
+import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenArgs
+import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
@@ -61,18 +69,23 @@ import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
+import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionStatus
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.uuid.Uuid
 import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
@@ -127,6 +140,42 @@ class HandleCredentialRequestCommandImpl(
      * point. When null the default pattern `hook.post-issuance.**` applies.
      */
     private val propertyResolver: PropertyResolver? = null,
+    /**
+     * Optional completeness-evaluation command. When present (EDK pipeline on the
+     * classpath) and the resolved [IssuanceSession] carries a
+     * [IssuanceSession.pipelineCorrelationId], the §6.1 deferral decision tree runs
+     * after the attribute contributor and before the format handler: incomplete bindings
+     * are either deferred or rejected, and a binding still awaiting approval is deferred.
+     * Null in pure-IDK deployments: the decision tree is skipped and issuance behaves
+     * exactly as without a pipeline.
+     */
+    private val evaluateAttributeCompletenessCommand: EvaluateAttributeCompletenessCommand? = null,
+    /**
+     * Optional OAuth2 server config provider. When present the deferred-response helper
+     * checks whether the issuing AS has `refresh_token` enabled — when it doesn't and a
+     * [MintDeferralScopedTokenCommand] is on the classpath, a deferral-scoped access token
+     * is minted and threaded onto the 202 response via [CredentialResponse.additionalParameters]
+     * so the wallet has an auth credential that outlives its original access token. Pure-IDK
+     * deployments leave this null and the common refresh-token path stays unchanged.
+     */
+    private val oauth2ConfigProvider: OAuth2ServersConfigProvider? = null,
+    /**
+     * Optional deferral-scoped token minter. Used by the deferred-response path when the AS
+     * has refresh tokens disabled; ignored otherwise. Null in pure-IDK deployments without
+     * the OAuth2-server-impl module on the classpath.
+     */
+    private val mintDeferralScopedTokenCommand: MintDeferralScopedTokenCommand? = null,
+    /**
+     * Optional callback coordinator for the §6.5.7 sync-wait fast-path. When the attribute
+     * contributor reports a non-empty
+     * [CredentialAttributeContribution.pendingAsyncCallbackSources] AND a coordinator is wired,
+     * the request suspends up to
+     * [CredentialAttributeContribution.syncWaitWindow] for those sources to land via the inbound
+     * callback endpoint, then re-runs the contributor before deciding whether to defer. Pure-IDK
+     * deployments leave this null and the wait block is a degenerate no-op (the NoOp contributor
+     * never reports pending sources).
+     */
+    private val callbackCoordinator: CallbackCoordinator? = null,
     private val clock: Clock,
 ) : TypedServiceCommandAdapter<HandleCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleCredentialRequestCommand.COMMAND_ID,
@@ -165,7 +214,12 @@ class HandleCredentialRequestCommandImpl(
         pendingHookContext = null
         val result = doExecuteInternal(args, applyDuring)
         emitOutcome(args, result)
-        if (result.isOk) {
+        // OID4VCI 1.0 §8.3.4: a 202 deferral envelope (transactionId set, credentials null) is NOT
+        // an issuance — no credential exists yet, so notification/webhook hooks must NOT fire. The
+        // eventual issuance fires post-issuance hooks from the /deferred_credential poll command
+        // when the credential is finally minted. Mirror the predicate used by [emitOutcome] for
+        // OID4VCI_CREDENTIAL_ISSUED so the two outcome paths stay in lockstep.
+        if (result.isOk && result.value.credentials != null && result.value.transactionId == null) {
             dispatchPostIssuanceHooks(args, result.value)
         }
         pendingHookContext = null
@@ -223,13 +277,27 @@ class HandleCredentialRequestCommandImpl(
         result: IdkResult<CredentialResponse, IdkError>,
     ) {
         val request = args.credentialRequest
-        val type = if (result.isOk) EventTypes.OID4VCI_CREDENTIAL_ISSUED else EventTypes.OID4VCI_CREDENTIAL_FAILED
+        // OID4VCI 1.0 §8.3.4: an Ok with `transaction_id` and no `credentials` is the deferred
+        // envelope, not a real issuance. Map it to OID4VCI_CREDENTIAL_DEFERRED so dashboards and
+        // SIEM rules that filter on OID4VCI_CREDENTIAL_ISSUED don't count deferrals as issuances.
+        // The eventual issuance event is OID4VCI_CREDENTIAL_DEFERRED_ISSUED, emitted by
+        // HandleDeferredCredentialRequestCommandImpl when a poll returns the actual credential.
+        val deferred = result.isOk && result.value.credentials == null && result.value.transactionId != null
+        val type =
+            when {
+                deferred -> EventTypes.OID4VCI_CREDENTIAL_DEFERRED
+                result.isOk -> EventTypes.OID4VCI_CREDENTIAL_ISSUED
+                else -> EventTypes.OID4VCI_CREDENTIAL_FAILED
+            }
         val category = if (result.isOk) EventCategories.OPERATION else EventCategories.ERROR
         val payload =
             buildJsonObject {
                 request.credentialConfigurationId?.let { put("credentialConfigurationId", it) }
                 request.credentialIdentifier?.let { put("credentialIdentifier", it) }
                 request.format?.let { put("format", it.toString()) }
+                if (deferred) {
+                    result.value.transactionId?.let { put("transactionId", it) }
+                }
             }
         val es = eventService ?: return
         es.emit(
@@ -265,11 +333,11 @@ class HandleCredentialRequestCommandImpl(
 
         // 2. Validate credential request basics
         if (request.credentialConfigurationId == null && request.credentialIdentifier == null && request.format == null) {
-            return Err(IdkError.fromString(code = "invalid_credential_request", message = "credential_configuration_id, credential_identifier, or format is required"))
+            return Err(IdkError.fromString(code = INVALID_CREDENTIAL_REQUEST, message = "credential_configuration_id, credential_identifier, or format is required"))
         }
         // OID4VCI Section 8.2: credential_configuration_id and credential_identifier are mutually exclusive
         if (request.credentialConfigurationId != null && request.credentialIdentifier != null) {
-            return Err(IdkError.fromString(code = "invalid_credential_request", message = "credential_configuration_id and credential_identifier are mutually exclusive"))
+            return Err(IdkError.fromString(code = INVALID_CREDENTIAL_REQUEST, message = "credential_configuration_id and credential_identifier are mutually exclusive"))
         }
         // 2b. Validate credential_identifier against token authorization_details (OID4VCI 1.0 §8.2):
         // a credential_identifier MUST appear in the token's authorization_details. When the token
@@ -395,20 +463,41 @@ class HandleCredentialRequestCommandImpl(
             } else {
                 null
             }
-        val contributedAttributes =
+        val initialContribution =
             if (session != null) {
                 attributeContributor
                     .contribute(session, tokenContext, configId)
                     .getOrElse { return Err(it) }
             } else {
-                emptyMap()
+                CredentialAttributeContribution(attributes = emptyMap())
+            }
+
+        // 5b. §6.5.7 sync-wait window. If the contributor reports sources still pending an
+        // async callback AND a CallbackCoordinator is wired, hold the response open for up to
+        // the contributor-reported `syncWaitWindow` for ALL of them to land. On success, re-run
+        // the contributor so the freshly-contributed attributes flow into the merge. On timeout
+        // (TimeoutCancellationException) fall through to the §6.1 deferral decision.
+        val resumed =
+            session != null &&
+                awaitPendingAsyncContributions(callbackCoordinator, session.pipelineCorrelationId, initialContribution)
+        val effectiveContribution =
+            if (resumed && session != null) {
+                attributeContributor
+                    .contribute(session, tokenContext, configId)
+                    .getOrElse { return Err(it) }
+            } else {
+                initialContribution
             }
 
         // 6. Merge attributes (priority: preSeeded → accumulated → contributed)
         val mergedAttributes = mutableMapOf<String, JsonElement>()
         session?.preSeededAttributes?.let { mergedAttributes.putAll(it) }
         session?.accumulatedAttributes?.let { mergedAttributes.putAll(it) }
-        mergedAttributes.putAll(contributedAttributes)
+        mergedAttributes.putAll(effectiveContribution.attributes)
+
+        // 6a. §6.1 completeness-driven deferral decision tree.
+        val completenessResult = runCompletenessDeferral(session, configId, tokenContext.cnfJkt)
+        if (completenessResult != null) return completenessResult
 
         // 6b. Resolve credential design if a design service is available
         val tenantId = execution.sessionContext.context.tenant.tenantId
@@ -491,6 +580,7 @@ class HandleCredentialRequestCommandImpl(
                                             signingCertChainPath = signingConfig?.signingCertChainPath,
                                             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
                                             expirationInDays = signingConfig?.expirationInDays,
+                                            statusListBinding = issuerConfigProvider.statusListBindings[configId],
                                         )
                                     handler.issueCredential(request, issuanceContext)
                                 }
@@ -505,26 +595,7 @@ class HandleCredentialRequestCommandImpl(
 
                 // If any credential in the batch is deferred, the entire response is deferred
                 if (envelopes.any { it.deferred }) {
-                    val transactionId = Uuid.random().toString()
-                    val now = Clock.System.now()
-                    val entry =
-                        DeferredCredentialEntry(
-                            transactionId = transactionId,
-                            issuanceSessionId = session?.sessionId ?: "",
-                            credentialConfigurationId = configId,
-                            status = DeferredCredentialStatus.PENDING,
-                            retryAfterSeconds = 5,
-                            createdAt = now.toEpochMilliseconds(),
-                            expiresAt = now.plus(1.hours).toEpochMilliseconds(),
-                        )
-                    deferredStore.create(entry).getOrElse { return Err(it) }
-
-                    return Ok(
-                        CredentialResponse(
-                            transactionId = transactionId,
-                            interval = entry.retryAfterSeconds,
-                        ),
-                    )
+                    return Ok(createDeferredResponse(session, configId, tokenContext.cnfJkt).getOrElse { return Err(it) })
                 }
 
                 var notificationId: String? = null
@@ -561,6 +632,7 @@ class HandleCredentialRequestCommandImpl(
                         signingKeyMode = signingConfig?.signingKeyMode ?: SigningKeyMode.None,
                         signingCertChainPath = signingConfig?.signingCertChainPath,
                         expirationInDays = signingConfig?.expirationInDays,
+                        statusListBinding = issuerConfigProvider.statusListBindings[configId],
                     )
 
                 val envelope =
@@ -569,26 +641,7 @@ class HandleCredentialRequestCommandImpl(
                         .getOrElse { return Err(it) }
 
                 if (envelope.deferred) {
-                    val transactionId = Uuid.random().toString()
-                    val now = Clock.System.now()
-                    val entry =
-                        DeferredCredentialEntry(
-                            transactionId = transactionId,
-                            issuanceSessionId = session?.sessionId ?: "",
-                            credentialConfigurationId = configId,
-                            status = DeferredCredentialStatus.PENDING,
-                            retryAfterSeconds = 5,
-                            createdAt = now.toEpochMilliseconds(),
-                            expiresAt = now.plus(1.hours).toEpochMilliseconds(),
-                        )
-                    deferredStore.create(entry).getOrElse { return Err(it) }
-
-                    return Ok(
-                        CredentialResponse(
-                            transactionId = transactionId,
-                            interval = entry.retryAfterSeconds,
-                        ),
-                    )
+                    return Ok(createDeferredResponse(session, configId, tokenContext.cnfJkt).getOrElse { return Err(it) })
                 }
 
                 CredentialResponse(
@@ -604,6 +657,211 @@ class HandleCredentialRequestCommandImpl(
 
         return Ok(response)
     }
+
+    /**
+     * §6.1 completeness-driven deferral decision tree.
+     *
+     * Runs only when an EDK pipeline is bound to this issuance (the session carries a
+     * [IssuanceSession.pipelineCorrelationId]) and [evaluateAttributeCompletenessCommand] is on
+     * the classpath. The attribute contributor has already run the pipeline's CREDENTIAL_REQUEST
+     * phase, so the attribute bag the verdicts are computed against is fully populated at this
+     * point.
+     *
+     * Returns:
+     * - `null` when the gate does not fire (no `pipelineCorrelationId`, command not injected, or
+     *   all attributes complete with no approval pending): the caller falls through to the format
+     *   handler.
+     * - [Ok] with a deferred [CredentialResponse] when every deferral candidate is either
+     *   incomplete-but-deferrable or awaiting approval. The session status is updated to
+     *   [IssuanceSessionStatus.DEFERRED].
+     * - [Err] when at least one incomplete binding is not deferrable (mandatory claim missing).
+     */
+    private suspend fun runCompletenessDeferral(
+        session: IssuanceSession?,
+        configId: String,
+        cnfJkt: String?,
+    ): IdkResult<CredentialResponse, IdkError>? {
+        val nonNullSession = session?.takeIf { it.pipelineCorrelationId != null }
+        val command = evaluateAttributeCompletenessCommand
+        if (nonNullSession == null || command == null) return null
+        val completenessResult = evaluateCompleteness(nonNullSession, command)
+        if (completenessResult.isErr) return Err(completenessResult.error)
+        return if (completenessResult.value) {
+            createDeferredResponse(nonNullSession, configId, cnfJkt)
+                .also {
+                    if (it.isOk) {
+                        sessionStore.update(nonNullSession.copy(status = IssuanceSessionStatus.DEFERRED))
+                    }
+                }
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Evaluates whether issuance should be deferred based on attribute completeness verdicts from
+     * the pipeline. Returns [Ok]`(true)` when deferral is warranted, [Ok]`(false)` when all
+     * attributes are complete with no approval pending, and [Err] when a mandatory claim is
+     * missing and cannot be deferred.
+     */
+    private suspend fun evaluateCompleteness(
+        session: IssuanceSession,
+        command: EvaluateAttributeCompletenessCommand,
+    ): IdkResult<Boolean, IdkError> {
+        val verdicts =
+            command
+                .execute(EvaluateAttributeCompletenessArgs(session.pipelineCorrelationId!!))
+                .getOrElse { return Err(it) }
+                .verdicts
+        val deferralCandidates = verdicts.filter { !it.complete || it.awaitingApproval }
+        if (deferralCandidates.isEmpty()) return Ok(false)
+        val missingClaimsError = buildMissingClaimsError(deferralCandidates)
+        return if (missingClaimsError != null) {
+            Err(missingClaimsError)
+        } else {
+            Ok(true)
+        }
+    }
+
+    /**
+     * Returns an [IdkError] when any of the deferral candidates are incomplete but not deferrable
+     * (mandatory claims missing without a deferral recommendation), or `null` when all candidates
+     * are either deferrable or awaiting approval.
+     */
+    private fun buildMissingClaimsError(deferralCandidates: List<BindingCompletenessVerdict>): IdkError? {
+        val notDeferrable = deferralCandidates.filter { !it.complete && !it.deferralRecommended }
+        if (notDeferrable.isEmpty()) return null
+        val missing =
+            notDeferrable
+                .flatMap { verdict -> verdict.missingRequiredPaths.map { it.value } }
+                .distinct()
+        return IdkError.fromString(
+            code = INVALID_CREDENTIAL_REQUEST,
+            message = "missing mandatory claims: ${missing.joinToString()}",
+        )
+    }
+
+    /**
+     * Build the deferred-credential response: persist a PENDING [DeferredCredentialEntry] keyed by
+     * a fresh transaction id and return the OID4VCI 1.0 §8.3.4 deferred response carrying that
+     * `transaction_id` and the poll `interval`.
+     *
+     * Shared by every deferral trigger in this command: a format handler returning a deferred
+     * envelope (single and batch) and the §6.1 completeness / approval-gate decision.
+     *
+     * §6.5 wallet-auth invariant: when the AS has refresh tokens disabled, the wallet's original
+     * access token may expire before the deferral resolves. If a [mintDeferralScopedTokenCommand]
+     * is wired and the configured AS does NOT advertise `refresh_token` in `grantTypesEnabled`,
+     * a deferral-scoped token is minted here and threaded onto the response via
+     * [CredentialResponse.additionalParameters]. The common refresh-token-enabled path adds
+     * nothing and the response stays byte-identical to the prior 202 shape.
+     */
+    private suspend fun createDeferredResponse(
+        session: IssuanceSession?,
+        configId: String,
+        cnfJkt: String?,
+    ): IdkResult<CredentialResponse, IdkError> {
+        val transactionId = Uuid.random().toString()
+        val now = Clock.System.now()
+        val entry =
+            DeferredCredentialEntry(
+                transactionId = transactionId,
+                issuanceSessionId = session?.sessionId ?: "",
+                credentialConfigurationId = configId,
+                status = DeferredCredentialStatus.PENDING,
+                retryAfterSeconds = 5,
+                createdAt = now.toEpochMilliseconds(),
+                expiresAt = now.plus(1.hours).toEpochMilliseconds(),
+            )
+        deferredStore.create(entry).getOrElse { return Err(it) }
+        val additional = buildDeferralAccessTokenAdditionals(session, transactionId, cnfJkt)
+        return Ok(
+            CredentialResponse(
+                transactionId = transactionId,
+                interval = entry.retryAfterSeconds,
+                additionalParameters = additional,
+            ),
+        )
+    }
+
+    /**
+     * Returns the additional response parameters to merge onto the deferred 202 — empty when
+     * refresh tokens are enabled (or when no mint command is wired), populated with
+     * `deferral_access_token` / `deferral_access_token_expires_in` when the fallback fires.
+     *
+     * Failure to mint is logged-and-swallowed via the falling-back-to-empty-map path: a deferral
+     * response without the fallback token is still better than failing the whole credential
+     * request — the wallet may still obtain the credential within its original token lifetime.
+     */
+    private suspend fun buildDeferralAccessTokenAdditionals(
+        session: IssuanceSession?,
+        transactionId: String,
+        cnfJkt: String?,
+    ): Map<String, JsonElement> {
+        val request = prepareDeferralTokenMintRequest(session, transactionId, cnfJkt) ?: return emptyMap()
+        val minted =
+            request.mint
+                .execute(
+                    MintDeferralScopedTokenArgs(
+                        correlationId = request.correlationId,
+                        transactionId = transactionId,
+                        ttlSeconds = request.ttlSeconds,
+                        cnfJkt = cnfJkt,
+                    ),
+                ).getOrElse { return emptyMap() }
+        return mapOf(
+            DEFERRAL_ACCESS_TOKEN to JsonPrimitive(minted.accessToken),
+            DEFERRAL_ACCESS_TOKEN_EXPIRES_IN to JsonPrimitive(minted.expiresInSeconds),
+        )
+    }
+
+    /**
+     * Resolves the inputs needed to mint a deferral-scoped access token, or returns null when any
+     * precondition fails (no mint command wired, no AS config provider wired, refresh tokens are
+     * already enabled on the AS, or the deferred session lacks both a pipeline correlation id and
+     * a session id). Centralising the bail-outs keeps the mint call site free of `return`s.
+     */
+    private fun prepareDeferralTokenMintRequest(
+        session: IssuanceSession?,
+        @Suppress("UnusedParameter") transactionId: String,
+        @Suppress("UnusedParameter") cnfJkt: String?,
+    ): DeferralTokenMintRequest? {
+        val mint = mintDeferralScopedTokenCommand
+        val asConfig =
+            oauth2ConfigProvider
+                ?.serverConfig
+                ?.takeUnless { REFRESH_TOKEN_GRANT in it.grantTypesEnabled }
+        val correlationId = session?.pipelineCorrelationId ?: session?.sessionId
+        return if (mint == null || asConfig == null || correlationId == null) {
+            null
+        } else {
+            DeferralTokenMintRequest(
+                mint = mint,
+                correlationId = correlationId,
+                ttlSeconds = resolveDeferralTokenTtlSeconds(),
+            )
+        }
+    }
+
+    private data class DeferralTokenMintRequest(
+        val mint: MintDeferralScopedTokenCommand,
+        val correlationId: String,
+        val ttlSeconds: Long,
+    )
+
+    /**
+     * Returns the TTL the deferral-scoped token should carry. Reads the operator-configured
+     * value at [CONFIG_KEY_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS]; when unset, defaults to
+     * [DEFAULT_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS] (matches `DeferralPolicy.maxDeferralSeconds`'s
+     * 7-day default). The token must outlive `maxDeferralSeconds` so wallets polling near the
+     * end of the deferral window still authenticate; the §6.5 invariant validator
+     * ([com.sphereon.openid.oid4vci.issuer.config.DeferralWalletAuthValidator]) enforces that
+     * relationship at config-load time.
+     */
+    private fun resolveDeferralTokenTtlSeconds(): Long =
+        propertyResolver
+            ?.getProperty(CONFIG_KEY_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS, Long::class)
+            ?: DEFAULT_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS
 
     /**
      * Dispatch proof verification to the appropriate [ProofVerifier] based on proof type.
@@ -639,4 +897,76 @@ class HandleCredentialRequestCommandImpl(
             vct = vct,
             doctype = doctype,
         )
+
+    private companion object {
+        const val INVALID_CREDENTIAL_REQUEST = "invalid_credential_request"
+
+        // §6.5 wallet-auth invariant — additional-parameter keys returned on the 202 when a
+        // deferral-scoped access token is minted as a fallback for refresh-token-disabled AS.
+        const val DEFERRAL_ACCESS_TOKEN = "deferral_access_token"
+        const val DEFERRAL_ACCESS_TOKEN_EXPIRES_IN = "deferral_access_token_expires_in"
+        const val REFRESH_TOKEN_GRANT = "refresh_token"
+
+        // §6.5 wallet-auth invariant — operator-configured TTL for the minted deferral-scoped
+        // access token. Must be sized to outlive the configured `DeferralPolicy.maxDeferralSeconds`;
+        // the DeferralWalletAuthValidator enforces that relationship at config-load.
+        const val CONFIG_KEY_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS: String =
+            "oid4vci.issuer.deferral-scoped-token.default-ttl-seconds"
+
+        // 7 days — matches `DeferralPolicy.maxDeferralSeconds`'s default so an out-of-the-box
+        // deployment with the deferral-scoped-token fallback enabled covers the full deferral
+        // window without further tuning.
+        const val DEFAULT_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS: Long = 7L * 24 * 3600
+    }
 }
+
+/**
+ * §6.5.7 sync-wait fast-path. Returns true when every pending async-callback source resolved
+ * via [CallbackCoordinator.awaitContribution] within the contribution's
+ * [CredentialAttributeContribution.syncWaitWindow]. Returns false when any precondition was
+ * missing (no [coordinator] wired, no [correlationId] join key, empty pending set, zero or
+ * negative window) OR when [withTimeout] fires before all awaits resolve.
+ *
+ * A `false` return signals the caller to keep the original contribution and fall through to the
+ * §6.1 deferral decision (the natural 202 path). A `true` return signals the caller to re-run
+ * the contributor so the freshly-arrived attributes flow into the merge before format dispatch.
+ *
+ * Hard-cap of [CredentialAttributeContribution.syncWaitWindow] against the LB / HTTP
+ * request-timeout is a follow-up: the plan §7.5 calls for clamping at config-load to
+ * `min(httpRequestTimeout, lbTimeout) - margin`, but those values are not currently surfaced to
+ * the issuer command. TODO(phase-3-followup): wire those bounds in once the issuer config
+ * provider exposes them.
+ */
+private suspend fun awaitPendingAsyncContributions(
+    coordinator: CallbackCoordinator?,
+    correlationId: String?,
+    contribution: CredentialAttributeContribution,
+): Boolean {
+    val pending = contribution.pendingAsyncCallbackSources.takeIf { it.isNotEmpty() }
+    val window = contribution.syncWaitWindow.takeIf { it > Duration.ZERO }
+    val ready = coordinator != null && correlationId != null && pending != null && window != null
+    if (!ready) {
+        return false
+    }
+    return runWithinSyncWaitWindow(coordinator!!, correlationId!!, pending!!, window!!)
+}
+
+private suspend fun runWithinSyncWaitWindow(
+    coordinator: CallbackCoordinator,
+    correlationId: String,
+    pending: Set<com.sphereon.attribute.flow.AttributeProvenanceRef>,
+    window: Duration,
+): Boolean =
+    try {
+        withTimeout(window) {
+            coroutineScope {
+                pending
+                    .map { sourceId ->
+                        async { coordinator.awaitContribution(correlationId, sourceId.value) }
+                    }.awaitAll()
+            }
+        }
+        true
+    } catch (expected: TimeoutCancellationException) {
+        false
+    }

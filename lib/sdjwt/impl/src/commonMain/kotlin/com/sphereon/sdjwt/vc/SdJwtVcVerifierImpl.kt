@@ -22,6 +22,11 @@ import com.sphereon.sdjwt.KeyBindingJwt
 import com.sphereon.sdjwt.SdJwtCompact
 import com.sphereon.sdjwt.SdJwtVerificationResult
 import com.sphereon.sdjwt.VerifySdJwtArgs
+import com.sphereon.statuslist.CredentialStatusDecision
+import com.sphereon.statuslist.CredentialStatusPolicy
+import com.sphereon.statuslist.describeStatus
+import com.sphereon.statuslist.evaluateCredentialStatus
+import com.sphereon.statuslist.spi.CredentialStatusVerifier
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -35,6 +40,7 @@ import kotlinx.serialization.json.jsonPrimitive
 internal class SdJwtVcVerifierImpl(
     private val baseVerifier: suspend (VerifySdJwtArgs) -> IdkResult<SdJwtVerificationResult, IdkError>,
     private val httpClient: HttpClient,
+    private val credentialStatusVerifiers: Set<CredentialStatusVerifier> = emptySet(),
 ) : SdJwtVcVerifier {
     override suspend fun verify(
         sdJwtString: String,
@@ -309,13 +315,23 @@ internal class SdJwtVcVerifierImpl(
         }
     }
 
-    private fun checkStatus(_payload: JsonObject): SdJwtVcVerificationError? {
-        // TODO: Implement status checking
-        // This would involve:
-        // 1. Extract status claim from payload
-        // 2. Resolve status list if present
-        // 3. Check revocation/validity
-        // For now, just return null (no status check)
-        return null
+    /**
+     * Checks the credential's status against the configured [credentialStatusVerifiers] (IETF Token
+     * Status List, W3C Bitstring, ...) under the strict default policy (reject revoked/suspended, fail
+     * closed). Returns null when no verifiers are wired, the credential carries no recognized status
+     * reference, or the status is acceptable; otherwise a [SdJwtVcVerificationError.StatusCheckFailed].
+     *
+     * Shares the OID4VP verifier's status mechanism ([evaluateCredentialStatus] over the pluggable
+     * [CredentialStatusVerifier] set) so SD-JWT VC verification gains every status format the set
+     * supports instead of a hand-rolled Token-Status-List-only path.
+     */
+    private suspend fun checkStatus(payload: JsonObject): SdJwtVcVerificationError? {
+        if (credentialStatusVerifiers.isEmpty()) return null
+        val evaluation = evaluateCredentialStatus(credentialStatusVerifiers, payload, CredentialStatusPolicy())
+        if (evaluation.decision != CredentialStatusDecision.REJECT) return null
+        val word = evaluation.rejectedStatus?.let { describeStatus(it) }
+        return SdJwtVcVerificationError.StatusCheckFailed(
+            if (word != null) "credential is $word" else (evaluation.reason ?: "credential status not accepted"),
+        )
     }
 }

@@ -17,11 +17,9 @@
 
 package com.sphereon.crypto.core.interop
 
-import at.asitplus.awesn1.Asn1Element
-import at.asitplus.awesn1.Asn1Sequence
 import at.asitplus.awesn1.crypto.Pkcs8PrivateKeyInfo
 import at.asitplus.awesn1.crypto.SubjectPublicKeyInfo
-import at.asitplus.awesn1.encoding.parse
+import at.asitplus.awesn1.serialization.DER
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
@@ -45,6 +43,8 @@ import dev.whyoleg.cryptography.algorithms.ECDSA
 import dev.whyoleg.cryptography.algorithms.SHA256
 import dev.whyoleg.cryptography.algorithms.SHA384
 import dev.whyoleg.cryptography.algorithms.SHA512
+import kotlinx.serialization.decodeFromByteArray
+import kotlinx.serialization.encodeToByteArray
 
 /*
  * These functions serve as conversions and interop between our crypto implementation and external libraries:
@@ -122,12 +122,10 @@ fun convertDerECKeyBytesToJwk(
 ): Jwk {
     val jwk: Jwk
     if (privateKeyBytes != null) {
-        val seq = Asn1Element.parse(privateKeyBytes) as Asn1Sequence
-        val pkcs8 = Pkcs8PrivateKeyInfo.decodeFromTlv(seq)
+        val pkcs8 = DER.decodeFromByteArray<Pkcs8PrivateKeyInfo>(privateKeyBytes)
         jwk = pkcs8.toJwk()
     } else {
-        val seq = Asn1Element.parse(publicKeyBytes) as Asn1Sequence
-        val spki = SubjectPublicKeyInfo.decodeFromTlv(seq)
+        val spki = DER.decodeFromByteArray<SubjectPublicKeyInfo>(publicKeyBytes)
         jwk = spki.toJwk()
     }
     val use = use.value
@@ -161,7 +159,7 @@ fun resolveEcdsaKmpDigest(alg: SignatureAlgorithm): CryptographyAlgorithmId<Dige
  */
 fun toDerEcdsaPublicKeyBytes(key: JwkType): ByteArray {
     val jwk = Jwk.from(key)
-    return jwk.toSubjectPublicKeyInfo().encodeToTlv().derEncoded
+    return DER.encodeToByteArray(jwk.toSubjectPublicKeyInfo())
 }
 
 /**
@@ -172,7 +170,7 @@ fun toDerEcdsaPrivateKeyBytes(key: JwkType): ByteArray {
     require(key.d != null) { "Cannot convert to private key bytes if the input key is not a private key jwk (missing d param)" }
 
     val jwk = CoseJoseKeyMappingService.toJoseJwk(key)
-    return jwk.toPkcs8PrivateKeyInfo().encodeToTlv().derEncoded
+    return DER.encodeToByteArray(jwk.toPkcs8PrivateKeyInfo())
 }
 
 suspend fun toDerEcdsaPublicKey(

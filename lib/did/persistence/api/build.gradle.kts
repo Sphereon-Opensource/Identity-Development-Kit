@@ -36,6 +36,7 @@ kotlin {
                 api(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
+                api(sphereonlib.app.cash.sqldelight.runtime)
             }
         }
         val commonTest by getting {

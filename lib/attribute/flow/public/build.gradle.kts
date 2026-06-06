@@ -24,6 +24,8 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(projects.libCoreApiPublic)
+                api(projects.libCryptoCorePublic)
+                api(projects.libDataStoreBlobPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
             }
         }

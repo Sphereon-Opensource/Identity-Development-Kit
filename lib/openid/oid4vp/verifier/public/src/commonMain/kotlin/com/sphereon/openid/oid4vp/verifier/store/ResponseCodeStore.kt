@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vp.verifier.store
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.openid.oid4vp.common.store.SessionStore
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.StoredAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult

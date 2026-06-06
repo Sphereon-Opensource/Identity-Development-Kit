@@ -32,6 +32,17 @@ import kotlin.time.Instant
 @JsExportCompat
 data class BlobDescriptor(
     val path: String,
+    /**
+     * The CONFIGURED registry id of the store this blob lives in (e.g. `"default"` from
+     * `blob.stores.default.*`), NOT the backend scheme id ([BlobStore.schemeId], e.g. `"memory"`
+     * or `"filesystem"`).
+     *
+     * Backend [BlobStore] implementations stamp their own scheme id here, but [BlobService]
+     * normalises it to the configured id on every caller-facing descriptor before it leaves the
+     * service. Callers may therefore round-trip this value straight back into [BlobInfo.storeId]
+     * for a subsequent operation. Descriptors observed directly from a [BlobStore] (below the
+     * service boundary) still carry the scheme id.
+     */
     val storeId: String,
     val sizeBytes: Long,
     val contentType: String? = null,

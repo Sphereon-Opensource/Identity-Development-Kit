@@ -236,6 +236,14 @@ data class OAuth2ServerInstanceConfig(
     // Browser-login session lifetimes (OIDC Core 1.0 §2 auth_time, prompt/max_age semantics)
     val session: SessionConfig = SessionConfig(),
     /**
+     * Optional plain-text notice rendered above the credential form on the AS login page (for
+     * example, a demo deployment advertising its seeded test account). Null or blank renders
+     * nothing, so production deployments that never set it carry no extra markup. The renderer
+     * treats this as plain text and HTML-escapes it. Config key:
+     * `${CONFIG_PREFIX}.<asId>.login-notice`.
+     */
+    val loginNotice: String? = null,
+    /**
      * Whether the AS may derive its outbound URL scheme/host from `X-Forwarded-Proto` /
      * `X-Forwarded-Host` / `Host` request headers when [issuer] is not configured. Defaults to
      * `true` so existing dev deployments behind a single trusted reverse proxy keep working

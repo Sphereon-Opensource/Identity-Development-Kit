@@ -4,6 +4,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.defaults.http.NoOpRoutableSlugLookup
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
@@ -12,11 +13,22 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
+import com.sphereon.openid.oid4vci.issuer.config.NoOpVctTypeMetadataProvider
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.ApprovePipelineSessionEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeAttributesEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeViaCallbackEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.DefaultOid4vciIssuerPublicUrlResolver
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.EvaluateCompletenessEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.FailPipelineSourceEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.FakeContributeAttributesCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetIssuerMetadataEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetSessionAttributesEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetVctTypeMetadataEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEndpointCommandImpl
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.InitPipelineSessionEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.IssueNonceEndpointCommandImpl
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -38,7 +50,16 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
     private val execution = TestSessionExecution()
     private val fakeConfigProvider = FakeOid4vciIssuerConfigProvider()
     private val fakeOfferStore = FakeCredentialOfferStore()
+    private val fakeOfferSessionStore = FakeCredentialOfferSessionStore()
+    private val rateLimiterClock =
+        object : kotlin.time.Clock {
+            override fun now(): kotlin.time.Instant = kotlin.time.Instant.parse("2026-05-15T12:00:00Z")
+        }
+    private val offerRateLimiter =
+        com.sphereon.openid.oid4vci.issuer.impl.command
+            .InMemoryOfferRateLimiter(rateLimiterClock)
     private val fakeDecryptJweCommand = FakeDecryptJweCommand()
+    private val fakeCreateCredentialOffer = FakeCreateCredentialOfferCommand()
 
     // Fake service commands
     private val fakeBuildMetadata = FakeBuildIssuerMetadataCommand()
@@ -63,8 +84,17 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeConfigProvider,
             fakeRestConfigProvider,
             FakeMultiManagedIdentifierService,
+            DefaultOid4vciIssuerPublicUrlResolver(),
         )
-    private val credentialOfferCommand = GetCredentialOfferEndpointCommandImpl(execution, fakeOfferStore, FakeCredentialIssuanceSessionStore())
+    private val credentialOfferCommand =
+        GetCredentialOfferEndpointCommandImpl(
+            execution,
+            fakeOfferStore,
+            FakeCredentialIssuanceSessionStore(),
+            fakeOfferSessionStore,
+            offerRateLimiter,
+            fakeCreateCredentialOffer,
+        )
     private val nonceCommand = IssueNonceEndpointCommandImpl(execution, fakeIssueNonce)
 
     // Real CredentialResponseEncryptor wired with a JweService that throws — none of the
@@ -95,17 +125,46 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeConfigProvider,
         )
     private val notificationCommand = HandleNotificationEndpointCommandImpl(execution, fakeHandleNotification, fakeConfigProvider)
+    private val contributeAttributesCommand = ContributeAttributesEndpointCommandImpl(execution, FakeContributeAttributesCommand())
+    private val initPipelineSessionCommand = InitPipelineSessionEndpointCommandImpl(execution, initPipelineSessionCommand = null)
+    private val evaluateCompletenessCommand = EvaluateCompletenessEndpointCommandImpl(execution, evaluateAttributeCompletenessCommand = null)
+    private val getSessionAttributesCommand = GetSessionAttributesEndpointCommandImpl(execution, getSessionAttributesCommand = null)
+    private val contributeViaCallbackCommand =
+        ContributeViaCallbackEndpointCommandImpl(
+            execution,
+            callbackTokenService = null,
+            contributeAttributesCommand = null,
+            callbackCoordinator = null,
+        )
+    private val failPipelineSourceCommand = FailPipelineSourceEndpointCommandImpl(execution, failPipelineSourceCommand = null)
+    private val approvePipelineSessionCommand = ApprovePipelineSessionEndpointCommandImpl(execution, approvePipelineSessionCommand = null)
 
     // Adapters
-    private val metadataAdapter = Oid4vciIssuerMetadataHttpAdapter(execution, metadataCommand)
+    private val metadataAdapter =
+        Oid4vciIssuerMetadataHttpAdapter(
+            execution,
+            NoOpRoutableSlugLookup(),
+            testTenantIdProvider(),
+            metadataCommand,
+        )
     private val protocolAdapter =
         Oid4vciIssuerProtocolHttpAdapter(
             execution,
+            NoOpRoutableSlugLookup(),
+            testTenantIdProvider(),
             credentialOfferCommand,
             nonceCommand,
             credentialCommand,
             deferredCommand,
             notificationCommand,
+            contributeAttributesCommand,
+            initPipelineSessionCommand,
+            evaluateCompletenessCommand,
+            getSessionAttributesCommand,
+            contributeViaCallbackCommand,
+            failPipelineSourceCommand,
+            approvePipelineSessionCommand,
+            GetVctTypeMetadataEndpointCommandImpl(execution, NoOpVctTypeMetadataProvider),
         )
 
     // ========================================================================
@@ -188,6 +247,152 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
 
             assertEquals(404, response.statusCode)
         }
+
+    @Test
+    fun singleUseOfferReturns200WithoutNoStoreCacheControl() =
+        runTest {
+            val offer =
+                CredentialOffer(
+                    credentialIssuer = "https://issuer.example.com",
+                    credentialConfigurationIds = listOf("TestCred"),
+                )
+            fakeOfferStore.putOffer("single-use-offer", offer)
+            fakeOfferSessionStore.putSession(
+                singleUseSession(offerId = "single-use-offer"),
+            )
+
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/oid4vci/credentials/offers/single-use-offer",
+                )
+
+            val response = protocolAdapter.handleRequest(request)
+
+            assertEquals(200, response.statusCode)
+            assertNotNull(response.body)
+            // SINGLE_USE keeps the pre-Task-4.3 behaviour: no reusable no-store cache directive.
+            assertEquals("application/json", response.headers["Content-Type"])
+            assertTrue(response.headers["Cache-Control"] != "no-store, no-cache, must-revalidate")
+        }
+
+    @Test
+    fun reusableOfferOverRateLimitReturns429() =
+        runTest {
+            val offer =
+                CredentialOffer(
+                    credentialIssuer = "https://issuer.example.com",
+                    credentialConfigurationIds = listOf("TestCred"),
+                )
+            fakeOfferStore.putOffer("reusable-offer", offer)
+            fakeOfferSessionStore.putSession(
+                reusableSession(
+                    offerId = "reusable-offer",
+                    rateLimit =
+                        com.sphereon.openid.oid4vci.issuer.command
+                            .OfferRateLimit(maxPerWindow = 1, windowSeconds = 60),
+                ),
+            )
+
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/oid4vci/credentials/offers/reusable-offer",
+                )
+
+            // First fetch consumes the only slot in the window.
+            protocolAdapter.handleRequest(request)
+            // Second fetch is over the limit.
+            val response = protocolAdapter.handleRequest(request)
+
+            assertEquals(429, response.statusCode)
+            assertEquals("no-store, no-cache, must-revalidate", response.headers["Cache-Control"])
+        }
+
+    @Test
+    fun reusableOfferWithinRateLimitMintsFreshOfferPerFetch() =
+        runTest {
+            val offer =
+                CredentialOffer(
+                    credentialIssuer = "https://issuer.example.com",
+                    credentialConfigurationIds = listOf("TestCred"),
+                )
+            fakeOfferStore.putOffer("reusable-offer-2", offer)
+            fakeOfferSessionStore.putSession(
+                reusableSession(
+                    offerId = "reusable-offer-2",
+                    rateLimit =
+                        com.sphereon.openid.oid4vci.issuer.command
+                            .OfferRateLimit(maxPerWindow = 5, windowSeconds = 60),
+                ),
+            )
+
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/oid4vci/credentials/offers/reusable-offer-2",
+                )
+
+            val first = protocolAdapter.handleRequest(request)
+            val second = protocolAdapter.handleRequest(request)
+
+            // Both fetches succeed with the reusable no-store cache directive.
+            assertEquals(200, first.statusCode)
+            assertEquals(200, second.statusCode)
+            assertEquals("no-store, no-cache, must-revalidate", first.headers["Cache-Control"])
+            assertEquals("no-store, no-cache, must-revalidate", second.headers["Cache-Control"])
+
+            // The fresh-per-fetch property: each GET mints a brand-new inner offer. The protocol
+            // CredentialOffer wire object carries no correlation_id, so the per-mint distinguishing
+            // value is the freshly registered pre-authorized code inside `grants`.
+            assertNotNull(first.body)
+            assertNotNull(second.body)
+            val firstCode = preAuthorizedCodeOf(first.body!!)
+            val secondCode = preAuthorizedCodeOf(second.body!!)
+            assertNotNull(firstCode)
+            assertNotNull(secondCode)
+            assertTrue(firstCode != secondCode, "two GETs on the same reusable URI must mint distinct inner offers")
+        }
+
+    private fun preAuthorizedCodeOf(body: String): String? =
+        json
+            .parseToJsonElement(body)
+            .jsonObject["grants"]
+            ?.jsonObject
+            ?.get("urn:ietf:params:oauth:grant-type:pre-authorized_code")
+            ?.jsonObject
+            ?.get("pre-authorized_code")
+            ?.jsonPrimitive
+            ?.content
+
+    private fun singleUseSession(offerId: String) =
+        com.sphereon.openid.oid4vci.rest.CredentialOfferSession(
+            correlationId = "corr-$offerId",
+            offerId = offerId,
+            status = com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
+            createdAt = 0L,
+            lastUpdatedAt = 0L,
+            uriLifecycle = com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle.SINGLE_USE,
+        )
+
+    private fun reusableSession(
+        offerId: String,
+        rateLimit: com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit,
+    ) = com.sphereon.openid.oid4vci.rest.CredentialOfferSession(
+        correlationId = "corr-$offerId",
+        offerId = offerId,
+        status = com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
+        createdAt = 0L,
+        lastUpdatedAt = 0L,
+        uriLifecycle = com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,
+        rateLimit = rateLimit,
+        offerTemplate =
+            com.sphereon.openid.oid4vci.rest.CredentialOfferTemplate(
+                issuerId = "https://issuer.example.com",
+                credentialConfigurationIds = listOf("TestCred"),
+                preAuthorizedCodeGrant = true,
+            ),
+    )
 
     // ========================================================================
     // 3. Nonce endpoint

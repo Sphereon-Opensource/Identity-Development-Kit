@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.http.describe
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.jvm.JvmStatic
@@ -143,6 +144,7 @@ data class HttpAdapterMount(
     val serverPrefix: String,
     val adapterBasePath: String,
     val tenantPathMode: TenantPathMode = TenantPathMode.OFF,
+    val tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None,
     val tenantSegmentPattern: String = DEFAULT_TENANT_SEGMENT_PATTERN,
     val tenantResolutionPriority: TenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH,
 ) {

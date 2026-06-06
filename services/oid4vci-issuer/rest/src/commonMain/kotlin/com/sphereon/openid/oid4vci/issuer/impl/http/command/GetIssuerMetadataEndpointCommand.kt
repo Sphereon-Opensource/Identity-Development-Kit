@@ -138,6 +138,27 @@ interface GetIssuerMetadataEndpointCommand : HttpEndpointCommand {
             )
         }
 
+        /**
+         * Spec-compliant OID4VCI 1.0 discovery descriptor. For issuer identifier
+         * `https://host/<issuer-path>`, metadata lives at
+         * `https://host/.well-known/openid-credential-issuer/<issuer-path>`.
+         */
+        fun specDescriptorFor(issuerIdentifier: String): HttpEndpointDescriptor {
+            val issuerPath = extractIssuerPath(issuerIdentifier)
+            val pattern = if (issuerPath.isBlank()) BARE_PATH else "$BARE_PATH$issuerPath"
+            return ENDPOINT.copy(pathPatterns = listOf(pattern))
+        }
+
+        /**
+         * Legacy prefix discovery descriptor retained for older wallets that still
+         * request `/<issuer-path>/.well-known/openid-credential-issuer`.
+         */
+        fun legacyPrefixDescriptorFor(issuerIdentifier: String): HttpEndpointDescriptor {
+            val issuerPath = extractIssuerPath(issuerIdentifier)
+            val pattern = if (issuerPath.isBlank()) BARE_PATH else "$issuerPath$BARE_PATH"
+            return ENDPOINT.copy(pathPatterns = listOf(pattern))
+        }
+
         private const val SCHEME_SEPARATOR_LENGTH = 3
     }
 }
@@ -152,6 +173,7 @@ class GetIssuerMetadataEndpointCommandImpl(
     private val configProvider: Oid4vciIssuerConfigProvider,
     private val restConfigProvider: Oid4vciRestConfigProvider,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
+    private val publicUrlResolver: Oid4vciIssuerPublicUrlResolver,
 ) : HttpEndpointCommandAdapter(
         id = GetIssuerMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -164,10 +186,10 @@ class GetIssuerMetadataEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
 
-        // Use the REST external-base-url for constructing endpoint URIs (e.g. /oid4vci/credential).
-        // This is the server root, separate from the issuer identifier which may include a path
-        // (e.g. identifier = "https://example.com/oid4vci", base = "https://example.com").
-        val baseUrl = (restConfigProvider.getConfig().externalBaseUrl ?: configProvider.issuerIdentifier).trimEnd('/')
+        val publicUrls =
+            publicUrlResolver
+                .resolve(request, configProvider, restConfigProvider)
+                .getOrElse { error -> return Err(error) }
 
         val acceptHeader = request.headers["Accept"] ?: request.headers["accept"] ?: ""
         val wantsJwt =
@@ -184,8 +206,8 @@ class GetIssuerMetadataEndpointCommandImpl(
         val metadataResult =
             buildMetadataCommand.execute(
                 BuildIssuerMetadataArgs(
-                    issuerIdentifier = configProvider.issuerIdentifier,
-                    baseUrl = baseUrl,
+                    issuerIdentifier = publicUrls.issuerIdentifier,
+                    baseUrl = publicUrls.endpointBaseUrl,
                     authorizationServers = configProvider.authorizationServers,
                     credentialConfigurations = configProvider.credentialConfigurations,
                     display = configProvider.display,
