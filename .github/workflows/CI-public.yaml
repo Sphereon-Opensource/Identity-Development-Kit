@@ -43,6 +43,15 @@ jobs:
           submodules: recursive
       - run: chmod +x ./gradlew
 
+      # Kotlin/Native LinuxX64 linking (ld.lld) resolves -lunistring against the
+      # system, but the runner image doesn't ship it. Without this the native
+      # link step fails with `ld.lld: error: unable to find library -lunistring`.
+      - name: Install native link dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libunistring-dev
+        shell: bash
+
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
