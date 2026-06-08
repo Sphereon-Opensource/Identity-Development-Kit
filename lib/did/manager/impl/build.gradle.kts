@@ -93,6 +93,16 @@ kotlin {
                 implementation(projects.libDidMethodsJwk)
                 implementation(projects.libDidPersistenceMemory)
                 implementation(projects.libDidMethodsWeb)
+                // did:webvh integration: the provider contributes WebvhManagedDidGenerator into
+                // Set<ManagedDidGenerator>, so the manager routes create(method="webvh") to it. The
+                // genesis log entry is signed via the Data Integrity eddsa-jcs-2022 cryptosuite, which
+                // the provider only pulls as a test dep — so the assembling (test) graph supplies it.
+                implementation(projects.libDidMethodsWebvhProvider)
+                implementation(projects.libDidMethodsWebvhResolver)
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                // webvh resolution pulls trust-core; supply its config-provider binding for the merge.
+                implementation(projects.libTrustCoreImpl)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }

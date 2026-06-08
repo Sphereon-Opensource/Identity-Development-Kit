@@ -17,33 +17,47 @@ import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 
 /**
- * Resolves the configurable mount path for the status-list hosting + admin REST surfaces from
- * deployment (app-level) config:
+ * Resolves the configurable mount paths for the status-list PUBLIC hosting and SIMPLE management
+ * (admin) REST surfaces from deployment (app-level) config:
  *
  * ```yaml
  * statuslists:
  *   hosting:
- *     base-path: /public/statuslists          # default: /statuslists
+ *     base-path: /public/statuslists             # default: /public/statuslists (public, cacheable token)
+ *     management-base-path: /api/statuslist/v1   # default: /api/statuslist/v1 (by-index admin)
  *     external-base-url: https://issuer.example  # for the REST publisher to derive statusListUri
  * ```
  *
- * The base path must be known at server startup (the AppScope route-descriptor catalog), so it is an
- * app-level setting — not per-tenant/per-principal. It is the stable, externally referenced root that
- * a hosted `statusListUri` is built on, so issued credentials and the served route never drift.
+ * The hosting + management base paths are decoupled: hosting is the unauthenticated, cacheable
+ * token surface; management is the (production-guarded) by-index admin surface. Both must be known
+ * at server startup (the AppScope route-descriptor catalog), so they are app-level settings — not
+ * per-tenant/per-principal. The hosting path is the stable, externally referenced root that a hosted
+ * `statusListUri` is built on, so issued credentials and the served route never drift.
  *
  * [AppConfigService] is injected via an optional [Provider] so a deployment (or a stub test graph)
- * without it still resolves the graph and falls back to the default
- * [StatusListHostingApiConstants.BASE_PATH].
+ * without it still resolves the graph and falls back to the defaults
+ * [StatusListHostingApiConstants.BASE_PATH] / [StatusListHostingApiConstants.MANAGEMENT_BASE_PATH].
  */
 @Inject
 @SingleIn(AppScope::class)
 class StatusListHostingConfig(
     private val appConfigProvider: Provider<AppConfigService>? = null,
 ) {
-    /** Configured hosting mount, normalised to a leading slash with no trailing slash. */
+    /** Configured PUBLIC hosting mount, normalised to a leading slash with no trailing slash. */
     val basePath: String by lazy {
         val configured = appConfigProvider?.invoke()?.getPropertyAsString(BASE_PATH_KEY)?.takeIf { it.isNotBlank() }
         normalizeBasePath(configured ?: StatusListHostingApiConstants.BASE_PATH)
+    }
+
+    /**
+     * Configured SIMPLE, by-index management (admin) mount, normalised to a leading slash with no
+     * trailing slash. Kept separate from [basePath] so the mutating admin routes never share a prefix
+     * with the cacheable public hosting surface. Defaults to
+     * [StatusListHostingApiConstants.MANAGEMENT_BASE_PATH].
+     */
+    val managementBasePath: String by lazy {
+        val configured = appConfigProvider?.invoke()?.getPropertyAsString(MANAGEMENT_BASE_PATH_KEY)?.takeIf { it.isNotBlank() }
+        normalizeBasePath(configured ?: StatusListHostingApiConstants.MANAGEMENT_BASE_PATH)
     }
 
     /**
@@ -63,6 +77,7 @@ class StatusListHostingConfig(
         // Same root, protocol-neutral `statuslists` namespace the definitions provider reads (no
         // `sphereon.` prefix — config keys map to the top-level YAML block).
         const val BASE_PATH_KEY = "statuslists.hosting.basePath"
+        const val MANAGEMENT_BASE_PATH_KEY = "statuslists.hosting.managementBasePath"
         const val EXTERNAL_BASE_URL_KEY = "statuslists.hosting.externalBaseUrl"
 
         /** Leading slash, no trailing slash, internal slashes preserved (e.g. `/public/statuslists`). */

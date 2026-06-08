@@ -72,6 +72,25 @@ class DidRecordConvertersTest {
         vmKmsBindings = vmKmsBindings,
     )
 
+    // ---- Web location (did:web / did:webvh share the key) ----
+
+    @Test
+    fun webAndWebvhDecomposeToTheSameWebLocation() {
+        val webDid = "did:web:example.com:tenants:acme"
+        val webvhDid = "did:webvh:QmScid123:example.com:tenants:acme"
+        val web = (DidDocument(id = webDid).toDidDetail(ctx(did = webDid)) as Ok).value
+        val webvh = (DidDocument(id = webvhDid).toDidDetail(ctx(did = webvhDid)) as Ok).value
+        assertEquals("example.com:tenants:acme", web.record.webLocation)
+        assertEquals(web.record.webLocation, webvh.record.webLocation, "web and webvh must share the web location")
+    }
+
+    @Test
+    fun nonWebMethodHasNoWebLocation() {
+        val doc = DidDocument(id = "did:example:123")
+        val detail = (doc.toDidDetail(ctx()) as Ok).value
+        assertNull(detail.record.webLocation)
+    }
+
     // ---- Controller (single vs multi) ----
 
     @Test

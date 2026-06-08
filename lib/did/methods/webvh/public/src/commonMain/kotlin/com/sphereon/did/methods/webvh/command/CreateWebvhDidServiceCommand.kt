@@ -72,12 +72,13 @@ data class CreateWebvhDidInput(
      */
     val updateKeyRefs: List<String>,
     /**
-     * Multikey strings (e.g. `z6Mk…`) of the public keys in [updateKeyRefs],
-     * in the same order. These go into `parameters.updateKeys`. The caller
-     * is responsible for ensuring `updateMultikeys[i]` is the multikey form
-     * of the public key corresponding to `updateKeyRefs[i]`.
+     * Multikey strings (e.g. `z6Mk…`) of the public keys in [updateKeyRefs], in the same order; they
+     * go into `parameters.updateKeys`. OPTIONAL: when left empty, the command derives them from the
+     * public keys of [updateKeyRefs] (resolved from the KMS) — callers should not hand-encode
+     * multikeys. Provide them explicitly only to override (each `updateMultikeys[i]` must be the
+     * multikey form of `updateKeyRefs[i]`).
      */
-    val updateMultikeys: List<String>,
+    val updateMultikeys: List<String> = emptyList(),
     /** Pre-rotation: multikey strings of the keys allowed to appear in the *next* entry's updateKeys. */
     val nextKeyMultikeys: List<String> = emptyList(),
     /** Optional witness configuration (threshold + witness DIDs). */

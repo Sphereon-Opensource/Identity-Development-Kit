@@ -6,7 +6,7 @@
     <ID>UnreachableCode:Oid4vcDemoServer.kt$call.respondBytes(response.readRawBytes(), ContentType.Application.Json, HttpStatusCode(response.status.value, ""))</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val response = httpClient.get("$externalBaseUrl/oid4vci/vct/$type")</ID>
-    <ID>UnreachableCode:Oid4vcDemoServer.kt$val response = httpClient.get("$issuerUrl/oid4vci/backend/credential/offers/$id")</ID>
+    <ID>UnreachableCode:Oid4vcDemoServer.kt$val response = httpClient.get("$issuerUrl/api/oid4vci/v1/backend/credential/offers/$id")</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val response = httpClient.get("$verifierUrl/oid4vp/backend/auth/requests/$id")</ID>
     <ID>UnreachableCode:Oid4vcDemoServer.kt$val type = call.parameters["type"] ?: return@get call.respond(HttpStatusCode.BadRequest)</ID>
   </CurrentIssues>

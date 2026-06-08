@@ -41,7 +41,7 @@ import kotlin.test.assertTrue
 
 /**
  * End-to-end integration test ported from the IDK-19 layout to the IDK-21 adapter layer.
- * Paths now go through the `/api/dids/v1` mount; sub-resource segments are hyphenated per the
+ * Paths now go through the `/api/did/v1` mount; sub-resource segments are hyphenated per the
  * IDK-21 spec (`verification-methods`, `verification-relationships`, `key-mappings`, …).
  */
 class DidManagerHttpAdapterE2ETest {
@@ -153,7 +153,7 @@ class DidManagerHttpAdapterE2ETest {
     @Test
     fun didLifecycleFlow_happyPath() =
         runTest {
-            // 1. Register a KMS key first — POST /dids does NOT accept wire-supplied key
+            // 1. Register a KMS key first — POST /identifiers does NOT accept wire-supplied key
             //    material; the server resolves the public JWK from KMS via keyInfo. This
             //    mirrors the production flow: KMS key registration is its own step.
             val createAlias = "rest-e2e-alias"
@@ -173,7 +173,7 @@ class DidManagerHttpAdapterE2ETest {
                 throw expected
             }
 
-            // 2. Create did:key via POST /api/dids/v1/dids referencing the registered key.
+            // 2. Create did:key via POST /api/did/v1/identifiers referencing the registered key.
             //    Body must match the new OpenAPI DidCreateRequest shape — keyInfo envelope,
             //    no wire-supplied publicKeyJwk.
             val createBody =
@@ -192,7 +192,7 @@ class DidManagerHttpAdapterE2ETest {
                     adapter.handleRequest(
                         GenericHttpRequest(
                             method = "POST",
-                            path = "/api/dids/v1/dids",
+                            path = "/api/did/v1/identifiers",
                             headers = mapOf("Content-Type" to "application/json"),
                             bodySupplier = { json.encodeToString(JsonObject.serializer(), createBody) },
                         ),
@@ -209,7 +209,7 @@ class DidManagerHttpAdapterE2ETest {
             assertEquals(
                 201,
                 createResponse.statusCode,
-                "POST /api/dids/v1/dids must create the DID and return 201 once the KMS key " +
+                "POST /api/did/v1/identifiers must create the DID and return 201 once the KMS key " +
                     "is registered (got ${createResponse.statusCode}; body=${createResponse.body})",
             )
             val createdBody =
@@ -231,19 +231,19 @@ class DidManagerHttpAdapterE2ETest {
             )
 
             val listResponse =
-                adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids"))
-            assertEquals(200, listResponse.statusCode, "GET /api/dids/v1/dids should return 200")
+                adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"))
+            assertEquals(200, listResponse.statusCode, "GET /api/did/v1/identifiers should return 200")
             val listBody = listResponse.body
             assertNotNull(listBody)
             val listElement = json.parseToJsonElement(listBody)
             assertTrue(
                 listElement is JsonObject && listElement["items"] is kotlinx.serialization.json.JsonArray,
-                "GET /api/dids/v1/dids must return a DidListResponse envelope with items + page (got $listElement)",
+                "GET /api/did/v1/identifiers must return a DidListResponse envelope with items + page (got $listElement)",
             )
 
             val getResponse =
                 adapter.handleRequest(
-                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids/did:key:nonexistent"),
+                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/did:key:nonexistent"),
                 )
             assertTrue(
                 getResponse.statusCode in setOf(404, 400),
@@ -252,7 +252,7 @@ class DidManagerHttpAdapterE2ETest {
 
             val listVmResponse =
                 adapter.handleRequest(
-                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids/did:key:nonexistent/verification-methods"),
+                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/did:key:nonexistent/verification-methods"),
                 )
             assertTrue(
                 listVmResponse.statusCode in setOf(404, 400),
@@ -263,7 +263,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "POST",
-                        path = "/api/dids/v1/dids/did:key:nonexistent/actions/deactivate",
+                        path = "/api/did/v1/identifiers/did:key:nonexistent/actions/deactivate",
                         headers = mapOf("Content-Type" to "application/json"),
                         bodySupplier = { "{}" },
                     ),
@@ -275,11 +275,11 @@ class DidManagerHttpAdapterE2ETest {
 
             val deleteResponse =
                 adapter.handleRequest(
-                    GenericHttpRequest(method = "DELETE", path = "/api/dids/v1/dids/did:key:nonexistent"),
+                    GenericHttpRequest(method = "DELETE", path = "/api/did/v1/identifiers/did:key:nonexistent"),
                 )
             assertTrue(
                 deleteResponse.statusCode in setOf(204, 404, 400, 500),
-                "DELETE /api/dids/v1/dids/{did} should route (got ${deleteResponse.statusCode})",
+                "DELETE /api/did/v1/identifiers/{did} should route (got ${deleteResponse.statusCode})",
             )
         }
 
@@ -288,7 +288,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             // Regression test for VDX-infra-34t: the wire `options` map must be lifted into
             // the typed DidCreateOptions.domain/path fields that WebDidProviderImpl reads.
-            // Before the fix, POST /dids with method=web always returned 400
+            // Before the fix, POST /identifiers with method=web always returned 400
             // "did:web creation requires a domain in options" regardless of body.
             val webAlias = "rest-e2e-web-alias"
             try {
@@ -329,7 +329,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "POST",
-                        path = "/api/dids/v1/dids",
+                        path = "/api/did/v1/identifiers",
                         headers = mapOf("Content-Type" to "application/json"),
                         bodySupplier = { json.encodeToString(JsonObject.serializer(), createBody) },
                     ),
@@ -337,7 +337,7 @@ class DidManagerHttpAdapterE2ETest {
             assertEquals(
                 201,
                 createResponse.statusCode,
-                "POST /api/dids/v1/dids with method=web and options.domain must create the DID " +
+                "POST /api/did/v1/identifiers with method=web and options.domain must create the DID " +
                     "(got ${createResponse.statusCode}; body=${createResponse.body})",
             )
             val createdDid =
@@ -364,7 +364,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "POST",
-                        path = "/api/dids/v1/dids",
+                        path = "/api/did/v1/identifiers",
                         headers = mapOf("Content-Type" to "application/json"),
                         bodySupplier = { json.encodeToString(JsonObject.serializer(), missingDomainBody) },
                     ),
@@ -384,7 +384,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids",
+                        path = "/api/did/v1/identifiers",
                         queryParameters =
                             mapOf(
                                 "method" to "key",
@@ -401,11 +401,11 @@ class DidManagerHttpAdapterE2ETest {
             val items = payload["items"]?.jsonArray
             assertNotNull(items, "DidListResponse.items must be present")
             assertTrue(items.isEmpty(), "filter by unknown alias must yield zero items, got $items")
-            val pagingMeta = payload["page"]?.jsonObject
-            assertNotNull(pagingMeta, "DidListResponse.page (PagingMeta) must be present")
-            assertEquals(0, pagingMeta["page"]?.jsonPrimitive?.contentOrNull?.toInt(), "page index")
-            assertEquals(10, pagingMeta["size"]?.jsonPrimitive?.contentOrNull?.toInt(), "page size echoed")
-            assertEquals(0, pagingMeta["totalElements"]?.jsonPrimitive?.contentOrNull?.toInt(), "totalElements zero")
+            val pageMeta = payload["page"]?.jsonObject
+            assertNotNull(pageMeta, "DidListResponse.page (PageMeta) must be present")
+            assertEquals(0, pageMeta["page"]?.jsonPrimitive?.contentOrNull?.toInt(), "page index")
+            assertEquals(10, pageMeta["size"]?.jsonPrimitive?.contentOrNull?.toInt(), "page size echoed")
+            assertEquals(0, pageMeta["total"]?.jsonPrimitive?.contentOrNull?.toInt(), "total zero")
         }
 
     @Test
@@ -416,34 +416,34 @@ class DidManagerHttpAdapterE2ETest {
 
             val response =
                 postJson(
-                    path = "/api/dids/v1/dids/external",
+                    path = "/api/did/v1/identifiers/external",
                     body = """{"did":"$external","alias":"rest-tracked"}""",
                 )
             assertEquals(
                 201,
                 response.statusCode,
-                "POST /api/dids/v1/dids/external should return 201; body=${response.body}",
+                "POST /api/did/v1/identifiers/external should return 201; body=${response.body}",
             )
             val payload = json.parseToJsonElement(response.body!!).jsonObject
             assertEquals("EXTERNAL", payload["role"]?.jsonPrimitive?.contentOrNull)
             assertEquals(external, payload["did"]?.jsonPrimitive?.contentOrNull)
 
-            val vmsBody = get("/api/dids/v1/dids/$external/verification-methods").body!!
+            val vmsBody = get("/api/did/v1/identifiers/$external/verification-methods").body!!
             val vms = json.parseToJsonElement(vmsBody).jsonObject["items"]?.jsonArray
             assertNotNull(vms)
             assertTrue(vms.isEmpty(), "EXTERNAL aggregate must not persist VM rows; got $vmsBody")
 
-            val servicesBody = get("/api/dids/v1/dids/$external/services").body!!
+            val servicesBody = get("/api/did/v1/identifiers/$external/services").body!!
             val services = json.parseToJsonElement(servicesBody).jsonObject["items"]?.jsonArray
             assertNotNull(services)
             assertTrue(services.isEmpty(), "EXTERNAL aggregate must not persist service rows")
 
-            val mappingsBody = get("/api/dids/v1/dids/$external/key-mappings").body!!
+            val mappingsBody = get("/api/did/v1/identifiers/$external/key-mappings").body!!
             val mappings = json.parseToJsonElement(mappingsBody).jsonObject["items"]?.jsonArray
             assertNotNull(mappings)
             assertTrue(mappings.isEmpty(), "EXTERNAL aggregate must not persist key-mapping rows")
 
-            val relsBody = get("/api/dids/v1/dids/$external/verification-relationships").body!!
+            val relsBody = get("/api/did/v1/identifiers/$external/verification-relationships").body!!
             val rels = json.parseToJsonElement(relsBody).jsonObject["items"]?.jsonArray
             assertNotNull(rels)
             assertTrue(rels.isEmpty(), "EXTERNAL aggregate must not persist relationship rows")
@@ -482,8 +482,8 @@ class DidManagerHttpAdapterE2ETest {
                     throw expected
                 }
 
-            val listResponse = get("/api/dids/v1/dids/$did/services")
-            assertEquals(200, listResponse.statusCode, "GET /api/dids/v1/dids/{did}/services should return 200")
+            val listResponse = get("/api/did/v1/identifiers/$did/services")
+            assertEquals(200, listResponse.statusCode, "GET /api/did/v1/identifiers/{did}/services should return 200")
             val listed =
                 json
                     .parseToJsonElement(listResponse.body!!)
@@ -500,13 +500,13 @@ class DidManagerHttpAdapterE2ETest {
 
             val patchResponse =
                 patchJson(
-                    path = "/api/dids/v1/dids/$did/services/svc-1",
+                    path = "/api/did/v1/identifiers/$did/services/svc-1",
                     body = """{"serviceEndpoint": "https://example.com/updated"}""",
                 )
             assertEquals(
                 200,
                 patchResponse.statusCode,
-                "PATCH /api/dids/v1/dids/{did}/services/{serviceId} should return 200; body=${patchResponse.body}",
+                "PATCH /api/did/v1/identifiers/{did}/services/{serviceId} should return 200; body=${patchResponse.body}",
             )
             val updated = json.parseToJsonElement(patchResponse.body!!).jsonObject
             assertEquals("svc-1", updated["id"]?.jsonPrimitive?.contentOrNull)
@@ -537,7 +537,7 @@ class DidManagerHttpAdapterE2ETest {
                     }.getOrThrow()
                     .did
             val vmsBefore =
-                json.parseToJsonElement(get("/api/dids/v1/dids/$did/verification-methods").body!!).jsonObject["items"]!!.jsonArray
+                json.parseToJsonElement(get("/api/did/v1/identifiers/$did/verification-methods").body!!).jsonObject["items"]!!.jsonArray
             assertTrue(vmsBefore.isNotEmpty(), "fixture should have at least one VM")
             val firstVm = vmsBefore.first().jsonObject
             val absoluteVmId = firstVm["id"]!!.jsonPrimitive.content
@@ -550,7 +550,7 @@ class DidManagerHttpAdapterE2ETest {
 
             val seedPatch =
                 patchJson(
-                    path = "/api/dids/v1/dids/$did/verification-methods/$vmFragment",
+                    path = "/api/did/v1/identifiers/$did/verification-methods/$vmFragment",
                     body =
                         """
                         {
@@ -561,7 +561,7 @@ class DidManagerHttpAdapterE2ETest {
                 )
             assertEquals(200, seedPatch.statusCode, "seed PATCH failed; body=${seedPatch.body}")
             val seeded =
-                json.parseToJsonElement(get("/api/dids/v1/dids/$did/verification-methods/$vmFragment").body!!).jsonObject
+                json.parseToJsonElement(get("/api/did/v1/identifiers/$did/verification-methods/$vmFragment").body!!).jsonObject
             assertEquals(
                 "authentication",
                 seeded["valueVerificationRelation"]?.jsonPrimitive?.contentOrNull,
@@ -575,7 +575,7 @@ class DidManagerHttpAdapterE2ETest {
 
             val clearPatch =
                 patchJson(
-                    path = "/api/dids/v1/dids/$did/verification-methods/$vmFragment",
+                    path = "/api/did/v1/identifiers/$did/verification-methods/$vmFragment",
                     body =
                         """
                         {
@@ -586,7 +586,7 @@ class DidManagerHttpAdapterE2ETest {
                 )
             assertEquals(200, clearPatch.statusCode, "clearing PATCH should return 200; body=${clearPatch.body}")
             val cleared =
-                json.parseToJsonElement(get("/api/dids/v1/dids/$did/verification-methods/$vmFragment").body!!).jsonObject
+                json.parseToJsonElement(get("/api/did/v1/identifiers/$did/verification-methods/$vmFragment").body!!).jsonObject
             assertTrue(
                 cleared["valueVerificationRelation"] == null || cleared["valueVerificationRelation"] is JsonNull,
                 "explicit null must clear valueVerificationRelation; got ${cleared["valueVerificationRelation"]}",
@@ -600,7 +600,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             val response =
                 adapter.handleRequest(
-                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids/does-not-exist/no-such-subresource"),
+                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/does-not-exist/no-such-subresource"),
                 )
             assertTrue(
                 response.statusCode in setOf(400, 404, 405),
@@ -632,7 +632,7 @@ class DidManagerHttpAdapterE2ETest {
                     "purposes": ["authentication"]
                 }
                 """.trimIndent()
-            val response = postJson("/api/dids/v1/dids/$did/verification-methods", body)
+            val response = postJson("/api/did/v1/identifiers/$did/verification-methods", body)
             assertEquals(422, response.statusCode, "capability rejection must produce 422; body=${response.body}")
             val obj = json.parseToJsonElement(response.body!!).jsonObject
             val code =
@@ -669,7 +669,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "PUT",
-                        path = "/api/dids/v1/dids/$did",
+                        path = "/api/did/v1/identifiers/$did",
                         headers = mapOf("Content-Type" to "application/json"),
                         bodySupplier = { body },
                     ),
@@ -697,7 +697,7 @@ class DidManagerHttpAdapterE2ETest {
             val did = createManagedDidKey("update-vm-cap-422")
             val response =
                 patchJson(
-                    "/api/dids/v1/dids/$did/verification-methods/key-1",
+                    "/api/did/v1/identifiers/$did/verification-methods/key-1",
                     """{ "expiresAt": "2030-01-01T00:00:00Z" }""",
                 )
             assertEquals(422, response.statusCode, "did:key VM update must reject with 422; body=${response.body}")
@@ -723,7 +723,7 @@ class DidManagerHttpAdapterE2ETest {
             val did = createManagedDidKey("update-svc-cap-422")
             val response =
                 patchJson(
-                    "/api/dids/v1/dids/$did/services/svc-nonexistent",
+                    "/api/did/v1/identifiers/$did/services/svc-nonexistent",
                     """{ "type": "LinkedDomains" }""",
                 )
             assertEquals(422, response.statusCode, "did:key service update must reject with 422; body=${response.body}")
@@ -741,7 +741,7 @@ class DidManagerHttpAdapterE2ETest {
     @Test
     fun listSupportedMethods_returnsRegisteredMethods() =
         runTest {
-            val response = get("/api/dids/v1/methods")
+            val response = get("/api/did/v1/methods")
             assertEquals(200, response.statusCode, "body=${response.body}")
             val obj = json.parseToJsonElement(response.body!!).jsonObject
             val items = obj["items"]?.jsonArray ?: error("response had no items array: $obj")
@@ -751,7 +751,7 @@ class DidManagerHttpAdapterE2ETest {
     @Test
     fun getMethodCapabilities_forKey_returnsCapabilityShape() =
         runTest {
-            val response = get("/api/dids/v1/methods/key/capabilities")
+            val response = get("/api/did/v1/methods/key/capabilities")
             assertEquals(200, response.statusCode, "body=${response.body}")
             val obj = json.parseToJsonElement(response.body!!).jsonObject
             assertEquals("key", obj["method"]?.jsonPrimitive?.contentOrNull)
@@ -760,7 +760,7 @@ class DidManagerHttpAdapterE2ETest {
     @Test
     fun getMethodCapabilitySummary_forKey_returnsSummary() =
         runTest {
-            val response = get("/api/dids/v1/methods/key/capabilities/summary")
+            val response = get("/api/did/v1/methods/key/capabilities/summary")
             assertEquals(200, response.statusCode, "body=${response.body}")
             val obj = json.parseToJsonElement(response.body!!).jsonObject
             assertEquals("key", obj["method"]?.jsonPrimitive?.contentOrNull)
@@ -770,7 +770,7 @@ class DidManagerHttpAdapterE2ETest {
     fun invalidateDidDocument_returnsNoContent() =
         runTest {
             val did = createManagedDidKey("invalidate-test")
-            val response = delete("/api/dids/v1/dids/$did/document/cache")
+            val response = delete("/api/did/v1/identifiers/$did/document/cache")
             assertTrue(
                 response.statusCode in setOf(200, 204),
                 "invalidate cache should succeed (got ${response.statusCode}: ${response.body})",
@@ -796,11 +796,11 @@ class DidManagerHttpAdapterE2ETest {
                 did
                     .replace("%", "%25")
                     .replace(":", "%3A")
-            val response = get("/api/dids/v1/dids/$encoded")
+            val response = get("/api/did/v1/identifiers/$encoded")
             assertEquals(
                 200,
                 response.statusCode,
-                "GET /api/dids/v1/dids/{did} must accept the percent-encoded form (encoded='$encoded'; " +
+                "GET /api/did/v1/identifiers/{did} must accept the percent-encoded form (encoded='$encoded'; " +
                     "got ${response.statusCode}: ${response.body}). A 404 here typically means the " +
                     "dispatcher captured the {did} path param without percent-decoding.",
             )
@@ -808,7 +808,7 @@ class DidManagerHttpAdapterE2ETest {
             assertEquals(did, obj["did"]?.jsonPrimitive?.contentOrNull)
         }
 
-    // ===== ?expand= contract — symmetric on GET /dids and GET /dids/{did} =====
+    // ===== ?expand= contract — symmetric on GET /identifiers and GET /identifiers/{did} =====
     //
     // Per spec (Resolution Y): default response is the lightweight `Did`; clients opt
     // into heavier projections via `?expand=document,keys` (or `?expand=all`). The
@@ -820,7 +820,7 @@ class DidManagerHttpAdapterE2ETest {
             val did = createManagedDidKey("expand-default-get")
             val response =
                 adapter.handleRequest(
-                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids/$did"),
+                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/$did"),
                 )
             assertEquals(200, response.statusCode, "body=${response.body}")
             val obj = json.parseToJsonElement(response.body!!).jsonObject
@@ -845,7 +845,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids/$did",
+                        path = "/api/did/v1/identifiers/$did",
                         queryParameters = mapOf("expand" to "document"),
                     ),
                 )
@@ -869,7 +869,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids/$did",
+                        path = "/api/did/v1/identifiers/$did",
                         queryParameters = mapOf("expand" to "keys"),
                     ),
                 )
@@ -929,7 +929,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids/$did",
+                        path = "/api/did/v1/identifiers/$did",
                         queryParameters = mapOf("expand" to "all"),
                     ),
                 )
@@ -949,7 +949,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids/$did",
+                        path = "/api/did/v1/identifiers/$did",
                         queryParameters = mapOf("expand" to "document,keys"),
                     ),
                 )
@@ -968,7 +968,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids/did:key:z6MkSyntheticForExpandTest",
+                        path = "/api/did/v1/identifiers/did:key:z6MkSyntheticForExpandTest",
                         queryParameters = mapOf("expand" to "verificationMethods"),
                     ),
                 )
@@ -981,7 +981,7 @@ class DidManagerHttpAdapterE2ETest {
             createManagedDidKey("expand-list-default")
             val response =
                 adapter.handleRequest(
-                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids"),
+                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"),
                 )
             assertEquals(200, response.statusCode, "body=${response.body}")
             val payload = json.parseToJsonElement(response.body!!).jsonObject
@@ -1008,7 +1008,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids",
+                        path = "/api/did/v1/identifiers",
                         queryParameters = mapOf("expand" to "document"),
                     ),
                 )
@@ -1034,7 +1034,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids",
+                        path = "/api/did/v1/identifiers",
                         queryParameters = mapOf("expand" to "all"),
                     ),
                 )
@@ -1056,7 +1056,7 @@ class DidManagerHttpAdapterE2ETest {
                 adapter.handleRequest(
                     GenericHttpRequest(
                         method = "GET",
-                        path = "/api/dids/v1/dids",
+                        path = "/api/did/v1/identifiers",
                         queryParameters = mapOf("expand" to "controllers"),
                     ),
                 )

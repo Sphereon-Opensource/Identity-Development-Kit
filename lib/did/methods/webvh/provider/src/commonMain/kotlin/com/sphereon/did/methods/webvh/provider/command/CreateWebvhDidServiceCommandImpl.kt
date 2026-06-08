@@ -24,6 +24,10 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.generic.Multikey
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.methods.webvh.WebvhDidCapabilities
 import com.sphereon.did.methods.webvh.WebvhDidUrlBuilder
@@ -62,6 +66,7 @@ class CreateWebvhDidServiceCommandImpl(
     execution: SessionExecution,
     private val signer: WebvhEntrySigner,
     private val didWebCompanionService: com.sphereon.did.methods.webvh.provider.companion.WebvhDidWebCompanionService,
+    private val keyManager: KeyManagerService,
 ) : TypedServiceCommandAdapter<CreateWebvhDidInput, CreateWebvhDidOutput, IdkError>(
         commandId = CreateWebvhDidServiceCommand.COMMAND_ID,
         execution = execution,
@@ -84,7 +89,7 @@ class CreateWebvhDidServiceCommandImpl(
         args: CreateWebvhDidInput,
         applyDuring: (CreateWebvhDidInput) -> CreateWebvhDidInput,
     ): IdkResult<CreateWebvhDidOutput, IdkError> {
-        val input = applyDuring(args)
+        val input = withDerivedMultikeys(applyDuring(args)).getOrElseErr { return Err(it) }
         validate(input).getOrElseErr { return Err(it) }
 
         val placeholderEntry = buildPlaceholderEntry(input)
@@ -176,6 +181,34 @@ class CreateWebvhDidServiceCommandImpl(
         val substitutedText = placeholderCleaned.toString().replace(WebvhScidComputer.PLACEHOLDER, scid)
         val substitutedJson = json.parseToJsonElement(substitutedText).jsonObject
         return json.decodeFromJsonElement(WebvhLogEntry.serializer(), substitutedJson)
+    }
+
+    /**
+     * Fill in [CreateWebvhDidInput.updateMultikeys] from the public keys of [CreateWebvhDidInput.updateKeyRefs]
+     * when the caller left them empty, so no caller has to hand-encode multikeys. Explicitly supplied
+     * multikeys are left untouched (override).
+     */
+    private suspend fun withDerivedMultikeys(input: CreateWebvhDidInput): IdkResult<CreateWebvhDidInput, IdkError> {
+        if (input.updateMultikeys.isNotEmpty() || input.updateKeyRefs.isEmpty()) {
+            return Ok(input)
+        }
+        val multikeys =
+            input.updateKeyRefs.map { ref ->
+                val jwk = resolvePublicJwk(ref).getOrElseErr { return Err(it) }
+                Multikey.fromPublicKey(jwk).getOrElseErr { return Err(it) }
+            }
+        return Ok(input.copy(updateMultikeys = multikeys))
+    }
+
+    private suspend fun resolvePublicJwk(keyAlias: String): IdkResult<Jwk, IdkError> {
+        val keyResult = keyManager.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
+        if (keyResult.isErr) {
+            return Err(IdkError.fromString(code = "webvh_update_key_unavailable", message = "KMS did not return update key '$keyAlias': ${keyResult.error.message}"))
+        }
+        val jwk =
+            keyResult.value.key?.key as? Jwk
+                ?: return Err(IdkError.fromString(code = "webvh_update_key_unavailable", message = "KMS key '$keyAlias' is not a JWK"))
+        return Ok(jwk)
     }
 
     private fun validate(input: CreateWebvhDidInput): IdkResult<Unit, IdkError> {

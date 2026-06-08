@@ -24,8 +24,19 @@ import dev.zacsweers.metro.SingleIn
 /**
  * Public URLs advertised by OID4VCI issuer metadata.
  *
- * [issuerIdentifier] becomes `credential_issuer`. [endpointBaseUrl] is the base
- * used for protocol endpoints such as `/oid4vci/credential`.
+ * [issuerIdentifier] becomes `credential_issuer` and is the issuer instance's external BASE: the
+ * scheme + host (which may be a tenant/instance subdomain) plus whatever path prefix the instance
+ * registered, or none. It carries no protocol or `/api` mount. Both the wallet-facing protocol
+ * surface and the OAuth2-authenticated backend admin API (`/api/oid4vci/v1/backend/...`) are formed
+ * by appending their respective mounts to this base — the tenant is never a URL path parameter
+ * (authenticated calls resolve it from the bearer token).
+ *
+ * [endpointBaseUrl] is the base used for wallet-facing protocol endpoints such as
+ * `/oid4vci/credential` (i.e. [issuerIdentifier] plus the protocol mount).
+ *
+ * NOTE (multi-instance): in deployments that run several issuer instances per tenant (VDX), a
+ * per-instance resolver must populate these from the SPECIFIC instance's registration, not a
+ * one-per-tenant lookup.
  */
 data class Oid4vciIssuerPublicUrls(
     val issuerIdentifier: String,

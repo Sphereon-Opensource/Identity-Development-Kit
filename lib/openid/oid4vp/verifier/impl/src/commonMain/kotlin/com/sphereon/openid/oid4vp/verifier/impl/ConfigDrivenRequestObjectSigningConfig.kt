@@ -197,10 +197,32 @@ class ConfigDrivenRequestObjectSigningConfig(
         val provider =
             didProviderRegistry.getProvider(method)
                 ?: error("No DID provider registered for method '$method' — cannot derive verifier client_id")
+        // did:web / did:webvh bind the key to a document hosted at a host; the DID is not derived
+        // from the key, so the host must be supplied. It is the host of the verifier's public base URL.
+        val domain =
+            if (method in WEB_RESOLVED_METHODS) {
+                resolveDidWebDomain()
+                    ?: error(
+                        "did:$method signing requires a host: set '$DID_WEB_DOMAIN_KEY' or a valid absolute '${EXTERNAL_BASE_URL_KEYS.first()}'.",
+                    )
+            } else {
+                null
+            }
         val createResult =
             provider
-                .create(DidCreateOptions(method = method, publicKeyJwk = jwk.toPublicKey()))
-                .getOrElse { error("Failed to derive did:$method from signing key '$alias': ${it.message.defaultMessage}") }
+                .create(
+                    DidCreateOptions(
+                        method = method,
+                        publicKeyJwk = jwk.toPublicKey(),
+                        domain = domain,
+                        // The verifier's request-object signing key authenticates the verifier — the
+                        // published did:web document MUST list it under the authentication relationship.
+                        purposes = if (method in WEB_RESOLVED_METHODS) listOf(VerificationPurpose.AUTHENTICATION) else null,
+                        // Descriptive, per-key fragment (e.g. did:web:host#oid4vp-verifier-signing) so the
+                        // verifier's VM is distinct in the shared hosted document.
+                        verificationMethodId = if (method in WEB_RESOLVED_METHODS) alias else null,
+                    ),
+                ).getOrElse { error("Failed to derive did:$method from signing key '$alias': ${it.message.defaultMessage}") }
 
         val absoluteOverride = configService.getPropertyAsString("$NAMESPACE.signing.verification-method-id")
         val fragmentOverride = configService.getPropertyAsString("$NAMESPACE.signing.verification-method-fragment")
@@ -306,8 +328,39 @@ class ConfigDrivenRequestObjectSigningConfig(
         configService.getPropertyAsString("$NAMESPACE.signing.keyAlias")
             ?: error("Request URI signing is enabled but no key alias configured at $NAMESPACE.signing.keyAlias")
 
+    /**
+     * Resolve the did:web/webvh host: an explicit override, else the host of the verifier's public
+     * base URL (the HTTPS URL the example is started with).
+     */
+    private fun resolveDidWebDomain(): String? {
+        configService.getPropertyAsString(DID_WEB_DOMAIN_KEY)?.takeIf { it.isNotBlank() }?.let { return hostOf(it) }
+        for (key in EXTERNAL_BASE_URL_KEYS) {
+            configService.getPropertyAsString(key)?.takeIf { it.isNotBlank() }?.let { return hostOf(it) }
+        }
+        return null
+    }
+
     companion object {
         private const val NAMESPACE = "oid4vp.verifier.request-object"
+        private val WEB_RESOLVED_METHODS = setOf("web", "webvh")
+
+        // The verifier's public base URL lives under `oid4vp.universal` in this deployment; accept the
+        // `oid4vp.verifier` form too for robustness.
+        private val EXTERNAL_BASE_URL_KEYS = listOf("oid4vp.universal.external-base-url", "oid4vp.verifier.external-base-url")
+        private const val DID_WEB_DOMAIN_KEY = "oid4vp.verifier.request-object.signing.did-web-domain"
+
+        /** Host (authority without scheme/port/path) of an absolute http(s) URL, or null. */
+        private fun hostOf(url: String): String? {
+            val authority =
+                url
+                    .substringAfter("://", "")
+                    .substringBefore('/')
+                    .substringBefore('?')
+                    .substringBefore('#')
+            val host = authority.substringBefore('@').substringBefore(':')
+            return host.takeIf { it.isNotBlank() }
+        }
+
         private const val DEFAULT_EXPIRATION_SECONDS = 300L
         private const val DEFAULT_MODE = "did:jwk"
         private const val DEFAULT_PROVIDER_ID = "default"

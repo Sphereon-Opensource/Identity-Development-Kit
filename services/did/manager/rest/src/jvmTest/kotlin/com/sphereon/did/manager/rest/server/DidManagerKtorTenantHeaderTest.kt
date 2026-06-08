@@ -90,7 +90,7 @@ class DidManagerKtorTenantHeaderTest {
                             val adapter = (session.graph as DidManagerHttpAdapter.Graph).didManagerHttpAdapter
                             val response =
                                 adapter.handleRequest(
-                                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids"),
+                                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"),
                                 )
                             call.respondText(
                                 text =
@@ -164,7 +164,7 @@ class DidManagerKtorTenantHeaderTest {
                             val adapter = (session.graph as DidManagerHttpAdapter.Graph).didManagerHttpAdapter
                             val response =
                                 adapter.handleRequest(
-                                    GenericHttpRequest(method = "GET", path = "/api/dids/v1/dids"),
+                                    GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"),
                                 )
                             call.respondText(
                                 "tenant=${session.sessionExecution.tenantId};status=${response.statusCode}",
@@ -188,7 +188,7 @@ class DidManagerKtorTenantHeaderTest {
         }
 
     /**
-     * Hits the real URL `/api/dids/v1/dids` through the universal dispatcher
+     * Hits the real URL `/api/did/v1/identifiers` through the universal dispatcher
      * (`installUniversalHttpAdapters` inside `configureDidManager`), not a hand-rolled probe
      * route. This catches the class of bug where `*HttpAdapterDescriptorProvider` ships
      * relative endpoint paths instead of full host-facing paths: the catalog then fails to
@@ -225,14 +225,14 @@ class DidManagerKtorTenantHeaderTest {
                 // OR an @SerialName on the case. Pin every documented param so a future
                 // OpenAPI-vs-enum drift fails this test rather than only failing in production.
                 val response =
-                    client.get("/api/dids/v1/dids?includeDeactivated=false&includeDeleted=false&page=0&size=20&sort=createdAt&sortDirection=DESC") {
+                    client.get("/api/did/v1/identifiers?includeDeactivated=false&includeDeleted=false&page=0&size=20&sort=createdAt&sortDirection=DESC") {
                         headers.append("X-Tenant-ID", "tenant-universal")
                         headers.append("X-User-ID", "user-universal")
                     }
                 assertEquals(
                     HttpStatusCode.OK,
                     response.status,
-                    "Catalog must route GET /api/dids/v1/dids to DidLifecycleHttpAdapter via the universal dispatcher. " +
+                    "Catalog must route GET /api/did/v1/identifiers to DidLifecycleHttpAdapter via the universal dispatcher. " +
                         "A 404 here typically means a *HttpAdapterDescriptorProvider returned relative endpoint paths " +
                         "instead of paths prefixed with adapterBasePath. A 400 typically means a typed-enum wire " +
                         "value (e.g. sort=createdAt) doesn't match a DidSortField @SerialName, so the request " +

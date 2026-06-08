@@ -120,7 +120,7 @@ class DidManagerCommandBehaviorTest {
             val page2 = commands.listDids.execute(DidFilter(size = 2, page = 2)).getOrThrow()
 
             // Total must reflect the unpaged count.
-            assertTrue(page0.page.totalElements >= 5, "expected total >= 5, got ${page0.page.totalElements}")
+            assertTrue(page0.page.total >= 5, "expected total >= 5, got ${page0.page.total}")
             assertEquals(2, page0.items.size)
             assertEquals(2, page1.items.size)
             assertTrue(page2.items.size in 1..2)
@@ -140,7 +140,7 @@ class DidManagerCommandBehaviorTest {
             createDidKey("no-page-a").getOrThrow()
             createDidKey("no-page-b").getOrThrow()
             val out = commands.listDids.execute(DidFilter(size = null)).getOrThrow()
-            assertEquals(out.items.size, out.page.totalElements)
+            assertEquals(out.items.size, out.page.total)
         }
 
     // ============ ListVerificationRelationshipsServiceCommand purpose filter ============

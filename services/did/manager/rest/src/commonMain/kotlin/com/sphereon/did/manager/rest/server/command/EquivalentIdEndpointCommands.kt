@@ -18,14 +18,14 @@ import com.sphereon.did.manager.command.AddEquivalentIdServiceCommand
 import com.sphereon.did.manager.command.ListEquivalentIdsServiceCommand
 import com.sphereon.did.manager.command.RemoveEquivalentIdServiceCommand
 
-// ========== GET /api/dids/v1/dids/{did}/equivalent-ids ==========
+// ========== GET /api/did/v1/identifiers/{did}/equivalent-ids ==========
 interface ListEquivalentIdsEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListEquivalentIdsServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/equivalent-ids",
+                pathPattern = "/identifiers/{did}/equivalent-ids",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listEquivalentIds",
                 commandId = COMMAND_ID,
@@ -35,14 +35,14 @@ interface ListEquivalentIdsEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/equivalent-ids ==========
+// ========== POST /api/did/v1/identifiers/{did}/equivalent-ids ==========
 interface AddEquivalentIdEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = AddEquivalentIdServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/equivalent-ids",
+                pathPattern = "/identifiers/{did}/equivalent-ids",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addEquivalentId",
@@ -53,14 +53,14 @@ interface AddEquivalentIdEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did}/equivalent-ids/{equivalentId} ==========
+// ========== DELETE /api/did/v1/identifiers/{did}/equivalent-ids/{equivalentId} ==========
 interface RemoveEquivalentIdEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = RemoveEquivalentIdServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}/equivalent-ids/{equivalentId}",
+                pathPattern = "/identifiers/{did}/equivalent-ids/{equivalentId}",
                 operationId = "removeEquivalentId",
                 commandId = COMMAND_ID,
                 tags = setOf("EquivalentIds"),

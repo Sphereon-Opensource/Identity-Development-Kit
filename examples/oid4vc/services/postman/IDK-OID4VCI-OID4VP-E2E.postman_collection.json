@@ -83,14 +83,14 @@
               "mode": "raw",
               "raw": "{\n  \"credential_configuration_ids\": [\"TestCredential\"],\n  \"grants\": {\n    \"urn:ietf:params:oauth:grant-type:pre-authorized_code\": {\n      \"tx_code\": {\n        \"input_mode\": \"numeric\",\n        \"length\": 6\n      }\n    }\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/oid4vci/backend/credential/offers" }
+            "url": { "raw": "{{base_url}}/api/oid4vci/v1/backend/credential/offers" }
           }
         },
         {
           "name": "2. Get Offer Status",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/oid4vci/backend/credential/offers/{{correlation_id}}" }
+            "url": { "raw": "{{base_url}}/api/oid4vci/v1/backend/credential/offers/{{correlation_id}}" }
           }
         },
         {
@@ -184,7 +184,7 @@
               "mode": "raw",
               "raw": "{\n  \"credential_configuration_ids\": [\"TestCredential\"],\n  \"grants\": {\n    \"authorization_code\": {\n      \"issuer_state\": \"test-state-123\"\n    }\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/oid4vci/backend/credential/offers" }
+            "url": { "raw": "{{base_url}}/api/oid4vci/v1/backend/credential/offers" }
           }
         },
         {

@@ -18,7 +18,7 @@ import com.sphereon.did.manager.command.GetMethodCapabilitiesServiceCommand
 import com.sphereon.did.manager.command.GetMethodCapabilitySummaryServiceCommand
 import com.sphereon.did.manager.command.ListSupportedMethodsServiceCommand
 
-// ========== GET /api/dids/v1/methods ==========
+// ========== GET /api/did/v1/methods ==========
 interface ListSupportedMethodsEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListSupportedMethodsServiceCommand.COMMAND_ID
@@ -35,7 +35,7 @@ interface ListSupportedMethodsEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/methods/{method}/capabilities ==========
+// ========== GET /api/did/v1/methods/{method}/capabilities ==========
 interface GetMethodCapabilitiesEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = GetMethodCapabilitiesServiceCommand.COMMAND_ID
@@ -52,7 +52,7 @@ interface GetMethodCapabilitiesEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/methods/{method}/capabilities/summary ==========
+// ========== GET /api/did/v1/methods/{method}/capabilities/summary ==========
 interface GetMethodCapabilitySummaryEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = GetMethodCapabilitySummaryServiceCommand.COMMAND_ID

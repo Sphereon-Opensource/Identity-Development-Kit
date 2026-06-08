@@ -115,9 +115,11 @@ services:
       - OAUTH2_AS_INTERNAL_URL=http://oauth2-as:8080
       # Issuer-wide JOSE signing mode shared by the SD-JWT credentials AND their status list (one
       # issuer identity, so a wallet trusts the list the same way it trusts the credential). Default
-      # (plain demo) = did:jwk so any wallet verifies self-contained with no out-of-band CA trust. The
-      # conformance x509/HAIP profiles override it to x5c (profiles/conformance-x509-*.env).
-      - OID4VCI_SIGNING_MODE=${OID4VCI_SIGNING_MODE:-did:jwk}
+      # (plain demo) = did:web bound to the issuer's KMS signing key; the did:web host is the public
+      # HTTPS base URL the example is started with (EXTERNAL_BASE_URL). Wallets resolve the issuer's
+      # key from that host's DID document. The conformance x509/HAIP profiles override it to x5c
+      # (profiles/conformance-x509-*.env). (Step 2: swap did:web -> did:webvh once that lands.)
+      - OID4VCI_SIGNING_MODE=${OID4VCI_SIGNING_MODE:-did:web}
       - INTERNAL_CLIENT_SECRET=${INTERNAL_CLIENT_SECRET:-e2e-demo-secret}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
       # OID4VCI 1.0 §11.2.4 credential response encryption support. Defaults advertise
@@ -188,9 +190,10 @@ services:
     environment:
       - EXTERNAL_BASE_URL=${EXTERNAL_BASE_URL}
       - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-e2e-keystore-pass}
-      # Client ID prefix selection (OID4VP §5.9.3). Default: did:jwk.
-      # Switch to x509_san_dns or x509_hash via profiles/conformance-*.env.
-      - VERIFIER_CLIENT_ID_PREFIX=${VERIFIER_CLIENT_ID_PREFIX:-did:jwk}
+      # Client ID prefix selection (OID4VP §5.9.3). Default: did:web bound to the verifier's KMS
+      # signing key; the did:web host is EXTERNAL_BASE_URL. Switch to x509_san_dns or x509_hash via
+      # profiles/conformance-*.env. (Step 2: swap did:web -> did:webvh once that lands.)
+      - VERIFIER_CLIENT_ID_PREFIX=${VERIFIER_CLIENT_ID_PREFIX:-did:web}
       # Default matches the SAN baked into the cert that lib/generate-keystores.{sh,ps1}
       # generates for the verifier alias. Always populated so the per-request multi-mode
       # signer can produce `x509_san_dns:verifier.example.com` regardless of which env

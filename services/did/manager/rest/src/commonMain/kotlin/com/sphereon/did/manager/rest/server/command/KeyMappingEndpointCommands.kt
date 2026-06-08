@@ -18,14 +18,14 @@ import com.sphereon.did.manager.command.AddKeyMappingServiceCommand
 import com.sphereon.did.manager.command.ListKeyMappingsServiceCommand
 import com.sphereon.did.manager.command.RemoveKeyMappingServiceCommand
 
-// ========== GET /api/dids/v1/dids/{did}/key-mappings ==========
+// ========== GET /api/did/v1/identifiers/{did}/key-mappings ==========
 interface ListKeyMappingsEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListKeyMappingsServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/key-mappings",
+                pathPattern = "/identifiers/{did}/key-mappings",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listKeyMappings",
                 commandId = COMMAND_ID,
@@ -35,14 +35,14 @@ interface ListKeyMappingsEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/key-mappings ==========
+// ========== POST /api/did/v1/identifiers/{did}/key-mappings ==========
 interface AddKeyMappingEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = AddKeyMappingServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/key-mappings",
+                pathPattern = "/identifiers/{did}/key-mappings",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addKeyMapping",
@@ -53,14 +53,14 @@ interface AddKeyMappingEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did}/key-mappings/{mappingId} ==========
+// ========== DELETE /api/did/v1/identifiers/{did}/key-mappings/{mappingId} ==========
 interface RemoveKeyMappingEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = RemoveKeyMappingServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}/key-mappings/{mappingId}",
+                pathPattern = "/identifiers/{did}/key-mappings/{mappingId}",
                 operationId = "removeKeyMapping",
                 commandId = COMMAND_ID,
                 tags = setOf("KeyMappings"),

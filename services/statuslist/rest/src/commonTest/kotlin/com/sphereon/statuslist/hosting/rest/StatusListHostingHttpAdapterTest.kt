@@ -25,7 +25,7 @@ import kotlin.test.assertNotNull
 
 /**
  * Real-chain tests for the public status-list hosting endpoints: a [CommandBackedHttpAdapter] mounted
- * at `/statuslists` dispatches to the REAL by-id / by-correlationId token endpoint impls, each
+ * at the hosting base path (`/public/statuslists`) dispatches to the REAL by-id / by-correlationId token endpoint impls, each
  * delegating to a recording stub of the IDK `GetStatusListTokenCommand`. Asserts that the response is
  * the RAW token string with the token's own `Content-Type` and a `Cache-Control` header (never a JSON
  * envelope), and that the correct [StatusListRef] reaches the service.
@@ -72,7 +72,9 @@ class StatusListHostingHttpAdapterTest {
             assertEquals(signedToken, response.bodyBytes?.decodeToString())
             assertEquals(StatusListContentTypes.STATUSLIST_JWT, response.contentType)
             assertEquals("public, max-age=3600", response.headers["Cache-Control"])
-            assertEquals(StatusListRef(id = "sl-7"), f.stub.captured)
+            // The public `/{id}` route resolves the stable business key (the human-readable
+            // correlationId that credentials embed) first, falling back to the technical id.
+            assertEquals(StatusListRef(correlationId = "sl-7"), f.stub.captured)
         }
 
     @Test

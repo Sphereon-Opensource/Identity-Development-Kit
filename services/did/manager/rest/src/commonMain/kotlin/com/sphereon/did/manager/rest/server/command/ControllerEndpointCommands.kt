@@ -18,14 +18,14 @@ import com.sphereon.did.manager.command.AddControllerServiceCommand
 import com.sphereon.did.manager.command.ListControllersServiceCommand
 import com.sphereon.did.manager.command.RemoveControllerServiceCommand
 
-// ========== GET /api/dids/v1/dids/{did}/controllers ==========
+// ========== GET /api/did/v1/identifiers/{did}/controllers ==========
 interface ListControllersEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListControllersServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/controllers",
+                pathPattern = "/identifiers/{did}/controllers",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listControllers",
                 commandId = COMMAND_ID,
@@ -35,14 +35,14 @@ interface ListControllersEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/controllers ==========
+// ========== POST /api/did/v1/identifiers/{did}/controllers ==========
 interface AddControllerEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = AddControllerServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/controllers",
+                pathPattern = "/identifiers/{did}/controllers",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addController",
@@ -53,14 +53,14 @@ interface AddControllerEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did}/controllers/{controllerId} ==========
+// ========== DELETE /api/did/v1/identifiers/{did}/controllers/{controllerId} ==========
 interface RemoveControllerEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = RemoveControllerServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}/controllers/{controllerId}",
+                pathPattern = "/identifiers/{did}/controllers/{controllerId}",
                 operationId = "removeController",
                 commandId = COMMAND_ID,
                 tags = setOf("Controllers"),

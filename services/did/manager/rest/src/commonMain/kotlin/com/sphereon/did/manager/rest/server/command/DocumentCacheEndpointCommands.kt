@@ -18,14 +18,14 @@ import com.sphereon.did.manager.command.GetCachedDidDocumentServiceCommand
 import com.sphereon.did.manager.command.InvalidateDidDocumentServiceCommand
 import com.sphereon.did.manager.command.ResolveAndCacheDidServiceCommand
 
-// ========== GET /api/dids/v1/dids/{did}/document ==========
+// ========== GET /api/did/v1/identifiers/{did}/document ==========
 interface GetDidDocumentEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = GetCachedDidDocumentServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/document",
+                pathPattern = "/identifiers/{did}/document",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDidDocument",
                 commandId = COMMAND_ID,
@@ -35,14 +35,14 @@ interface GetDidDocumentEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/document/refresh ==========
+// ========== POST /api/did/v1/identifiers/{did}/document/refresh ==========
 interface RefreshDidDocumentEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ResolveAndCacheDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/document/refresh",
+                pathPattern = "/identifiers/{did}/document/refresh",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "refreshDidDocument",
                 commandId = COMMAND_ID,
@@ -52,14 +52,14 @@ interface RefreshDidDocumentEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did}/document/cache ==========
+// ========== DELETE /api/did/v1/identifiers/{did}/document/cache ==========
 interface InvalidateDidDocumentEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = InvalidateDidDocumentServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}/document/cache",
+                pathPattern = "/identifiers/{did}/document/cache",
                 operationId = "invalidateDidDocument",
                 commandId = COMMAND_ID,
                 tags = setOf("DocumentCache"),

@@ -59,7 +59,7 @@ import kotlin.test.assertNotNull
 /**
  * Verifies every endpoint descriptor on the IDK-21 DID Manager surface matches the expected
  * method/path/operationId. Cheap guard against drift when the endpoint command files are
- * hand-edited. Paths are RELATIVE to the adapter mount basePath `/api/dids/v1`.
+ * hand-edited. Paths are RELATIVE to the adapter mount basePath `/api/did/v1`.
  */
 class DidManagerEndpointDescriptorsTest {
     private fun assertDescriptor(
@@ -77,37 +77,37 @@ class DidManagerEndpointDescriptorsTest {
     // ========== DID lifecycle (9) ==========
 
     @Test
-    fun createDidDescriptor() = assertDescriptor(CreateDidEndpointCommand.ENDPOINT, HttpMethod.POST, "/dids", "createDid")
+    fun createDidDescriptor() = assertDescriptor(CreateDidEndpointCommand.ENDPOINT, HttpMethod.POST, "/identifiers", "createDid")
 
     @Test
-    fun listDidsDescriptor() = assertDescriptor(ListDidsEndpointCommand.ENDPOINT, HttpMethod.GET, "/dids", "listDids")
+    fun listDidsDescriptor() = assertDescriptor(ListDidsEndpointCommand.ENDPOINT, HttpMethod.GET, "/identifiers", "listDids")
 
     @Test
-    fun trackExternalDidDescriptor() = assertDescriptor(TrackExternalDidEndpointCommand.ENDPOINT, HttpMethod.POST, "/dids/external", "trackExternalDid")
+    fun trackExternalDidDescriptor() = assertDescriptor(TrackExternalDidEndpointCommand.ENDPOINT, HttpMethod.POST, "/identifiers/external", "trackExternalDid")
 
     @Test
-    fun getDidDescriptor() = assertDescriptor(GetDidEndpointCommand.ENDPOINT, HttpMethod.GET, "/dids/{did}", "getDid")
+    fun getDidDescriptor() = assertDescriptor(GetDidEndpointCommand.ENDPOINT, HttpMethod.GET, "/identifiers/{did}", "getDid")
 
     @Test
-    fun updateDidDescriptor() = assertDescriptor(UpdateDidEndpointCommand.ENDPOINT, HttpMethod.PATCH, "/dids/{did}", "updateDid")
+    fun updateDidDescriptor() = assertDescriptor(UpdateDidEndpointCommand.ENDPOINT, HttpMethod.PATCH, "/identifiers/{did}", "updateDid")
 
     @Test
-    fun replaceDidDescriptor() = assertDescriptor(ReplaceDidEndpointCommand.ENDPOINT, HttpMethod.PUT, "/dids/{did}", "replaceDid")
+    fun replaceDidDescriptor() = assertDescriptor(ReplaceDidEndpointCommand.ENDPOINT, HttpMethod.PUT, "/identifiers/{did}", "replaceDid")
 
     @Test
-    fun deleteDidDescriptor() = assertDescriptor(DeleteDidEndpointCommand.ENDPOINT, HttpMethod.DELETE, "/dids/{did}", "deleteDid")
+    fun deleteDidDescriptor() = assertDescriptor(DeleteDidEndpointCommand.ENDPOINT, HttpMethod.DELETE, "/identifiers/{did}", "deleteDid")
 
     @Test
     fun deactivateDidDescriptor() =
         assertDescriptor(
             DeactivateDidEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/actions/deactivate",
+            "/identifiers/{did}/actions/deactivate",
             "deactivateDid",
         )
 
     @Test
-    fun resolveDidDescriptor() = assertDescriptor(ResolveDidEndpointCommand.ENDPOINT, HttpMethod.GET, "/dids/{did}/resolve", "resolveDid")
+    fun resolveDidDescriptor() = assertDescriptor(ResolveDidEndpointCommand.ENDPOINT, HttpMethod.GET, "/identifiers/{did}/resolve", "resolveDid")
 
     // ========== Verification methods (5) ==========
 
@@ -116,7 +116,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListVerificationMethodsEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/verification-methods",
+            "/identifiers/{did}/verification-methods",
             "listVerificationMethods",
         )
 
@@ -125,7 +125,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddVerificationMethodEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/verification-methods",
+            "/identifiers/{did}/verification-methods",
             "addVerificationMethod",
         )
 
@@ -134,7 +134,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             GetVerificationMethodEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/verification-methods/{methodId}",
+            "/identifiers/{did}/verification-methods/{methodId}",
             "getVerificationMethod",
         )
 
@@ -143,7 +143,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             UpdateVerificationMethodEndpointCommand.ENDPOINT,
             HttpMethod.PATCH,
-            "/dids/{did}/verification-methods/{methodId}",
+            "/identifiers/{did}/verification-methods/{methodId}",
             "updateVerificationMethod",
         )
 
@@ -152,7 +152,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveVerificationMethodEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/verification-methods/{methodId}",
+            "/identifiers/{did}/verification-methods/{methodId}",
             "removeVerificationMethod",
         )
 
@@ -163,7 +163,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListVerificationRelationshipsEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/verification-relationships",
+            "/identifiers/{did}/verification-relationships",
             "listVerificationRelationships",
         )
 
@@ -172,7 +172,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddVerificationRelationshipEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/verification-relationships",
+            "/identifiers/{did}/verification-relationships",
             "addVerificationRelationship",
         )
 
@@ -181,7 +181,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveVerificationRelationshipEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/verification-relationships/{relationshipId}",
+            "/identifiers/{did}/verification-relationships/{relationshipId}",
             "removeVerificationRelationship",
         )
 
@@ -192,7 +192,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListDidServicesEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/services",
+            "/identifiers/{did}/services",
             "listDidServices",
         )
 
@@ -201,7 +201,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddDidServiceEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/services",
+            "/identifiers/{did}/services",
             "addDidService",
         )
 
@@ -210,7 +210,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             GetDidServiceEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/services/{serviceId}",
+            "/identifiers/{did}/services/{serviceId}",
             "getDidService",
         )
 
@@ -219,7 +219,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             UpdateDidServiceEndpointCommand.ENDPOINT,
             HttpMethod.PATCH,
-            "/dids/{did}/services/{serviceId}",
+            "/identifiers/{did}/services/{serviceId}",
             "updateDidService",
         )
 
@@ -228,7 +228,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveDidServiceEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/services/{serviceId}",
+            "/identifiers/{did}/services/{serviceId}",
             "removeDidService",
         )
 
@@ -239,7 +239,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListKeyMappingsEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/key-mappings",
+            "/identifiers/{did}/key-mappings",
             "listKeyMappings",
         )
 
@@ -248,7 +248,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddKeyMappingEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/key-mappings",
+            "/identifiers/{did}/key-mappings",
             "addKeyMapping",
         )
 
@@ -257,7 +257,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveKeyMappingEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/key-mappings/{mappingId}",
+            "/identifiers/{did}/key-mappings/{mappingId}",
             "removeKeyMapping",
         )
 
@@ -268,7 +268,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListControllersEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/controllers",
+            "/identifiers/{did}/controllers",
             "listControllers",
         )
 
@@ -277,7 +277,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddControllerEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/controllers",
+            "/identifiers/{did}/controllers",
             "addController",
         )
 
@@ -286,7 +286,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveControllerEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/controllers/{controllerId}",
+            "/identifiers/{did}/controllers/{controllerId}",
             "removeController",
         )
 
@@ -297,7 +297,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListAlsoKnownAsEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/also-known-as",
+            "/identifiers/{did}/also-known-as",
             "listAlsoKnownAs",
         )
 
@@ -306,7 +306,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddAlsoKnownAsEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/also-known-as",
+            "/identifiers/{did}/also-known-as",
             "addAlsoKnownAs",
         )
 
@@ -315,7 +315,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveAlsoKnownAsEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/also-known-as/{akaId}",
+            "/identifiers/{did}/also-known-as/{akaId}",
             "removeAlsoKnownAs",
         )
 
@@ -326,7 +326,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             ListEquivalentIdsEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/equivalent-ids",
+            "/identifiers/{did}/equivalent-ids",
             "listEquivalentIds",
         )
 
@@ -335,7 +335,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             AddEquivalentIdEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/equivalent-ids",
+            "/identifiers/{did}/equivalent-ids",
             "addEquivalentId",
         )
 
@@ -344,7 +344,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RemoveEquivalentIdEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/equivalent-ids/{equivalentId}",
+            "/identifiers/{did}/equivalent-ids/{equivalentId}",
             "removeEquivalentId",
         )
 
@@ -355,7 +355,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             GetDidDocumentEndpointCommand.ENDPOINT,
             HttpMethod.GET,
-            "/dids/{did}/document",
+            "/identifiers/{did}/document",
             "getDidDocument",
         )
 
@@ -364,7 +364,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             RefreshDidDocumentEndpointCommand.ENDPOINT,
             HttpMethod.POST,
-            "/dids/{did}/document/refresh",
+            "/identifiers/{did}/document/refresh",
             "refreshDidDocument",
         )
 
@@ -373,7 +373,7 @@ class DidManagerEndpointDescriptorsTest {
         assertDescriptor(
             InvalidateDidDocumentEndpointCommand.ENDPOINT,
             HttpMethod.DELETE,
-            "/dids/{did}/document/cache",
+            "/identifiers/{did}/document/cache",
             "invalidateDidDocument",
         )
 

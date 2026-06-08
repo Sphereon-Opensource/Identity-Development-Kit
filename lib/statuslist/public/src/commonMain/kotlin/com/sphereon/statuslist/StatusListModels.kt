@@ -297,6 +297,12 @@ data class CreateStatusListArgs(
      * many wallets reject a status list whose trust anchor / mechanism differs from the credential's.
      */
     val signingKeyMode: String? = null,
+    /**
+     * For DID signing modes, the verification-method URL used as the token's `kid`. Required to pin
+     * the kid for did:web/did:webvh (not derivable from the key); a full DID URL is used verbatim, and
+     * if omitted web/webvh default to `did:web:<host>#<signingKeyAlias>`. did:jwk/did:key derive it.
+     */
+    val signingVerificationMethodId: String? = null,
     /** Optional PEM cert-chain path for `x5c` mode when the KMS key carries no embedded chain. */
     val signingCertChainPath: String? = null,
     val ttlSeconds: Long? = null,

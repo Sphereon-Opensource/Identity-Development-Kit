@@ -26,7 +26,7 @@ import kotlin.native.ObjCName
 /**
  * HTTP endpoint command for creating credential offers.
  *
- * POST /oid4vci/backend/credential/offers
+ * POST /api/oid4vci/v1/backend/credential/offers
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateCredentialOfferEndpointCommand", exact = true)
@@ -51,7 +51,7 @@ interface CreateCredentialOfferEndpointCommand : HttpEndpointCommand {
 /**
  * HTTP endpoint command for getting credential offer status.
  *
- * GET /oid4vci/backend/credential/offers/{correlation_id}
+ * GET /api/oid4vci/v1/backend/credential/offers/{correlation_id}
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetCredentialOfferStatusEndpointCommand", exact = true)
@@ -75,7 +75,7 @@ interface GetCredentialOfferStatusEndpointCommand : HttpEndpointCommand {
 /**
  * HTTP endpoint command for deleting credential offers.
  *
- * DELETE /oid4vci/backend/credential/offers/{correlation_id}
+ * DELETE /api/oid4vci/v1/backend/credential/offers/{correlation_id}
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteCredentialOfferEndpointCommand", exact = true)

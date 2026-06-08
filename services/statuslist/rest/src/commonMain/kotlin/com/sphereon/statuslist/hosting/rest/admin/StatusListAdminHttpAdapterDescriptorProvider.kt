@@ -24,8 +24,8 @@ import dev.zacsweers.metro.binding
  * AppScope descriptor provider for the simple by-index status-list admin endpoints. Required
  * alongside the SessionScope [StatusListAdminHttpAdapter] so the routes register at server startup
  * (the AppScope catalog must not instantiate Session-scoped adapters); without it the dispatcher
- * 404s before reaching the adapter. Reads the same configurable [StatusListHostingConfig.basePath]
- * as the adapter so catalog and dispatch agree.
+ * 404s before reaching the adapter. Reads the same configurable
+ * [StatusListHostingConfig.managementBasePath] as the adapter so catalog and dispatch agree.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -41,13 +41,13 @@ class StatusListAdminHttpAdapterDescriptorProvider(
             mount =
                 HttpAdapterMount(
                     serverPrefix = "",
-                    adapterBasePath = hostingConfig.basePath,
+                    adapterBasePath = hostingConfig.managementBasePath,
                 ),
             endpoints =
                 listOf(
                     GetStatusListEntryStatusEndpointCommand.ENDPOINT,
                     RevokeStatusListEntryEndpointCommand.ENDPOINT,
                     ClearStatusListEndpointCommand.ENDPOINT,
-                ).map { it.copy(pathPatterns = it.pathPatterns.map { p -> hostingConfig.basePath + p }) },
+                ).map { it.copy(pathPatterns = it.pathPatterns.map { p -> hostingConfig.managementBasePath + p }) },
         )
 }

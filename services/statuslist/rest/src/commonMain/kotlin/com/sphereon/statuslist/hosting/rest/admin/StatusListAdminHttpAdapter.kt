@@ -25,13 +25,13 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 /**
- * SIMPLE, by-index status-list admin HTTP adapter, mounted at the same [StatusListHostingApiConstants.BASE_PATH]
- * as the public hosting adapter but kept separate so the cacheable token hosting stays free of
- * mutating routes:
+ * SIMPLE, by-index status-list admin HTTP adapter, mounted at the dedicated
+ * [StatusListHostingConfig.managementBasePath] (default `/api/statuslist/v1`), kept entirely separate
+ * from the public token hosting adapter so the cacheable hosting surface stays free of mutating routes:
  *
- * - GET  <basePath>/{id}/entries/{index}        — read the status of a single index.
- * - POST <basePath>/{id}/entries/{index}/revoke — revoke the credential at an index.
- * - POST <basePath>/{id}/clear                  — reset the list to all-valid.
+ * - GET  <managementBasePath>/{id}/entries/{index}        — read the status of a single index.
+ * - POST <managementBasePath>/{id}/entries/{index}/revoke — revoke the credential at an index.
+ * - POST <managementBasePath>/{id}/clear                  — reset the list to all-valid.
  *
  * This is the open-core admin surface (no business keys); the EDK `lib-statuslist-management-rest`
  * is the durable, authenticated, business-key management API. Unauthenticated here; a production
@@ -52,7 +52,7 @@ class StatusListAdminHttpAdapter(
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
-                adapterBasePath = hostingConfig.basePath,
+                adapterBasePath = hostingConfig.managementBasePath,
             ),
     ) {
     override val endpointCommands: List<HttpEndpointCommand> = listOf(getStatus, revoke, clear)

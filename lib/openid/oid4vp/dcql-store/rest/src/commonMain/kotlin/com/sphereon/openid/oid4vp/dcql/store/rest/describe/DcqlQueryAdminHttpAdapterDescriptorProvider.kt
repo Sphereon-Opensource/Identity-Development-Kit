@@ -44,7 +44,7 @@ import dev.zacsweers.metro.binding
 class DcqlQueryAdminHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
     override val id: String = DcqlQueryAdminHttpAdapter.ID
 
-    private val basePath = "/api/v1/oid4vp"
+    private val basePath = "/api/dcql/v1"
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(

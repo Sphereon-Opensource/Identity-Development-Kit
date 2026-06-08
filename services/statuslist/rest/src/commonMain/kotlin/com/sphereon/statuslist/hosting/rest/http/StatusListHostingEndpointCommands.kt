@@ -34,8 +34,8 @@ private val TOKEN_MEDIA_TYPES =
     )
 
 /**
- * `GET /statuslists/{id}` — return the RAW signed status-list token for the list with this technical
- * id. Public, unauthenticated, cacheable. Delegates to `statuslist.token.get`.
+ * `GET /public/statuslists/{id}` — return the RAW signed status-list token for the list with this
+ * technical id. Public, unauthenticated, cacheable. Delegates to `statuslist.token.get`.
  */
 interface GetStatusListTokenByIdEndpointCommand : HttpEndpointCommand {
     companion object {
@@ -54,8 +54,8 @@ interface GetStatusListTokenByIdEndpointCommand : HttpEndpointCommand {
 }
 
 /**
- * `GET /statuslists/by/{correlationId}` — return the RAW signed status-list token for the list with
- * this business correlation id. Public, unauthenticated, cacheable. Delegates to
+ * `GET /public/statuslists/by/{correlationId}` — return the RAW signed status-list token for the list
+ * with this business correlation id. Public, unauthenticated, cacheable. Delegates to
  * `statuslist.token.get`.
  */
 interface GetStatusListTokenByCorrelationIdEndpointCommand : HttpEndpointCommand {

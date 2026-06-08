@@ -78,7 +78,7 @@ private fun parseBody(
     }
 
 /**
- * `GET /api/v1/oid4vp/dcql` — list all DCQL query configurations for the current tenant.
+ * `GET /api/dcql/v1/queries` — list all DCQL query configurations for the current tenant.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -108,7 +108,7 @@ class ListDcqlQueriesEndpointCommandImpl(
 }
 
 /**
- * `POST /api/v1/oid4vp/dcql` — create a new DCQL query configuration.
+ * `POST /api/dcql/v1/queries` — create a new DCQL query configuration.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -148,7 +148,7 @@ class CreateDcqlQueryEndpointCommandImpl(
 }
 
 /**
- * `GET /api/v1/oid4vp/dcql/{queryId}` — read a single DCQL query configuration.
+ * `GET /api/dcql/v1/queries/{queryId}` — read a single DCQL query configuration.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -217,7 +217,7 @@ private suspend fun runUpdate(
 }
 
 /**
- * `PUT /api/v1/oid4vp/dcql/{queryId}` — replace a DCQL query configuration in full.
+ * `PUT /api/dcql/v1/queries/{queryId}` — replace a DCQL query configuration in full.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -238,7 +238,7 @@ class ReplaceDcqlQueryEndpointCommandImpl(
 }
 
 /**
- * `PATCH /api/v1/oid4vp/dcql/{queryId}` — partially update a DCQL query configuration.
+ * `PATCH /api/dcql/v1/queries/{queryId}` — partially update a DCQL query configuration.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -259,7 +259,7 @@ class PatchDcqlQueryEndpointCommandImpl(
 }
 
 /**
- * `DELETE /api/v1/oid4vp/dcql/{queryId}` — delete a DCQL query configuration.
+ * `DELETE /api/dcql/v1/queries/{queryId}` — delete a DCQL query configuration.
  */
 @Inject
 @SingleIn(SessionScope::class)

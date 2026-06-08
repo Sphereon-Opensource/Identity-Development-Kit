@@ -64,6 +64,14 @@ data class DidRecord(
     val alias: String? = null,
     val role: DidRole,
     val canonicalId: String? = null,
+    /**
+     * For web-hosted methods (did:web / did:webvh), the shared web location — the did:web
+     * method-specific id (`host[%3Aport][:segment...]`) this DID's document is served at. Both
+     * methods that map to the same location share this value, so a `(tenant_id, web_location)`
+     * unique index enforces that no two records (regardless of method) manage the same location.
+     * `null` for non-web methods. Derived via [com.sphereon.did.utils.WebLocation.fromDid].
+     */
+    val webLocation: String? = null,
     val deactivated: Boolean = false,
     val extensionPropertiesJson: String? = null,
     val createdAt: Instant,

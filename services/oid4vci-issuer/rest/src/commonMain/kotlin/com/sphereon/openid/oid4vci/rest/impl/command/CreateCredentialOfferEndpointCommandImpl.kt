@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 /**
  * HTTP endpoint for creating credential offer sessions.
  *
- * POST /oid4vci/backend/credential/offers
+ * POST /api/oid4vci/v1/backend/credential/offers
  */
 @Inject
 @SingleIn(SessionScope::class)

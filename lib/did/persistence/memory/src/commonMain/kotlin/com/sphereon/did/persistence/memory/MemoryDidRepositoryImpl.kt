@@ -84,6 +84,26 @@ class MemoryDidRepositoryImpl : DidRepository {
                         ),
                     )
                 }
+                // Mirrors the live (tenant_id, web_location) unique index in the SQL dialects:
+                // did:web and did:webvh that map to the same web location may never coexist.
+                if (record.webLocation != null && record.deletedAt == null) {
+                    val locationClash =
+                        records.values.firstOrNull { existing ->
+                            existing.id != record.id &&
+                                existing.tenantId == record.tenantId &&
+                                existing.webLocation == record.webLocation &&
+                                existing.deletedAt == null
+                        }
+                    if (locationClash != null) {
+                        return@withLock Err(
+                            IdkError.ALREADY_EXISTS_ERROR(
+                                message =
+                                    "save: Web location '${record.webLocation}' is already managed by " +
+                                        "did=${locationClash.did} (method=${locationClash.method}) for tenant=${record.tenantId}",
+                            ),
+                        )
+                    }
+                }
                 records[record.id] = record
                 controllers[record.id] = aggregate.controller.toMutableList()
                 akas[record.id] = aggregate.alsoKnownAs.toMutableList()
@@ -128,6 +148,21 @@ class MemoryDidRepositoryImpl : DidRepository {
             val match =
                 records.values.firstOrNull { record ->
                     record.alias == alias &&
+                        (tenantId == null || record.tenantId == tenantId) &&
+                        (includeDeleted || record.deletedAt == null)
+                }
+            if (match == null) Ok(null) else Ok(loadAggregate(match).defensiveCopy())
+        }
+
+    override suspend fun findByWebLocation(
+        tenantId: String?,
+        webLocation: String,
+        includeDeleted: Boolean,
+    ): IdkResult<DidDetail?, IdkError> =
+        mutex.withLock {
+            val match =
+                records.values.firstOrNull { record ->
+                    record.webLocation == webLocation &&
                         (tenantId == null || record.tenantId == tenantId) &&
                         (includeDeleted || record.deletedAt == null)
                 }

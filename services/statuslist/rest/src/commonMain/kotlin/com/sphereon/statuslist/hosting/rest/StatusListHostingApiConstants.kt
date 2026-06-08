@@ -19,11 +19,22 @@ package com.sphereon.statuslist.hosting.rest
  */
 object StatusListHostingApiConstants {
     /**
-     * Adapter mount; the hosting endpoints are rooted here. Deliberately UNVERSIONED: this is the
-     * stable, externally referenced `statusListUri` that issued credentials embed, so the URL must
-     * not change across platform upgrades.
+     * Adapter mount for the PUBLIC hosting surface; the token hosting endpoints are rooted here.
+     * Deliberately UNVERSIONED: this is the stable, externally referenced `statusListUri` that issued
+     * credentials embed, so the URL must not change across platform upgrades. The `/public/` prefix
+     * decouples the cacheable, unauthenticated hosting routes from the authenticated management surface
+     * (see [MANAGEMENT_BASE_PATH]).
      */
-    const val BASE_PATH = "/statuslists"
+    const val BASE_PATH = "/public/statuslists"
+
+    /**
+     * Adapter mount for the SIMPLE, by-index management (admin) surface — read / revoke / clear by
+     * numeric index. VERSIONED (`/v1`) and SINGULAR, kept entirely separate from the public hosting
+     * routes so the mutating admin endpoints never share a path prefix with the cacheable token
+     * hosting. The EDK `lib-statuslist-management-rest` mounts its durable, business-key management API
+     * at this same base.
+     */
+    const val MANAGEMENT_BASE_PATH = "/api/statuslist/v1"
 
     /**
      * Default `Cache-Control max-age` (seconds) used when the token carries no TTL hint. Status
@@ -39,8 +50,8 @@ object StatusListHostingApiConstants {
     }
 
     /**
-     * SIMPLE, by-index admin endpoint paths, relative to [BASE_PATH]. This is the open-core admin
-     * surface (status read / revoke / clear by numeric index, no business keys); the EDK
+     * SIMPLE, by-index admin endpoint paths, relative to [MANAGEMENT_BASE_PATH]. This is the open-core
+     * admin surface (status read / revoke / clear by numeric index, no business keys); the EDK
      * `lib-statuslist-management-rest` provides the durable, business-key management API.
      */
     object AdminPaths {

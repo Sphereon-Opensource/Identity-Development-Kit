@@ -28,17 +28,17 @@ import com.sphereon.did.manager.command.UpdateDidServiceCommand
  * HTTP endpoint commands for the DID lifecycle (create, list, import, get, update, replace,
  * delete, deactivate, resolve). Each impl is a thin shim: parse the request, delegate to the
  * matching IDK-20 service command, serialize the result. Paths are relative to the adapter
- * mount basePath `/api/dids/v1`.
+ * mount basePath `/api/did/v1`.
  */
 
-// ========== POST /api/dids/v1/dids — createDid ==========
+// ========== POST /api/did/v1/identifiers — createDid ==========
 interface CreateDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = CreateDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids",
+                pathPattern = "/identifiers",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createDid",
@@ -49,14 +49,14 @@ interface CreateDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/dids — listDids ==========
+// ========== GET /api/did/v1/identifiers — listDids ==========
 interface ListDidsEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListDidsServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids",
+                pathPattern = "/identifiers",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listDids",
                 commandId = COMMAND_ID,
@@ -72,7 +72,7 @@ interface TrackExternalDidEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/external",
+                pathPattern = "/identifiers/external",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "trackExternalDid",
@@ -83,14 +83,14 @@ interface TrackExternalDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/dids/{did} — getDid ==========
+// ========== GET /api/did/v1/identifiers/{did} — getDid ==========
 interface GetDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = GetDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}",
+                pathPattern = "/identifiers/{did}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDid",
                 commandId = COMMAND_ID,
@@ -100,14 +100,14 @@ interface GetDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== PATCH /api/dids/v1/dids/{did} — updateDid ==========
+// ========== PATCH /api/did/v1/identifiers/{did} — updateDid ==========
 interface UpdateDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = UpdateDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PATCH,
-                pathPattern = "/dids/{did}",
+                pathPattern = "/identifiers/{did}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "updateDid",
@@ -118,14 +118,14 @@ interface UpdateDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== PUT /api/dids/v1/dids/{did} — replaceDid ==========
+// ========== PUT /api/did/v1/identifiers/{did} — replaceDid ==========
 interface ReplaceDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ReplaceDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PUT,
-                pathPattern = "/dids/{did}",
+                pathPattern = "/identifiers/{did}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "replaceDid",
@@ -136,14 +136,14 @@ interface ReplaceDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did} — deleteDid ==========
+// ========== DELETE /api/did/v1/identifiers/{did} — deleteDid ==========
 interface DeleteDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = DeleteDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}",
+                pathPattern = "/identifiers/{did}",
                 operationId = "deleteDid",
                 commandId = COMMAND_ID,
                 tags = setOf("Dids"),
@@ -152,14 +152,14 @@ interface DeleteDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/actions/deactivate — deactivateDid ==========
+// ========== POST /api/did/v1/identifiers/{did}/actions/deactivate — deactivateDid ==========
 interface DeactivateDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = DeactivateDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/actions/deactivate",
+                pathPattern = "/identifiers/{did}/actions/deactivate",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deactivateDid",
@@ -170,14 +170,14 @@ interface DeactivateDidEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/dids/{did}/resolve — resolveDid ==========
+// ========== GET /api/did/v1/identifiers/{did}/resolve — resolveDid ==========
 interface ResolveDidEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ResolveDidServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/resolve",
+                pathPattern = "/identifiers/{did}/resolve",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "resolveDid",
                 commandId = COMMAND_ID,

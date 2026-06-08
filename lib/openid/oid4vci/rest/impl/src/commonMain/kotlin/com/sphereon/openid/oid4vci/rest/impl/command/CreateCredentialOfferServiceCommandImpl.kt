@@ -160,7 +160,7 @@ class CreateCredentialOfferServiceCommandImpl(
         val config = configProvider.getConfig()
         val statusUri =
             config.externalBaseUrl?.let {
-                "${it.trimEnd('/')}/oid4vci/backend/credential/offers/$correlationId"
+                "${it.trimEnd('/')}/api/oid4vci/v1/backend/credential/offers/$correlationId"
             }
 
         val qrUri =

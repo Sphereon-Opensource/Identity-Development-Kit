@@ -102,7 +102,7 @@ class JwsStatusListSigner(
         contentType: String,
         buildPayload: (SignStatusListTokenArgs) -> JsonObject,
     ): IdkResult<StatusListToken, IdkError> {
-        val (effectiveArgs, identifierHeader) = resolveKeyReference(args)
+        val (effectiveArgs, identifierHeader) = resolveKeyReference(args).getOrElse { return Err(it) }
         val payload = buildPayload(effectiveArgs)
         val header =
             buildJsonObject {
@@ -129,41 +129,88 @@ class JwsStatusListSigner(
      * KMS attach the identifier). Resolution failures fall back to the KMS default rather than failing
      * the whole list, mirroring the credential issuance handlers.
      */
-    private suspend fun resolveKeyReference(args: SignStatusListTokenArgs): Pair<SignStatusListTokenArgs, JsonObject?> {
-        val mode = args.signingKeyMode ?: return args to null
+    private suspend fun resolveKeyReference(args: SignStatusListTokenArgs): IdkResult<Pair<SignStatusListTokenArgs, JsonObject?>, IdkError> {
+        val mode = args.signingKeyMode ?: return Ok(args to null)
         return when {
             mode.startsWith("did:") -> {
-                val vmId = resolveDidVerificationMethodId(args.signingKeyAlias, mode.removePrefix("did:")) ?: return args to null
+                val vmId =
+                    resolveDidKid(args, mode.removePrefix("did:"))
+                        // SECURITY: never silently fall back to another trust mechanism (x5c / KMS
+                        // default) when a DID kid can't be resolved — that would issue the list under
+                        // an x509 cert instead of the DID. Fail loudly. did:web/did:webvh kids are not
+                        // derivable from the key, so configure `verification-method-id` for the list.
+                        ?: return Err(
+                            IdkError.fromString(
+                                code = "statuslist_did_kid_unresolved",
+                                message =
+                                    "Cannot resolve a '$mode' kid for status-list signing key '${args.signingKeyAlias}'. " +
+                                        "Set the list's 'verification-method-id' (did:web/did:webvh kids are not derivable " +
+                                        "from the key). Refusing to fall back to x5c or any other trust mechanism.",
+                            ),
+                        )
                 val did = vmId.substringBefore('#')
-                args.copy(issuer = did) to buildJsonObject { put("kid", JsonPrimitive(vmId)) }
+                Ok(args.copy(issuer = did) to buildJsonObject { put("kid", JsonPrimitive(vmId)) })
             }
 
             mode.equals("x5c", ignoreCase = true) -> {
-                args to resolveX5cHeader(args.signingKeyAlias)
+                Ok(args to resolveX5cHeader(args.signingKeyAlias))
             }
 
             // jwk-thumbprint / unknown modes: let the KMS attach the identifier.
             else -> {
-                args to null
+                Ok(args to null)
             }
         }
     }
 
-    /** DID verification-method id ("`<did>#<fragment>`") for [keyAlias] under [method]; null on failure. */
-    private suspend fun resolveDidVerificationMethodId(
-        keyAlias: String,
+    /**
+     * DID verification-method id ("`<did>#<fragment>`") used as the token `kid`, or `null` if it
+     * cannot be resolved. Priority: an explicit configured [SignStatusListTokenArgs.signingVerificationMethodId]
+     * (required form for did:web/webvh), else for web/webvh `did:web:<host>#<signingKeyAlias>` (host from
+     * the list's hosting URI), else the key-derived id for did:jwk/did:key.
+     */
+    private suspend fun resolveDidKid(
+        args: SignStatusListTokenArgs,
         method: String,
     ): String? {
-        val jwk = publicJwk(keyAlias) ?: return null
+        // A configured kid MUST be a full absolute DID URL (`did:<method>:...#<fragment>`) — never a
+        // hostname or a bare fragment. Anything else is ignored in favour of the derived absolute kid.
+        args.signingVerificationMethodId?.takeIf { it.startsWith("did:") && it.contains('#') }?.let { return it }
+        val jwk = publicJwk(args.signingKeyAlias) ?: return null
         val provider = didProviderRegistry.getProvider(method) ?: return null
+        val webMethod = method in WEB_RESOLVED_METHODS
         val created =
             provider
-                .create(DidCreateOptions(method = method, publicKeyJwk = jwk.toPublicKey()))
-                .getOrNull() ?: return null
+                .create(
+                    DidCreateOptions(
+                        method = method,
+                        publicKeyJwk = jwk.toPublicKey(),
+                        domain = if (webMethod) hostOf(args.statusListUri) else null,
+                        purposes = if (webMethod) listOf(VerificationPurpose.ASSERTION_METHOD) else null,
+                        verificationMethodId = if (webMethod) args.signingKeyAlias else null,
+                    ),
+                ).getOrNull() ?: return null
         return created.verificationMethodsByPurpose[VerificationPurpose.ASSERTION_METHOD]
             ?.firstOrNull()
             ?.id
-            ?: "${created.did}#0"
+            ?: if (webMethod) "${created.did}#${args.signingKeyAlias}" else "${created.did}#0"
+    }
+
+    private companion object {
+        val WEB_RESOLVED_METHODS = setOf("web", "webvh")
+
+        /** Host (authority without scheme/port/path) of an absolute http(s) URL, or null. */
+        fun hostOf(url: String?): String? {
+            if (url.isNullOrBlank()) return null
+            val authority =
+                url
+                    .substringAfter("://", "")
+                    .substringBefore('/')
+                    .substringBefore('?')
+                    .substringBefore('#')
+            val host = authority.substringBefore('@').substringBefore(':')
+            return host.takeIf { it.isNotBlank() }
+        }
     }
 
     /** `{ x5c: [...] }` from the signing key's certificate chain, or null when the key carries none. */

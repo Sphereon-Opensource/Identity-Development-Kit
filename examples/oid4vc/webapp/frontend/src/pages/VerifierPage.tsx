@@ -39,8 +39,8 @@ try {
 
 type RequestUriMethod = 'get' | 'post'
 type ResponseMode = 'direct_post' | 'direct_post.jwt'
-type ClientIdScheme = 'did:jwk' | 'x509_san_dns' | 'x509_hash'
-type ProfileId = 'haip' | 'x509-hash' | 'x509-san-dns' | 'did-jwk' | 'custom'
+type ClientIdScheme = 'did:web' | 'x509_san_dns' | 'x509_hash'
+type ProfileId = 'haip' | 'x509-hash' | 'x509-san-dns' | 'did-web' | 'custom'
 
 interface ProfilePreset {
   id: ProfileId
@@ -80,12 +80,12 @@ const VERIFIER_PROFILES: ProfilePreset[] = [
     clientIdScheme: 'x509_san_dns',
   },
   {
-    id: 'did-jwk',
-    label: 'did:jwk (DID-bound)',
+    id: 'did-web',
+    label: 'did:web (DID-bound)',
     walletTarget: 'openid4vp://',
     requestUriMethod: 'get',
     responseMode: 'direct_post',
-    clientIdScheme: 'did:jwk',
+    clientIdScheme: 'did:web',
   },
 ]
 
@@ -234,7 +234,7 @@ export function VerifierPage() {
 
       // Map UI `clientIdScheme` to the backend enum constant name.
       const clientIdSchemeWire =
-        clientIdScheme === 'did:jwk' ? 'DECENTRALIZED_IDENTIFIER'
+        clientIdScheme === 'did:web' ? 'DECENTRALIZED_IDENTIFIER'
         : clientIdScheme === 'x509_san_dns' ? 'X509_SAN_DNS'
         : 'X509_HASH'
 
@@ -391,11 +391,11 @@ export function VerifierPage() {
               <input
                 type="radio"
                 name="client_id_scheme"
-                value="did:jwk"
-                checked={clientIdScheme === 'did:jwk'}
-                onChange={() => setClientIdScheme('did:jwk')}
+                value="did:web"
+                checked={clientIdScheme === 'did:web'}
+                onChange={() => setClientIdScheme('did:web')}
               />
-              did:jwk (DID-bound)
+              did:web (DID-bound)
             </label>
           </div>
 

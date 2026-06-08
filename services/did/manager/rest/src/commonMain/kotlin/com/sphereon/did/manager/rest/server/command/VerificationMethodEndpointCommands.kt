@@ -20,14 +20,14 @@ import com.sphereon.did.manager.command.ListVerificationMethodsServiceCommand
 import com.sphereon.did.manager.command.RemoveVerificationMethodServiceCommand
 import com.sphereon.did.manager.command.UpdateVerificationMethodServiceCommand
 
-// ========== GET /api/dids/v1/dids/{did}/verification-methods ==========
+// ========== GET /api/did/v1/identifiers/{did}/verification-methods ==========
 interface ListVerificationMethodsEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListVerificationMethodsServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/verification-methods",
+                pathPattern = "/identifiers/{did}/verification-methods",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listVerificationMethods",
                 commandId = COMMAND_ID,
@@ -37,14 +37,14 @@ interface ListVerificationMethodsEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/verification-methods ==========
+// ========== POST /api/did/v1/identifiers/{did}/verification-methods ==========
 interface AddVerificationMethodEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = AddVerificationMethodServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/verification-methods",
+                pathPattern = "/identifiers/{did}/verification-methods",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addVerificationMethod",
@@ -55,14 +55,14 @@ interface AddVerificationMethodEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/dids/{did}/verification-methods/{methodId} ==========
+// ========== GET /api/did/v1/identifiers/{did}/verification-methods/{methodId} ==========
 interface GetVerificationMethodEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = GetVerificationMethodServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/verification-methods/{methodId}",
+                pathPattern = "/identifiers/{did}/verification-methods/{methodId}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getVerificationMethod",
                 commandId = COMMAND_ID,
@@ -72,14 +72,14 @@ interface GetVerificationMethodEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== PATCH /api/dids/v1/dids/{did}/verification-methods/{methodId} ==========
+// ========== PATCH /api/did/v1/identifiers/{did}/verification-methods/{methodId} ==========
 interface UpdateVerificationMethodEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = UpdateVerificationMethodServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PATCH,
-                pathPattern = "/dids/{did}/verification-methods/{methodId}",
+                pathPattern = "/identifiers/{did}/verification-methods/{methodId}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "updateVerificationMethod",
@@ -90,14 +90,14 @@ interface UpdateVerificationMethodEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did}/verification-methods/{methodId} ==========
+// ========== DELETE /api/did/v1/identifiers/{did}/verification-methods/{methodId} ==========
 interface RemoveVerificationMethodEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = RemoveVerificationMethodServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}/verification-methods/{methodId}",
+                pathPattern = "/identifiers/{did}/verification-methods/{methodId}",
                 operationId = "removeVerificationMethod",
                 commandId = COMMAND_ID,
                 tags = setOf("VerificationMethods"),

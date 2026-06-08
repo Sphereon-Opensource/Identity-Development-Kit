@@ -21,7 +21,7 @@ package com.sphereon.did.manager.rest.server
  */
 object DidManagerRestPaths {
     /** Default URL prefix for every DID Manager REST endpoint. */
-    const val BASE_PATH: String = "/api/dids/v1"
+    const val BASE_PATH: String = "/api/did/v1"
     const val BASE_PATH_CONFIG_KEY: String = "didManager.rest.adapterBasePath"
 
     /**

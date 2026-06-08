@@ -112,6 +112,9 @@ class ConfigDrivenStatusListDefinitionsProvider(
         // How the token references its signing key in the JOSE header (did:<method> / x5c / ...). Set
         // this to match the credentials that reference the list so wallets trust the same key/anchor.
         val signingKeyMode = configService.getPropertyAsString("$prefix.signingKeyMode")?.takeIf { it.isNotBlank() }
+        // For DID modes, the configured verification-method URL used as the token `kid` (did:web/webvh
+        // cannot derive it from the key).
+        val signingVerificationMethodId = configService.getPropertyAsString("$prefix.verificationMethodId")?.takeIf { it.isNotBlank() }
         val signingCertChainPath = configService.getPropertyAsString("$prefix.signingCertChainPath")?.takeIf { it.isNotBlank() }
         val ttlSeconds = configService.getPropertyAsString("$prefix.ttlSeconds")?.toLongOrNull()
         // The list token's `iss`: per-list override, then the global default, then the origin of the
@@ -131,6 +134,7 @@ class ConfigDrivenStatusListDefinitionsProvider(
             bitsPerStatus = bitsPerStatus,
             signingKeyAlias = signingKeyAlias,
             signingKeyMode = signingKeyMode,
+            signingVerificationMethodId = signingVerificationMethodId,
             signingCertChainPath = signingCertChainPath,
             ttlSeconds = ttlSeconds,
         )

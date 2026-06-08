@@ -34,9 +34,9 @@ import dev.zacsweers.metro.binding
 /**
  * Command-backed HTTP adapter for OID4VCI backend REST API endpoints.
  *
- * - **POST /oid4vci/backend/credential/offers** - Create credential offer
- * - **GET /oid4vci/backend/credential/offers/{correlation_id}** - Get status
- * - **DELETE /oid4vci/backend/credential/offers/{correlation_id}** - Delete session
+ * - **POST /api/oid4vci/v1/backend/credential/offers** - Create credential offer
+ * - **GET /api/oid4vci/v1/backend/credential/offers/{correlation_id}** - Get status
+ * - **DELETE /api/oid4vci/v1/backend/credential/offers/{correlation_id}** - Delete session
  *
  * Framework-agnostic. Authentication is delegated to the platform server.
  * All operations are tenant-scoped via session context.
@@ -55,13 +55,13 @@ class Oid4vciRestHttpAdapter(
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
-                adapterBasePath = "/oid4vci",
+                adapterBasePath = "/api/oid4vci/v1",
             ),
     ) {
     companion object {
         const val ID: String = "OID4VCI_REST"
 
-        const val BACKEND_BASE_PATH: String = "/oid4vci/backend/credential/offers"
+        const val BACKEND_BASE_PATH: String = "/api/oid4vci/v1/backend/credential/offers"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

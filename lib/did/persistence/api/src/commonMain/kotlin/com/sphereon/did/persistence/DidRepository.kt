@@ -70,6 +70,20 @@ interface DidRepository {
     ): IdkResult<DidDetail?, IdkError>
 
     /**
+     * Loads the aggregate whose [DidRecord.webLocation] matches — the method/SCID-independent
+     * lookup used by DID hosting to resolve a `did.json`/`did.jsonl` request (which carries the
+     * host+path but not the method or did:webvh SCID). Because the live `(tenant_id, web_location)`
+     * index is unique, at most one non-deleted record matches. Returns `Ok(null)` when no row matches.
+     *
+     * @param webLocation the normalised web location (see [com.sphereon.did.utils.WebLocation]).
+     */
+    suspend fun findByWebLocation(
+        tenantId: String?,
+        webLocation: String,
+        includeDeleted: Boolean = false,
+    ): IdkResult<DidDetail?, IdkError>
+
+    /**
      * Loads every aggregate matching [filter]. Implementation must batch child-row fetches
      * (1 query for did_record + 1 batched-IN query per child table = 9 queries total,
      * regardless of result size — never N+1). Ordering follows [DidRecord.createdAt] ascending.

@@ -21,7 +21,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import kotlinx.serialization.Serializable
 
 /**
- * Request body for `PUT`/`PATCH /api/v1/oid4vp/dcql/{queryId}`.
+ * Request body for `PUT`/`PATCH /api/dcql/v1/queries/{queryId}`.
  *
  * The `query_id` is taken from the path, never the body. A null field leaves the
  * corresponding stored value unchanged (PATCH semantics); a `PUT` caller is expected

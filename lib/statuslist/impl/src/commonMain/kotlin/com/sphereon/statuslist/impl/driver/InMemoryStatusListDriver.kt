@@ -325,6 +325,7 @@ class InMemoryStatusListDriver(
                 statusListUri = state.args.statusListUri,
                 signingKeyAlias = state.args.signingKeyAlias ?: state.args.correlationId,
                 signingKeyMode = state.args.signingKeyMode,
+                signingVerificationMethodId = state.args.signingVerificationMethodId,
                 signingCertChainPath = state.args.signingCertChainPath,
                 bitsPerStatus = state.args.bitsPerStatus,
                 length = state.args.length,

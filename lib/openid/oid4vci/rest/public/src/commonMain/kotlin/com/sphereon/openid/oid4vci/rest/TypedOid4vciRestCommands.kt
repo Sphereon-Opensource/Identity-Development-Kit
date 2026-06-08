@@ -30,7 +30,7 @@ import kotlin.native.ObjCName
 /**
  * Service command for creating credential offer sessions.
  *
- * POST /oid4vci/backend/credential/offers
+ * POST /api/oid4vci/v1/backend/credential/offers
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateCredentialOfferServiceCommand", exact = true)
@@ -49,7 +49,7 @@ interface CreateCredentialOfferServiceCommand :
 /**
  * Service command for getting credential offer status.
  *
- * GET /oid4vci/backend/credential/offers/{correlation_id}
+ * GET /api/oid4vci/v1/backend/credential/offers/{correlation_id}
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetCredentialOfferStatusServiceCommand", exact = true)
@@ -68,7 +68,7 @@ interface GetCredentialOfferStatusServiceCommand :
 /**
  * Service command for deleting credential offer sessions.
  *
- * DELETE /oid4vci/backend/credential/offers/{correlation_id}
+ * DELETE /api/oid4vci/v1/backend/credential/offers/{correlation_id}
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DeleteCredentialOfferServiceCommand", exact = true)

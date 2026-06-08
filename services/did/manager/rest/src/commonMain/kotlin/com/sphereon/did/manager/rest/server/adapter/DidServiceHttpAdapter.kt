@@ -29,7 +29,7 @@ import dev.zacsweers.metro.binding
 
 /**
  * HTTP adapter for the DID services sub-surface of the IDK-21 DID Manager REST API.
- * Mounted at `/api/dids/v1`; routes are relative to that prefix and live in
+ * Mounted at `/api/did/v1`; routes are relative to that prefix and live in
  * the per-endpoint [HttpEndpointCommand] descriptors.
  */
 @Inject

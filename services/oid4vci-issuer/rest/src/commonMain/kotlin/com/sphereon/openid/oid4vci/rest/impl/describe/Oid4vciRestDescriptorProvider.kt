@@ -36,9 +36,9 @@ import dev.zacsweers.metro.binding
  * HttpAdapterCatalog can route incoming requests to this adapter.
  *
  * Endpoints:
- * - POST /oid4vci/backend/credential/offers — Create credential offer
- * - GET /oid4vci/backend/credential/offers/{correlation_id} — Get offer status
- * - DELETE /oid4vci/backend/credential/offers/{correlation_id} — Delete offer
+ * - POST /api/oid4vci/v1/backend/credential/offers — Create credential offer
+ * - GET /api/oid4vci/v1/backend/credential/offers/{correlation_id} — Get offer status
+ * - DELETE /api/oid4vci/v1/backend/credential/offers/{correlation_id} — Delete offer
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -46,7 +46,7 @@ import dev.zacsweers.metro.binding
 class Oid4vciRestDescriptorProvider : HttpAdapterDescriptorProvider {
     override val id: String = Oid4vciRestHttpAdapter.ID
 
-    private val basePath = "/oid4vci"
+    private val basePath = "/api/oid4vci/v1"
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(

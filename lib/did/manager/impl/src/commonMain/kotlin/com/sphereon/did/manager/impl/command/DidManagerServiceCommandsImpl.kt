@@ -107,7 +107,7 @@ import com.sphereon.did.manager.command.ListVerificationRelationshipsInput
 import com.sphereon.did.manager.command.ListVerificationRelationshipsServiceCommand
 import com.sphereon.did.manager.command.MethodCapabilityListResponse
 import com.sphereon.did.manager.command.MethodInput
-import com.sphereon.did.manager.command.PagingMeta
+import com.sphereon.did.manager.command.PageMeta
 import com.sphereon.did.manager.command.RemoveAlsoKnownAsServiceCommand
 import com.sphereon.did.manager.command.RemoveControllerServiceCommand
 import com.sphereon.did.manager.command.RemoveDidServiceServiceCommand
@@ -608,15 +608,20 @@ class ListDidsServiceCommandImpl(
         val effectiveSize = pageSize ?: totalElements.coerceAtLeast(1)
         val totalPages =
             if (effectiveSize <= 0) 0 else (totalElements + effectiveSize - 1) / effectiveSize
+        val offset = filter.page * effectiveSize
+        val hasMore = offset + items.size < totalElements
         return Ok(
             ListDidsOutput(
                 items = items.map { it.toWire(expand) },
                 page =
-                    PagingMeta(
+                    PageMeta(
+                        limit = effectiveSize,
+                        offset = offset,
                         page = filter.page,
                         size = effectiveSize,
-                        totalElements = totalElements,
+                        total = totalElements,
                         totalPages = totalPages,
+                        hasMore = hasMore,
                     ),
             ),
         )

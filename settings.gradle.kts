@@ -466,6 +466,8 @@ includeProject("lib-did-persistence-memory", "lib/did/persistence/memory")
 includeProject("lib-did-persistence-sqlite", "lib/did/persistence/sqlite")
 includeProject("lib-did-persistence-test-fixtures", "lib/did/persistence/test-fixtures")
 includeProject("lib-did-rest-resolver-server", "lib/did/rest/resolver/server")
+includeProject("lib-did-hosting-public", "lib/did/hosting/public")
+includeProject("lib-did-hosting-impl", "lib/did/hosting/impl")
 
 // mDoc libraries
 includeProject("lib-mdoc-core-public", "lib/mdoc/core/public")
@@ -534,6 +536,7 @@ includeProject("ktor-server-kotlin-inject", "services/ktor/server/plugins/ktor-s
 includeProject("ktor-server-jwt-auth", "services/ktor/server/plugins/ktor-server-jwt-auth")
 includeProject("services-kms-rest", "services/kms/rest")
 includeProject("services-did-manager-rest", "services/did/manager/rest")
+includeProject("services-did-hosting-rest", "services/did/hosting/rest")
 includeProject("services-oid4vp-verifier-rest", "services/oid4vp-verifier/rest")
 includeProject("services-oauth2-as-rest", "services/oauth2-as/rest")
 includeProject("services-oid4vci-issuer-rest", "services/oid4vci-issuer/rest")

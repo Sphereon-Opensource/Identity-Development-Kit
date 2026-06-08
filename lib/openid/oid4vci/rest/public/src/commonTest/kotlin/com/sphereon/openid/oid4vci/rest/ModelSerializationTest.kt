@@ -115,7 +115,7 @@ class ModelSerializationTest {
             CreateCredentialOfferOutput(
                 correlationId = "corr-123",
                 offerUri = "openid-credential-offer://?credential_offer=...",
-                statusUri = "https://issuer.example.com/oid4vci/backend/credential/offers/corr-123",
+                statusUri = "https://issuer.example.com/api/oid4vci/v1/backend/credential/offers/corr-123",
                 qrUri = "data:image/png;base64,abc123",
                 txCode = "1234",
             )

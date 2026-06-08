@@ -30,7 +30,7 @@ private const val DCQL_ADMIN_TAG = "oid4vp-dcql"
 /**
  * List all DCQL query configurations for the current tenant.
  *
- * GET /api/v1/oid4vp/dcql
+ * GET /api/dcql/v1/queries
  */
 @JsExportCompat
 interface ListDcqlQueriesEndpointCommand : HttpEndpointCommand {
@@ -40,7 +40,7 @@ interface ListDcqlQueriesEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dcql",
+                pathPattern = "/queries",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listDcqlQueries",
                 commandId = COMMAND_ID,
@@ -53,7 +53,7 @@ interface ListDcqlQueriesEndpointCommand : HttpEndpointCommand {
 /**
  * Create a new DCQL query configuration.
  *
- * POST /api/v1/oid4vp/dcql
+ * POST /api/dcql/v1/queries
  */
 @JsExportCompat
 interface CreateDcqlQueryEndpointCommand : HttpEndpointCommand {
@@ -63,7 +63,7 @@ interface CreateDcqlQueryEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dcql",
+                pathPattern = "/queries",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createDcqlQuery",
@@ -77,7 +77,7 @@ interface CreateDcqlQueryEndpointCommand : HttpEndpointCommand {
 /**
  * Read a single DCQL query configuration by its `query_id`.
  *
- * GET /api/v1/oid4vp/dcql/{queryId}
+ * GET /api/dcql/v1/queries/{queryId}
  */
 @JsExportCompat
 interface GetDcqlQueryEndpointCommand : HttpEndpointCommand {
@@ -87,7 +87,7 @@ interface GetDcqlQueryEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dcql/{queryId}",
+                pathPattern = "/queries/{queryId}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDcqlQuery",
                 commandId = COMMAND_ID,
@@ -100,7 +100,7 @@ interface GetDcqlQueryEndpointCommand : HttpEndpointCommand {
 /**
  * Replace a DCQL query configuration in full.
  *
- * PUT /api/v1/oid4vp/dcql/{queryId}
+ * PUT /api/dcql/v1/queries/{queryId}
  */
 @JsExportCompat
 interface ReplaceDcqlQueryEndpointCommand : HttpEndpointCommand {
@@ -110,7 +110,7 @@ interface ReplaceDcqlQueryEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PUT,
-                pathPattern = "/dcql/{queryId}",
+                pathPattern = "/queries/{queryId}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "replaceDcqlQuery",
@@ -124,7 +124,7 @@ interface ReplaceDcqlQueryEndpointCommand : HttpEndpointCommand {
 /**
  * Partially update a DCQL query configuration.
  *
- * PATCH /api/v1/oid4vp/dcql/{queryId}
+ * PATCH /api/dcql/v1/queries/{queryId}
  */
 @JsExportCompat
 interface PatchDcqlQueryEndpointCommand : HttpEndpointCommand {
@@ -134,7 +134,7 @@ interface PatchDcqlQueryEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PATCH,
-                pathPattern = "/dcql/{queryId}",
+                pathPattern = "/queries/{queryId}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "patchDcqlQuery",
@@ -148,7 +148,7 @@ interface PatchDcqlQueryEndpointCommand : HttpEndpointCommand {
 /**
  * Delete a DCQL query configuration by its `query_id`.
  *
- * DELETE /api/v1/oid4vp/dcql/{queryId}
+ * DELETE /api/dcql/v1/queries/{queryId}
  */
 @JsExportCompat
 interface DeleteDcqlQueryEndpointCommand : HttpEndpointCommand {
@@ -158,7 +158,7 @@ interface DeleteDcqlQueryEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dcql/{queryId}",
+                pathPattern = "/queries/{queryId}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deleteDcqlQuery",
                 commandId = COMMAND_ID,

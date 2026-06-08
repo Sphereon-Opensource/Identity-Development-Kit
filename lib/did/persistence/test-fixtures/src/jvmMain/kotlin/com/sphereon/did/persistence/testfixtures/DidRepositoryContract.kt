@@ -91,6 +91,76 @@ abstract class DidRepositoryContract {
         deletedAt = deletedAt,
     )
 
+    private fun webRecord(
+        id: String = newId(),
+        did: String,
+        method: String,
+        webLocation: String,
+        tenantId: String = tenant,
+        deletedAt: Instant? = null,
+    ) = DidRecord(
+        id = id,
+        tenantId = tenantId,
+        did = did,
+        method = method,
+        role = DidRole.MANAGED,
+        webLocation = webLocation,
+        createdAt = now,
+        updatedAt = now,
+        deletedAt = deletedAt,
+    )
+
+    @Test
+    fun findsByWebLocation() =
+        runTest {
+            before()
+            val repo = repository()
+            val rec = webRecord(did = "did:web:example.com:tenants:acme", method = "web", webLocation = "example.com:tenants:acme")
+            (repo.save(DidDetail(record = rec)) as? Ok) ?: error("save failed")
+
+            val found = repo.findByWebLocation(tenant, "example.com:tenants:acme")
+            assertTrue(found is Ok, "findByWebLocation should succeed")
+            assertNotNull(found.value, "expected a record at the web location")
+            assertEquals(rec.did, found.value!!.record.did)
+
+            val miss = repo.findByWebLocation(tenant, "other.example.com")
+            assertTrue(miss is Ok && miss.value == null, "unmanaged location returns null")
+        }
+
+    @Test
+    fun rejectsSecondMethodAtSameWebLocation() =
+        runTest {
+            before()
+            val repo = repository()
+            // A did:webvh manages example.com (web location strips the SCID).
+            val webvh =
+                webRecord(
+                    did = "did:webvh:QmScid123:example.com",
+                    method = "webvh",
+                    webLocation = "example.com",
+                )
+            assertTrue(repo.save(DidDetail(record = webvh)) is Ok, "first save should succeed")
+
+            // A did:web for the SAME location must be rejected — both map to example.com/.well-known.
+            val web =
+                webRecord(
+                    did = "did:web:example.com",
+                    method = "web",
+                    webLocation = "example.com",
+                )
+            val clash = repo.save(DidDetail(record = web))
+            assertTrue(clash is Err, "second method at the same web location must be rejected")
+
+            // A different web location for the same tenant is allowed.
+            val other =
+                webRecord(
+                    did = "did:web:other.example.com",
+                    method = "web",
+                    webLocation = "other.example.com",
+                )
+            assertTrue(repo.save(DidDetail(record = other)) is Ok, "distinct web location should be allowed")
+        }
+
     private fun assumeInfrastructureAvailable() {
         assumeTrue(isInfrastructureAvailable, "Required repository infrastructure is not available")
     }

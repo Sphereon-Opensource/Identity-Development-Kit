@@ -231,21 +231,27 @@ data class Did(
 )
 
 /**
- * Standard pagination metadata, mirroring the OpenAPI `common-components.PagingMeta` schema.
+ * Canonical pagination metadata, mirroring the OpenAPI `common-components.PageMeta` schema and the
+ * `pagination` object emitted by `ResponseBuilder.paginated()`. The `limit`/`offset`/`total`/
+ * `hasMore` fields are the stable legacy fields; `page`/`size`/`totalPages` are the additive
+ * unified fields.
  */
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("PagingMeta", exact = true)
+@ObjCName("PageMeta", exact = true)
 @Serializable
-data class PagingMeta(
+data class PageMeta(
+    val limit: Int,
+    val offset: Int,
     val page: Int,
     val size: Int,
-    val totalElements: Int,
+    val total: Int,
     val totalPages: Int,
+    val hasMore: Boolean,
 )
 
 /**
  * Output wrapper for `ListDidsServiceCommand`. Wire-shape matches the OpenAPI `DidListResponse`
- * schema: `{ items, page }`, where items are wire-shape [Did] and `page` is the [PagingMeta]
+ * schema: `{ items, page }`, where items are wire-shape [Did] and `page` is the [PageMeta]
  * envelope.
  */
 @OptIn(ExperimentalObjCName::class)
@@ -253,7 +259,7 @@ data class PagingMeta(
 @Serializable
 data class ListDidsOutput(
     val items: List<Did>,
-    val page: PagingMeta,
+    val page: PageMeta,
 )
 
 /**

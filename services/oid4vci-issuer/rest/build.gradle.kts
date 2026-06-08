@@ -111,10 +111,14 @@ kotlin {
                 implementation(projects.libDidPersistenceApi)
                 implementation(projects.libDidPersistenceMemory)
 
-                // DID resolvers (for proof verification with did:jwk / did:key)
+                // DID resolvers (for proof verification with did:jwk / did:key) + did:web signing/resolution.
                 implementation(projects.libDidResolverImpl)
                 implementation(projects.libDidMethodsJwk)
                 implementation(projects.libDidMethodsKey)
+                implementation(projects.libDidMethodsWeb)
+                // Public DID-document hosting endpoint (/.well-known/did.json). The issuer contributes
+                // its own DidHostingProvider (IssuerDidWebHostingProvider) that this endpoint serves.
+                implementation(projects.servicesDidHostingRest)
 
                 // SD-JWT (for JWS verification of proofs)
                 implementation(projects.libSdjwtImpl)

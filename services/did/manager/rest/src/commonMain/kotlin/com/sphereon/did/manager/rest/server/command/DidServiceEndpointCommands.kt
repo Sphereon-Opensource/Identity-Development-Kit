@@ -20,14 +20,14 @@ import com.sphereon.did.manager.command.ListDidServicesServiceCommand
 import com.sphereon.did.manager.command.RemoveDidServiceServiceCommand
 import com.sphereon.did.manager.command.UpdateDidServiceServiceCommand
 
-// ========== GET /api/dids/v1/dids/{did}/services ==========
+// ========== GET /api/did/v1/identifiers/{did}/services ==========
 interface ListDidServicesEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = ListDidServicesServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/services",
+                pathPattern = "/identifiers/{did}/services",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listDidServices",
                 commandId = COMMAND_ID,
@@ -37,14 +37,14 @@ interface ListDidServicesEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== POST /api/dids/v1/dids/{did}/services ==========
+// ========== POST /api/did/v1/identifiers/{did}/services ==========
 interface AddDidServiceEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = AddDidServiceServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/dids/{did}/services",
+                pathPattern = "/identifiers/{did}/services",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addDidService",
@@ -55,14 +55,14 @@ interface AddDidServiceEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== GET /api/dids/v1/dids/{did}/services/{serviceId} ==========
+// ========== GET /api/did/v1/identifiers/{did}/services/{serviceId} ==========
 interface GetDidServiceEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = GetDidServiceServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/dids/{did}/services/{serviceId}",
+                pathPattern = "/identifiers/{did}/services/{serviceId}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDidService",
                 commandId = COMMAND_ID,
@@ -72,14 +72,14 @@ interface GetDidServiceEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== PATCH /api/dids/v1/dids/{did}/services/{serviceId} ==========
+// ========== PATCH /api/did/v1/identifiers/{did}/services/{serviceId} ==========
 interface UpdateDidServiceEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = UpdateDidServiceServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PATCH,
-                pathPattern = "/dids/{did}/services/{serviceId}",
+                pathPattern = "/identifiers/{did}/services/{serviceId}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "updateDidService",
@@ -90,14 +90,14 @@ interface UpdateDidServiceEndpointCommand : HttpEndpointCommand {
     }
 }
 
-// ========== DELETE /api/dids/v1/dids/{did}/services/{serviceId} ==========
+// ========== DELETE /api/did/v1/identifiers/{did}/services/{serviceId} ==========
 interface RemoveDidServiceEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = RemoveDidServiceServiceCommand.COMMAND_ID
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
-                pathPattern = "/dids/{did}/services/{serviceId}",
+                pathPattern = "/identifiers/{did}/services/{serviceId}",
                 operationId = "removeDidService",
                 commandId = COMMAND_ID,
                 tags = setOf("DidServices"),

@@ -238,23 +238,24 @@ export const api = {
 
   getAuthRequestStatus: (id: string) => fetchJson<AuthRequestStatus>(`/verifier/requests/${id}/status`),
 
-  // Status-list admin routes are served directly by the issuer at the root path (like VCT),
-  // not through the webapp BFF proxy.
+  // Status-list management (by-index admin) routes are served directly by the issuer at the
+  // dedicated, versioned management base (decoupled from the public /public/statuslists hosting
+  // surface), not through the webapp BFF proxy.
   getStatusListEntry: async (listId: string, index: number): Promise<StatusListEntryStatus> => {
-    const res = await fetch(`/statuslists/${encodeURIComponent(listId)}/entries/${index}`)
+    const res = await fetch(`/api/statuslist/v1/${encodeURIComponent(listId)}/entries/${index}`)
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
     return res.json()
   },
 
   revokeStatusListEntry: async (listId: string, index: number): Promise<StatusListEntryStatus> => {
-    const res = await fetch(`/statuslists/${encodeURIComponent(listId)}/entries/${index}/revoke`, { method: 'POST' })
+    const res = await fetch(`/api/statuslist/v1/${encodeURIComponent(listId)}/entries/${index}/revoke`, { method: 'POST' })
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
     return res.json()
   },
 
   // Reset the list to all-valid (drops every revocation). Demo convenience for the in-memory list.
   clearStatusList: async (listId: string): Promise<{ correlationId: string; length: number; cleared: boolean }> => {
-    const res = await fetch(`/statuslists/${encodeURIComponent(listId)}/clear`, { method: 'POST' })
+    const res = await fetch(`/api/statuslist/v1/${encodeURIComponent(listId)}/clear`, { method: 'POST' })
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
     return res.json()
   },

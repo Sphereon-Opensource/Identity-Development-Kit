@@ -108,7 +108,7 @@ fun Application.configureOid4vcDemo(
             post("/issuer/offers") {
                 val body = call.receiveText()
                 val response =
-                    httpClient.post("$issuerUrl/oid4vci/backend/credential/offers") {
+                    httpClient.post("$issuerUrl/api/oid4vci/v1/backend/credential/offers") {
                         contentType(ContentType.Application.Json)
                         setBody(body)
                     }
@@ -118,7 +118,7 @@ fun Application.configureOid4vcDemo(
             // Get offer status
             get("/issuer/offers/{id}/status") {
                 val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-                val response = httpClient.get("$issuerUrl/oid4vci/backend/credential/offers/$id")
+                val response = httpClient.get("$issuerUrl/api/oid4vci/v1/backend/credential/offers/$id")
                 call.respondBytes(response.readRawBytes(), ContentType.Application.Json, HttpStatusCode(response.status.value, ""))
             }
 

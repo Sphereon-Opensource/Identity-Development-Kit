@@ -126,6 +126,7 @@ kotlin {
                 implementation(projects.libDidResolverImpl)
                 implementation(projects.libDidMethodsJwk)
                 implementation(projects.libDidMethodsKey)
+                implementation(projects.libDidMethodsWeb)
 
                 // OAuth2 (needed for JAR support in verifier)
                 implementation(projects.libOauth2CommonImpl)

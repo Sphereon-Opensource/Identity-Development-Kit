@@ -37,7 +37,7 @@ import dev.zacsweers.metro.binding
 /**
  * HTTP endpoint for deleting credential offer sessions.
  *
- * DELETE /oid4vci/backend/credential/offers/{correlation_id}
+ * DELETE /api/oid4vci/v1/backend/credential/offers/{correlation_id}
  */
 @Inject
 @SingleIn(SessionScope::class)

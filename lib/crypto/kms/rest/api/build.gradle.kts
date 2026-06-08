@@ -1,6 +1,7 @@
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
 import com.sphereon.gradle.plugin.configureLinuxTargetIfEnabled
 import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
+import com.sphereon.gradle.plugin.openapiSpec
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
 plugins {
@@ -17,10 +18,7 @@ metro {
 val kotlinBasePackage = "com.sphereon.crypto.kms.rest.api.generated"
 val kotlinModelPackage = "$kotlinBasePackage.models"
 val kotlinApiPackage = "$kotlinBasePackage.api"
-val inputSpecPath =
-    layout.projectDirectory
-        .file("src/openapi/openapi.yml")
-        .asFile.path
+val inputSpecPath = openapiSpec("kms-openapi.yml").path
 val generatedSourcesPath =
     layout.buildDirectory
         .dir("generated/openapi")

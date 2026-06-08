@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS did_record (
     alias TEXT,
     role TEXT NOT NULL,
     canonical_id TEXT,
+    -- Shared web location for did:web / did:webvh (host[%3Aport][:segment...]); NULL otherwise.
+    web_location TEXT,
     deactivated INTEGER AS Boolean NOT NULL DEFAULT 0,
     extension_properties_json TEXT,
     created_at TEXT AS Instant NOT NULL,
@@ -45,6 +47,12 @@ CREATE INDEX IF NOT EXISTS idx_did_record_alias ON did_record(alias);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_did_record_tenant_alias_live
     ON did_record(tenant_id, alias)
     WHERE alias IS NOT NULL AND deleted_at IS NULL;
+-- Live (tenant_id, web_location) uniqueness across ALL methods: a did:web and a did:webvh that
+-- map to the same hosted location may never coexist. Sparse on web_location IS NOT NULL so only
+-- web-hosted methods participate.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_did_record_tenant_web_location_live
+    ON did_record(tenant_id, web_location)
+    WHERE web_location IS NOT NULL AND deleted_at IS NULL;
 
 -- ================================================================
 -- 2. did_controller
@@ -235,6 +243,13 @@ WHERE alias = :alias
   AND (:includeDeleted = 1 OR deleted_at IS NULL)
 ORDER BY deleted_at IS NOT NULL, created_at ASC;
 
+findDidRecordByWebLocation:
+SELECT * FROM did_record
+WHERE web_location = :webLocation
+  AND (:tenantId IS NULL OR tenant_id = :tenantId)
+  AND (:includeDeleted = 1 OR deleted_at IS NULL)
+ORDER BY deleted_at IS NOT NULL, created_at ASC;
+
 -- :sort is one of 'createdAt','updatedAt','did','method','alias' (camelCase wire form);
 -- :sortDirection is 'ASC' or 'DESC'. The CASE chains below activate exactly one column +
 -- direction pair so the ORDER BY is effectively dynamic without losing prepared-statement
@@ -277,12 +292,12 @@ WHERE (:tenantId IS NULL OR tenant_id = :tenantId)
 
 insertDidRecord:
 INSERT INTO did_record(
-    id, tenant_id, did, method, alias, role, canonical_id,
+    id, tenant_id, did, method, alias, role, canonical_id, web_location,
     deactivated, extension_properties_json,
     created_at, created_by_id, updated_at, updated_by_id,
     deleted_at, deleted_by_id
 ) VALUES (
-    :id, :tenantId, :did, :method, :alias, :role, :canonicalId,
+    :id, :tenantId, :did, :method, :alias, :role, :canonicalId, :webLocation,
     :deactivated, :extensionPropertiesJson,
     :createdAt, :createdById, :updatedAt, :updatedById,
     :deletedAt, :deletedById
@@ -293,6 +308,7 @@ UPDATE did_record SET
     alias = :alias,
     role = :role,
     canonical_id = :canonicalId,
+    web_location = :webLocation,
     deactivated = :deactivated,
     extension_properties_json = :extensionPropertiesJson,
     updated_at = :updatedAt,

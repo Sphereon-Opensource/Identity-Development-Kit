@@ -39,7 +39,7 @@ import kotlinx.serialization.json.Json
 /**
  * HTTP endpoint for getting credential offer status.
  *
- * GET /oid4vci/backend/credential/offers/{correlation_id}
+ * GET /api/oid4vci/v1/backend/credential/offers/{correlation_id}
  */
 @Inject
 @SingleIn(SessionScope::class)

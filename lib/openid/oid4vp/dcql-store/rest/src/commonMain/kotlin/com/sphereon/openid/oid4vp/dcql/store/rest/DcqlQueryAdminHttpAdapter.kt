@@ -38,13 +38,13 @@ import dev.zacsweers.metro.binding
 /**
  * HTTP adapter for the DCQL query configuration administration endpoints.
  *
- * Mounts the following endpoints at `/api/v1/oid4vp/dcql`:
- * - `GET    /dcql`            list configurations
- * - `POST   /dcql`            create a configuration
- * - `GET    /dcql/{queryId}`  read a configuration
- * - `PUT    /dcql/{queryId}`  replace a configuration
- * - `PATCH  /dcql/{queryId}`  partially update a configuration
- * - `DELETE /dcql/{queryId}`  delete a configuration
+ * Mounts the following endpoints at `/api/dcql/v1/queries`:
+ * - `GET    /queries`            list configurations
+ * - `POST   /queries`            create a configuration
+ * - `GET    /queries/{queryId}`  read a configuration
+ * - `PUT    /queries/{queryId}`  replace a configuration
+ * - `PATCH  /queries/{queryId}`  partially update a configuration
+ * - `DELETE /queries/{queryId}`  delete a configuration
  *
  * Auth is the OIDC bearer token; the tenant is resolved from the session, never from headers.
  */
@@ -65,7 +65,7 @@ class DcqlQueryAdminHttpAdapter(
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
-                adapterBasePath = "/api/v1/oid4vp",
+                adapterBasePath = "/api/dcql/v1",
             ),
     ) {
     override val endpointCommands: List<HttpEndpointCommand> =

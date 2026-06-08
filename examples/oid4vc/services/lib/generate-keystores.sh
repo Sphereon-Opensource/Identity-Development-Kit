@@ -203,6 +203,23 @@ generate_all_keystores() {
     generate_ecdh_alias "oid4vci-issuer" "oid4vci-request-decryption"
     generate_keystore "oid4vp-verifier" "$verifier_san_dns" "oid4vp-verifier-signing"
 
+    # Share the verifier's signing key into the issuer keystore so the SINGLE did:web document the
+    # issuer serves can publish the verifier's authentication key (#key-2) alongside the issuer's
+    # assertionMethod key (#key-1) — one DID, both keys. Idempotent.
+    local share_pw="${KEYSTORE_PASSWORD:-e2e-keystore-pass}"
+    local issuer_ks="${keystores_dir}/oid4vci-issuer/keystore.p12"
+    local verifier_ks="${keystores_dir}/oid4vp-verifier/keystore.p12"
+    if [ -f "$issuer_ks" ] && [ -f "$verifier_ks" ]; then
+        if keytool -list -keystore "$issuer_ks" -storepass "$share_pw" -alias "oid4vp-verifier-signing" -storetype PKCS12 >/dev/null 2>&1; then
+            echo "  Alias 'oid4vp-verifier-signing' already shared into issuer keystore, skipping"
+        else
+            keytool -importkeystore \
+                -srckeystore "$verifier_ks" -srcstoretype PKCS12 -srcstorepass "$share_pw" -srcalias "oid4vp-verifier-signing" \
+                -destkeystore "$issuer_ks" -deststoretype PKCS12 -deststorepass "$share_pw" -destalias "oid4vp-verifier-signing" \
+                -noprompt 2>/dev/null && echo "  Shared 'oid4vp-verifier-signing' into issuer keystore (unified did:web doc)"
+        fi
+    fi
+
     generate_wallet_attester_jwks_if_missing
     generate_key_attester_jwks_if_missing
 

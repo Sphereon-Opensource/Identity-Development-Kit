@@ -18,21 +18,24 @@ kms:
         path: /app/keystore/keystore.p12
 
 # Credential status lists — standalone, protocol-neutral (NOT nested under oid4vci). Each list is
-# provisioned at startup and hosted at its own root path (GET /statuslists/{id}); the `uri` here is
-# the externally reachable address issued credentials embed and verifiers dereference. A credential
-# type opts in via `oid4vci.issuer.credentials.[<id>].status-list-id` below.
+# provisioned at startup and hosted at its own public root path (GET /public/statuslists/{id}); the
+# `uri` here is the externally reachable address issued credentials embed and verifiers dereference. A
+# credential type opts in via `oid4vci.issuer.credentials.[<id>].status-list-id` below.
 statuslists:
   # Hosting driver config. `base-path` is the configurable mount for the public token-hosting REST
-  # surface (default /statuslists; e.g. /public/statuslists). With `external-base-url` set, the `rest`
+  # surface (default /public/statuslists), decoupled from the by-index management surface
+  # (`management-base-path`, default /api/statuslist/v1). With `external-base-url` set, the `rest`
   # publisher derives a list's `uri` as <external-base-url><base-path>/<id>, so a list may omit `uri`.
   hosting:
-    base-path: /statuslists
+    base-path: /public/statuslists
+    management-base-path: /api/statuslist/v1
     external-base-url: "${env:EXTERNAL_BASE_URL}"
   ids: revocation
   "[revocation]":
-    # Explicit `uri` (takes precedence). Could be omitted here since `hosting.external-base-url` +
-    # `publisher: rest` derive the same value (${EXTERNAL_BASE_URL}/statuslists/revocation).
-    uri: "${env:EXTERNAL_BASE_URL}/statuslists/revocation"
+    # Explicit `uri` (takes precedence). "revocation" is the list's correlationId; the hosting
+    # `/{id}` endpoint resolves by technical id and falls back to correlationId, so the bare path
+    # works (the `/by/<correlationId>` form also works).
+    uri: "${env:EXTERNAL_BASE_URL}/public/statuslists/revocation"
     # Hosting driver: `rest` (this deployment serves it, default), `export` (self-host elsewhere),
     # or the github-pages/cdn seams. See StatusListPublisher.
     publisher: rest
@@ -56,6 +59,16 @@ oid4vci:
   issuer:
     identifier: "${env:EXTERNAL_BASE_URL}/oid4vci"
     authorization-servers: "${env:EXTERNAL_BASE_URL}/auth"
+    # The SINGLE did:web document served at /.well-known/did.json carries every key this deployment
+    # publishes, each at a descriptive per-alias fragment (e.g. did:web:<host>#PID): the issuer's
+    # credential-signing keys under assertionMethod, and the verifier's request-object signing key
+    # under authentication. The verifier key is shared into the issuer keystore by
+    # lib/generate-keystores.sh so this service can publish its public key. Aliases not present in
+    # the KMS are skipped.
+    hosting:
+      did-web:
+        assertion-key-aliases: PID,TestCredential,AgeOver18,Mdl
+        authentication-key-aliases: oid4vp-verifier-signing
     # Key alias in the issuer KMS used to sign issuer metadata (OID4VCI §13.2.4).
     # Reuses the TestCredential signing key for the demo; production should use a dedicated key.
     signing-key-alias: TestCredential

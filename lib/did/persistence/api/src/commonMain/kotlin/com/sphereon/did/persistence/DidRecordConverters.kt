@@ -30,6 +30,7 @@ import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationMethodOrReference
 import com.sphereon.did.models.VerificationPurpose
+import com.sphereon.did.utils.WebLocation
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -172,6 +173,7 @@ fun DidDocument.toDidDetail(ctx: DecomposeContext): IdkResult<DidDetail, IdkErro
             alias = ctx.alias,
             role = ctx.role,
             canonicalId = ctx.canonicalId,
+            webLocation = WebLocation.fromDid(ctx.method, ctx.did),
             deactivated = ctx.deactivated,
             extensionPropertiesJson = extensions.toJsonStringOrNull(),
             createdAt = createdAt,

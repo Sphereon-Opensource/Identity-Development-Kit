@@ -30,7 +30,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Request body for POST /oid4vci/backend/credential/offers.
+ * Request body for POST /api/oid4vci/v1/backend/credential/offers.
  *
  * Creates a new OID4VCI credential offer session. The caller specifies which
  * credential configurations to offer and optionally supplies subject data.
@@ -207,7 +207,7 @@ data class IssuanceCallbackConfig(
 )
 
 /**
- * Response body for POST /oid4vci/backend/credential/offers.
+ * Response body for POST /api/oid4vci/v1/backend/credential/offers.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CreateCredentialOfferOutput", exact = true)
@@ -242,7 +242,7 @@ data class CreateCredentialOfferOutput(
 )
 
 /**
- * Response body for GET /oid4vci/backend/credential/offers/{correlation_id}.
+ * Response body for GET /api/oid4vci/v1/backend/credential/offers/{correlation_id}.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetCredentialOfferStatusOutput", exact = true)

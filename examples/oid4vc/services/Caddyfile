@@ -90,9 +90,17 @@
 		reverse_proxy oid4vci-issuer:8080
 	}
 
-	# Credential status list hosting (public, cacheable) — GET /statuslists/{id}.
-	# Protocol-neutral root path; the issuer service serves the signed status-list token here.
-	handle /statuslists/* {
+	# Credential status list hosting (public, cacheable) — GET /public/statuslists/{id}.
+	# Protocol-neutral public path; the issuer service serves the signed status-list token here.
+	handle /public/statuslists/* {
+		import cors
+		reverse_proxy oid4vci-issuer:8080
+	}
+
+	# Credential status list management (by-index admin) — read / revoke / clear.
+	# Decoupled from the public hosting surface above; mounted at the versioned, singular
+	# management base. The issuer service serves the admin endpoints here.
+	handle /api/statuslist/v1/* {
 		import cors
 		reverse_proxy oid4vci-issuer:8080
 	}
@@ -105,6 +113,14 @@
 		reverse_proxy oid4vci-issuer:8080
 	}
 	handle /.well-known/jwt-vc-issuer/oid4vci {
+		import cors
+		reverse_proxy oid4vci-issuer:8080
+	}
+
+	# did:web document for the issuer's signing DID (did:web:<host>). Served by the issuer's
+	# DID-hosting endpoint, derived from its signing key. Host header is preserved so the
+	# hosting endpoint computes the public web location.
+	handle /.well-known/did.json {
 		import cors
 		reverse_proxy oid4vci-issuer:8080
 	}

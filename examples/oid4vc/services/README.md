@@ -236,7 +236,7 @@ Dots become underscores, keys are uppercased. Config keys use bare domain prefix
 
 No user login required. The issuer creates a credential offer with a pre-authorized code.
 
-1. **Create offer**. `POST /oid4vci/backend/credential/offers`
+1. **Create offer**. `POST /api/oid4vci/v1/backend/credential/offers`
 2. Wallet scans QR code from the response
 3. Wallet exchanges pre-auth code at `POST /auth/token`
 4. Wallet requests credential at `POST /oid4vci/credential`
@@ -245,7 +245,7 @@ No user login required. The issuer creates a credential offer with a pre-authori
 
 Requires user login. The wallet redirects to the AS for authentication.
 
-1. **Create offer**. `POST /oid4vci/backend/credential/offers` with `authorization_code` grant
+1. **Create offer**. `POST /api/oid4vci/v1/backend/credential/offers` with `authorization_code` grant
 2. Wallet scans QR, opens authorization URL in browser
 3. User logs in at `/auth/login` (testuser/testpass)
 4. AS redirects back with authorization code

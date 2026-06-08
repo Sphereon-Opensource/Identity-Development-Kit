@@ -57,13 +57,30 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     /** Build the reference (by id or correlationId) from the matched request. */
     protected abstract fun resolveRef(request: GenericHttpRequest): IdkResult<StatusListRef, IdkError>
 
+    /**
+     * Additional references to try if [resolveRef]'s reference resolves nothing. Lets the by-id
+     * endpoint accept a correlationId on the bare `/{id}` path (so a stable business key works
+     * without the `/by/` prefix), without conflating id and correlationId in the driver/management ops.
+     */
+    protected open fun fallbackRefs(request: GenericHttpRequest): List<StatusListRef> = emptyList()
+
     final override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
         val ref = resolveRef(request).getOrElse { return Err(it) }
-        return service.execute(ref).map { token -> token.toRawResponse() }
+        var result = service.execute(ref)
+        if (result.isErr) {
+            for (fallback in fallbackRefs(request)) {
+                val attempt = service.execute(fallback)
+                if (attempt.isOk) {
+                    result = attempt
+                    break
+                }
+            }
+        }
+        return result.map { token -> token.toRawResponse() }
     }
 
     private fun StatusListToken.toRawResponse(): GenericHttpResponse {
@@ -77,7 +94,7 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     }
 }
 
-/** `GET /statuslists/{id}` — resolve the token by technical id. */
+/** `GET /public/statuslists/{id}` — resolve the token by technical id. */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<GetStatusListTokenByIdEndpointCommand>())
@@ -93,11 +110,20 @@ class GetStatusListTokenByIdEndpointCommandImpl(
     GetStatusListTokenByIdEndpointCommand {
     override fun resolveRef(request: GenericHttpRequest): IdkResult<StatusListRef, IdkError> {
         val id = request.requirePathParam(PARAM_ID).getOrElse { return Err(it) }
-        return Ok(StatusListRef(id = id))
+        // Public hosting favors the stable business key: the `/{id}` segment is resolved as a
+        // correlationId first (what credentials embed and what is stable across rebuilds),
+        // falling back to the internal technical id below.
+        return Ok(StatusListRef(correlationId = id))
     }
+
+    override fun fallbackRefs(request: GenericHttpRequest): List<StatusListRef> =
+        request.requirePathParam(PARAM_ID).fold(
+            success = { id -> listOf(StatusListRef(id = id)) },
+            failure = { emptyList() },
+        )
 }
 
-/** `GET /statuslists/by/{correlationId}` — resolve the token by business correlation id. */
+/** `GET /public/statuslists/by/{correlationId}` — resolve the token by business correlation id. */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<GetStatusListTokenByCorrelationIdEndpointCommand>())

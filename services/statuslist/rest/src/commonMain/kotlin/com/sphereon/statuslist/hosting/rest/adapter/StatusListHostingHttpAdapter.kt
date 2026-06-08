@@ -27,7 +27,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 /**
- * PUBLIC HTTP adapter that hosts the signed status-list token, mounted at `/statuslists`. Routes by
+ * PUBLIC HTTP adapter that hosts the signed status-list token, mounted at `/public/statuslists`. Routes by
  * relative path to the by-id and by-correlationId token endpoints. These endpoints are
  * unauthenticated and cacheable: the deployment's auth layer leaves this mount open, and the
  * responses carry a `Cache-Control` header. They serve the RAW signed token a verifier resolves.

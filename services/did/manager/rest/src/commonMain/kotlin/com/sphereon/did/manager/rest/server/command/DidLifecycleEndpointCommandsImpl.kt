@@ -241,7 +241,7 @@ private fun parseSortDirection(request: GenericHttpRequest): IdkResult<SortDirec
     }
 }
 
-// ========== POST /api/dids/v1/dids/external — trackExternalDid ==========
+// ========== POST /api/did/v1/identifiers/external — trackExternalDid ==========
 
 @Inject
 @SingleIn(SessionScope::class)

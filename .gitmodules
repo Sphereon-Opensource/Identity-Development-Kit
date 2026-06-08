@@ -1,3 +1,7 @@
 [submodule "gradle-build-support"]
 	path = gradle-build-support
 	url = https://github.com/Sphereon-Opensource/gradle-build-support.git
+[submodule "openapi"]
+	path = openapi
+	url = https://github.com/Sphereon-Opensource/openapi.git
+	branch = develop

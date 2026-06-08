@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
  * This is the test the Codex follow-up flagged as missing: even though every adapter and
  * descriptor provider was updated to consume [DidManagerRestConfig], nothing in the
  * existing suite drives the dispatcher with a non-default `adapterBasePath`. Without this
- * test, a future change that hardcodes `/api/dids/v1` somewhere in the routing chain would
+ * test, a future change that hardcodes `/api/did/v1` somewhere in the routing chain would
  * pass CI while silently making the surface un-remountable.
  *
  * The test overrides [DidManagerRestPaths.BASE_PATH_CONFIG_KEY] at the AppScope property

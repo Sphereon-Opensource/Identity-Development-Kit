@@ -50,6 +50,13 @@ data class SignStatusListTokenArgs(
      * null. Set to match the credentials that reference this list so wallets trust the same key/anchor.
      */
     val signingKeyMode: String? = null,
+    /**
+     * For DID signing modes, the verification-method URL used as the JOSE `kid`. did:web/did:webvh
+     * are NOT derivable from the key, so this is how the kid is configured. A full DID URL
+     * (`did:web:host#frag`) is used verbatim; if omitted, web/webvh default to the host (from
+     * [statusListUri]) plus the [signingKeyAlias] as the fragment. did:jwk/did:key derive it.
+     */
+    val signingVerificationMethodId: String? = null,
     /** Optional PEM cert-chain path for `x5c` mode when the KMS key has no embedded chain. */
     val signingCertChainPath: String? = null,
     val bitsPerStatus: Int,

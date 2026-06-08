@@ -62,6 +62,7 @@ class SqliteDidRepositoryImpl(
                             alias = record.alias,
                             role = record.role.name,
                             canonicalId = record.canonicalId,
+                            webLocation = record.webLocation,
                             deactivated = record.deactivated,
                             extensionPropertiesJson = record.extensionPropertiesJson,
                             updatedAt = record.updatedAt,
@@ -79,6 +80,7 @@ class SqliteDidRepositoryImpl(
                             alias = record.alias,
                             role = record.role.name,
                             canonicalId = record.canonicalId,
+                            webLocation = record.webLocation,
                             deactivated = record.deactivated,
                             extensionPropertiesJson = record.extensionPropertiesJson,
                             createdAt = record.createdAt,
@@ -146,6 +148,20 @@ class SqliteDidRepositoryImpl(
                 if (row == null) Ok(null) else Ok(loadAggregate(row.toDidRecord()))
             } catch (exception: Exception) {
                 Err(translate(exception, "findByAlias"))
+            }
+        }
+
+    override suspend fun findByWebLocation(
+        tenantId: String?,
+        webLocation: String,
+        includeDeleted: Boolean,
+    ): IdkResult<DidDetail?, IdkError> =
+        io {
+            try {
+                val row = queries.findDidRecordByWebLocation(webLocation, tenantId, boolToLong(includeDeleted)).executeAsList().firstOrNull()
+                if (row == null) Ok(null) else Ok(loadAggregate(row.toDidRecord()))
+            } catch (exception: Exception) {
+                Err(translate(exception, "findByWebLocation"))
             }
         }
 
@@ -717,6 +733,7 @@ class SqliteDidRepositoryImpl(
             alias = alias,
             role = DidRole.valueOf(role),
             canonicalId = canonical_id,
+            webLocation = web_location,
             deactivated = deactivated,
             extensionPropertiesJson = extension_properties_json,
             createdAt = created_at,

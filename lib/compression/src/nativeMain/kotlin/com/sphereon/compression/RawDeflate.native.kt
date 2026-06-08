@@ -42,7 +42,6 @@ import platform.zlib.inflate
 import platform.zlib.inflateEnd
 import platform.zlib.inflateInit2_
 import platform.zlib.z_stream
-import platform.zlib.zlibVersion
 
 /**
  * Apple (iOS/macOS) & Linux native raw DEFLATE via Kotlin/Native's built-in `platform.zlib`.
@@ -66,7 +65,11 @@ private fun zlibProcess(
 ): ByteArray =
     memScoped {
         val strm = alloc<z_stream>()
-        val version = zlibVersion()
+        // The Kotlin/Native zlib bindings expose deflateInit2_/inflateInit2_ with a String?
+        // `version` parameter; zlibVersion() returns a C pointer that no longer matches that
+        // signature (fails :lib-compression:compileKotlinLinuxX64). zlib only checks the major
+        // version, so the compile-time ZLIB_VERSION major ("1") is the correct value to pass.
+        val version = "1.2.13"
         val streamSize = sizeOf<z_stream>().toInt()
         val initRc =
             if (compress) {

@@ -49,6 +49,7 @@ import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.manager.DidRole
 import com.sphereon.did.manager.DidUpdateOptions
 import com.sphereon.did.manager.ManagedDid
+import com.sphereon.did.manager.ManagedDidGenerator
 import com.sphereon.did.manager.MethodCapabilitySummary
 import com.sphereon.did.manager.PatchValue
 import com.sphereon.did.manager.ServicePatch
@@ -139,7 +140,13 @@ class DidManagerServiceImpl(
     private val keyReferenceStore: KeyReferenceStore,
     private val idGen: IdGenerator,
     private val clock: Clock,
+    // Methods (e.g. did:webvh) whose minting can't go through DidProvider.create contribute a
+    // generator; the manager routes create() through it. Empty when no such method is on the classpath.
+    private val managedDidGenerators: Set<ManagedDidGenerator> = emptySet(),
 ) : DidManager {
+    private val managedDidGeneratorsByMethod: Map<String, ManagedDidGenerator> by lazy {
+        managedDidGenerators.associateBy { it.method }
+    }
     private val json = Json { encodeDefaults = false }
     private val logger = execution.log.logManager.withTag("DidManagerService")
 
@@ -277,8 +284,16 @@ class DidManagerServiceImpl(
     // ============ Create ============
 
     override suspend fun create(options: DidCreateOptions): IdkResult<ManagedDid, IdkError> {
-        val provider = requireProvider(options.method).getOrElse { return Err(it) }
-        val result = provider.create(options).getOrElse { return Err(it) }
+        // Methods whose minting can't go through the generic DidProvider.create (e.g. did:webvh —
+        // it needs a signed genesis log + SCID) contribute a ManagedDidGenerator; route to it.
+        // Everything after this (key-mapping resolution, decompose, persist) is method-agnostic.
+        val result =
+            managedDidGeneratorsByMethod[options.method]?.let { generator ->
+                generator.generate(options).getOrElse { return Err(it) }
+            } ?: run {
+                val provider = requireProvider(options.method).getOrElse { return Err(it) }
+                provider.create(options).getOrElse { return Err(it) }
+            }
 
         val recordId = idGen.next()
         val now = clock.now()
@@ -359,6 +374,26 @@ class DidManagerServiceImpl(
             )
 
         val detail = result.didDocument.toDidDetail(ctx).getOrElse { return Err(it) }
+
+        // Cross-method web-location guard: a hosted host+path may be managed by exactly one DID.
+        // did:web:example.com and did:webvh:<scid>:example.com both resolve at the same URL, so the
+        // system must reject the second. Pre-check for a friendly error; the live (tenant_id,
+        // web_location) unique index is the hard backstop. Prefer did:webvh (it is a backwards-
+        // compatible superset of did:web).
+        detail.record.webLocation?.let { location ->
+            val existing = repository.findByWebLocation(tenantId, location).getOrElse { return Err(it) }
+            if (existing != null && existing.record.did != detail.record.did) {
+                return Err(
+                    IdkError.ALREADY_EXISTS_ERROR(
+                        message =
+                            "Web location '$location' is already managed by ${existing.record.did} " +
+                                "(method=${existing.record.method}). did:web and did:webvh cannot both manage the " +
+                                "same host and path; use a single did:webvh DID, which is backwards compatible with did:web.",
+                    ),
+                )
+            }
+        }
+
         invalidateManagedCache(result.did)
         repository.save(detail).getOrElse { return Err(it) }
         return detail.toManagedDidWithJwks()
