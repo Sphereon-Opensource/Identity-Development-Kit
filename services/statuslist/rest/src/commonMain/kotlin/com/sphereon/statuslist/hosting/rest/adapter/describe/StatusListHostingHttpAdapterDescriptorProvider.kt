@@ -15,7 +15,6 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.statuslist.hosting.rest.StatusListHostingConfig
 import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByCorrelationIdEndpointCommand
-import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByIdEndpointCommand
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -46,7 +45,6 @@ class StatusListHostingHttpAdapterDescriptorProvider(
                 ),
             endpoints =
                 listOf(
-                    GetStatusListTokenByIdEndpointCommand.ENDPOINT,
                     GetStatusListTokenByCorrelationIdEndpointCommand.ENDPOINT,
                 ).map { it.copy(pathPatterns = it.pathPatterns.map { p -> hostingConfig.basePath + p }) },
         )

@@ -33,6 +33,7 @@ import com.sphereon.statuslist.StatusListResult
 import com.sphereon.statuslist.StatusListSortField
 import com.sphereon.statuslist.StatusListSummary
 import com.sphereon.statuslist.StatusListToken
+import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.UpdateEntryStatusArgs
 import com.sphereon.statuslist.impl.codec.StatusBitset
 import com.sphereon.statuslist.impl.codec.StatusListCodec
@@ -155,12 +156,34 @@ class InMemoryStatusListStore {
 
     suspend fun updateEntryStatus(args: UpdateEntryStatusArgs): IdkResult<StatusListEntry, IdkError> =
         mutex.withLock {
-            val (state, existing) = resolveEntry(args.entry) ?: return@withLock Err(entryNotFound(args.entry))
+            val ref = args.entry
+            val state = resolveEntryListState(ref) ?: return@withLock Err(entryNotFound(ref))
             if (args.value !in 0 until (1 shl state.args.bitsPerStatus)) {
                 return@withLock Err(StatusListErrors.invalidStatusValue(args.value, state.args.bitsPerStatus))
             }
-            state.bitset.set(existing.statusListIndex, args.value)
-            val updated = existing.copy(value = args.value)
+            val existing = findEntryIn(state, ref)
+            // A status update by index must work on ANY in-range index, allocated
+            // or not: rejecting unallocated indexes would reveal which indexes
+            // carry issued credentials. Lookups by entry/credential id still
+            // require an allocated entry (they reference allocation-time data).
+            val index =
+                existing?.statusListIndex ?: ref.statusListIndex
+                    ?: return@withLock Err(entryNotFound(ref))
+            if (index !in 0 until state.args.length) {
+                return@withLock Err(StatusListErrors.indexOutOfRange(index, state.args.length))
+            }
+            state.bitset.set(index, args.value)
+            val updated =
+                existing?.copy(value = args.value)
+                    ?: StatusListEntry(
+                        statusListId = state.id,
+                        statusListIndex = index,
+                        entryCorrelationId = null,
+                        credentialId = null,
+                        credentialHash = null,
+                        value = args.value,
+                        purpose = state.args.purposes.firstOrNull() ?: StatusPurpose.REVOCATION,
+                    )
             indexEntry(state, updated)
             state.updatedAt = Clock.System.now()
             Ok(updated)
@@ -225,12 +248,22 @@ class InMemoryStatusListStore {
     }
 
     private fun resolveEntry(ref: EntryRef): Pair<ListState, StatusListEntry>? {
-        val state =
-            when {
-                ref.statusListId != null -> lists[ref.statusListId]
-                ref.correlationId != null -> correlationToId[ref.correlationId]?.let { lists[it] }
-                else -> null
-            } ?: return null
+        val state = resolveEntryListState(ref) ?: return null
+        val entry = findEntryIn(state, ref) ?: return null
+        return state to entry
+    }
+
+    private fun resolveEntryListState(ref: EntryRef): ListState? =
+        when {
+            ref.statusListId != null -> lists[ref.statusListId]
+            ref.correlationId != null -> correlationToId[ref.correlationId]?.let { lists[it] }
+            else -> null
+        }
+
+    private fun findEntryIn(
+        state: ListState,
+        ref: EntryRef
+    ): StatusListEntry? {
         val index =
             when {
                 ref.statusListIndex != null -> ref.statusListIndex
@@ -238,8 +271,7 @@ class InMemoryStatusListStore {
                 ref.credentialId != null -> state.indexByCredentialId[ref.credentialId]
                 else -> null
             } ?: return null
-        val entry = state.entriesByIndex[index] ?: return null
-        return state to entry
+        return state.entriesByIndex[index]
     }
 
     private fun ListState.toSummary(): StatusListSummary =

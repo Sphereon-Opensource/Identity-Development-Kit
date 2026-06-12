@@ -21,6 +21,7 @@ package com.sphereon.data.store.party.input
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.IdentifierType
+import com.sphereon.data.store.party.model.ProtectedIdentifierValue
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
@@ -72,6 +73,15 @@ data class CorrelationIdentifierCreateInput
         /** Electronic address extension data (for EMAIL, PHONE, URL) */
         @SerialName("electronicExtension")
         val electronicExtension: IdentifierElectronicCreateInput? = null,
+        /**
+         * Optional at-rest protection envelope for the identifier value. When present, the
+         * persistence layer stores the protection mode plus whichever representations the
+         * envelope carries (plaintext, ciphertext, blind-index HMAC and key references).
+         * The IDK lite model performs no crypto itself; callers obtain the envelope from an
+         * identifier protector in a higher layer.
+         */
+        @SerialName("protectedValue")
+        val protectedValue: ProtectedIdentifierValue? = null,
     )
 
 /**

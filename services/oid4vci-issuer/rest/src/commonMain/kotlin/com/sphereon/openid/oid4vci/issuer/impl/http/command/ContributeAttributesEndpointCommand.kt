@@ -58,7 +58,7 @@ interface ContributeAttributesEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/sessions/{correlationId}/attributes",
+                pathPattern = "/backend/sessions/{correlationId}/attributes",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "contributeAttributes",

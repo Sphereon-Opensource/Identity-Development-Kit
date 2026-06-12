@@ -68,7 +68,7 @@ class EvaluateCompletenessEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = EvaluateCompletenessEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.GET, endpoint.method)
-        assertEquals("/sessions/{correlationId}/completeness", endpoint.pathPattern)
+        assertEquals("/backend/sessions/{correlationId}/completeness", endpoint.pathPattern)
     }
 
     @Test
@@ -101,7 +101,7 @@ class EvaluateCompletenessEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/corr-123/completeness",
+                    path = "/backend/sessions/corr-123/completeness",
                     headers = emptyMap(),
                     bodySupplier = { null },
                 )
@@ -130,7 +130,7 @@ class EvaluateCompletenessEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/corr-456/completeness",
+                    path = "/backend/sessions/corr-456/completeness",
                     headers = emptyMap(),
                     bodySupplier = { null },
                 )
@@ -156,7 +156,7 @@ class EvaluateCompletenessEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/unknown/completeness",
+                    path = "/backend/sessions/unknown/completeness",
                     bodySupplier = { null },
                 )
 
@@ -174,7 +174,7 @@ class EvaluateCompletenessEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/corr-123/completeness",
+                    path = "/backend/sessions/corr-123/completeness",
                     bodySupplier = { null },
                 )
 
@@ -287,7 +287,7 @@ class EvaluateCompletenessEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/oid4vci/sessions/integrated-corr/completeness",
+                    path = "/oid4vci/backend/sessions/integrated-corr/completeness",
                     headers = emptyMap(),
                     bodySupplier = { null },
                 )

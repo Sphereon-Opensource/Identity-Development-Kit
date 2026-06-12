@@ -83,6 +83,10 @@ class MsoMdocFormatHandler(
         request: CredentialRequest,
         context: IssuanceContext,
     ): IdkResult<CredentialEnvelope, IdkError> {
+        // Fail closed: this handler cannot embed a status entry into the MSO, so a credential
+        // configuration bound to a status list must not issue through it.
+        unsupportedStatusListBinding(context)?.let { return Err(it) }
+
         val doctype =
             context.credentialConfiguration.doctype
                 ?: return Err(IdkError.fromString(code = "invalid_credential_request", message = "mso_mdoc requires doctype in credential configuration"))

@@ -36,6 +36,7 @@ import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.crypto.resolution.tryManagedIdentifierToJwk
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
@@ -123,7 +124,12 @@ interface GetIssuerMetadataEndpointCommand : HttpEndpointCommand {
             val issuerPath = extractIssuerPath(issuerIdentifier)
             val patterns =
                 if (issuerPath.isBlank()) {
-                    listOf(BARE_PATH)
+                    listOf(
+                        BARE_PATH,
+                        "$BARE_PATH/{issuerPath...}",
+                        "/{issuerPath}$BARE_PATH",
+                        "/{issuerPathParent}/{issuerPathChild}$BARE_PATH",
+                    )
                 } else {
                     listOf("$BARE_PATH$issuerPath", "$issuerPath$BARE_PATH")
                 }
@@ -180,11 +186,18 @@ class GetIssuerMetadataEndpointCommandImpl(
         endpoint = GetIssuerMetadataEndpointCommand.descriptorFor(configProvider.issuerIdentifier),
     ),
     GetIssuerMetadataEndpointCommand {
+    private val sessionExecution: SessionExecution = execution
+
     override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
+        if (request.path != GetIssuerMetadataEndpointCommand.BARE_PATH &&
+            (sessionExecution.tenantId.isBlank() || sessionExecution.tenantId == IdentityConstants.ANONYMOUS_TENANT_ID)
+        ) {
+            return Err(IdkError.NOT_FOUND_ERROR(message = "Not found: ${request.method} ${request.path}"))
+        }
 
         val publicUrls =
             publicUrlResolver

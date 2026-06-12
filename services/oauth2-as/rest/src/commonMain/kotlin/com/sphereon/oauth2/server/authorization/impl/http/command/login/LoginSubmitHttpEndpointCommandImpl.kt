@@ -40,11 +40,13 @@ import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStore
+import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -70,6 +72,7 @@ class LoginSubmitHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val userAuthProvider: UserAuthenticationProvider,
     private val loginSessionStore: OidcLoginSessionStore,
+    private val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
     private val clock: Clock,
@@ -151,9 +154,21 @@ class LoginSubmitHttpEndpointCommandImpl(
             return Ok(redirectBackToLoginWithError(sessionId, returnUrl))
         }
 
+        // Load the pending authorization session (read-only: findById does NOT consume; the
+        // callback flow's single-use removal stays where it is) so the provider receives the
+        // application id stamped at session mint. Fail-open: a lookup failure or missing
+        // session downgrades to an application-agnostic context, login continues.
+        val pendingSession =
+            pendingAuthorizationSessionStore
+                .findById(sessionId)
+                .getOrElse { null }
         val authResult =
             userAuthProvider.authenticateWithCredentials(
                 UserCredentials.UsernamePassword(username = username, password = password),
+                AuthenticationContext(
+                    sessionId = sessionId,
+                    applicationId = pendingSession?.applicationId,
+                ),
             )
         if (!authResult.isOk) {
             // Provider returned a failure result. Subject is intentionally NOT included in the

@@ -25,8 +25,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -80,12 +80,12 @@ interface KmsKeysServiceFacade : ServiceFacade {
     suspend fun listKeys(providerId: String? = null): IdkResult<ListKeysResponse, IdkError>
 
     /**
-     * Stores a key.
+     * Imports externally supplied key material.
      *
-     * @param storeKey Key storage request
-     * @return The stored key info wrapped in StoreKeyResponse
+     * @param importKey Key import request
+     * @return The imported key info wrapped in ImportKeyResponse
      */
-    suspend fun storeKey(storeKey: StoreKey): IdkResult<StoreKeyResponse, IdkError>
+    suspend fun importKey(importKey: ImportKey): IdkResult<ImportKeyResponse, IdkError>
 
     /**
      * Generates a new key.

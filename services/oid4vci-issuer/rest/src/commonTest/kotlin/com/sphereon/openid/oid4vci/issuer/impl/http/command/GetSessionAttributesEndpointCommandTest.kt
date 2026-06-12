@@ -67,7 +67,7 @@ class GetSessionAttributesEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = GetSessionAttributesEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.GET, endpoint.method)
-        assertEquals("/sessions/{correlationId}/attributes", endpoint.pathPattern)
+        assertEquals("/backend/sessions/{correlationId}/attributes", endpoint.pathPattern)
     }
 
     @Test
@@ -98,7 +98,7 @@ class GetSessionAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/corr-123/attributes",
+                    path = "/backend/sessions/corr-123/attributes",
                     headers = emptyMap(),
                     bodySupplier = { null },
                 )
@@ -128,7 +128,7 @@ class GetSessionAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/corr-456/attributes",
+                    path = "/backend/sessions/corr-456/attributes",
                     headers = emptyMap(),
                     bodySupplier = { null },
                 )
@@ -154,7 +154,7 @@ class GetSessionAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/unknown/attributes",
+                    path = "/backend/sessions/unknown/attributes",
                     bodySupplier = { null },
                 )
 
@@ -172,7 +172,7 @@ class GetSessionAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/sessions/corr-123/attributes",
+                    path = "/backend/sessions/corr-123/attributes",
                     bodySupplier = { null },
                 )
 
@@ -282,7 +282,7 @@ class GetSessionAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "GET",
-                    path = "/oid4vci/sessions/integrated-corr/attributes",
+                    path = "/oid4vci/backend/sessions/integrated-corr/attributes",
                     headers = emptyMap(),
                     bodySupplier = { null },
                 )

@@ -30,7 +30,10 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readString
 
 private const val DEFAULT_PROFILE = "default"
-private const val YML_EXTENSION = ".yml"
+
+// Both standard YAML extensions are accepted; when both files exist, `.yml`
+// loads first and `.yaml` overlays it (last write wins per key).
+private val YML_EXTENSIONS = listOf(".yml", ".yaml")
 
 /**
  * YAML property source implementation using snakeyaml-engine-kmp (multiplatform).
@@ -94,27 +97,34 @@ open class YamlPropertySourceImpl(
             val properties = mutableMapOf<String, Any>()
             val load = Load(LoadSettings())
 
-            // 1. Load base file from filesystem
-            val baseFile = Path(basePath, "$filePrefix$YML_EXTENSION")
-            val baseFileExists = loadYamlFromPath(load, baseFile, properties)
+            // 1. Load base file from filesystem (.yml and .yaml)
+            var baseFileExists = false
+            for (extension in YML_EXTENSIONS) {
+                val baseFile = Path(basePath, "$filePrefix$extension")
+                if (loadYamlFromPath(load, baseFile, properties)) baseFileExists = true
+            }
 
             // 2. Load profile override from filesystem
             if (profile != DEFAULT_PROFILE) {
-                val profileFile = Path(basePath, "$filePrefix-$profile$YML_EXTENSION")
-                loadYamlFromPath(load, profileFile, properties)
+                for (extension in YML_EXTENSIONS) {
+                    val profileFile = Path(basePath, "$filePrefix-$profile$extension")
+                    loadYamlFromPath(load, profileFile, properties)
+                }
             }
 
             // 3. Classpath fallback (only if no filesystem file found in step 1)
             if (!baseFileExists) {
-                val classpathName = "$filePrefix$YML_EXTENSION"
-                readClasspathResource(classpathName)?.let { content ->
-                    parseYamlString(load, content, properties)
+                for (extension in YML_EXTENSIONS) {
+                    readClasspathResource("$filePrefix$extension")?.let { content ->
+                        parseYamlString(load, content, properties)
+                    }
                 }
                 // Also try classpath profile override
                 if (profile != DEFAULT_PROFILE) {
-                    val profileClasspathName = "$filePrefix-$profile$YML_EXTENSION"
-                    readClasspathResource(profileClasspathName)?.let { content ->
-                        parseYamlString(load, content, properties)
+                    for (extension in YML_EXTENSIONS) {
+                        readClasspathResource("$filePrefix-$profile$extension")?.let { content ->
+                            parseYamlString(load, content, properties)
+                        }
                     }
                 }
             }

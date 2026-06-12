@@ -396,7 +396,7 @@ class MultiTenantKmsIsolationTest {
             }
             """.trimIndent()
 
-        return client.post("http://localhost:$port/keys/generate") {
+        return client.post("http://localhost:$port/keys") {
             header("X-Tenant-ID", tenantId)
             header("X-User-ID", userId)
             contentType(ContentType.Application.Json)

@@ -179,7 +179,7 @@ class ProviderControllerTest {
                 """.trimIndent()
 
             val response =
-                client.post("http://localhost:$port/providers/testsoftware/keys") {
+                client.post("http://localhost:$port/providers/testsoftware/keys/import") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -201,7 +201,7 @@ class ProviderControllerTest {
                 """.trimIndent()
 
             val response =
-                client.post("http://localhost:$port/providers/testsoftware/keys/generate") {
+                client.post("http://localhost:$port/providers/testsoftware/keys") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -242,7 +242,7 @@ class ProviderControllerTest {
                 """.trimIndent()
 
             val storeResponse =
-                client.post("http://localhost:$port/providers/testsoftware/keys") {
+                client.post("http://localhost:$port/providers/testsoftware/keys/import") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -295,7 +295,7 @@ class ProviderControllerTest {
                 """.trimIndent()
 
             val storeResponse =
-                client.post("http://localhost:$port/providers/testsoftware/keys") {
+                client.post("http://localhost:$port/providers/testsoftware/keys/import") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)

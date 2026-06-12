@@ -166,6 +166,7 @@ class InitiateProviderAuthenticationCommandImpl(
                 completed = false,
                 providerId = applied.providerId,
                 flowContext = applied.flowContext,
+                applicationId = applied.applicationId,
             )
         val storeResult = sessionStore.storePendingFederation(pendingEntry, ttl = flowConfig.pendingTtl)
         if (storeResult.isErr) {

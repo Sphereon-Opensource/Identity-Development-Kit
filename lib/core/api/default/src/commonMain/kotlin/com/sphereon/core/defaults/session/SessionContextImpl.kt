@@ -17,6 +17,8 @@
 
 package com.sphereon.core.defaults.session
 
+import com.sphereon.core.defaults.context.UserContextImpl
+import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
@@ -34,7 +36,12 @@ import kotlin.native.ObjCName
  * `UserContextGraph.Factory` provides it as `@Provides userContext: UserContext`,
  * and `SessionGraph` extends UserScope, making it injectable here.
  *
- * [sessionId] is provided by `SessionGraph.Factory.createSessionGraph(@Provides @Named("sessionId") sessionId)`.
+ * [sessionId], [correlationId] and the optional per-session [SecuredTenantContextDetails]
+ * are provided by `SessionGraph.Factory.createSessionGraph(...)`. When the session
+ * carries validated transport credentials (a bearer JWT the REST layer validated),
+ * the exposed [context] is the UserScope context enriched with those details — the
+ * cached UserScope instance itself stays credential-free because it is shared across
+ * requests for the same tenant+principal.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -42,10 +49,23 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("SessionContextImpl", exact = true)
 class SessionContextImpl(
-    override val context: UserContext,
+    context: UserContext,
     @Named("sessionId") override val sessionId: String,
     @Named("correlationId") override val correlationId: String,
+    secureDetails: SecuredTenantContextDetails? = null,
 ) : SessionContext {
+    override val context: UserContext =
+        if (secureDetails == null || context.secureDetails != null) {
+            context
+        } else {
+            UserContextImpl(
+                tenant = context.tenant,
+                principal = context.principal,
+                secureDetails = secureDetails,
+                id = context.id,
+            )
+        }
+
     override fun toString(): String = "SessionContext(sessionId='$sessionId', context=$context, correlationId='$correlationId')"
 
     override fun equals(other: Any?): Boolean {

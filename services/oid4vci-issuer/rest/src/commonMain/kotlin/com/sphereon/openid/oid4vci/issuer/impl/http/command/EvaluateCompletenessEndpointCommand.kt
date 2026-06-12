@@ -53,7 +53,7 @@ interface EvaluateCompletenessEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/sessions/{correlationId}/completeness",
+                pathPattern = "/backend/sessions/{correlationId}/completeness",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "evaluateCompleteness",
                 commandId = COMMAND_ID,

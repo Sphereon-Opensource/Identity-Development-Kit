@@ -45,9 +45,9 @@ class OAuth2ClientsConfigBinder(
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
-    fun loadClientRegistrations(): IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> =
+    fun loadClientRegistrations(serverId: String? = null): IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> =
         try {
-            val configuredClients = loadConfiguredClients()
+            val configuredClients = loadConfiguredClients(serverId)
             val registrations = linkedMapOf<String, ClientRegistration>()
             val ownersByClientId = linkedMapOf<String, String>()
 
@@ -78,8 +78,9 @@ class OAuth2ClientsConfigBinder(
             )
         }
 
-    private fun loadConfiguredClients(): Map<String, ConfiguredOAuth2Client> {
-        val properties = configService.getSubProperties(setOf(CONFIG_PREFIX), stripPrefix = true)
+    private fun loadConfiguredClients(serverId: String?): Map<String, ConfiguredOAuth2Client> {
+        val configPrefix = configPrefix(serverId)
+        val properties = configService.getSubProperties(setOf(configPrefix), stripPrefix = true)
         if (properties.isEmpty()) {
             return emptyMap()
         }
@@ -102,7 +103,7 @@ class OAuth2ClientsConfigBinder(
         }
 
         return grouped.mapValues { (entryKey, entryProperties) ->
-            parseClient(entryKey, entryProperties)
+            parseClient(configPrefix, entryKey, entryProperties)
         }
     }
 
@@ -127,6 +128,7 @@ class OAuth2ClientsConfigBinder(
             .sortedByDescending { it.length }
 
     private fun parseClient(
+        configPrefix: String,
         entryKey: String,
         properties: Map<String, Any>,
     ): ConfiguredOAuth2Client {
@@ -135,7 +137,7 @@ class OAuth2ClientsConfigBinder(
             readStringList(properties, "grantTypes")
                 ?.map { parseGrantType(it, entryKey) }
                 ?.takeIf { it.isNotEmpty() }
-                ?: throw IllegalArgumentException("Missing required property '$CONFIG_PREFIX.$entryKey.grant-types'")
+                ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.grant-types'")
         val responseTypes =
             readStringList(properties, "responseTypes")
                 ?.map { parseResponseType(it, entryKey) }
@@ -150,7 +152,7 @@ class OAuth2ClientsConfigBinder(
             enabled = readBoolean(properties, "enabled") ?: true,
             clientId =
                 readString(properties, "clientId")
-                    ?: throw IllegalArgumentException("Missing required property '$CONFIG_PREFIX.$entryKey.client-id'"),
+                    ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.client-id'"),
             clientSecret = readString(properties, "clientSecret"),
             clientName = readString(properties, "clientName"),
             clientType = clientType,
@@ -159,7 +161,7 @@ class OAuth2ClientsConfigBinder(
             redirectUris = readStringList(properties, "redirectUris").orEmpty(),
             allowedScopes = readStringList(properties, "allowedScopes"),
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
-            jwks = readJwks(properties, "jwks", entryKey),
+            jwks = readJwks(configPrefix, properties, "jwks", entryKey),
             jwksUri = readString(properties, "jwksUri"),
             requirePkce = readBoolean(properties, "requirePkce") ?: (clientType == ClientType.PUBLIC),
             requirePushedAuthorizationRequests = readBoolean(properties, "requirePushedAuthorizationRequests") ?: false,
@@ -168,7 +170,7 @@ class OAuth2ClientsConfigBinder(
             refreshTokenLifetime = readInt(properties, "refreshTokenLifetime"),
             authorizationCodeLifetime = readInt(properties, "authorizationCodeLifetime") ?: 600,
             trustedAttesterIssuers = readStringList(properties, "trustedAttesterIssuers"),
-            trustedAttesterJwks = readJwks(properties, "trustedAttesterJwks", entryKey),
+            trustedAttesterJwks = readJwks(configPrefix, properties, "trustedAttesterJwks", entryKey),
             trustedAttesterJwksUris = readStringList(properties, "trustedAttesterJwksUris"),
             postLogoutRedirectUris = readStringList(properties, "postLogoutRedirectUris").orEmpty(),
             frontchannelLogoutUri = readString(properties, "frontchannelLogoutUri"),
@@ -203,6 +205,7 @@ class OAuth2ClientsConfigBinder(
      *  - `OKP`: requires `crv` plus `x` (base64url): Ed25519 / X25519.
      */
     private fun readJwks(
+        configPrefix: String,
         properties: Map<String, Any>,
         fieldName: String,
         entryKey: String,
@@ -223,16 +226,17 @@ class OAuth2ClientsConfigBinder(
         }
         return grouped.entries
             .sortedBy { it.key }
-            .map { (index, jwkProperties) -> parseJwk(jwkProperties, entryKey, fieldName, index) }
+            .map { (index, jwkProperties) -> parseJwk(configPrefix, jwkProperties, entryKey, fieldName, index) }
     }
 
     private fun parseJwk(
+        configPrefix: String,
         properties: Map<String, Any>,
         entryKey: String,
         fieldName: String,
         index: Int,
     ): Jwk {
-        val keyPath = "$CONFIG_PREFIX.$entryKey.$fieldName.$index"
+        val keyPath = "$configPrefix.$entryKey.$fieldName.$index"
         val keyTypeStr =
             readString(properties, "kty")
                 ?: throw IllegalArgumentException(
@@ -498,6 +502,9 @@ class OAuth2ClientsConfigBinder(
 
     companion object {
         const val CONFIG_PREFIX = "oauth2.clients"
+        const val SERVER_CLIENTS_SUFFIX = "clients"
+
+        fun configPrefix(serverId: String?): String = serverId?.let { "oauth2.servers.$it.$SERVER_CLIENTS_SUFFIX" } ?: CONFIG_PREFIX
 
         /**
          * Normalized form of the `client-id` config leaf used as the discovery anchor for client

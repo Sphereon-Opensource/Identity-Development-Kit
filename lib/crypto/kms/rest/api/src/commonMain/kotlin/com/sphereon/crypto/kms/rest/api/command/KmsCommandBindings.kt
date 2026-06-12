@@ -34,9 +34,9 @@ interface KmsCommandBindings {
             ?: error("No binding for ${ListKeysServiceCommand.COMMAND_ID}")
 
     @Provides
-    fun kmsStoreKey(registry: SessionScopedCommandRegistry): StoreKeyServiceCommand =
-        registry.get(StoreKeyServiceCommand.COMMAND_ID) as? StoreKeyServiceCommand
-            ?: error("No binding for ${StoreKeyServiceCommand.COMMAND_ID}")
+    fun kmsImportKey(registry: SessionScopedCommandRegistry): ImportKeyServiceCommand =
+        registry.get(ImportKeyServiceCommand.COMMAND_ID) as? ImportKeyServiceCommand
+            ?: error("No binding for ${ImportKeyServiceCommand.COMMAND_ID}")
 
     @Provides
     fun kmsGenerateKey(registry: SessionScopedCommandRegistry): GenerateKeyServiceCommand =

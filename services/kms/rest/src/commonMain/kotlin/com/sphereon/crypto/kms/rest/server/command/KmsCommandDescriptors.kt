@@ -5,9 +5,9 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.IntoMap
@@ -25,8 +25,8 @@ interface KmsCommandDescriptors {
     fun listKeysService(impl: ListKeysServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
-    @StringKey(StoreKeyServiceCommand.COMMAND_ID)
-    fun storeKeyService(impl: StoreKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
+    @StringKey(ImportKeyServiceCommand.COMMAND_ID)
+    fun importKeyService(impl: ImportKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(GenerateKeyServiceCommand.COMMAND_ID)

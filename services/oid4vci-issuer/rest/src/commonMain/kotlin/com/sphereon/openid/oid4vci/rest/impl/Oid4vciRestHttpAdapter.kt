@@ -22,6 +22,13 @@ import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.ApprovePipelineSessionEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeAttributesEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeViaCallbackEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.EvaluateCompletenessEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.FailPipelineSourceEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetSessionAttributesEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.impl.http.command.InitPipelineSessionEndpointCommand
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferEndpointCommand
 import com.sphereon.openid.oid4vci.rest.DeleteCredentialOfferEndpointCommand
 import com.sphereon.openid.oid4vci.rest.GetCredentialOfferStatusEndpointCommand
@@ -49,6 +56,13 @@ class Oid4vciRestHttpAdapter(
     private val createCommand: CreateCredentialOfferEndpointCommand,
     private val getStatusCommand: GetCredentialOfferStatusEndpointCommand,
     private val deleteCommand: DeleteCredentialOfferEndpointCommand,
+    private val initPipelineSessionCommand: InitPipelineSessionEndpointCommand,
+    private val contributeAttributesCommand: ContributeAttributesEndpointCommand,
+    private val getSessionAttributesCommand: GetSessionAttributesEndpointCommand,
+    private val evaluateCompletenessCommand: EvaluateCompletenessEndpointCommand,
+    private val approvePipelineSessionCommand: ApprovePipelineSessionEndpointCommand,
+    private val failPipelineSourceCommand: FailPipelineSourceEndpointCommand,
+    private val contributeViaCallbackCommand: ContributeViaCallbackEndpointCommand,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
@@ -69,6 +83,13 @@ class Oid4vciRestHttpAdapter(
             createCommand,
             getStatusCommand,
             deleteCommand,
+            initPipelineSessionCommand,
+            contributeAttributesCommand,
+            getSessionAttributesCommand,
+            evaluateCompletenessCommand,
+            approvePipelineSessionCommand,
+            failPipelineSourceCommand,
+            contributeViaCallbackCommand,
         )
 
     @ContributesTo(SessionScope::class)

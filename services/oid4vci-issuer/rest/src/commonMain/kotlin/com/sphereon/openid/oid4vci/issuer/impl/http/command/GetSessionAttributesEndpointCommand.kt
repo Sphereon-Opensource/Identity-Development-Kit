@@ -53,7 +53,7 @@ interface GetSessionAttributesEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/sessions/{correlationId}/attributes",
+                pathPattern = "/backend/sessions/{correlationId}/attributes",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getSessionAttributes",
                 commandId = COMMAND_ID,

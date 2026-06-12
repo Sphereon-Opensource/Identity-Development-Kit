@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -241,12 +242,16 @@ private class StubAuthProvider(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> {
         initiateAuthCalled = true
         return Ok("redirect:$sessionId")
     }
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> = Ok(authenticatedUser?.userId)
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> = Ok(authenticatedUser?.userId)
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> {
         logoutCalled = true

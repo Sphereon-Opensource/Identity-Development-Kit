@@ -65,6 +65,12 @@ data class IdentityResult
         /** Whether this is the default identity for the owning party */
         @SerialName("isDefault")
         val isDefault: Boolean,
+        /**
+         * The specialization this identity serves when it is intrinsically role-scoped
+         * (null = party-global, fan-out-then-filter applies at login).
+         */
+        @SerialName("specializationSubtype")
+        val specializationSubtype: String? = null,
         /** When the identity was created */
         @SerialName("createdAt")
         val createdAt: Instant,
@@ -106,6 +112,7 @@ data class IdentityResult
                 tenantId = identity.tenantId,
                 identityRole = identity.identityRole,
                 isDefault = identity.isDefault,
+                specializationSubtype = identity.specializationSubtype,
                 createdAt = identity.createdAt,
                 createdById = identity.createdById,
                 updatedAt = identity.updatedAt,
@@ -137,6 +144,7 @@ data class IdentityResult
                 tenantId = tenantId,
                 identityRole = identityRole,
                 isDefault = isDefault,
+                specializationSubtype = specializationSubtype,
                 createdAt = createdAt,
                 createdById = createdById,
                 updatedAt = updatedAt,

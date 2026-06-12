@@ -107,6 +107,8 @@ kotlin {
                 implementation(projects.libCryptoCorePublic)
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCoreEventsImpl)
+                // Real in-memory status-list driver + enricher for the fail-closed issuance tests
+                implementation(projects.libStatuslistImpl)
             }
         }
     }

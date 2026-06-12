@@ -62,7 +62,7 @@ class ProvidersRestServiceImpl(
         return provider.listKeys()
     }
 
-    override suspend fun providerStoreKey(
+    override suspend fun providerImportKey(
         providerId: String,
         keyInfo: ResolvedKeyInfoType<*>,
         certChain: Array<String>?,

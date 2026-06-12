@@ -25,9 +25,9 @@ import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.JwkUse
 import com.sphereon.crypto.kms.rest.server.TestApiAppGraph
@@ -104,7 +104,7 @@ class KmsCommandRegistryIntegrationTest {
             listOf(
                 GetKeyServiceCommand.COMMAND_ID,
                 ListKeysServiceCommand.COMMAND_ID,
-                StoreKeyServiceCommand.COMMAND_ID,
+                ImportKeyServiceCommand.COMMAND_ID,
                 GenerateKeyServiceCommand.COMMAND_ID,
                 DeleteKeyServiceCommand.COMMAND_ID,
             )
@@ -124,7 +124,7 @@ class KmsCommandRegistryIntegrationTest {
             listOf(
                 GetKeyServiceCommand.COMMAND_ID,
                 ListKeysServiceCommand.COMMAND_ID,
-                StoreKeyServiceCommand.COMMAND_ID,
+                ImportKeyServiceCommand.COMMAND_ID,
                 GenerateKeyServiceCommand.COMMAND_ID,
                 DeleteKeyServiceCommand.COMMAND_ID,
             )
@@ -142,7 +142,7 @@ class KmsCommandRegistryIntegrationTest {
         // Then - each command can be resolved via the registry
         assertNotNull(registry.get(GetKeyServiceCommand.COMMAND_ID), "GetKey should be resolvable via registry")
         assertNotNull(registry.get(ListKeysServiceCommand.COMMAND_ID), "ListKeys should be resolvable via registry")
-        assertNotNull(registry.get(StoreKeyServiceCommand.COMMAND_ID), "StoreKey should be resolvable via registry")
+        assertNotNull(registry.get(ImportKeyServiceCommand.COMMAND_ID), "ImportKey should be resolvable via registry")
         assertNotNull(registry.get(GenerateKeyServiceCommand.COMMAND_ID), "GenerateKey should be resolvable via registry")
         assertNotNull(registry.get(DeleteKeyServiceCommand.COMMAND_ID), "DeleteKey should be resolvable via registry")
     }
@@ -287,7 +287,7 @@ class KmsCommandRegistryIntegrationTest {
         // Then - commands resolved via registry have the expected commandId values
         assertEquals("kms.keys.get", commandMap[GetKeyServiceCommand.COMMAND_ID]?.commandId)
         assertEquals("kms.keys.list", commandMap[ListKeysServiceCommand.COMMAND_ID]?.commandId)
-        assertEquals("kms.keys.store", commandMap[StoreKeyServiceCommand.COMMAND_ID]?.commandId)
+        assertEquals("kms.keys.import", commandMap[ImportKeyServiceCommand.COMMAND_ID]?.commandId)
         assertEquals("kms.keys.generate", commandMap[GenerateKeyServiceCommand.COMMAND_ID]?.commandId)
         assertEquals("kms.keys.delete", commandMap[DeleteKeyServiceCommand.COMMAND_ID]?.commandId)
     }

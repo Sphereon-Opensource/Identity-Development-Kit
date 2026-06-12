@@ -295,7 +295,7 @@ class KmsServiceCommandsTransportE2ETest {
                 override suspend fun execute(args: GenerateKeyGlobal) = throw UnsupportedOperationException()
             }
         assertEquals(HttpMethod.POST, generateKey.httpEndpoint.method)
-        assertEquals("/keys/generate", generateKey.httpEndpoint.pathPattern)
+        assertEquals("/keys", generateKey.httpEndpoint.pathPattern)
 
         val deleteKey =
             object : DeleteKeyServiceCommand {

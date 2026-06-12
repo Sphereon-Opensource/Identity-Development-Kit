@@ -30,6 +30,7 @@ import com.sphereon.oauth2.server.authorization.command.federation.InitiateProvi
 import com.sphereon.oauth2.server.authorization.command.federation.InitiateProviderAuthenticationCommand
 import com.sphereon.oauth2.server.authorization.config.FederationProviderConfig
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -74,6 +75,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> {
         val providerId =
             hint?.providerId
@@ -84,6 +86,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
             returnUrl = returnUrl,
             providerId = providerId,
             hint = hint,
+            applicationId = context?.applicationId,
         )
     }
 
@@ -94,6 +97,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
         callbackPath: String? = null,
         flowContext: FlowContext? = null,
         hint: AuthenticationHint? = null,
+        applicationId: String? = null,
     ): IdkResult<String, AuthenticationError> =
         initiateProviderAuthenticationCommand
             .execute(
@@ -104,6 +108,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
                     callbackPath = callbackPath,
                     flowContext = flowContext,
                     hint = hint,
+                    applicationId = applicationId,
                 ),
             ).map { it.value }
 
@@ -112,8 +117,10 @@ abstract class AbstractFederatedUserAuthenticationProvider(
         state: String,
     ): IdkResult<FederationCallbackOutcome, AuthenticationError> = handleFederationCallbackCommand.execute(HandleFederationCallbackArgs(code = code, state = state))
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> =
-        Err(AuthenticationError.Generic(description = "Federated provider does not support direct credential authentication"))
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(description = "Federated provider does not support direct credential authentication"))
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> {
         sessionStore.removeCachedUserClaims(userId)

@@ -51,6 +51,22 @@ import io.ktor.util.AttributeKey
 val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.baseTenantId")
 
 /**
+ * Per-call attribute holding the VALIDATED bearer-token claims input.
+ *
+ * Auth/tenant-resolution plugins that validate an `Authorization: Bearer ...`
+ * token (signature, `iss`, `exp`, ...) stamp the resulting
+ * [com.sphereon.core.defaults.context.ValidatedJwtClaimsInput] here. The
+ * [com.sphereon.ktor.server.inject.interceptor.UserContextInterceptor] consumes
+ * it when creating the per-request session so the session context surfaces the
+ * validated JWT via `sessionContext.context.secureDetails?.jwt` — the seam
+ * commands use to read authorization claims (e.g. `roles`) off the request's
+ * token. Absent for anonymous requests; downstream endpoints that require
+ * token-borne claims reject on their own.
+ */
+val ValidatedJwtClaimsAttribute: AttributeKey<com.sphereon.core.defaults.context.ValidatedJwtClaimsInput> =
+    AttributeKey("sphereon.auth.validatedJwtClaims")
+
+/**
  * Configuration for the Universal HTTP Adapter exposure.
  */
 class UniversalHttpAdapterConfig {

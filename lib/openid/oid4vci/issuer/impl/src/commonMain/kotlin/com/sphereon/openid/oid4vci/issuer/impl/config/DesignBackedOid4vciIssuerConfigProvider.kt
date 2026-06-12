@@ -39,6 +39,17 @@ import dev.zacsweers.metro.SingleIn
  *
  * NOT annotated with `@ContributesBinding` — deployment wiring decides which
  * [Oid4vciIssuerConfigProvider] implementation is active in a given session.
+ *
+ * ## Per-instance targeting
+ * Unlike the config-backed providers ([AbstractConfigOid4vciIssuerConfigProvider] and its
+ * subclasses), this provider has no config namespace to route: its data source is the
+ * credential-design store, scoped by [tenantId], and its issuer identity ([issuerIdentifier],
+ * [authorizationServers], [display]) is supplied at construction rather than read from a
+ * `oid4vci.issuer(.s.<id>)` namespace. It is therefore already instance-relative through its
+ * constructor — the deployment wiring that knows the active issuer instance passes that instance's
+ * identifier/authorization-servers/display (and the per-instance [tenantId]) when constructing it,
+ * so design aggregation reads under exactly the selected instance. There is no shared config-read
+ * body to extract into the abstract base.
  */
 @Inject
 @SingleIn(SessionScope::class)

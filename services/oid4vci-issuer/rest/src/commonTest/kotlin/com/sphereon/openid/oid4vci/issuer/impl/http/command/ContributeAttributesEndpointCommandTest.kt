@@ -69,7 +69,7 @@ class ContributeAttributesEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = ContributeAttributesEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.POST, endpoint.method)
-        assertEquals("/sessions/{correlationId}/attributes", endpoint.pathPattern)
+        assertEquals("/backend/sessions/{correlationId}/attributes", endpoint.pathPattern)
     }
 
     @Test
@@ -101,7 +101,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-123/attributes",
+                    path = "/backend/sessions/corr-123/attributes",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"attributes":[],"lookup_keys":[]}""" },
                 )
@@ -135,7 +135,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-456/attributes",
+                    path = "/backend/sessions/corr-456/attributes",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{}""" },
                 )
@@ -173,7 +173,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/session-phase/attributes",
+                    path = "/backend/sessions/session-phase/attributes",
                     bodySupplier = {
                         """{"attributes":[$attributeJson],"lookup_keys":[$lookupKeyJson]}"""
                     },
@@ -201,7 +201,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/unknown/attributes",
+                    path = "/backend/sessions/unknown/attributes",
                     bodySupplier = { """{}""" },
                 )
 
@@ -217,7 +217,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-bad/attributes",
+                    path = "/backend/sessions/corr-bad/attributes",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { "not-valid-json{{" },
                 )
@@ -236,7 +236,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-123/attributes",
+                    path = "/backend/sessions/corr-123/attributes",
                     bodySupplier = { """{}""" },
                 )
 
@@ -346,7 +346,7 @@ class ContributeAttributesEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/oid4vci/sessions/integrated-corr/attributes",
+                    path = "/oid4vci/backend/sessions/integrated-corr/attributes",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"attributes":[],"lookup_keys":[]}""" },
                 )

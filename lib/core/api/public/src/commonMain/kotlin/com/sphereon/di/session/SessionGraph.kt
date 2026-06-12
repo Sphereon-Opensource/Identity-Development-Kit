@@ -19,6 +19,7 @@ package com.sphereon.di.session
 
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.log.SessionLogManager
+import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.UserScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.ForScope
@@ -64,6 +65,16 @@ interface SessionGraph {
             sessionId: String,
             @Provides @Named("correlationId")
             correlationId: String = sessionId,
+            /**
+             * Validated transport credentials for THIS session (e.g. the bearer JWT a
+             * REST request presented, after upstream signature/iss/exp validation).
+             * Session-scoped on purpose: the UserScope [com.sphereon.di.context.UserContext]
+             * is cached per tenant+principal and must never carry one request's token.
+             * When non-null the session-scoped [SessionContext] surfaces a [com.sphereon.di.context.UserContext]
+             * whose `secureDetails` carries these credentials.
+             */
+            @Provides
+            secureDetails: SecuredTenantContextDetails? = null,
         ): SessionGraph
     }
 

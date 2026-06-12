@@ -34,27 +34,7 @@ private val TOKEN_MEDIA_TYPES =
     )
 
 /**
- * `GET /public/statuslists/{id}` — return the RAW signed status-list token for the list with this
- * technical id. Public, unauthenticated, cacheable. Delegates to `statuslist.token.get`.
- */
-interface GetStatusListTokenByIdEndpointCommand : HttpEndpointCommand {
-    companion object {
-        const val COMMAND_ID = CommandIds.HTTP_GET_TOKEN_BY_ID
-        val ENDPOINT =
-            HttpEndpointDescriptor(
-                method = HttpMethod.GET,
-                pathPattern = Paths.TOKEN_BY_ID,
-                produces = TOKEN_MEDIA_TYPES,
-                commandId = COMMAND_ID,
-                operationId = "getStatusListToken",
-                tags = HOSTING_TAGS,
-                summary = "Resolve the signed status-list token by id",
-            )
-    }
-}
-
-/**
- * `GET /public/statuslists/by/{correlationId}` — return the RAW signed status-list token for the list
+ * `GET /public/statuslists/{correlationId}` returns the raw signed status-list token for the list
  * with this business correlation id. Public, unauthenticated, cacheable. Delegates to
  * `statuslist.token.get`.
  */

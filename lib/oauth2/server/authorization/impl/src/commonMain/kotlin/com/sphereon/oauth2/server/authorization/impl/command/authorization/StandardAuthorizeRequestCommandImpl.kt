@@ -38,6 +38,7 @@ import com.sphereon.oauth2.server.authorization.command.jar.VerifyRequestObjectC
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.model.ConsentDecision
 import com.sphereon.oauth2.server.authorization.model.Prompt
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
@@ -403,6 +404,11 @@ class StandardAuthorizeRequestCommandImpl(
                 sessionId = session.sessionId,
                 returnUrl = returnUrl,
                 hint = hint,
+                context =
+                    AuthenticationContext(
+                        sessionId = session.sessionId,
+                        applicationId = session.applicationId,
+                    ),
             )
         if (authResult.isErr) {
             // Auth-provider unreachable / misconfigured; surface to the client via the

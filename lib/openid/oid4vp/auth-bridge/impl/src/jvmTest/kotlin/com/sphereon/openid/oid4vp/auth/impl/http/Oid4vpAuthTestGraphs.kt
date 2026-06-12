@@ -38,6 +38,7 @@ import com.sphereon.oauth2.jwt.validation.JwtValidationError
 import com.sphereon.oauth2.jwt.validation.OidcDiscoveryMetadata
 import com.sphereon.oauth2.jwt.validation.OidcDiscoveryService
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -127,11 +128,15 @@ private class NoOpTestUserAuthenticationProvider : UserAuthenticationProvider {
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> =
         com.sphereon.core.api
             .Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> =
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> =
         com.sphereon.core.api
             .Err(AuthenticationError.Generic(description = "Not implemented in test"))
 
@@ -184,7 +189,14 @@ interface Oid4vpAuthTestStoreModule {
  * which contributes HTTP adapters that require RequestObjectSigningConfig.
  */
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RequestObjectSigningConfig>(), replaces = [com.sphereon.openid.oid4vp.verifier.impl.ConfigDrivenRequestObjectSigningConfig::class])
+@ContributesBinding(
+    SessionScope::class,
+    binding = binding<RequestObjectSigningConfig>(),
+    replaces = [
+        com.sphereon.openid.oid4vp.verifier.impl.ConfigDrivenRequestObjectSigningConfig::class,
+        com.sphereon.openid.oid4vp.verifier.impl.config.RegistryBackedOid4vpVerifierConfigProvider::class,
+    ],
+)
 class TestRequestObjectSigningConfig
     @Inject
     constructor() : RequestObjectSigningConfig {

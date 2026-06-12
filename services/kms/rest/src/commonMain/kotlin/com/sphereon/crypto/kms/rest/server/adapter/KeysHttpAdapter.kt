@@ -38,9 +38,9 @@ import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceComma
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.KmsRestService
@@ -60,8 +60,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOpe
  * Handles all key-related endpoints:
  * - GET /keys - List all keys
  * - GET /keys/{aliasOrKid} - Get specific key
- * - POST /keys - Store a key
- * - POST /keys/generate - Generate a new key
+ * - POST /keys - Generate a new key
+ * - POST /keys/import - Import externally supplied key material
  * - POST /keys/register - Register an existing provider key for platform use
  * - DELETE /keys/{aliasOrKid} - Delete a key
  */
@@ -99,16 +99,16 @@ class KeysHttpAdapter(
                 handle { req -> handleListKeys(req) }
             }
             post("/") {
-                operationId("storeKey")
-                consumes(MediaType.ApplicationJson)
-                produces(MediaType.ApplicationJson)
-                handle { req -> handleStoreKey(req) }
-            }
-            post("/generate") {
                 operationId("generateKey")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGenerateKey(req) }
+            }
+            post("/import") {
+                operationId("importKey")
+                consumes(MediaType.ApplicationJson)
+                produces(MediaType.ApplicationJson)
+                handle { req -> handleImportKey(req) }
             }
             post("/register") {
                 operationId("registerKeyReference")
@@ -168,14 +168,14 @@ class KeysHttpAdapter(
         return jsonResponse(200, json.encodeToString(ListKeysResponse(keyInfos = keyInfos)))
     }
 
-    private suspend fun handleStoreKey(request: GenericHttpRequest): GenericHttpResponse {
+    private suspend fun handleImportKey(request: GenericHttpRequest): GenericHttpResponse {
         val body =
             request.body
                 ?: return errorResponse(400, "Missing request body")
 
         val storeKeyRequest =
             try {
-                json.decodeFromString<StoreKey>(body)
+                json.decodeFromString<ImportKey>(body)
             } catch (expected: Exception) {
                 return errorResponse(400, "Invalid request body: ${expected.message}")
             }
@@ -191,7 +191,7 @@ class KeysHttpAdapter(
             }
         return createdResponse(
             "/keys/${key.alias}",
-            json.encodeToString(StoreKeyResponse(keyInfo = key.toRest())),
+            json.encodeToString(ImportKeyResponse(keyInfo = key.toRest())),
         )
     }
 

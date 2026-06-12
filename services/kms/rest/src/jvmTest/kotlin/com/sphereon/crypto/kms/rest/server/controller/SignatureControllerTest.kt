@@ -170,7 +170,7 @@ class SignatureControllerTest {
             """.trimIndent()
 
         val response =
-            client.post("http://localhost:$port/keys/generate") {
+            client.post("http://localhost:$port/keys") {
                 header("X-Tenant-ID", TEST_TENANT_ID)
                 header("X-User-ID", TEST_USER_ID)
                 contentType(ContentType.Application.Json)

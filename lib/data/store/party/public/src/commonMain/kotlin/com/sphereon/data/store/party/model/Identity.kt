@@ -52,6 +52,16 @@ data class Identity
         /** Whether this is the default identity for the owning party */
         @SerialName("isDefault")
         val isDefault: Boolean = false,
+        /**
+         * The specialization this identity serves, when it is intrinsically role-scoped
+         * (e.g. an `employee` login identity vs a `customer` login identity on the same person).
+         * Null means the identity is party-global and login resolution fans out then filters by binding.
+         */
+        @SerialName("specializationSubtype")
+        val specializationSubtype: String? = null,
+        /** Opaque per-identity salt handle (reference only; no crypto in this layer) */
+        @SerialName("saltRef")
+        val saltRef: String? = null,
         /** When the identity was created */
         @SerialName("createdAt")
         val createdAt: Instant,

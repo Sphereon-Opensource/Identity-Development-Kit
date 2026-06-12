@@ -38,7 +38,7 @@ interface ProvidersRestService {
 
     suspend fun providerListKeys(providerId: String): Array<ManagedKeyReference>
 
-    suspend fun providerStoreKey(
+    suspend fun providerImportKey(
         providerId: String,
         keyInfo: ResolvedKeyInfoType<*>,
         certChain: Array<String>? = null,

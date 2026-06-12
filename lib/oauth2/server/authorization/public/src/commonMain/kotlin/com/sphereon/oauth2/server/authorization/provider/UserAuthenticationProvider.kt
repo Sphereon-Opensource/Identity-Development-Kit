@@ -66,12 +66,14 @@ interface UserAuthenticationProvider {
      * @param sessionId Authorization session identifier
      * @param returnUrl URL to redirect back to after authentication
      * @param hint Optional login hint (e.g., email address, username)
+     * @param context Optional authentication context (session id, application id)
      * @return Redirect URL to authentication system, or error
      */
     suspend fun initiateAuthentication(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint? = null,
+        context: AuthenticationContext? = null,
     ): IdkResult<String, AuthenticationError>
 
     /**
@@ -88,9 +90,13 @@ interface UserAuthenticationProvider {
      * SECURITY NOTE: This method should implement rate limiting and brute-force protection.
      *
      * @param credentials User credentials (username/password, token, etc.)
+     * @param context Optional authentication context (session id, application id)
      * @return User ID if authenticated, null if invalid credentials, or error
      */
-    suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError>
+    suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext? = null,
+    ): IdkResult<String?, AuthenticationError>
 
     /**
      * Logout user
@@ -128,6 +134,18 @@ interface UserAuthenticationProvider {
      */
     suspend fun isAuthenticationMethodAvailable(method: AuthenticationMethod): IdkResult<Boolean, AuthenticationError>
 }
+
+/**
+ * Context for an authentication attempt. Carries the authorization session identity and the
+ * opaque application / login-surface id resolved at session mint (see
+ * [ClientApplicationResolver]), so providers can scope user lookup or login UX per application.
+ * All fields optional: a `null` context or `null` fields mean "no application binding" and
+ * providers must keep working (legacy / application-agnostic mode).
+ */
+data class AuthenticationContext(
+    val sessionId: String? = null,
+    val applicationId: String? = null,
+)
 
 /**
  * Authenticated user information

@@ -175,7 +175,7 @@ class KeysHttpAdapterIntegrationTest {
             val request = GenerateKeyGlobal(alias = "integration-test-key")
 
             val response =
-                client.post("http://localhost:$port/keys/generate") {
+                client.post("http://localhost:$port/keys") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -199,7 +199,7 @@ class KeysHttpAdapterIntegrationTest {
             val generateRequest = GenerateKeyGlobal(alias = "key-to-delete")
 
             val generateResponse =
-                client.post("http://localhost:$port/keys/generate") {
+                client.post("http://localhost:$port/keys") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -224,7 +224,7 @@ class KeysHttpAdapterIntegrationTest {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
-                    setBody("""{"invalid": "json"}""")
+                    setBody("{")
                 }
             assertEquals(HttpStatusCode.BadRequest, response.status)
             val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject

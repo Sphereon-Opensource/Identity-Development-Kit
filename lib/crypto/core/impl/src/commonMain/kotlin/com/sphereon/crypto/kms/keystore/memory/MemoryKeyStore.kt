@@ -161,6 +161,20 @@ class MemoryKeyStoreService(
                 }
             if (matchingKey != null) {
                 managedKeyInfo = matchingKey
+            } else {
+                // Direct alias-shaped fallback: callers regularly carry the provisioning
+                // alias in `kid` (e.g. GenerateMacArgs.keyId is looked up as
+                // KeyInfo(kid = keyId)). When neither the kid metadata nor the EC
+                // coordinates matched, treat the kid value as an alias — the store
+                // supports direct alias gets, so a lookup that succeeds by alias must
+                // also succeed when the same value is carried as kid. The same
+                // key-material safety property as above applies: supplied material, if
+                // any, must match the stored key.
+                val kid = keyInfo.kid
+                val aliasShaped = if (kid !== null) keys[kid] else null
+                if (aliasShaped !== null && (supplied === null || isSameKeyMaterial(supplied, aliasShaped.key))) {
+                    managedKeyInfo = aliasShaped
+                }
             }
         }
 

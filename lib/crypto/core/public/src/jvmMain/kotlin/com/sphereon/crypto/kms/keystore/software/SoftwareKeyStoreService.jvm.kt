@@ -336,8 +336,17 @@ actual class SoftwareKeyStoreService actual constructor(
                 val entry = ks.getEntry(alias, passwordProtection)
                 when (entry) {
                     is KeyStore.PrivateKeyEntry -> getCachedOrResolveKeyInfo(alias, entry)
+
                     is KeyStore.SecretKeyEntry -> resolvedKeyInfoFromSecretEntry(alias, entry)
-                    else -> throw NotFoundException("Could not find key for alias $alias, kid $kid")
+
+                    // NotFoundException's first parameter is `resource`, NOT the exception
+                    // message — pass `message` explicitly so callers that report
+                    // `exception.message` (e.g. the KMS encrypt command) stay diagnosable
+                    // instead of surfacing "Encryption failed: null".
+                    else -> throw NotFoundException(
+                        resource = "key:$alias",
+                        message = "Could not find key for alias $alias, kid $kid",
+                    )
                 }
             }
 
@@ -753,7 +762,21 @@ actual class SoftwareKeyStoreService actual constructor(
             return KeyInfo<KeyType>(alias = metadataMatch.alias, kid = metadataMatch.kid, providerId = metadataMatch.providerId)
         }
 
-        // Step 2: key-material comparison fallback (only when caller provided key material)
+        // Step 2: direct alias-shaped lookup — treat the kid value as an alias. Callers
+        // regularly carry the provisioning alias in `kid` (e.g. GenerateMacArgs.keyId is
+        // looked up as KeyInfo(kid = keyId)). The keystore supports direct alias gets, so
+        // resolve against it without depending on the listKeys() metadata scan, which
+        // skips entries it cannot decode and compares aliases with exact string equality
+        // (PKCS12 alias lookups themselves are case-insensitive).
+        val kid = keyInfo.kid
+        if (kid != null) {
+            val ks = keyStoreData.await().keyStore
+            if (ks.containsAlias(kid) && ks.isKeyEntry(kid)) {
+                return KeyInfo<KeyType>(alias = kid, kid = kid, providerId = config.id)
+            }
+        }
+
+        // Step 3: key-material comparison fallback (only when caller provided key material)
         if (keyInfo.key != null) {
             val allKeys = listKeysInternal()
             val materialMatch =

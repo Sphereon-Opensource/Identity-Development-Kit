@@ -64,7 +64,7 @@ interface ContributeViaCallbackEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/sessions/{correlationId}/callbacks/{callbackToken}",
+                pathPattern = "/backend/sessions/{correlationId}/callbacks/{callbackToken}",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "contributeViaCallback",

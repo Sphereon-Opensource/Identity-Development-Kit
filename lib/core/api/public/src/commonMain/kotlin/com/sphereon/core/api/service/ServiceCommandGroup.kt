@@ -26,7 +26,7 @@ import kotlinx.serialization.Serializable
  * Used for discoverability, admin UIs, health checks, and transport server validation.
  *
  * Example: the "kms.keys" group contains commands for key CRUD operations:
- * `kms.keys.get`, `kms.keys.list`, `kms.keys.store`, `kms.keys.generate`, `kms.keys.delete`.
+ * `kms.keys.get`, `kms.keys.list`, `kms.keys.import`, `kms.keys.generate`, `kms.keys.delete`.
  */
 @JsExportCompat
 @Serializable

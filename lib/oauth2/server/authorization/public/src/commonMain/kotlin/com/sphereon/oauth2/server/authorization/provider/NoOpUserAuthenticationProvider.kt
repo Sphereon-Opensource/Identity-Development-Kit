@@ -43,10 +43,13 @@ class NoOpUserAuthenticationProvider : UserAuthenticationProvider {
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> = Err(AuthenticationError.Generic(description = "No authentication provider configured"))
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> =
-        Err(AuthenticationError.Generic(description = "No authentication provider configured"))
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> = Err(AuthenticationError.Generic(description = "No authentication provider configured"))
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)
 

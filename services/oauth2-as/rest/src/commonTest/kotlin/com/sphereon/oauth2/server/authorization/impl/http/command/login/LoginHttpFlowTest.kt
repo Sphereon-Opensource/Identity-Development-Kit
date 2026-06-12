@@ -34,7 +34,9 @@ import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2Serv
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfKeyProvider
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryPendingAuthorizationSessionStore
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -111,6 +113,7 @@ class LoginHttpFlowTest {
                 execution = TestSessionExecution(),
                 userAuthProvider = userAuthProvider,
                 loginSessionStore = store,
+                pendingAuthorizationSessionStore = InMemoryPendingAuthorizationSessionStore(),
                 secureRandom = secureRandom,
                 configProvider = TestOAuth2ServersConfigProvider(),
                 clock = Clock.System,
@@ -539,9 +542,13 @@ class LoginHttpFlowTest {
             sessionId: String,
             returnUrl: String,
             hint: AuthenticationHint?,
+            context: AuthenticationContext?,
         ): IdkResult<String, AuthenticationError> = Ok("/login?session_id=$sessionId")
 
-        override suspend fun authenticateWithCredentials(credentials: UserCredentials,): IdkResult<String?, AuthenticationError> {
+        override suspend fun authenticateWithCredentials(
+            credentials: UserCredentials,
+            context: AuthenticationContext?,
+        ): IdkResult<String?, AuthenticationError> {
             val up = credentials as? UserCredentials.UsernamePassword ?: return Ok(null)
             return if (up.username == validPair.first && up.password == validPair.second) Ok(up.username) else Ok(null)
         }

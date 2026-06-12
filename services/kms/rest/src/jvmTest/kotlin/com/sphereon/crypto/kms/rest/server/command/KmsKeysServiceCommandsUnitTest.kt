@@ -23,9 +23,9 @@ import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.facade.KmsKeysServiceFacade
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.JwkUse
@@ -56,7 +56,7 @@ class KmsKeysServiceCommandsUnitTest {
     private lateinit var sessionContext: SessionContext
     private lateinit var getKeyCommand: GetKeyServiceCommand
     private lateinit var listKeysCommand: ListKeysServiceCommand
-    private lateinit var storeKeyCommand: StoreKeyServiceCommand
+    private lateinit var importKeyCommand: ImportKeyServiceCommand
     private lateinit var generateKeyCommand: GenerateKeyServiceCommand
     private lateinit var deleteKeyCommand: DeleteKeyServiceCommand
 
@@ -101,7 +101,7 @@ class KmsKeysServiceCommandsUnitTest {
         val registry = (session.graph as KmsCommandRegistryIntegrationTest.TestRegistryGraph).sessionScopedCommandRegistry
         getKeyCommand = registry.get(GetKeyServiceCommand.COMMAND_ID) as GetKeyServiceCommand
         listKeysCommand = registry.get(ListKeysServiceCommand.COMMAND_ID) as ListKeysServiceCommand
-        storeKeyCommand = registry.get(StoreKeyServiceCommand.COMMAND_ID) as StoreKeyServiceCommand
+        importKeyCommand = registry.get(ImportKeyServiceCommand.COMMAND_ID) as ImportKeyServiceCommand
         generateKeyCommand = registry.get(GenerateKeyServiceCommand.COMMAND_ID) as GenerateKeyServiceCommand
         deleteKeyCommand = registry.get(DeleteKeyServiceCommand.COMMAND_ID) as DeleteKeyServiceCommand
     }
@@ -344,7 +344,7 @@ class KmsKeysServiceCommandsUnitTest {
     fun testGenerateKeyCommandMetadata() {
         assertEquals(GenerateKeyServiceCommand.COMMAND_ID, generateKeyCommand.commandId)
         assertEquals(HttpMethod.POST, generateKeyCommand.httpEndpoint.method)
-        assertEquals("/keys/generate", generateKeyCommand.httpEndpoint.pathPattern)
+        assertEquals("/keys", generateKeyCommand.httpEndpoint.pathPattern)
     }
 
     @Test

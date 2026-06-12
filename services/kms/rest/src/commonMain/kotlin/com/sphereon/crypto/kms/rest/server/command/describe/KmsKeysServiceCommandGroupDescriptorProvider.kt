@@ -21,9 +21,9 @@ import com.sphereon.core.api.service.ServiceCommandGroupDescriptorProvider
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
@@ -56,7 +56,7 @@ class KmsKeysServiceCommandGroupDescriptorProvider : ServiceCommandGroupDescript
                 listOf(
                     GetKeyServiceCommand.COMMAND_ID,
                     ListKeysServiceCommand.COMMAND_ID,
-                    StoreKeyServiceCommand.COMMAND_ID,
+                    ImportKeyServiceCommand.COMMAND_ID,
                     GenerateKeyServiceCommand.COMMAND_ID,
                     DeleteKeyServiceCommand.COMMAND_ID,
                     RegisterKeyReferenceServiceCommand.COMMAND_ID,

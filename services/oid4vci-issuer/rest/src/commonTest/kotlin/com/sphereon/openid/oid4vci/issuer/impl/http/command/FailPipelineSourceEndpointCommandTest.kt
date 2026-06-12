@@ -42,7 +42,7 @@ class FailPipelineSourceEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = FailPipelineSourceEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.POST, endpoint.method)
-        assertEquals("/sessions/{correlationId}/fail", endpoint.pathPattern)
+        assertEquals("/backend/sessions/{correlationId}/fail", endpoint.pathPattern)
     }
 
     @Test
@@ -64,7 +64,7 @@ class FailPipelineSourceEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-7/fail",
+                    path = "/backend/sessions/corr-7/fail",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"source_id":"src-A","reason":"Upstream 502"}""" },
                 )
@@ -88,7 +88,7 @@ class FailPipelineSourceEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-8/fail",
+                    path = "/backend/sessions/corr-8/fail",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"source_id":"src-B"}""" },
                 )
@@ -113,7 +113,7 @@ class FailPipelineSourceEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/unknown/fail",
+                    path = "/backend/sessions/unknown/fail",
                     bodySupplier = { """{"source_id":"src-A"}""" },
                 )
 
@@ -130,7 +130,7 @@ class FailPipelineSourceEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/fail",
+                    path = "/backend/sessions/corr-1/fail",
                     bodySupplier = { """{"source_id":"src-A"}""" },
                 )
 
@@ -144,7 +144,7 @@ class FailPipelineSourceEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-bad/fail",
+                    path = "/backend/sessions/corr-bad/fail",
                     bodySupplier = { "not-json{{" },
                 )
 
@@ -159,7 +159,7 @@ class FailPipelineSourceEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/fail",
+                    path = "/backend/sessions/corr-1/fail",
                     bodySupplier = { """{}""" },
                 )
 

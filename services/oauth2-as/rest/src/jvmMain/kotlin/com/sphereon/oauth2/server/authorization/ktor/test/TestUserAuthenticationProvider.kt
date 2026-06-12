@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -71,6 +72,7 @@ class TestUserAuthenticationProvider(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> {
         // Prepend the configured issuer (e.g. https://host/auth) so the browser redirect
         // stays inside the AS path prefix when hosted behind a reverse proxy.
@@ -78,7 +80,10 @@ class TestUserAuthenticationProvider(
         return Ok("$base/login?session_id=$sessionId&return_url=${urlEncode(returnUrl)}")
     }
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> {
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> {
         if (credentials !is UserCredentials.UsernamePassword) {
             return Ok(null)
         }

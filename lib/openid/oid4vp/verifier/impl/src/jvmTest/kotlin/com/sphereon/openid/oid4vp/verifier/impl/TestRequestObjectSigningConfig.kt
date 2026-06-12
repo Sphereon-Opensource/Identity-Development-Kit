@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.verifier.impl
 
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vp.verifier.impl.config.RegistryBackedOid4vpVerifierConfigProvider
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -32,7 +33,11 @@ import dev.zacsweers.metro.binding
  * the DI graph for KSP.
  */
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RequestObjectSigningConfig>(), replaces = [ConfigDrivenRequestObjectSigningConfig::class])
+@ContributesBinding(
+    SessionScope::class,
+    binding = binding<RequestObjectSigningConfig>(),
+    replaces = [ConfigDrivenRequestObjectSigningConfig::class, RegistryBackedOid4vpVerifierConfigProvider::class],
+)
 class TestRequestObjectSigningConfig
     @Inject
     constructor() : RequestObjectSigningConfig {

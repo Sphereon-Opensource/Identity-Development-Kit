@@ -37,6 +37,12 @@ import kotlin.time.Instant
  * Tenant context is intentionally NOT carried on this record. The federation provider is
  * `SessionScope` and reads tenant from `SessionExecution` at the point of use, so a stale
  * tenant captured at initiate time can never override the live session at callback time.
+ *
+ * [applicationId] is the opaque application / login-surface id the originating authorization
+ * request resolved (see `AuthenticationContext.applicationId`). Captured at initiate time so
+ * the callback can hand it to the `FederatedIdentityLinker`, which scopes identity upsert and
+ * session-record writes to the application the user is actually logging in to. Null when the
+ * flow is not bound to a specific application.
  */
 @Serializable
 data class PendingFederation(
@@ -54,4 +60,5 @@ data class PendingFederation(
     val flowContext: FlowContext? = null,
     val upstreamAcr: String? = null,
     val upstreamAmr: List<String>? = null,
+    val applicationId: String? = null,
 )

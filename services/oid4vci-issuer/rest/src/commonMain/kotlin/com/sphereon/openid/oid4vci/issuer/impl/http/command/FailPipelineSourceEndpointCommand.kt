@@ -48,7 +48,7 @@ interface FailPipelineSourceEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/sessions/{correlationId}/fail",
+                pathPattern = "/backend/sessions/{correlationId}/fail",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "failPipelineSource",

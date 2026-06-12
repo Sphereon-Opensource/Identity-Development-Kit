@@ -30,6 +30,7 @@ import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_ID_TOKEN
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_USERINFO
 import com.sphereon.oauth2.server.authorization.model.SessionStatus
+import com.sphereon.oauth2.server.authorization.provider.ClientApplicationResolver
 import com.sphereon.oauth2.server.authorization.storage.SessionStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -79,6 +80,7 @@ class CreateAuthorizationSessionCommandImpl(
     execution: SessionExecution,
     private val sessionStorage: SessionStorage,
     private val secureRandom: SecureRandom,
+    private val clientApplicationResolver: ClientApplicationResolver,
     // 15 minutes default
     private val sessionLifetimeSeconds: Int = 900,
 ) : TypedServiceCommandAdapter<VerifiedAuthorizationRequest, AuthorizationSession, IdkError>(
@@ -106,6 +108,21 @@ class CreateAuthorizationSessionCommandImpl(
 
         // Generate cryptographically secure random session ID
         val sessionId = generateSecureSessionId()
+
+        // Resolve the opaque application / login-surface id for this client. Fail-open: a
+        // resolver error must not block the authorization flow, it only downgrades login to
+        // application-agnostic mode (applicationId = null). The IDK default resolver
+        // (NoneClientApplicationResolver) always returns Ok(null).
+        val applicationId =
+            clientApplicationResolver
+                .resolveApplicationId(clientId = request.clientId, requestHost = null)
+                .getOrElse { error ->
+                    execution.log.warn(
+                        "ClientApplicationResolver failed for client '${request.clientId}': " +
+                            "${error.message.defaultMessage}; continuing without applicationId",
+                    )
+                    null
+                }
 
         // Create authorization session.
         //
@@ -147,6 +164,7 @@ class CreateAuthorizationSessionCommandImpl(
                 // session, the later check stops a code from being issued if max_age has
                 // elapsed during a slow consent flow.
                 maxAge = request.request.maxAge?.toLong(),
+                applicationId = applicationId,
                 additionalData =
                     buildMap {
                         // Carry authorization_details through the session

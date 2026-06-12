@@ -11,8 +11,11 @@
 package com.sphereon.core.defaults.context
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.di.context.BasicSecuredDetails
 import com.sphereon.di.context.PrincipalInput
+import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantInput
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -59,3 +62,33 @@ class ValidatedJwtClaimsInput internal constructor(
  * factory boundary; this is the only sanctioned path to satisfy it.
  */
 fun JwtClaimsInput.markValidated(): ValidatedJwtClaimsInput = ValidatedJwtClaimsInput(this)
+
+/**
+ * Project the validated bearer token into [SecuredTenantContextDetails] for the
+ * session context, so commands can read the request's validated JWT via
+ * `execution.sessionContext.context.secureDetails?.jwt`.
+ *
+ * Returns `null` when the input carries no raw token (claims-only inputs have no
+ * credential to surface). `iss` / `iat` / `nbf` / `exp` are mirrored from the
+ * validated claims; the upstream validator already enforced them, this is a
+ * read-only projection (epoch seconds scaled to the milliseconds the
+ * [SecuredTenantContextDetails] contract uses).
+ */
+fun ValidatedJwtClaimsInput.toSecuredDetails(): SecuredTenantContextDetails? {
+    val jwt = claimsInput.rawToken ?: return null
+    val claims = claimsInput.claims
+
+    fun epochMillis(claim: String): Long? = (claims[claim] as? JsonPrimitive)?.content?.toLongOrNull()?.let { it * MILLIS_PER_SECOND }
+    val issuer = (claims["iss"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val validFrom = epochMillis("nbf") ?: epochMillis("iat")
+    val validUntil = epochMillis("exp")
+    return if (issuer != null && validFrom != null && validUntil != null) {
+        BasicSecuredDetails(jwt = jwt, iss = issuer, validFrom = validFrom, validUntil = validUntil)
+    } else if (issuer != null) {
+        BasicSecuredDetails(jwt = jwt, iss = issuer)
+    } else {
+        BasicSecuredDetails(jwt = jwt)
+    }
+}
+
+private const val MILLIS_PER_SECOND = 1_000L

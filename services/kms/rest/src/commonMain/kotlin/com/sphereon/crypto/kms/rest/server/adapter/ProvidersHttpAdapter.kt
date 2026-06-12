@@ -22,7 +22,6 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.RoutedHttpAdapter
 import com.sphereon.core.api.http.describe.HttpAdapterMount
-import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.httpRoutes
 import com.sphereon.core.api.http.response.createdResponse
@@ -36,11 +35,11 @@ import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKey
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.KeyProvider
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeyProvidersResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toRestResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
@@ -50,7 +49,6 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.Json
@@ -64,8 +62,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOpe
  * - GET /providers/{providerId} - Get provider details
  * - GET /providers/{providerId}/keys - List keys in provider
  * - GET /providers/{providerId}/keys/{aliasOrKid} - Get specific key
- * - POST /providers/{providerId}/keys - Store key in provider
- * - POST /providers/{providerId}/keys/generate - Generate key in provider
+ * - POST /providers/{providerId}/keys - Generate key in provider
+ * - POST /providers/{providerId}/keys/import - Import externally supplied key material into provider
  * - DELETE /providers/{providerId}/keys/{aliasOrKid} - Delete key from provider
  */
 @Inject
@@ -110,16 +108,16 @@ class ProvidersHttpAdapter(
                 handle { req -> handleGetKey(req) }
             }
             post("/{providerId}/keys") {
-                operationId("providerStoreKey")
-                consumes(MediaType.ApplicationJson)
-                produces(MediaType.ApplicationJson)
-                handle { req -> handleStoreKey(req) }
-            }
-            post("/{providerId}/keys/generate") {
                 operationId("providerGenerateKey")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGenerateKey(req) }
+            }
+            post("/{providerId}/keys/import") {
+                operationId("providerImportKey")
+                consumes(MediaType.ApplicationJson)
+                produces(MediaType.ApplicationJson)
+                handle { req -> handleImportKey(req) }
             }
             delete("/{providerId}/keys/{aliasOrKid}") {
                 operationId("providerDeleteKey")
@@ -196,8 +194,8 @@ class ProvidersHttpAdapter(
         return jsonResponse(200, json.encodeToString<GetKeyResponse>(GetKeyResponse(keyInfo = keyInfo.toRest())))
     }
 
-    private suspend fun handleStoreKey(request: GenericHttpRequest): GenericHttpResponse {
-        val req = request.withExtractedParams("/providers/{providerId}/keys")
+    private suspend fun handleImportKey(request: GenericHttpRequest): GenericHttpResponse {
+        val req = request.withExtractedParams("/providers/{providerId}/keys/import")
         val providerId =
             req.pathParams["providerId"]
                 ?: return errorResponse(400, "Missing path parameter: providerId")
@@ -207,14 +205,14 @@ class ProvidersHttpAdapter(
 
         val storeKeyRequest =
             try {
-                json.decodeFromString<StoreKey>(body)
+                json.decodeFromString<ImportKey>(body)
             } catch (expected: Exception) {
                 return errorResponse(400, "Invalid request body: ${expected.message}")
             }
 
         val key =
             try {
-                providersService.providerStoreKey(
+                providersService.providerImportKey(
                     providerId = providerId,
                     keyInfo = storeKeyRequest.keyInfo.toSdk(),
                     certChain = storeKeyRequest.certChain,
@@ -224,12 +222,12 @@ class ProvidersHttpAdapter(
             }
         return createdResponse(
             "/providers/$providerId/keys/${key.alias}",
-            json.encodeToString<StoreKeyResponse>(StoreKeyResponse(keyInfo = key.toRest())),
+            json.encodeToString<ImportKeyResponse>(ImportKeyResponse(keyInfo = key.toRest())),
         )
     }
 
     private suspend fun handleGenerateKey(request: GenericHttpRequest): GenericHttpResponse {
-        val req = request.withExtractedParams("/providers/{providerId}/keys/generate")
+        val req = request.withExtractedParams("/providers/{providerId}/keys")
         val providerId =
             req.pathParams["providerId"]
                 ?: return errorResponse(400, "Missing path parameter: providerId")

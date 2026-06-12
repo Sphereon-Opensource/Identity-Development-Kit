@@ -44,6 +44,12 @@ data class InitiateProviderAuthenticationArgs(
     val callbackPath: String? = null,
     val flowContext: FlowContext? = null,
     val hint: AuthenticationHint? = null,
+    /**
+     * Opaque application / login-surface id from `AuthenticationContext.applicationId`.
+     * Persisted on the pending federation record so the callback can scope identity
+     * linking to the application the login targets. Null = application-agnostic flow.
+     */
+    val applicationId: String? = null,
 )
 
 /**

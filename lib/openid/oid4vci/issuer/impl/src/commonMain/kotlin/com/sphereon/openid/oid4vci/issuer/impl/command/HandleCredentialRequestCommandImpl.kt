@@ -548,6 +548,12 @@ class HandleCredentialRequestCommandImpl(
         // 7. Resolve signing configuration for this credential type
         val signingConfig = issuerConfigProvider.credentialSigningConfigs[configId]
 
+        // 7b. Resolve the status-list binding, failing closed: a configuration that declares a
+        // status list whose binding cannot be resolved must abort the request — issuing without
+        // the status claim would produce a credential that can never be revoked.
+        val statusListBinding =
+            issuerConfigProvider.statusListBindingFor(configId).getOrElse { return Err(it) }
+
         // 8. Dispatch to format handler
         val handler =
             formatHandlers.firstOrNull { it.canHandle(request, configuration) }
@@ -580,7 +586,7 @@ class HandleCredentialRequestCommandImpl(
                                             signingCertChainPath = signingConfig?.signingCertChainPath,
                                             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
                                             expirationInDays = signingConfig?.expirationInDays,
-                                            statusListBinding = issuerConfigProvider.statusListBindings[configId],
+                                            statusListBinding = statusListBinding,
                                         )
                                     handler.issueCredential(request, issuanceContext)
                                 }
@@ -632,7 +638,7 @@ class HandleCredentialRequestCommandImpl(
                         signingKeyMode = signingConfig?.signingKeyMode ?: SigningKeyMode.None,
                         signingCertChainPath = signingConfig?.signingCertChainPath,
                         expirationInDays = signingConfig?.expirationInDays,
-                        statusListBinding = issuerConfigProvider.statusListBindings[configId],
+                        statusListBinding = statusListBinding,
                     )
 
                 val envelope =

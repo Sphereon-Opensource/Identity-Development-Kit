@@ -64,6 +64,23 @@ interface SessionContextManager {
         makeActive: Boolean = true,
     ): SessionInstance
 
+    /**
+     * Open a session by id, additionally binding validated transport credentials
+     * (e.g. the request's bearer JWT after upstream validation) into the session
+     * graph so the session-scoped [SessionContext] exposes them via
+     * `context.secureDetails`. The credentials are per-session by design: the
+     * cached per-tenant+principal user context must never carry one request's
+     * token. The default delegates to the credential-less overload (fakes and
+     * legacy managers keep working); [com.sphereon.core.defaults.session.SessionContextManagerImpl]
+     * overrides it to thread the details into the session graph factory.
+     */
+    fun createOrGetFromId(
+        @Named("sessionId") sessionId: String,
+        @Named("correlationId") correlationId: String = sessionId,
+        makeActive: Boolean = true,
+        secureDetails: com.sphereon.di.context.SecuredTenantContextDetails?,
+    ): SessionInstance = createOrGetFromId(sessionId, correlationId, makeActive)
+
     // Session cleanup
     fun destroyById(sessionId: String)
 

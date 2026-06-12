@@ -147,6 +147,7 @@ class HandleFederationOutcomeCommandImpl(
                         authenticatedAt = now,
                         expiresAt = now + flowConfig.sessionTtl,
                         upstreamSid = exchange.upstreamSid,
+                        applicationId = pending.applicationId,
                     ),
                 ).getOrElse {
                     // `upstreamSub` identifies a natural person; log a redacted fingerprint at warn

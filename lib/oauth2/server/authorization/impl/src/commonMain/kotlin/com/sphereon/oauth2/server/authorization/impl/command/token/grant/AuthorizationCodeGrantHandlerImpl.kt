@@ -134,6 +134,23 @@ class AuthorizationCodeGrantHandlerImpl(
                     ?.filterIsInstance<String>()
                     ?.takeIf { it.isNotEmpty() }
                     ?.let { put(SESSION_KEY_OIDC_CLAIMS_USERINFO, it) }
+
+                // RFC 9068 §2.2.3.1 authorization claims: `roles` is a REGISTERED claim for
+                // JWT access tokens (sourced from RFC 7643 §4.1.2), unlike the identity
+                // claims this token deliberately omits. When the authenticated user carries
+                // a `roles` string collection (the local user provider surfaces it via
+                // UserInfo.attributes -> userClaims; federated providers may surface it as a
+                // JsonArray of string primitives), embed it so resource servers can make
+                // role-based authorization decisions from the bearer token alone.
+                val roles =
+                    when (val raw = verified.userClaims[ROLES_CLAIM]) {
+                        is JsonArray -> raw.mapNotNull { element -> (element as? JsonPrimitive)?.takeIf { it.isString }?.content }
+                        is Collection<*> -> raw.filterIsInstance<String>()
+                        else -> emptyList()
+                    }
+                if (roles.isNotEmpty()) {
+                    put(ROLES_CLAIM, roles)
+                }
             }
         val accessToken =
             commands.createAccessToken
@@ -287,5 +304,8 @@ class AuthorizationCodeGrantHandlerImpl(
 
     private companion object {
         private const val CREDENTIAL_IDENTIFIER_SUFFIX_BYTES = 12
+
+        /** RFC 9068 §2.2.3.1 / RFC 7643 §4.1.2 authorization claim name. */
+        private const val ROLES_CLAIM = "roles"
     }
 }

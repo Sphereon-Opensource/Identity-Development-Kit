@@ -53,15 +53,25 @@ import com.sphereon.crypto.core.x509.certificateChainToX5c
 import com.sphereon.crypto.kms.rest.api.generated.infrastructure.Base64ByteArray
 import com.sphereon.crypto.kms.rest.api.generated.models.CreateRawSignature
 import com.sphereon.crypto.kms.rest.api.generated.models.CreateRawSignatureResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.DecryptRequest
+import com.sphereon.crypto.kms.rest.api.generated.models.DecryptResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.EncryptRequest
+import com.sphereon.crypto.kms.rest.api.generated.models.EncryptResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ErrorResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKey
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.KeyAgreementRequest
+import com.sphereon.crypto.kms.rest.api.generated.models.KeyAgreementResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.UnwrapKeyRequest
+import com.sphereon.crypto.kms.rest.api.generated.models.UnwrapKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.VerifyRawSignature
 import com.sphereon.crypto.kms.rest.api.generated.models.VerifyRawSignatureResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.WrapKeyRequest
+import com.sphereon.crypto.kms.rest.api.generated.models.WrapKeyResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.api.mapper.toSdkReferences
@@ -86,6 +96,9 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+import com.sphereon.crypto.kms.rest.api.generated.models.ContentEncryptionAlgorithm as ContentEncryptionAlgorithmRest
+import com.sphereon.crypto.kms.rest.api.generated.models.KeyAgreementAlgorithm as KeyAgreementAlgorithmRest
+import com.sphereon.crypto.kms.rest.api.generated.models.KeyWrapAlgorithm as KeyWrapAlgorithmRest
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("RestClientKmsProvider", exact = true)
@@ -168,7 +181,7 @@ class RestClientKmsProviderImpl(
         val response =
             http.post {
                 contentType(ContentType.Application.Json)
-                url("${config.restKmsUrl}/providers/${config.restProviderId}/keys/generate")
+                url("${config.restKmsUrl}/providers/${config.restProviderId}/keys")
                 applyAuthHeaders()
                 setBody(
                     GenerateKey(
@@ -315,18 +328,18 @@ class RestClientKmsProviderImpl(
         val keyInfoWithAlias = ResolvedKeyInfo.fromDTO(keyInfo).copy(alias = alias, providerId = config.restProviderId, x5c = x5c)
         val response =
             http.post {
-                url("${config.restKmsUrl}/providers/${config.restProviderId}/keys")
+                url("${config.restKmsUrl}/providers/${config.restProviderId}/keys/import")
                 contentType(ContentType.Application.Json)
                 applyAuthHeaders()
                 setBody(
-                    StoreKey(
+                    ImportKey(
                         keyInfo = keyInfoWithAlias.toRest(),
                         certChain = x5c,
                     ),
                 )
             }
-        val storeKeyResponse = response.body<StoreKeyResponse>()
-        return storeKeyResponse.keyInfo.toSdk()
+        val importKeyResponse = response.body<ImportKeyResponse>()
+        return importKeyResponse.keyInfo.toSdk()
     }
 
     override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean {
@@ -365,11 +378,31 @@ class RestClientKmsProviderImpl(
                     OperationCapability(operation = KmsProviderOperation.DELETE_KEY, supported = true),
                     OperationCapability(operation = KmsProviderOperation.SIGN, supported = true),
                     OperationCapability(operation = KmsProviderOperation.VERIFY, supported = true),
-                    OperationCapability(operation = KmsProviderOperation.ENCRYPT, supported = false, notes = "Not yet implemented for REST provider"),
-                    OperationCapability(operation = KmsProviderOperation.DECRYPT, supported = false, notes = "Not yet implemented for REST provider"),
-                    OperationCapability(operation = KmsProviderOperation.WRAP_KEY, supported = false, notes = "Not yet implemented for REST provider"),
-                    OperationCapability(operation = KmsProviderOperation.UNWRAP_KEY, supported = false, notes = "Not yet implemented for REST provider"),
-                    OperationCapability(operation = KmsProviderOperation.KEY_AGREEMENT, supported = false, notes = "Not yet implemented for REST provider"),
+                    OperationCapability(
+                        operation = KmsProviderOperation.ENCRYPT,
+                        supported = true,
+                        contentEncryptionAlgorithms = ContentEncryptionAlgorithm.entries.toTypedArray(),
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.DECRYPT,
+                        supported = true,
+                        contentEncryptionAlgorithms = ContentEncryptionAlgorithm.entries.toTypedArray(),
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.WRAP_KEY,
+                        supported = true,
+                        keyWrapAlgorithms = KeyWrapAlgorithm.entries.toTypedArray(),
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.UNWRAP_KEY,
+                        supported = true,
+                        keyWrapAlgorithms = KeyWrapAlgorithm.entries.toTypedArray(),
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.KEY_AGREEMENT,
+                        supported = true,
+                        keyAgreementAlgorithms = KeyAgreementAlgorithm.entries.toTypedArray(),
+                    ),
                 ),
             // Key type support
             supportedKeyTypes = supportedKeyTypes(),
@@ -378,7 +411,7 @@ class RestClientKmsProviderImpl(
             supportedCryptoAlgorithms = emptyArray(),
             supportedDigestAlgorithms = supportedDigests(),
             signatureAlgorithms = supportedSignatureAlgorithms(),
-            contentEncryptionAlgorithms = emptyArray(),
+            contentEncryptionAlgorithms = ContentEncryptionAlgorithm.entries.toTypedArray(),
             // Additional capabilities
             supportsX509 = false,
             supportsAttestation = false,
@@ -388,14 +421,32 @@ class RestClientKmsProviderImpl(
             resolutionMethods = emptyArray(),
         )
 
-    // ========== EncryptionService (not yet implemented for REST) ==========
+    // ========== EncryptionService ==========
 
     override suspend fun encrypt(
         keyInfo: KeyInfoType<*>,
         plaintext: ByteArray,
         algorithm: com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm,
         additionalAuthenticatedData: ByteArray?,
-    ): com.sphereon.crypto.core.kms.EncryptionResult = throw UnsupportedOperationException("REST KMS provider does not yet support encryption operations")
+    ): com.sphereon.crypto.core.kms.EncryptionResult {
+        val response =
+            http.post {
+                url("${config.restKmsUrl}/encryption/encrypt")
+                contentType(ContentType.Application.Json)
+                applyAuthHeaders()
+                setBody(
+                    EncryptRequest(
+                        keyInfo = keyInfo.toRest(),
+                        plaintext = Base64ByteArray(plaintext),
+                        algorithm = ContentEncryptionAlgorithmRest.valueOf(algorithm.name),
+                        additionalAuthenticatedData = additionalAuthenticatedData?.let { Base64ByteArray(it) },
+                    ),
+                )
+            }
+        handleErrors(response)
+        val result = response.body<EncryptResponse>()
+        return EncryptionResult(ciphertext = result.ciphertext.value, iv = result.iv.value, authTag = result.authTag.value)
+    }
 
     override suspend fun decrypt(
         keyInfo: KeyInfoType<*>,
@@ -404,26 +455,94 @@ class RestClientKmsProviderImpl(
         iv: ByteArray,
         authTag: ByteArray,
         additionalAuthenticatedData: ByteArray?,
-    ): ByteArray = throw UnsupportedOperationException("REST KMS provider does not yet support decryption operations")
+    ): ByteArray {
+        val response =
+            http.post {
+                url("${config.restKmsUrl}/encryption/decrypt")
+                contentType(ContentType.Application.Json)
+                applyAuthHeaders()
+                setBody(
+                    DecryptRequest(
+                        keyInfo = keyInfo.toRest(),
+                        ciphertext = Base64ByteArray(ciphertext),
+                        algorithm = ContentEncryptionAlgorithmRest.valueOf(algorithm.name),
+                        iv = Base64ByteArray(iv),
+                        authTag = Base64ByteArray(authTag),
+                        additionalAuthenticatedData = additionalAuthenticatedData?.let { Base64ByteArray(it) },
+                    ),
+                )
+            }
+        handleErrors(response)
+        return response.body<DecryptResponse>().plaintext.value
+    }
 
     override suspend fun wrapKey(
         wrappingKeyInfo: KeyInfoType<*>,
         keyToWrap: ByteArray,
         algorithm: com.sphereon.crypto.core.kms.KeyWrapAlgorithm,
-    ): ByteArray = throw UnsupportedOperationException("REST KMS provider does not yet support key wrapping operations")
+    ): ByteArray {
+        val response =
+            http.post {
+                url("${config.restKmsUrl}/encryption/wrap")
+                contentType(ContentType.Application.Json)
+                applyAuthHeaders()
+                setBody(
+                    WrapKeyRequest(
+                        wrappingKeyInfo = wrappingKeyInfo.toRest(),
+                        keyToWrap = Base64ByteArray(keyToWrap),
+                        algorithm = KeyWrapAlgorithmRest.valueOf(algorithm.name),
+                    ),
+                )
+            }
+        handleErrors(response)
+        return response.body<WrapKeyResponse>().wrappedKey.value
+    }
 
     override suspend fun unwrapKey(
         unwrappingKeyInfo: KeyInfoType<*>,
         wrappedKey: ByteArray,
         algorithm: com.sphereon.crypto.core.kms.KeyWrapAlgorithm,
-    ): ByteArray = throw UnsupportedOperationException("REST KMS provider does not yet support key unwrapping operations")
+    ): ByteArray {
+        val response =
+            http.post {
+                url("${config.restKmsUrl}/encryption/unwrap")
+                contentType(ContentType.Application.Json)
+                applyAuthHeaders()
+                setBody(
+                    UnwrapKeyRequest(
+                        unwrappingKeyInfo = unwrappingKeyInfo.toRest(),
+                        wrappedKey = Base64ByteArray(wrappedKey),
+                        algorithm = KeyWrapAlgorithmRest.valueOf(algorithm.name),
+                    ),
+                )
+            }
+        handleErrors(response)
+        return response.body<UnwrapKeyResponse>().unwrappedKey.value
+    }
 
     override suspend fun performKeyAgreement(
         privateKeyInfo: KeyInfoType<*>,
         publicKeyInfo: KeyInfoType<*>,
         algorithm: com.sphereon.crypto.core.kms.KeyAgreementAlgorithm,
         keyDataLen: Int?,
-    ): ByteArray = throw UnsupportedOperationException("REST KMS provider does not yet support key agreement operations")
+    ): ByteArray {
+        val response =
+            http.post {
+                url("${config.restKmsUrl}/encryption/key-agreement")
+                contentType(ContentType.Application.Json)
+                applyAuthHeaders()
+                setBody(
+                    KeyAgreementRequest(
+                        privateKeyInfo = privateKeyInfo.toRest(),
+                        publicKeyInfo = publicKeyInfo.toRest(),
+                        algorithm = KeyAgreementAlgorithmRest.valueOf(algorithm.name),
+                        keyDataLen = keyDataLen,
+                    ),
+                )
+            }
+        handleErrors(response)
+        return response.body<KeyAgreementResponse>().sharedSecret.value
+    }
 
     private fun createHttpClient(): HttpClient {
         val simpleOptions = config.httpClientOptions

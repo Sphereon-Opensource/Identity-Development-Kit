@@ -117,6 +117,43 @@ object StatusListErrors {
             category = ErrorCategory.VALIDATION,
         )
 
+    fun enricherUnavailable(credentialConfigurationId: String): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_ENRICHER_UNAVAILABLE",
+            message =
+                "Credential configuration '$credentialConfigurationId' is bound to a status list, but no " +
+                    "CredentialStatusEnricher is available on this deployment; refusing to issue a credential " +
+                    "that could never be revoked",
+            category = ErrorCategory.UNAVAILABLE,
+        )
+
+    fun enrichmentUnsupportedForFormat(
+        credentialConfigurationId: String,
+        format: String,
+    ): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_ENRICHMENT_UNSUPPORTED_FORMAT",
+            message =
+                "Credential configuration '$credentialConfigurationId' is bound to a status list, but the " +
+                    "'$format' format handler does not support status enrichment; refusing to issue a credential " +
+                    "that could never be revoked",
+            category = ErrorCategory.UNAVAILABLE,
+        )
+
+    fun bindingUnresolvable(
+        credentialConfigurationId: String,
+        statusListId: String,
+        reason: String,
+    ): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_BINDING_UNRESOLVABLE",
+            message =
+                "Credential configuration '$credentialConfigurationId' declares status list '$statusListId' " +
+                    "but the binding cannot be resolved: $reason; refusing to issue a credential that could " +
+                    "never be revoked",
+            category = ErrorCategory.UNAVAILABLE,
+        )
+
     fun publisherNotImplemented(publisherId: String): IdkError =
         IdkError.fromString(
             code = "STATUSLIST_PUBLISHER_NOT_IMPLEMENTED",

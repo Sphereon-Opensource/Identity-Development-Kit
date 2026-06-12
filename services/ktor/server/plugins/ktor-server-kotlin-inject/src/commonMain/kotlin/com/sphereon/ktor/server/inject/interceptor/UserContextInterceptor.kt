@@ -19,7 +19,9 @@ package com.sphereon.ktor.server.inject.interceptor
 
 import com.sphereon.core.api.app.CoreApiAppExtensionGraph
 import com.sphereon.core.api.log.LogService
+import com.sphereon.core.defaults.context.toSecuredDetails
 import com.sphereon.di.app.AppGraph
+import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.context.RequestScopedContext
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
@@ -99,12 +101,21 @@ class UserContextInterceptor(
             // otherwise the session id is its own natural correlation anchor.
             val correlationId = call.request.header("X-Correlation-Id") ?: sessionId
 
+            // When an auth/tenant-resolution plugin validated a bearer token for this
+            // call, project it into the session's secure details so commands can read
+            // the validated JWT (and its authorization claims, e.g. `roles`) through
+            // `execution.sessionContext.context.secureDetails?.jwt`. Per-session by
+            // design: the user context above is cached per tenant+principal and must
+            // not carry one request's token.
+            val secureDetails = call.attributes.getOrNull(ValidatedJwtClaimsAttribute)?.toSecuredDetails()
+
             // Create or get session (using generated session ID)
             val sessionInstance =
                 contextInstance.sessionContextManager.createOrGetFromId(
                     sessionId = sessionId,
                     correlationId = correlationId,
                     makeActive = false, // ID-based resolution, no global active state
+                    secureDetails = secureDetails,
                 )
 
             // Store context in call attributes

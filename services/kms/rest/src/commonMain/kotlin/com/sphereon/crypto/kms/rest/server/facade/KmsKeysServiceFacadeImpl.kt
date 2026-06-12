@@ -24,19 +24,19 @@ import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceInput
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceResponse
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.facade.KmsKeysServiceFacade
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -56,7 +56,7 @@ import dev.zacsweers.metro.binding
 class KmsKeysServiceFacadeImpl(
     private val getKeyCommand: GetKeyServiceCommand,
     private val listKeysCommand: ListKeysServiceCommand,
-    private val storeKeyCommand: StoreKeyServiceCommand,
+    private val importKeyCommand: ImportKeyServiceCommand,
     private val generateKeyCommand: GenerateKeyServiceCommand,
     private val deleteKeyCommand: DeleteKeyServiceCommand,
     private val registerKeyReferenceCommand: RegisterKeyReferenceServiceCommand,
@@ -68,7 +68,7 @@ class KmsKeysServiceFacadeImpl(
 
     override suspend fun listKeys(providerId: String?): IdkResult<ListKeysResponse, IdkError> = listKeysCommand.execute(ListKeysInput(providerId = providerId))
 
-    override suspend fun storeKey(storeKey: StoreKey): IdkResult<StoreKeyResponse, IdkError> = storeKeyCommand.execute(storeKey)
+    override suspend fun importKey(importKey: ImportKey): IdkResult<ImportKeyResponse, IdkError> = importKeyCommand.execute(importKey)
 
     override suspend fun generateKey(generateKey: GenerateKeyGlobal): IdkResult<GenerateKeyResponse, IdkError> = generateKeyCommand.execute(generateKey)
 

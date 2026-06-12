@@ -23,6 +23,7 @@ import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.decodeFromBase64
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -101,6 +102,7 @@ class ConfigBackedUserAuthenticationProvider(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> =
         Err(
             AuthenticationError.Generic(
@@ -110,7 +112,10 @@ class ConfigBackedUserAuthenticationProvider(
             ),
         )
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials,): IdkResult<String?, AuthenticationError> {
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> {
         val usernamePassword = credentials as? UserCredentials.UsernamePassword ?: return Ok(null)
         val username = usernamePassword.username
         val storedHash =

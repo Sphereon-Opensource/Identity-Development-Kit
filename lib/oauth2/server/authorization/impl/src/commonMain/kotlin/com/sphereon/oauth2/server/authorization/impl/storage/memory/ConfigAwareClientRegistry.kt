@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
@@ -48,6 +49,7 @@ import dev.zacsweers.metro.binding
 class ConfigAwareClientRegistry(
     private val backingStorage: InMemoryOAuth2BackingStorage,
     private val configBinder: OAuth2ClientsConfigBinder,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
 ) : ClientRegistry {
     private val partitionKey = OAuth2StoragePartitionKey.appLevel()
@@ -56,8 +58,10 @@ class ConfigAwareClientRegistry(
     /**
      * Configured clients merged from two sources:
      *
-     *  - `oauth2.clients.<id>.*` — the public client registry consumed by the authorization
-     *    code / device / pre-authorized-code flows.
+     *  - `oauth2.clients.<id>.*` — the global public client registry consumed by the
+     *    authorization code / device / pre-authorized-code flows.
+     *  - `oauth2.servers.<asId>.clients.<id>.*` — active-AS-scoped public clients, overlaid
+     *    on top of the global registry when an AS instance is resolved.
      *  - `oauth2.servers.<asId>.internal-clients.<role>.*` — server-to-server resource-server
      *    clients (e.g. the OID4VCI / OID4VP / introspection callers). They authenticate via
      *    `client_secret_basic` and are recognized as resource servers by the introspection
@@ -69,9 +73,15 @@ class ConfigAwareClientRegistry(
      * surface operator misconfiguration.
      */
     private val configuredClients: IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> by lazy {
-        val regular = configBinder.loadClientRegistrations()
-        if (regular.isErr) return@lazy regular
-        val merged = LinkedHashMap(regular.value)
+        val activeServerId = asInstanceIdProvider.currentAsInstanceId() ?: serversConfigProvider.getConfig().defaultServer
+        val globalClients = configBinder.loadClientRegistrations()
+        if (globalClients.isErr) return@lazy globalClients
+        val serverClients = activeServerId?.let { configBinder.loadClientRegistrations(it) } ?: Ok(emptyMap())
+        if (serverClients.isErr) return@lazy serverClients
+        val merged = LinkedHashMap(globalClients.value)
+        for ((clientId, registration) in serverClients.value) {
+            merged[clientId] = registration
+        }
         for ((clientId, registration) in loadInternalClientRegistrations()) {
             require(!merged.containsKey(clientId)) {
                 "Internal client id '$clientId' collides with an `oauth2.clients` registration"

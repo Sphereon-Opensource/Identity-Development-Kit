@@ -37,6 +37,7 @@ import com.sphereon.identity.matching.crypto.ReconciliationCryptoService
 import com.sphereon.identity.matching.store.IdentityMatchStore
 import com.sphereon.identity.reconciliation.model.KnownHolderState
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -281,6 +282,7 @@ class Oid4vpUserAuthenticationProviderImpl(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> {
         log.debug("Initiating OID4VP authentication for OAuth session: $sessionId")
 
@@ -307,7 +309,10 @@ class Oid4vpUserAuthenticationProviderImpl(
         return Ok(qrPageUrl)
     }
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> {
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> {
         // OID4VP doesn't support direct credential authentication
         return Err(
             AuthenticationError.MethodUnavailable(

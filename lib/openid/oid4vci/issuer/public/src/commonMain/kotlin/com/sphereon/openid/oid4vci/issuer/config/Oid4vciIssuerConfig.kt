@@ -16,6 +16,9 @@
 
 package com.sphereon.openid.oid4vci.issuer.config
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.jose.Jwk
@@ -122,6 +125,20 @@ interface Oid4vciIssuerConfigProvider {
     @JsExportIgnoreCompat
     val statusListBindings: Map<String, StatusListBinding>
         get() = emptyMap()
+
+    /**
+     * Fail-closed binding resolution for issuance. A credential configuration bound to a status
+     * list must never issue without its status claim — a credential issued without one can never
+     * be revoked. So unlike [statusListBindings] (which only exposes resolvable bindings), this
+     * distinguishes the three cases the issuance path must handle:
+     * - `Ok(null)` — the configuration declares no status list; issuance proceeds without a
+     *   status claim.
+     * - `Ok(binding)` — the binding resolved; issuance must embed the status claim before signing.
+     * - `Err` — the configuration declares a status list but the binding cannot be resolved
+     *   (definitions source missing, unknown list id); issuance must abort.
+     */
+    @JsExportIgnoreCompat
+    fun statusListBindingFor(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> = Ok(statusListBindings[credentialConfigId])
 
     /**
      * Per-credential, per-proof-carrier trust configuration for OID4VCI 1.0 §7.2 key

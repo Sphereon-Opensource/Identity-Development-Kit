@@ -85,9 +85,11 @@ data class IssuanceContext(
      */
     val expirationInDays: Int? = null,
     /**
-     * Optional binding to a credential status list. When set (and a `CredentialStatusEnricher` is
-     * available), the format handler allocates a status entry and embeds the status claim into the
-     * credential before signing. Null means no status list for this credential.
+     * Optional binding to a credential status list. When set, the format handler MUST allocate a
+     * status entry (via the `CredentialStatusEnricher`) and embed the status claim into the
+     * credential before signing — and MUST fail the issuance when it cannot (enricher missing,
+     * reservation failure, or a format without status support): a credential issued without its
+     * status claim can never be revoked. Null means no status list for this credential.
      */
     val statusListBinding: StatusListBinding? = null,
 )

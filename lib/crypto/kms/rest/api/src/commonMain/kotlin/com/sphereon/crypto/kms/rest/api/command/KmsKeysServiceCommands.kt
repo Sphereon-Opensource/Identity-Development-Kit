@@ -27,8 +27,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -182,29 +182,29 @@ interface ListKeysServiceCommand :
 }
 
 /**
- * Service command for storing a key.
+ * Service command for importing externally supplied key material.
  *
- * POST /keys
+ * POST /keys/import
  */
 @OptIn(ExperimentalObjCName::class)
-@ObjCName("StoreKeyServiceCommand", exact = true)
-interface StoreKeyServiceCommand :
-    // Args ARE the wire body: the OpenAPI StoreKeyRequest body is the flat
-    // StoreKey schema, and BinaryCommandAdapter decodes the raw body into the
+@ObjCName("ImportKeyServiceCommand", exact = true)
+interface ImportKeyServiceCommand :
+    // Args ARE the wire body: the OpenAPI ImportKeyRequest body is the flat
+    // ImportKey schema, and BinaryCommandAdapter decodes the raw body into the
     // args type directly — no wrapper envelope.
-    ServiceCommand<StoreKey, StoreKeyResponse, IdkError>,
+    ServiceCommand<ImportKey, ImportKeyResponse, IdkError>,
     PublicApiCommand {
     companion object {
-        const val COMMAND_ID = "kms.keys.store"
+        const val COMMAND_ID = "kms.keys.import"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/keys",
+                pathPattern = "/keys/import",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
                 tags = setOf("Keys"),
-                summary = "Store a key",
+                summary = "Import externally supplied key material",
             )
     }
 
@@ -216,7 +216,7 @@ interface StoreKeyServiceCommand :
 /**
  * Service command for generating a new key.
  *
- * POST /keys/generate
+ * POST /keys
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyServiceCommand", exact = true)
@@ -232,7 +232,7 @@ interface GenerateKeyServiceCommand :
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/keys/generate",
+                pathPattern = "/keys",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,

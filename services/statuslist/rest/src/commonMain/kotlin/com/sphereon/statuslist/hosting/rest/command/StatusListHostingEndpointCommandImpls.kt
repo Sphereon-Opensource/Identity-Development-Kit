@@ -28,20 +28,18 @@ import com.sphereon.statuslist.command.GetStatusListTokenCommand
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants.CommandIds
 import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByCorrelationIdEndpointCommand
-import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByIdEndpointCommand
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
-private const val PARAM_ID = "id"
 private const val PARAM_CORRELATION_ID = "correlationId"
 
 /**
  * Shared base for the hosting endpoints: resolves a [StatusListRef] from the URL, delegates to the
- * IDK [GetStatusListTokenCommand], and renders the RAW signed token as the response body with the
+ * IDK [GetStatusListTokenCommand], and renders the raw signed token as the response body with the
  * token's own media type and a `Cache-Control: public, max-age=<ttl>` header. The token string is
- * emitted verbatim (UTF-8 bytes) so the body is the exact URI a verifier resolves — never a JSON
+ * emitted verbatim as UTF-8 bytes so the body is the exact URI a verifier resolves, never a JSON
  * envelope.
  */
 abstract class AbstractGetStatusListTokenEndpointCommand(
@@ -54,15 +52,8 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
         execution = execution,
         endpoint = endpoint,
     ) {
-    /** Build the reference (by id or correlationId) from the matched request. */
+    /** Build the reference from the matched request. */
     protected abstract fun resolveRef(request: GenericHttpRequest): IdkResult<StatusListRef, IdkError>
-
-    /**
-     * Additional references to try if [resolveRef]'s reference resolves nothing. Lets the by-id
-     * endpoint accept a correlationId on the bare `/{id}` path (so a stable business key works
-     * without the `/by/` prefix), without conflating id and correlationId in the driver/management ops.
-     */
-    protected open fun fallbackRefs(request: GenericHttpRequest): List<StatusListRef> = emptyList()
 
     final override suspend fun doExecute(
         args: GenericHttpRequest,
@@ -70,17 +61,7 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
         val ref = resolveRef(request).getOrElse { return Err(it) }
-        var result = service.execute(ref)
-        if (result.isErr) {
-            for (fallback in fallbackRefs(request)) {
-                val attempt = service.execute(fallback)
-                if (attempt.isOk) {
-                    result = attempt
-                    break
-                }
-            }
-        }
-        return result.map { token -> token.toRawResponse() }
+        return service.execute(ref).map { token -> token.toRawResponse() }
     }
 
     private fun StatusListToken.toRawResponse(): GenericHttpResponse {
@@ -94,36 +75,7 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     }
 }
 
-/** `GET /public/statuslists/{id}` — resolve the token by technical id. */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetStatusListTokenByIdEndpointCommand>())
-class GetStatusListTokenByIdEndpointCommandImpl(
-    execution: SessionExecution,
-    service: GetStatusListTokenCommand,
-) : AbstractGetStatusListTokenEndpointCommand(
-        id = CommandIds.HTTP_GET_TOKEN_BY_ID,
-        execution = execution,
-        endpoint = GetStatusListTokenByIdEndpointCommand.ENDPOINT,
-        service = service,
-    ),
-    GetStatusListTokenByIdEndpointCommand {
-    override fun resolveRef(request: GenericHttpRequest): IdkResult<StatusListRef, IdkError> {
-        val id = request.requirePathParam(PARAM_ID).getOrElse { return Err(it) }
-        // Public hosting favors the stable business key: the `/{id}` segment is resolved as a
-        // correlationId first (what credentials embed and what is stable across rebuilds),
-        // falling back to the internal technical id below.
-        return Ok(StatusListRef(correlationId = id))
-    }
-
-    override fun fallbackRefs(request: GenericHttpRequest): List<StatusListRef> =
-        request.requirePathParam(PARAM_ID).fold(
-            success = { id -> listOf(StatusListRef(id = id)) },
-            failure = { emptyList() },
-        )
-}
-
-/** `GET /public/statuslists/by/{correlationId}` — resolve the token by business correlation id. */
+/** `GET /public/statuslists/{correlationId}` resolves the token by business correlation id. */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<GetStatusListTokenByCorrelationIdEndpointCommand>())

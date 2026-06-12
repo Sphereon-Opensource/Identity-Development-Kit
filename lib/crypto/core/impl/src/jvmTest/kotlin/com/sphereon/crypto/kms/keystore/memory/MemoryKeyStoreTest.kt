@@ -18,14 +18,20 @@
 package com.sphereon.crypto.kms.keystore.memory
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.JvmCryptoTestAppGraph
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.createJvmCryptoTestAppGraph
+import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyStore
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
@@ -782,6 +788,47 @@ class MemoryKeyStoreTest {
             val retrievedKey = memoryKeyStore.getKey(storedKey)
             assertNotNull(retrievedKey)
             assertEquals(alias, retrievedKey.alias)
+        }
+
+    /**
+     * Kid-as-alias resolution: callers regularly carry the provisioning alias in the kid
+     * field (e.g. GenerateMacArgs.keyId -> KeyInfo(kid = keyId) in the software KMS
+     * provider's MAC path). When the stored key's kid metadata does not match (here: the
+     * stored ResolvedKeyInfo has no kid at all), the store must still resolve the lookup
+     * by treating the kid value as an alias, since a direct alias get with the same value
+     * succeeds.
+     */
+    @Test
+    fun getKeyByKidCarryingAliasValueShouldSucceed() =
+        runTest {
+            val alias = "idfr:bi:application"
+            val jwk =
+                Jwk(
+                    kty = JwaKeyType.oct,
+                    k =
+                        kotlin.random.Random
+                            .nextBytes(32)
+                            .encodeToBase64Url(),
+                    alg = JwaAlgorithm.HS256,
+                )
+            val keyInfo =
+                ResolvedKeyInfo(
+                    key = jwk,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    keyType = KeyTypeMapping.Symmetric,
+                    alias = alias,
+                    providerId = "test-provider",
+                )
+            memoryKeyStore.storeKey(keyInfo, "test-provider", alias, null)
+
+            // Direct alias get succeeds
+            val byAlias = memoryKeyStore.getKey(KeyInfo<Jwk>(alias = alias))
+            assertEquals(alias, byAlias.alias)
+
+            // The same value carried only as kid must resolve as well
+            val byKid = memoryKeyStore.getKey(KeyInfo<Jwk>(kid = alias))
+            assertEquals(alias, byKid.alias)
+            assertEquals(jwk.k, (byKid.key as? Jwk)?.k)
         }
 
     @Test

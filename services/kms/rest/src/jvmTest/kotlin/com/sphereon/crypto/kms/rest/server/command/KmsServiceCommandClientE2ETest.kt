@@ -131,7 +131,7 @@ class KmsServiceCommandClientE2ETest {
                     mapOf(
                         GetKeyServiceCommand.COMMAND_ID to ("GET" to "/keys/{aliasOrKid}"),
                         ListKeysServiceCommand.COMMAND_ID to ("GET" to "/keys"),
-                        GenerateKeyServiceCommand.COMMAND_ID to ("POST" to "/keys/generate"),
+                        GenerateKeyServiceCommand.COMMAND_ID to ("POST" to "/keys"),
                         DeleteKeyServiceCommand.COMMAND_ID to ("DELETE" to "/keys/{aliasOrKid}"),
                     ),
                 tenantHeaderName = "X-Tenant-ID",
@@ -309,7 +309,7 @@ class KmsServiceCommandClientE2ETest {
         assertEquals("/keys", listKeysCommand.httpEndpoint.pathPattern)
 
         assertEquals(HttpMethod.POST, generateKeyCommand.httpEndpoint.method)
-        assertEquals("/keys/generate", generateKeyCommand.httpEndpoint.pathPattern)
+        assertEquals("/keys", generateKeyCommand.httpEndpoint.pathPattern)
 
         assertEquals(HttpMethod.DELETE, deleteKeyCommand.httpEndpoint.method)
         assertEquals("/keys/{aliasOrKid}", deleteKeyCommand.httpEndpoint.pathPattern)

@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -72,9 +73,13 @@ class UserAuthenticationProviderDelegate(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
-    ): IdkResult<String, AuthenticationError> = selected.initiateAuthentication(sessionId, returnUrl, hint)
+        context: AuthenticationContext?,
+    ): IdkResult<String, AuthenticationError> = selected.initiateAuthentication(sessionId, returnUrl, hint, context)
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials,): IdkResult<String?, AuthenticationError> = selected.authenticateWithCredentials(credentials)
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> = selected.authenticateWithCredentials(credentials, context)
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = selected.logout(userId)
 

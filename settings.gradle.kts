@@ -445,6 +445,10 @@ includeProject("lib-data-credential-definition-public", "lib/data/credential-def
 includeProject("lib-data-credential-definition-impl", "lib/data/credential-definition/impl")
 includeProject("lib-data-credential-definition-rest", "lib/data/credential-definition/rest")
 
+// Software Registry (unified software-instance model + read/write SPIs)
+includeProject("lib-software-registry-public", "lib/software/registry/public")
+includeProject("lib-software-registry-impl", "lib/software/registry/impl")
+
 // Data Store - Party (data models for identity, contact, tenant)
 includeProject("lib-data-store-party-public", "lib/data/store/party/public")
 

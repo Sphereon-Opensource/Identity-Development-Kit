@@ -51,6 +51,7 @@ import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersC
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -475,10 +476,14 @@ class SessionEvaluationTest {
         override suspend fun initiateAuthentication(
             sessionId: String,
             returnUrl: String,
-            hint: AuthenticationHint?
+            hint: AuthenticationHint?,
+            context: AuthenticationContext?
         ) = Ok(FAKE_IDP_REDIRECT)
 
-        override suspend fun authenticateWithCredentials(credentials: UserCredentials) = Ok(null)
+        override suspend fun authenticateWithCredentials(
+            credentials: UserCredentials,
+            context: AuthenticationContext?
+        ) = Ok(null)
 
         override suspend fun logout(userId: String) = Ok(Unit)
 

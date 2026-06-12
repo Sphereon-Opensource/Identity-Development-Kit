@@ -16,7 +16,6 @@ import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
 import com.sphereon.statuslist.hosting.rest.command.GetStatusListTokenByCorrelationIdEndpointCommandImpl
-import com.sphereon.statuslist.hosting.rest.command.GetStatusListTokenByIdEndpointCommandImpl
 import com.sphereon.statuslist.hosting.rest.test.createTestSessionExecution
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -51,7 +50,6 @@ class StatusListHostingHttpAdapterTest {
                 execution = execution,
                 endpoints =
                     listOf(
-                        GetStatusListTokenByIdEndpointCommandImpl(execution, stub),
                         GetStatusListTokenByCorrelationIdEndpointCommandImpl(execution, stub),
                     ),
             )
@@ -60,7 +58,7 @@ class StatusListHostingHttpAdapterTest {
     private fun base(suffix: String) = StatusListHostingApiConstants.BASE_PATH + suffix
 
     @Test
-    fun getById_returnsRawToken_withContentType_andTtlCacheControl() =
+    fun getByCorrelationId_returnsRawToken_withContentType_andTtlCacheControl() =
         runTest {
             val f = Fixture(ttlSeconds = 3600)
             val response =
@@ -83,7 +81,7 @@ class StatusListHostingHttpAdapterTest {
             val f = Fixture(ttlSeconds = null)
             val response =
                 f.adapter.handleRequest(
-                    GenericHttpRequest.withTextBody(method = "GET", path = base("/by/corr-9"), body = null),
+                    GenericHttpRequest.withTextBody(method = "GET", path = base("/corr-9"), body = null),
                 )
             assertEquals(200, response.statusCode)
             assertEquals(signedToken, response.bodyBytes?.decodeToString())

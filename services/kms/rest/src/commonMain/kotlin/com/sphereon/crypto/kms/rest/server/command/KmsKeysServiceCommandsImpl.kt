@@ -34,18 +34,18 @@ import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceInput
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceResponse
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.KmsRestService
@@ -153,49 +153,49 @@ class ListKeysServiceCommandImpl(
     }
 }
 
-// ========== StoreKey Service Command Implementation ==========
+// ========== ImportKey Service Command Implementation ==========
 
 /**
- * LOCAL implementation of [StoreKeyServiceCommand].
+ * LOCAL implementation of [ImportKeyServiceCommand].
  *
- * POST /keys
+ * POST /keys/import
  */
 @Inject
 @SingleIn(SessionScope::class)
-class StoreKeyServiceCommandImpl(
+class ImportKeyServiceCommandImpl(
     execution: SessionExecution,
     private val kmsService: KmsRestService,
-) : TypedServiceCommandAdapter<StoreKey, StoreKeyResponse, IdkError>(
-        commandId = StoreKeyServiceCommand.COMMAND_ID,
+) : TypedServiceCommandAdapter<ImportKey, ImportKeyResponse, IdkError>(
+        commandId = ImportKeyServiceCommand.COMMAND_ID,
         execution = execution,
-        inputTypeToken = typeToken<StoreKey>(),
-        outputTypeToken = typeToken<StoreKeyResponse>(),
+        inputTypeToken = typeToken<ImportKey>(),
+        outputTypeToken = typeToken<ImportKeyResponse>(),
     ),
-    StoreKeyServiceCommand {
-    override val commandId = StoreKeyServiceCommand.COMMAND_ID
+    ImportKeyServiceCommand {
+    override val commandId = ImportKeyServiceCommand.COMMAND_ID
 
     override suspend fun doExecute(
-        args: StoreKey,
-        applyDuring: (StoreKey) -> StoreKey,
-    ): IdkResult<StoreKeyResponse, IdkError> {
-        val storeKeyRequest = applyDuring(args)
+        args: ImportKey,
+        applyDuring: (ImportKey) -> ImportKey,
+    ): IdkResult<ImportKeyResponse, IdkError> {
+        val importKeyRequest = applyDuring(args)
 
         val key =
             try {
                 kmsService.storeKey(
-                    keyInfo = storeKeyRequest.keyInfo.toSdk(),
-                    certChain = storeKeyRequest.certChain,
+                    keyInfo = importKeyRequest.keyInfo.toSdk(),
+                    certChain = importKeyRequest.certChain,
                 )
             } catch (expected: Exception) {
                 return Err(
                     IdkError.UNKNOWN_ERROR(
-                        message = "Failed to store key: ${expected.message}",
+                        message = "Failed to import key: ${expected.message}",
                         exception = expected,
                     ),
                 )
             }
 
-        return Ok(StoreKeyResponse(keyInfo = key.toRest()))
+        return Ok(ImportKeyResponse(keyInfo = key.toRest()))
     }
 }
 
@@ -204,7 +204,7 @@ class StoreKeyServiceCommandImpl(
 /**
  * LOCAL implementation of [GenerateKeyServiceCommand].
  *
- * POST /keys/generate
+ * POST /keys
  */
 @Inject
 @SingleIn(SessionScope::class)

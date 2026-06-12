@@ -68,7 +68,7 @@ class InitPipelineSessionEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = InitPipelineSessionEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.POST, endpoint.method)
-        assertEquals("/sessions", endpoint.pathPattern)
+        assertEquals("/backend/sessions", endpoint.pathPattern)
     }
 
     @Test
@@ -95,7 +95,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions",
+                    path = "/backend/sessions",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = {
                         """{"pipeline_configuration":{"pipelineId":"pipe-1"},"correlation_id":"corr-123","ttl_seconds":3600}"""
@@ -131,7 +131,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions",
+                    path = "/backend/sessions",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = {
                         """{"pipeline_configuration":{"pipelineId":"pipe-2"}}"""
@@ -160,7 +160,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions",
+                    path = "/backend/sessions",
                     bodySupplier = {
                         """{"pipeline_configuration":{"pipelineId":"pipe-3"}}"""
                     },
@@ -186,7 +186,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions",
+                    path = "/backend/sessions",
                     bodySupplier = {
                         """{"pipeline_configuration":{"pipelineId":"unknown-pipe"}}"""
                     },
@@ -204,7 +204,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions",
+                    path = "/backend/sessions",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { "not-valid-json{{" },
                 )
@@ -223,7 +223,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions",
+                    path = "/backend/sessions",
                     bodySupplier = {
                         """{"pipeline_configuration":{"pipelineId":"pipe-x"}}"""
                     },
@@ -318,7 +318,7 @@ class InitPipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/oid4vci/sessions",
+                    path = "/oid4vci/backend/sessions",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = {
                         """{"pipeline_configuration":{"pipelineId":"pipe-integrated"}}"""

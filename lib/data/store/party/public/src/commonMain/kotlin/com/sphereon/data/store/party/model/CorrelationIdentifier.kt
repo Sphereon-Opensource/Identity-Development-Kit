@@ -54,6 +54,9 @@ data class CorrelationIdentifier
         val identifierType: IdentifierType,
         /** The actual identifier value (DID string, email, phone number, VAT number, etc.) */
         val value: String,
+        /** Optional protected representation of the identifier value (inert envelope; no crypto in this layer) */
+        @SerialName("protectedValue")
+        val protectedValue: ProtectedIdentifierValue? = null,
         /** Whether this is the primary identifier for its type */
         @SerialName("isPrimary")
         val isPrimary: Boolean = false,

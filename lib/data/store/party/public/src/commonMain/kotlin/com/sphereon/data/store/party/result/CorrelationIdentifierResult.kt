@@ -23,6 +23,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.party.model.CorrelationIdentifier
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.IdentifierX509
+import com.sphereon.data.store.party.model.ProtectedIdentifierValue
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
@@ -67,6 +68,9 @@ data class CorrelationIdentifierResult
         val identifierType: IdentifierType,
         /** The actual identifier value (DID string, email, phone number, VAT number, etc.) */
         val value: String,
+        /** Optional protected representation of the identifier value (inert envelope; no crypto in this layer) */
+        @SerialName("protectedValue")
+        val protectedValue: ProtectedIdentifierValue? = null,
         /** Whether this is the primary identifier for its type */
         @SerialName("isPrimary")
         val isPrimary: Boolean,
@@ -141,6 +145,7 @@ data class CorrelationIdentifierResult
                 tenantId = identifier.tenantId,
                 identifierType = identifier.identifierType,
                 value = identifier.value,
+                protectedValue = identifier.protectedValue,
                 isPrimary = identifier.isPrimary,
                 isVerified = identifier.isVerified,
                 verifiedAt = identifier.verifiedAt,
@@ -183,6 +188,7 @@ data class CorrelationIdentifierResult
                 tenantId = tenantId,
                 identifierType = identifierType,
                 value = value,
+                protectedValue = protectedValue,
                 isPrimary = isPrimary,
                 isVerified = isVerified,
                 verifiedAt = verifiedAt,

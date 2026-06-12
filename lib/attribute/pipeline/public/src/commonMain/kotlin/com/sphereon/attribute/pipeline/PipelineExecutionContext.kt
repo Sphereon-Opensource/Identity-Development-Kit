@@ -38,4 +38,7 @@ interface PipelineExecutionContext {
 
     /** Attributes pushed in for the current phase by the caller or an inbound transport. */
     val phaseInput: AttributeBag
+
+    /** The pipeline binding currently invoking this source, including any persisted source instance. */
+    val sourceBinding: AttributeSourceBinding? get() = null
 }

@@ -29,12 +29,12 @@ import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKey
-import com.sphereon.crypto.kms.rest.api.command.StoreKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
-import com.sphereon.crypto.kms.rest.api.generated.models.StoreKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
 
 /**
  * Shared transport invoker for KMS REST command clients.
@@ -113,27 +113,27 @@ class ListKeysServiceCommandClient(
 }
 
 /**
- * HTTP client implementation of [StoreKeyServiceCommand].
+ * HTTP client implementation of [ImportKeyServiceCommand].
  *
- * POST /keys
+ * POST /keys/import
  */
-class StoreKeyServiceCommandClient(
+class ImportKeyServiceCommandClient(
     transport: SessionBoundKmsCommandTransport,
 ) : KmsKeysTransportCommandClient(transport),
-    StoreKeyServiceCommand {
-    override val id: String = StoreKeyServiceCommand.COMMAND_ID
+    ImportKeyServiceCommand {
+    override val id: String = ImportKeyServiceCommand.COMMAND_ID
     override val isEnabled: Boolean = true
-    override val commandId: String = StoreKeyServiceCommand.COMMAND_ID
-    override val inputTypeToken: TypeToken<StoreKey> = typeToken<StoreKey>()
-    override val outputTypeToken: TypeToken<StoreKeyResponse> = typeToken<StoreKeyResponse>()
+    override val commandId: String = ImportKeyServiceCommand.COMMAND_ID
+    override val inputTypeToken: TypeToken<ImportKey> = typeToken<ImportKey>()
+    override val outputTypeToken: TypeToken<ImportKeyResponse> = typeToken<ImportKeyResponse>()
 
-    override suspend fun execute(args: StoreKey): IdkResult<StoreKeyResponse, IdkError> = invokeCommand(commandId = commandId, input = args, outputTypeToken = outputTypeToken)
+    override suspend fun execute(args: ImportKey): IdkResult<ImportKeyResponse, IdkError> = invokeCommand(commandId = commandId, input = args, outputTypeToken = outputTypeToken)
 }
 
 /**
  * HTTP client implementation of [GenerateKeyServiceCommand].
  *
- * POST /keys/generate
+ * POST /keys
  */
 class GenerateKeyServiceCommandClient(
     transport: SessionBoundKmsCommandTransport,

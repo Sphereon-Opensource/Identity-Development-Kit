@@ -57,7 +57,7 @@ interface InitPipelineSessionEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/sessions",
+                pathPattern = "/backend/sessions",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "initPipelineSession",

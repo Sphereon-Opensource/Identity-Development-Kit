@@ -45,8 +45,11 @@ object StatusListHostingApiConstants {
 
     /** REST endpoint paths, relative to [BASE_PATH]. */
     object Paths {
-        const val TOKEN_BY_ID = "/{id}"
-        const val TOKEN_BY_CORRELATION_ID = "/by/{correlationId}"
+        /**
+         * The sole public hosting route. Lists are addressed by their stable business correlation id
+         * directly under [BASE_PATH] (no `/by/` segment): `GET /public/statuslists/{correlationId}`.
+         */
+        const val TOKEN_BY_CORRELATION_ID = "/{correlationId}"
     }
 
     /**
@@ -67,7 +70,6 @@ object StatusListHostingApiConstants {
 
     /** Three-part command ids (`module.service.command`) for the HTTP endpoint commands. */
     object CommandIds {
-        const val HTTP_GET_TOKEN_BY_ID = "statuslist.token.get-endpoint"
         const val HTTP_GET_TOKEN_BY_CORRELATION_ID = "statuslist.token.getbycorrelationid-endpoint"
     }
 

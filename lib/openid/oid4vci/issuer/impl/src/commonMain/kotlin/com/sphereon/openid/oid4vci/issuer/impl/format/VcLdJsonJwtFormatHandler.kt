@@ -93,6 +93,10 @@ class VcLdJsonJwtFormatHandler(
         request: CredentialRequest,
         context: IssuanceContext,
     ): IdkResult<CredentialEnvelope, IdkError> {
+        // Fail closed: this handler does not embed a credentialStatus entry, so a credential
+        // configuration bound to a status list must not issue through it.
+        unsupportedStatusListBinding(context)?.let { return Err(it) }
+
         val credentialTypes = resolveCredentialTypes(context)
         val primaryType = pickPrimaryType(credentialTypes)
         val now = Clock.System.now()

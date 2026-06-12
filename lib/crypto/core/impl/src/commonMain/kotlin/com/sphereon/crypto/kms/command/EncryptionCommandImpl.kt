@@ -96,8 +96,12 @@ class EncryptCommandImpl(
                 authTag = result.authTag,
             ).asOkResult()
         } catch (expected: Exception) {
-            log.warn("Encryption failed: ${expected.message}")
-            IdkError.fromString(message = "Encryption failed: ${expected.message}").asErrorResult()
+            // Carry the cause class and message; some exceptions (e.g. resource-style
+            // NotFoundException) have a null message, which would otherwise surface as
+            // the undiagnosable "Encryption failed: null".
+            val detail = expected.message?.let { "${expected::class.simpleName}: $it" } ?: expected.toString()
+            log.warn("Encryption failed: $detail")
+            IdkError.fromString(message = "Encryption failed: $detail").asErrorResult()
         }
     }
 
@@ -147,8 +151,10 @@ class DecryptCommandImpl(
             log.debug("Decryption successful, plaintext length: ${plaintext.size} bytes")
             DecryptResult(plaintext).asOkResult()
         } catch (expected: Exception) {
-            log.warn("Decryption failed: ${expected.message}")
-            IdkError.fromString(message = "Decryption failed: ${expected.message}").asErrorResult()
+            // See the encrypt path: keep the cause class and never drop a null message.
+            val detail = expected.message?.let { "${expected::class.simpleName}: $it" } ?: expected.toString()
+            log.warn("Decryption failed: $detail")
+            IdkError.fromString(message = "Decryption failed: $detail").asErrorResult()
         }
     }
 

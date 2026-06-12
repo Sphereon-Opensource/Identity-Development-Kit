@@ -42,6 +42,11 @@ data class AttributeSourceBinding(
     /** The phases this source runs in for this pipeline. */
     @JsExportIgnoreCompat
     val phases: Set<PipelinePhase>,
+    /**
+     * Optional persisted source instance/configuration id. Commercial EDK/VDX deployments use this
+     * to distinguish tenant-registered source instances that share one source implementation.
+     */
+    val sourceInstanceId: String? = null,
     /** When true, a missing required lookup key or a source failure fails the phase. */
     val required: Boolean = true,
     /**

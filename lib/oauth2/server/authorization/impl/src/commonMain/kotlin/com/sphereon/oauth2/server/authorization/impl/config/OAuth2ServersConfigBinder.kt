@@ -59,20 +59,18 @@ class OAuth2ServersConfigBinder(
     private val prefix: String
         get() = OAuth2ServerInstanceConfig.CONFIG_PREFIX
 
-    private val _config: OAuth2ServersConfig by lazy { loadConfig() }
+    override fun getConfig(): OAuth2ServersConfig = loadConfig()
 
-    override fun getConfig(): OAuth2ServersConfig = _config
+    override fun getServer(id: String): OAuth2ServerInstanceConfig? = getConfig().getServer(id)
 
-    override fun getServer(id: String): OAuth2ServerInstanceConfig? = _config.getServer(id)
-
-    override fun getDefaultServer(): OAuth2ServerInstanceConfig = _config.getDefaultServer()
+    override fun getDefaultServer(): OAuth2ServerInstanceConfig = getConfig().getDefaultServer()
 
     override fun resolveIssuer(
         serverId: String,
         tenantId: String,
     ): String {
         val server =
-            _config.getServer(serverId)
+            getConfig().getServer(serverId)
                 ?: error("OAuth2 server '$serverId' not found in configuration")
         val issuer = server.issuer
         val template = server.issuerTemplate
@@ -141,7 +139,11 @@ class OAuth2ServersConfigBinder(
     private fun discoverServerIds(): Set<String> {
         val stripped = configService.getSubProperties(prefixes = setOf(prefix), stripPrefix = true)
         if (stripped.isEmpty()) {
-            return emptySet()
+            return if (DEFAULT_SERVER_PROBE_KEYS.any { configService.containsProperty("$prefix.default.$it") }) {
+                setOf("default")
+            } else {
+                emptySet()
+            }
         }
         return stripped.keys
             .asSequence()
@@ -159,6 +161,20 @@ class OAuth2ServersConfigBinder(
          * `default-server`.
          */
         const val DEFAULT_SERVER_KEY = "default-server"
+        val DEFAULT_SERVER_PROBE_KEYS =
+            setOf(
+                "mode",
+                "issuer",
+                "issuer-template",
+                "access-token-lifetime-seconds",
+                "grant-types-enabled",
+                "response-types-supported",
+                "scopes-supported",
+                "oidc",
+                "par",
+                "introspection",
+                "revocation",
+            )
     }
 
     private fun loadServerConfig(id: String): OAuth2ServerInstanceConfig {

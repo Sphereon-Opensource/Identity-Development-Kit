@@ -25,6 +25,8 @@ kotlin {
                 // Core dependencies
                 api(projects.libCoreApiPublic)
                 api(projects.libCryptoCorePublic)
+                // Lite party model: ProtectedIdentifierValue / IdentifierProtectionMode / IdentifierType
+                api(projects.libDataStorePartyPublic)
                 api(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)
             }

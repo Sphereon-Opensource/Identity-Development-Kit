@@ -51,7 +51,7 @@ interface ApprovePipelineSessionEndpointCommand : HttpEndpointCommand {
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
-                pathPattern = "/sessions/{correlationId}/approve",
+                pathPattern = "/backend/sessions/{correlationId}/approve",
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "approvePipelineSession",

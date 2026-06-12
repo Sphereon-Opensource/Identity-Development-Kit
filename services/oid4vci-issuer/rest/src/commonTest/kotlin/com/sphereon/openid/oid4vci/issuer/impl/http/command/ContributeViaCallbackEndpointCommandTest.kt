@@ -52,7 +52,7 @@ class ContributeViaCallbackEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = ContributeViaCallbackEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.POST, endpoint.method)
-        assertEquals("/sessions/{correlationId}/callbacks/{callbackToken}", endpoint.pathPattern)
+        assertEquals("/backend/sessions/{correlationId}/callbacks/{callbackToken}", endpoint.pathPattern)
     }
 
     @Test
@@ -83,7 +83,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-123/callbacks/token.value.here",
+                    path = "/backend/sessions/corr-123/callbacks/token.value.here",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"attributes":[],"lookup_keys":[]}""" },
                 )
@@ -111,7 +111,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-X/callbacks/tok",
+                    path = "/backend/sessions/corr-X/callbacks/tok",
                     bodySupplier = { """{}""" },
                 )
 
@@ -133,7 +133,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/callbacks/bad-token",
+                    path = "/backend/sessions/corr-1/callbacks/bad-token",
                     bodySupplier = { """{}""" },
                 )
 
@@ -154,7 +154,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/callbacks/tok",
+                    path = "/backend/sessions/corr-1/callbacks/tok",
                     bodySupplier = { """{}""" },
                 )
 
@@ -184,7 +184,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/callbacks/tok",
+                    path = "/backend/sessions/corr-1/callbacks/tok",
                     bodySupplier = { """{}""" },
                 )
 
@@ -206,7 +206,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/callbacks/tok",
+                    path = "/backend/sessions/corr-1/callbacks/tok",
                     bodySupplier = { """{}""" },
                 )
 
@@ -238,7 +238,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-z/callbacks/tok",
+                    path = "/backend/sessions/corr-z/callbacks/tok",
                     bodySupplier = { """{}""" },
                 )
 
@@ -259,7 +259,7 @@ class ContributeViaCallbackEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-1/callbacks/tok",
+                    path = "/backend/sessions/corr-1/callbacks/tok",
                     bodySupplier = { "not-json{{" },
                 )
 

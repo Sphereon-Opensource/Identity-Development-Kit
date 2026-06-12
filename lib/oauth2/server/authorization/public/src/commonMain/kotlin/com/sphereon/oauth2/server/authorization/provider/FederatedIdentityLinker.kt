@@ -72,6 +72,14 @@ data class LinkFederatedSessionRequest(
      * local session bound to the upstream one.
      */
     val upstreamSid: String? = null,
+    /**
+     * Opaque application / login-surface id captured at federation initiate time
+     * (`PendingFederation.applicationId`, originally `AuthenticationContext.applicationId`).
+     * When present, implementations scope the identity link to that application:
+     * the local identity is bound to it for login and the written session record
+     * carries it. Null = application-agnostic federation login.
+     */
+    val applicationId: String? = null,
 )
 
 /** Output of a successful link. */

@@ -55,8 +55,23 @@ value class PartyType(
         /** A human individual */
         val NATURAL_PERSON = PartyType("natural_person")
 
+        /** Alias for [NATURAL_PERSON] */
+        val PERSON = NATURAL_PERSON
+
         /** A company, institution, or other legal entity */
         val ORGANIZATION = PartyType("organization")
+
+        /** A software-backed service participant (endpoint, integration, automated actor) */
+        val SERVICE = PartyType("service")
+
+        /** A unit within an organization (department, division, sub-tenant scope) */
+        val ORGANIZATION_UNIT = PartyType("organization_unit")
+
+        /** A collection of parties grouped for addressing or authorization */
+        val GROUP = PartyType("group")
+
+        /** An autonomous actor acting on behalf of another party */
+        val AGENT = PartyType("agent")
     }
 
     override fun toString(): String = value

@@ -20,17 +20,16 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants
 import com.sphereon.statuslist.hosting.rest.StatusListHostingConfig
 import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByCorrelationIdEndpointCommand
-import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByIdEndpointCommand
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 /**
- * PUBLIC HTTP adapter that hosts the signed status-list token, mounted at `/public/statuslists`. Routes by
- * relative path to the by-id and by-correlationId token endpoints. These endpoints are
+ * PUBLIC HTTP adapter that hosts the signed status-list token, mounted at `/public/statuslists`. Serves
+ * the by-correlationId token endpoint (`GET /public/statuslists/{correlationId}`). It is
  * unauthenticated and cacheable: the deployment's auth layer leaves this mount open, and the
- * responses carry a `Cache-Control` header. They serve the RAW signed token a verifier resolves.
+ * response carries a `Cache-Control` header. It serves the RAW signed token a verifier resolves.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -38,7 +37,6 @@ import dev.zacsweers.metro.binding
 class StatusListHostingHttpAdapter(
     execution: SessionExecution,
     hostingConfig: StatusListHostingConfig,
-    getTokenById: GetStatusListTokenByIdEndpointCommand,
     getTokenByCorrelationId: GetStatusListTokenByCorrelationIdEndpointCommand,
 ) : CommandBackedHttpAdapter(
         id = ID,
@@ -51,7 +49,6 @@ class StatusListHostingHttpAdapter(
     ) {
     override val endpointCommands: List<HttpEndpointCommand> =
         listOf(
-            getTokenById,
             getTokenByCorrelationId,
         )
 

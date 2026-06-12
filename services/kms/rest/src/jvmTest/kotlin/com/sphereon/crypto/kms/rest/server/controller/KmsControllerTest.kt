@@ -125,7 +125,7 @@ class KmsControllerTest {
         }
 
     @Test
-    fun storeKey() =
+    fun importKey() =
         runTest {
             val payload =
                 """
@@ -154,7 +154,7 @@ class KmsControllerTest {
                 """.trimIndent()
 
             val response =
-                client.post("http://localhost:$port/keys") {
+                client.post("http://localhost:$port/keys/import") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -176,7 +176,7 @@ class KmsControllerTest {
                 """.trimIndent()
 
             val response =
-                client.post("http://localhost:$port/keys/generate") {
+                client.post("http://localhost:$port/keys") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -217,7 +217,7 @@ class KmsControllerTest {
                 """.trimIndent()
 
             val storeResponse =
-                client.post("http://localhost:$port/keys") {
+                client.post("http://localhost:$port/keys/import") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)
@@ -270,7 +270,7 @@ class KmsControllerTest {
                 """.trimIndent()
 
             val storeResponse =
-                client.post("http://localhost:$port/keys") {
+                client.post("http://localhost:$port/keys/import") {
                     header("X-Tenant-ID", TEST_TENANT_ID)
                     header("X-User-ID", TEST_USER_ID)
                     contentType(ContentType.Application.Json)

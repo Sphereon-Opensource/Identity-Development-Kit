@@ -127,6 +127,10 @@ data class AuthorizationSession(
      * Additional session data
      */
     val additionalData: Map<String, @Contextual Any> = emptyMap(),
+    /**
+     * The application / login-surface id resolved from [clientId]; opaque to IDK.
+     */
+    val applicationId: String? = null,
 )
 
 /**

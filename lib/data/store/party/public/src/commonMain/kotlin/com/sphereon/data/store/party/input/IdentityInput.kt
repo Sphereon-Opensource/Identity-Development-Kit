@@ -46,6 +46,15 @@ data class IdentityCreateInput
         /** Whether this is the default identity for the owning party */
         @SerialName("isDefault")
         val isDefault: Boolean = false,
+        /** The owning person/org party (null = unowned) */
+        @SerialName("ownerId")
+        val ownerId: Uuid? = null,
+        /**
+         * The specialization this identity serves when it is intrinsically role-scoped
+         * (null = party-global, fan-out-then-filter applies at login).
+         */
+        @SerialName("specializationSubtype")
+        val specializationSubtype: String? = null,
     )
 
 /**

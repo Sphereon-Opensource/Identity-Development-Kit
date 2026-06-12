@@ -63,7 +63,7 @@ class ApprovePipelineSessionEndpointCommandTest {
     fun endpointDescriptorHasCorrectMethodAndPath() {
         val endpoint = ApprovePipelineSessionEndpointCommand.ENDPOINT
         assertEquals(HttpMethod.POST, endpoint.method)
-        assertEquals("/sessions/{correlationId}/approve", endpoint.pathPattern)
+        assertEquals("/backend/sessions/{correlationId}/approve", endpoint.pathPattern)
     }
 
     @Test
@@ -95,7 +95,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-123/approve",
+                    path = "/backend/sessions/corr-123/approve",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"decision":"APPROVE"}""" },
                 )
@@ -127,7 +127,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-456/approve",
+                    path = "/backend/sessions/corr-456/approve",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"decision":"REJECT","reason":"Document expired"}""" },
                 )
@@ -161,7 +161,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-sanity/approve",
+                    path = "/backend/sessions/corr-sanity/approve",
                     bodySupplier = { """{"decision":"APPROVE"}""" },
                 )
 
@@ -188,7 +188,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-789/approve",
+                    path = "/backend/sessions/corr-789/approve",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"decision":"APPROVE"}""" },
                 )
@@ -213,7 +213,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/unknown/approve",
+                    path = "/backend/sessions/unknown/approve",
                     bodySupplier = { """{"decision":"APPROVE"}""" },
                 )
 
@@ -231,7 +231,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-123/approve",
+                    path = "/backend/sessions/corr-123/approve",
                     bodySupplier = { """{"decision":"APPROVE"}""" },
                 )
 
@@ -247,7 +247,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/sessions/corr-bad/approve",
+                    path = "/backend/sessions/corr-bad/approve",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { "not-valid-json{{" },
                 )
@@ -355,7 +355,7 @@ class ApprovePipelineSessionEndpointCommandTest {
             val request =
                 GenericHttpRequest(
                     method = "POST",
-                    path = "/oid4vci/sessions/integrated-corr/approve",
+                    path = "/oid4vci/backend/sessions/integrated-corr/approve",
                     headers = mapOf("Content-Type" to "application/json"),
                     bodySupplier = { """{"decision":"APPROVE"}""" },
                 )

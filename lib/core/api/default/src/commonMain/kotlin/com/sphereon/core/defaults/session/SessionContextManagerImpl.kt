@@ -19,6 +19,7 @@ package com.sphereon.core.defaults.session
 
 import com.sphereon.di.context.AnonymousUserGraphManager
 import com.sphereon.di.context.IdentityConstants
+import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.context.UserContextManager
 import com.sphereon.di.context.UserScope
@@ -140,6 +141,16 @@ class SessionContextManagerImpl(
     ): SessionInstance {
         requireNotNull(sessionId) { "sessionId must not be null" }
         return getOrCreateSessionInternal(sessionId, null, correlationId, makeActive).instance
+    }
+
+    override fun createOrGetFromId(
+        sessionId: String,
+        correlationId: String,
+        makeActive: Boolean,
+        secureDetails: SecuredTenantContextDetails?,
+    ): SessionInstance {
+        requireNotNull(sessionId) { "sessionId must not be null" }
+        return getOrCreateSessionInternal(sessionId, null, correlationId, makeActive, secureDetails).instance
     }
 
     // Session cleanup
@@ -306,6 +317,7 @@ class SessionContextManagerImpl(
         sessionContext: SessionContext?,
         correlationId: String,
         makeActive: Boolean,
+        secureDetails: SecuredTenantContextDetails? = null,
     ): SessionGraph {
         // Fast-path: lock-free read if already created
         // Read the atomic value once to avoid multiple atomic reads
@@ -347,11 +359,14 @@ class SessionContextManagerImpl(
                         context = userContextManager.getActive().context,
                         sessionId = sessionId,
                         correlationId = correlationId,
+                        secureDetails = secureDetails,
                     )
                 }
 
-            // Create the session graph and scope
-            val sessionGraph = sessionGraphFactory.createSessionGraph(sessionId, actualSessionContext.correlationId)
+            // Create the session graph and scope. The per-session secure details ride the
+            // graph factory so the DI-resolved SessionContext (what SessionExecution sees)
+            // carries the same credentials as the scope-service copy above.
+            val sessionGraph = sessionGraphFactory.createSessionGraph(sessionId, actualSessionContext.correlationId, secureDetails)
             val scope =
                 contextScope.buildChild("session:$sessionId") {
                     addMetroDependencyGraph(sessionGraph)

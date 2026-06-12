@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
@@ -94,21 +95,25 @@ class CompositeUserAuthenticationProvider(
         sessionId: String,
         returnUrl: String,
         hint: AuthenticationHint?,
+        context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> {
         val provider = selectProvider(hint)
         synchronized(this) { sessionProviderMap[sessionId] = provider }
-        return provider.initiateAuthentication(sessionId, returnUrl, hint)
+        return provider.initiateAuthentication(sessionId, returnUrl, hint, context)
     }
 
-    override suspend fun authenticateWithCredentials(credentials: UserCredentials): IdkResult<String?, AuthenticationError> {
+    override suspend fun authenticateWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<String?, AuthenticationError> {
         // Try wallet provider first for custom credentials
         if (walletProvider != null && credentials is UserCredentials.Custom) {
-            val result = walletProvider.authenticateWithCredentials(credentials)
+            val result = walletProvider.authenticateWithCredentials(credentials, context)
             if (result.isOk && result.value != null) {
                 return result
             }
         }
-        return federationProvider.authenticateWithCredentials(credentials)
+        return federationProvider.authenticateWithCredentials(credentials, context)
     }
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> {
