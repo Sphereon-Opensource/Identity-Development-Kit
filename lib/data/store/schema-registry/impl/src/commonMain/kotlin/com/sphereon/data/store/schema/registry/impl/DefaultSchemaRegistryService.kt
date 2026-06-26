@@ -21,6 +21,7 @@ package com.sphereon.data.store.schema.registry.impl
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.BlobInfo
@@ -42,8 +43,6 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -351,13 +350,12 @@ class DefaultSchemaRegistryService(
         extension: String,
     ): String = "schemas/${namespace.ifEmpty { "_default" }}/$name/content$extension"
 
-    @OptIn(ExperimentalEncodingApi::class)
     private fun resolveContentBytes(
         contentBase64: String?,
         contentText: String?,
     ): ByteArray? =
         when {
-            contentBase64 != null -> Base64.decode(contentBase64)
+            contentBase64 != null -> contentBase64.decodeFromBase64()
             contentText != null -> contentText.encodeToByteArray()
             else -> null
         }

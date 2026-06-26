@@ -17,6 +17,7 @@
 
 package com.sphereon.crypto.core.kms
 
+import at.asitplus.awesn1.crypto.pki.Pkcs10CsrAttribute
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.KeyInfoType
@@ -54,6 +55,7 @@ interface CertificateService {
         subjectKeyInfo: ResolvedKeyInfoType<*>,
         distinguishedNameElements: X509DistinguishedNameElements,
         serialNumber: Int = 1,
+        attributes: List<Pkcs10CsrAttribute> = emptyList(),
     ): CertificateSigningRequest
 
     @OptIn(ExperimentalObjCRefinement::class)
@@ -64,6 +66,7 @@ interface CertificateService {
         subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
         subject: X509DistinguishedNameElements,
         serialNumber: Int,
+        extensions: List<X509CertificateExtensionSpec> = emptyList(),
         notBefore: LocalDateTimeKMP = LocalDateTimeKMP.now(),
         notAfter: LocalDateTimeKMP =
             LocalDateTimeKMP.fromString(
@@ -85,6 +88,7 @@ interface CertificateService {
         subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
         csr: CertificateSigningRequest,
         serialNumber: Int = csr.serialNumber,
+        extensions: List<X509CertificateExtensionSpec> = emptyList(),
         notBefore: LocalDateTimeKMP = LocalDateTimeKMP.now(),
         notAfter: LocalDateTimeKMP =
             LocalDateTimeKMP.fromString(
@@ -111,6 +115,28 @@ data class CertificateResult(
 )
 
 @JsExportCompat
+data class X509CertificateExtensionSpec(
+    val oid: String,
+    val critical: Boolean = false,
+    val valueDer: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is X509CertificateExtensionSpec) return false
+        return oid == other.oid &&
+            critical == other.critical &&
+            valueDer.contentEquals(other.valueDer)
+    }
+
+    override fun hashCode(): Int {
+        var result = oid.hashCode()
+        result = 31 * result + critical.hashCode()
+        result = 31 * result + valueDer.contentHashCode()
+        return result
+    }
+}
+
+@JsExportCompat
 data class
 CertificateOptions
     @JvmOverloads
@@ -120,6 +146,7 @@ CertificateOptions
         val issuerKeyInfo: KeyInfoType<KeyType> = subjectKeyInfo,
         val issuer: X509DistinguishedNameElements = subject,
         val serialNumber: Int = 1,
+        val extensions: List<X509CertificateExtensionSpec> = emptyList(),
         val notBefore: LocalDateTimeKMP = LocalDateTimeKMP.now(),
         val notAfter: LocalDateTimeKMP =
             LocalDateTimeKMP.fromString(

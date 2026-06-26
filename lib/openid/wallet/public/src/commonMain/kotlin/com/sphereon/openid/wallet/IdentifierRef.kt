@@ -22,13 +22,13 @@ import kotlinx.serialization.Serializable
 /**
  * A typed reference to an identifier (issuer, subject, relying party, etc.).
  *
- * The [correlationId] is an opaque string token (e.g. a UUID) that
- * allows callers to correlate this reference with a Party record without
- * a database round-trip. It is optional and not used for auth decisions.
+ * The [identityIdentifierId] is an opaque string token (e.g. a UUID) that
+ * links this reference to an IdentityIdentifier row without a database
+ * round-trip. It is optional and not used for auth decisions.
  */
 @Serializable
 data class IdentifierRef(
     val type: IdentifierType,
     val value: String,
-    val correlationId: String? = null,
+    val identityIdentifierId: String? = null,
 )

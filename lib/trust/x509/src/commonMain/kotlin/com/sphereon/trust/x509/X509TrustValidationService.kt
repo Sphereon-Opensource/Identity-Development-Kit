@@ -31,6 +31,8 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
 /**
@@ -65,11 +67,14 @@ class X509TrustValidationService(
         return try {
             val identifier = request.identifier
             val x5c =
-                when (identifier) {
-                    is ExternalIdentifierResult -> identifier.keyInfo?.x5c
-                    is ManagedIdentifierResult<*> -> identifier.keyInfo?.x5c
-                    else -> null
-                }
+                request.context.parameters[PARAM_X5C]
+                    ?.decodeStringList()
+                    ?.toTypedArray()
+                    ?: when (identifier) {
+                        is ExternalIdentifierResult -> identifier.keyInfo?.x5c
+                        is ManagedIdentifierResult<*> -> identifier.keyInfo?.x5c
+                        else -> null
+                    }
 
             if (x5c.isNullOrEmpty()) {
                 return TrustValidationResult(
@@ -80,7 +85,9 @@ class X509TrustValidationService(
                 )
             }
 
-            val trustedCerts = trustAnchorLoader.loadTrustedCerts()
+            val trustedCerts =
+                request.context.parameters[PARAM_TRUSTED_CERTS]?.decodeStringList()
+                    ?: trustAnchorLoader.loadTrustedCerts()
 
             val verificationRequest =
                 if (trustedCerts.isNotEmpty()) {
@@ -105,8 +112,11 @@ class X509TrustValidationService(
 
             // Check trusted fingerprints if configured
             val x509Config = trustConfigProvider.getTrustConfig().anchors.x509
-            if (x509Config.trustedFingerprints.isNotEmpty()) {
-                val fingerprintMatch = checkFingerprints(x5c.first(), x509Config.trustedFingerprints)
+            val trustedFingerprints =
+                request.context.parameters[PARAM_TRUSTED_FINGERPRINTS]?.decodeStringList()
+                    ?: x509Config.trustedFingerprints
+            if (trustedFingerprints.isNotEmpty()) {
+                val fingerprintMatch = checkFingerprints(x5c.first(), trustedFingerprints)
                 if (!fingerprintMatch) {
                     return TrustValidationResult(
                         trusted = false,
@@ -249,5 +259,22 @@ class X509TrustValidationService(
                 }
             }
         return result.copy(discoveredEntities = entities)
+    }
+
+    private companion object {
+        const val PARAM_X5C = "x5c"
+        const val PARAM_TRUSTED_CERTS = "trustedCerts"
+        const val PARAM_TRUSTED_FINGERPRINTS = "trustedFingerprints"
+
+        val PARAM_JSON = Json { ignoreUnknownKeys = true }
+
+        fun String.decodeStringList(): List<String> =
+            try {
+                PARAM_JSON.decodeFromString<List<String>>(this)
+            } catch (_: SerializationException) {
+                split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            } catch (_: IllegalArgumentException) {
+                split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            }
     }
 }

@@ -21,6 +21,7 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.AuthenticationScheme
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Instant
@@ -128,7 +129,12 @@ sealed interface TokenPayload {
         override val dpopJkt: String?,
         override val certificateThumbprintS256: String? = null,
         val jti: String?,
-        val additionalClaims: Map<String, String> = emptyMap(),
+        /**
+         * All non-registered claims from the token payload, with full fidelity: object and array
+         * claims (e.g. `roles`) and any custom claims (e.g. `tenant_id`) are preserved as [JsonElement]
+         * rather than flattened to strings. Populated by the verifier from the parsed payload.
+         */
+        val additionalClaims: Map<String, JsonElement> = emptyMap(),
     ) : TokenPayload
 
     /**

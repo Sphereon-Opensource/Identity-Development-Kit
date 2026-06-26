@@ -39,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOperationsRest
 import com.sphereon.crypto.kms.rest.api.generated.models.SignatureAlgorithm as SignatureAlgorithmRest
 
 /**
@@ -132,6 +133,30 @@ class KmsKeysServiceCommandsUnitTest {
             val response = result.value
             assertNotNull(response.keyPair, "Key pair should not be null")
             assertNotNull(response.keyPair.jose, "Public key should not be null")
+        }
+
+    @Test
+    fun testGenerateKeyViaFacadeAcceptsRestDeriveKeyOperations() =
+        runTest {
+            val result =
+                facade.generateKey(
+                    GenerateKeyGlobal(
+                        alias = "facade-derive-key-${System.currentTimeMillis()}",
+                        providerId = TEST_PROVIDER_ID,
+                        use = JwkUse.enc,
+                        keyOperations = arrayOf(KeyOperationsRest.deriveKey, KeyOperationsRest.deriveBits),
+                        alg = SignatureAlgorithmRest.ECKA_DH_SHA256,
+                    ),
+                )
+
+            assertTrue(
+                result.isOk,
+                "Generate key should accept REST keyOperations deriveKey/deriveBits, but got: ${if (result.isErr) {
+                    result.error
+                } else {
+                    "N/A"
+                }}",
+            )
         }
 
     @Test

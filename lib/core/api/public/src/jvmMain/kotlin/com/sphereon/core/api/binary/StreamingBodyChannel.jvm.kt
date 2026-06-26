@@ -38,7 +38,7 @@ actual fun StreamingBody.Companion.ofChannel(
     contentLength: Long?,
 ): StreamingBody {
     require(channel is ByteReadChannel) {
-        "Expected io.ktor.utils.io.ByteReadChannel, got ${channel::class.simpleName}"
+        "Expected io.ktor.utils.io.ByteReadChannel, got ${channel.javaClass.simpleName}"
     }
 
     val byteFlow =

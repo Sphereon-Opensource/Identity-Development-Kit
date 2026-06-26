@@ -16,6 +16,13 @@
 
 package com.sphereon.crypto.jose.jws
 
+import com.nimbusds.jose.JOSEObjectType
+import com.nimbusds.jose.JWSAlgorithm
+import com.nimbusds.jose.JWSHeader
+import com.nimbusds.jose.JWSObject
+import com.nimbusds.jose.Payload
+import com.nimbusds.jose.crypto.ECDSASigner
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
@@ -24,6 +31,7 @@ import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
@@ -41,8 +49,11 @@ import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.jose.jws.command.PrepareJwsCommand
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.IdentifierContext
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierKeyResult
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -2026,6 +2037,71 @@ class JwsMockedErrorPathsTest {
 
             assertTrue(result.isOk, "Should succeed with ExternalIdentifierResult")
             assertTrue(result.value.isValid, "Should be valid")
+        }
+
+    @Test
+    fun testVerifyJws_WithJwksUrlResultVerifiesWithoutSignatureService() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            val mockIdentifierService = mockk<com.sphereon.crypto.resolution.IdentifierService>()
+            val mockSignatureService = mockk<SignatureService>()
+
+            val nimbusJwk =
+                ECKeyGenerator(com.nimbusds.jose.jwk.Curve.P_256)
+                    .keyID("platform-key")
+                    .generate()
+            val jwsObject =
+                JWSObject(
+                    JWSHeader.Builder(JWSAlgorithm.ES256)
+                        .keyID("platform-key")
+                        .type(JOSEObjectType.JWT)
+                        .build(),
+                    Payload("""{"sub":"platform"}"""),
+                )
+            jwsObject.sign(ECDSASigner(nimbusJwk))
+
+            val publicJwk = nimbusJwk.toPublicJWK()
+            val sphereonJwk =
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    crv = JwaCurve.P_256,
+                    x = publicJwk.x.toString(),
+                    y = publicJwk.y.toString(),
+                    kid = publicJwk.keyID,
+                    alg = JwaAlgorithm.ES256,
+                )
+            val resolvedKeyInfo = ResolvedKeyInfo.fromKey(sphereonJwk)
+            val jwksUrl = "https://platform.example/.well-known/jwks.json"
+            val jwksOpts = ExternalIdentifierJwksUrlOpts(identifier = jwksUrl)
+            val externalResult =
+                ExternalIdentifierResult.JwksUrl(
+                    identifierOpts = jwksOpts,
+                    jwks = arrayOf(resolvedKeyInfo),
+                    keyInfo = resolvedKeyInfo,
+                    jwksUrl = jwksUrl,
+                    selectedKid = "platform-key",
+                )
+
+            coEvery { mockIdentifierService.resolve(any<com.sphereon.crypto.resolution.IdentifierOptsOrResult>()) } returns
+                IdkResult.ok(externalResult)
+            coEvery { mockSignatureService.isValidRawSignature(any(), any(), any()) } throws
+                IllegalStateException("JWKS URL verification must not require a configured KMS provider")
+
+            val command =
+                com.sphereon.crypto.jose.jws.command.VerifyJwsCommandImpl(
+                    execution = mockExecution,
+                    identifierService = mockIdentifierService,
+                    signatureService = mockSignatureService,
+                )
+
+            val result = command.execute(VerifyJwsArgs(jws = JwsCompact(jwsObject.serialize()), identifier = jwksOpts))
+
+            assertTrue(result.isOk, "Should return a verification result")
+            assertTrue(
+                result.value.isValid,
+                "JWKS URL public-key verification should succeed without consulting the tenant KMS provider: ${result.value.errorMessages}",
+            )
+            coVerify(exactly = 0) { mockSignatureService.isValidRawSignature(any(), any(), any()) }
         }
 
     @Test

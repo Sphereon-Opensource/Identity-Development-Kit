@@ -30,8 +30,9 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
  * pattern for key rotation handling).
  *
  * The default implementation (`DefaultIssuerJwksResolver`) composes
- * `FetchAuthorizationServerMetadataCommand` + `FetchJwksCommand`. Production deployments that
- * want cross-tenant caching behaviour can substitute their own implementation.
+ * `FetchAuthorizationServerMetadataCommand` for discovery with the IDK identifier-resolution
+ * system (`JwksUrlExternalIdentifierResolutionService`) for `jwks_uri` key resolution. Production
+ * deployments that want cross-tenant caching behaviour can substitute their own implementation.
  */
 public interface IssuerJwksResolver {
     /**

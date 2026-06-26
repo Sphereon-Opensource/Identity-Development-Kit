@@ -112,4 +112,11 @@ class KotlinInjectConfiguration {
         set(value) {
             _principalResolver = value
         }
+
+    /**
+     * Request path prefixes that do not need request-scoped DI. Liveness and
+     * metrics probes must remain independent from tenant/principal resolution
+     * and from remote configuration sources.
+     */
+    var ignoredPathPrefixes: List<String> = listOf("/health", "/ready", "/metrics")
 }

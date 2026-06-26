@@ -2,9 +2,9 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ClassOrdering:CorrelationIdentifierFetchOptions.kt$CorrelationIdentifierFetchOptions$Companion</ID>
-    <ID>ClassOrdering:CorrelationIdentifierFilter.kt$CorrelationIdentifierFilter$Companion</ID>
-    <ID>ClassOrdering:CorrelationIdentifierResult.kt$CorrelationIdentifierResult$fun toCorrelationIdentifier()</ID>
+    <ID>ClassOrdering:IdentityIdentifierFetchOptions.kt$IdentityIdentifierFetchOptions$Companion</ID>
+    <ID>ClassOrdering:IdentityIdentifierFilter.kt$IdentityIdentifierFilter$Companion</ID>
+    <ID>ClassOrdering:IdentityIdentifierResult.kt$IdentityIdentifierResult$fun toIdentityIdentifier()</ID>
     <ID>ClassOrdering:IdentifierType.kt$IdentifierType$override fun toString(): String</ID>
     <ID>ClassOrdering:IdentityFetchOptions.kt$IdentityFetchOptions$Companion</ID>
     <ID>ClassOrdering:IdentityFilter.kt$IdentityFilter$Companion</ID>

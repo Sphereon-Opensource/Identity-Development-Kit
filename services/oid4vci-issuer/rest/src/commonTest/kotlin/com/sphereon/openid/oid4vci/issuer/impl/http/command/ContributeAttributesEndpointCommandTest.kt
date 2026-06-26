@@ -30,7 +30,6 @@ import com.sphereon.credential.issuance.pipeline.IssuancePipelineStatus
 import com.sphereon.credential.issuance.pipeline.command.ContributeAttributesArgs
 import com.sphereon.credential.issuance.pipeline.command.ContributeAttributesCommand
 import com.sphereon.credential.issuance.pipeline.command.ContributeAttributesResult
-import com.sphereon.openid.oid4vci.issuer.config.NoOpVctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.impl.command.InMemoryOfferRateLimiter
 import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
 import com.sphereon.openid.oid4vci.issuer.impl.http.FakeCreateCredentialOfferCommand
@@ -328,6 +327,7 @@ class ContributeAttributesEndpointCommandTest {
                     execution,
                     NoOpRoutableSlugLookup(),
                     testTenantIdProvider(),
+                    com.sphereon.openid.oid4vci.issuer.impl.http.NoOpAppConfigService,
                     credentialOfferCommand,
                     nonceCommand,
                     credentialCommand,
@@ -340,7 +340,6 @@ class ContributeAttributesEndpointCommandTest {
                     ContributeViaCallbackEndpointCommandImpl(execution, callbackTokenService = null, contributeAttributesCommand = null, callbackCoordinator = null),
                     FailPipelineSourceEndpointCommandImpl(execution, failPipelineSourceCommand = null),
                     ApprovePipelineSessionEndpointCommandImpl(execution, approvePipelineSessionCommand = null),
-                    GetVctTypeMetadataEndpointCommandImpl(execution, NoOpVctTypeMetadataProvider),
                 )
 
             val request =

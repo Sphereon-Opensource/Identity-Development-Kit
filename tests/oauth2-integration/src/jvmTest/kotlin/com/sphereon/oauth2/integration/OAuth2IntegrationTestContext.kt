@@ -64,6 +64,8 @@ class OAuth2IntegrationTestContext(
     val kmsProvider: SoftwareKmsProviderImpl
 
     init {
+        (session.graph as TenantOverrideSessionGraph).mutableResolvedTenantIdProvider.setCurrentTenantId(DEFAULT_TENANT_ID)
+
         val providerConfig = SoftwareKmsProviderConfig(id = "oauth2-integration-kms")
         val providerFactory = (app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
         kmsProvider = providerFactory.create(providerConfig, execution)

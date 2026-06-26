@@ -32,10 +32,20 @@ import kotlin.native.ObjCName
  * Supported patterns:
  * - `${VAR}` - Simple substitution
  * - `${VAR:default}` - With default value
- * - `${env:VAR}` - Explicit env source
+ * - `${env:VAR}` - Explicit env source (convenience alias for `${secret:@env:VAR}`)
  * - `${scope:key}` - Explicit scope prefix (app, tenant, principal)
- * - `${secret:provider:path}` - Secret reference (resolved by SecretProvider)
+ * - `${secret:<logical.key>[:<key>]}` - Cascade secret reference: resolves via the
+ *   tenant-selected provider, then the app-selected provider, then env.
+ * - `${secret:@<provider>:<logical.key>[:<key>]}` - Pinned secret reference targeting a
+ *   specific provider (e.g. `@env`, `@vault`, `@azure`, `@aws`, `@kubernetes-mount`).
  * - `${db.${env}}` - Recursive (max depth configurable)
+ *
+ * The `<logical.key>` of a secret reference is passed through verbatim here; the
+ * [SecretAddressResolver] normalizes it during resolution so dotted, `UPPER_SNAKE_CASE`, hyphen,
+ * slash, and space forms all address the same logical secret (e.g. `example.secret.ref.value` ==
+ * `EXAMPLE_SECRET_REF_VALUE` == `example/secret/ref/value`) and then renders the backend-native,
+ * tenant-sharded physical address. Centralizing normalization there keeps the env floor and every
+ * provider consistent.
  *
  * Protection-aware interpolation:
  * When using a [ProtectedPropertyResolver], scope-prefixed interpolations (e.g., `${app:db.password}`)
@@ -94,6 +104,31 @@ interface PropertyInterpolator {
         maxDepth: Int?,
         resolveSecrets: Boolean,
     ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope) // Default delegates
+
+    /**
+     * Interpolate placeholders with full control over resolution options AND scope identity.
+     *
+     * The [scopeIdentifier] (tenantId for [ConfigLevel.TENANT], principalId for
+     * [ConfigLevel.PRINCIPAL]) is threaded through to secret resolution so that cascade
+     * (`${secret:<key>}`) references can select the tenant/principal-scoped provider.
+     * Without it, cascade resolution can only fall back to the app/env floor.
+     *
+     * @param value The value containing placeholders
+     * @param resolver Property resolver for looking up referenced values
+     * @param requestingScope The scope level requesting the interpolation
+     * @param maxDepth Maximum recursion depth for nested interpolations (overrides default)
+     * @param resolveSecrets Whether to resolve ${secret:...} references
+     * @param scopeIdentifier The tenant or principal ID for scope-specific secret resolution
+     * @return The interpolated string, or error if resolution fails
+     */
+    suspend fun interpolate(
+        value: String,
+        resolver: PropertyResolver,
+        requestingScope: ConfigLevel,
+        maxDepth: Int?,
+        resolveSecrets: Boolean,
+        scopeIdentifier: String?,
+    ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope, maxDepth, resolveSecrets) // Default delegates
 
     /**
      * Check if a value contains placeholders that need interpolation.
@@ -179,10 +214,16 @@ data class PlaceholderToken(
             path = null,
         )
 
+        /**
+         * Build a secret token. The [provider] is nullable: `null` means a cascade
+         * reference (`${secret:<key>}`) that resolves through the tenant-selected
+         * provider, then the app-selected provider, then env. A non-null [provider]
+         * pins resolution to that exact provider (`${secret:@<provider>:<key>}`).
+         */
         @JvmStatic
         fun secret(
             match: String,
-            provider: String,
+            provider: String?,
             path: String,
             key: String? = null,
         ) = PlaceholderToken(
@@ -212,7 +253,11 @@ enum class PlaceholderType {
     /** Explicit `${scope:key}` where scope is app/tenant/principal */
     SCOPE,
 
-    /** Secret `${secret:provider:path}` or `${secret:provider:path:key}` */
+    /**
+     * Secret reference. Cascade form `${secret:<key>}` / `${secret:<key>:<subkey>}`
+     * (provider omitted) or pinned form `${secret:@<provider>:<key>}` /
+     * `${secret:@<provider>:<key>:<subkey>}`.
+     */
     SECRET,
 }
 
@@ -234,13 +279,18 @@ class DefaultPropertyInterpolator(
     private val simplePlaceholderPattern = Regex("""\$\{([^{}]+)\}""")
     private val envPattern = Regex("""^env:(.+)$""")
     private val scopePattern = Regex("""^(app|tenant|principal):(.+)$""")
-    private val secretPattern = Regex("""^secret:([^:]+):([^:]+)(?::(.+))?$""")
+
+    // Secret grammar. The `secret:` prefix is always present.
+    //   group1 = optional pinned provider id (only when a leading `@` is present); null = cascade
+    //   group2 = logical key (path)
+    //   group3 = optional sub-key
+    private val secretPattern = Regex("""^secret:(?:@([^:]+):)?([^:]+)(?::(.+))?$""")
     private val defaultValuePattern = Regex("""^([^:]+):(.*)$""")
 
     override suspend fun interpolate(
         value: String,
         resolver: PropertyResolver,
-    ): IdkResult<String, IdkError> = interpolateRecursive(value, resolver, null, null, mutableSetOf(), 0, maxDepth, true)
+    ): IdkResult<String, IdkError> = interpolateRecursive(value, resolver, null, null, null, mutableSetOf(), 0, maxDepth, true)
 
     override suspend fun interpolate(
         value: String,
@@ -248,7 +298,7 @@ class DefaultPropertyInterpolator(
         requestingScope: ConfigLevel,
     ): IdkResult<String, IdkError> {
         val protectedResolver = resolver as? ProtectedPropertyResolver
-        return interpolateRecursive(value, resolver, protectedResolver, requestingScope, mutableSetOf(), 0, maxDepth, true)
+        return interpolateRecursive(value, resolver, protectedResolver, requestingScope, null, mutableSetOf(), 0, maxDepth, true)
     }
 
     override suspend fun interpolate(
@@ -257,10 +307,29 @@ class DefaultPropertyInterpolator(
         requestingScope: ConfigLevel,
         maxDepth: Int?,
         resolveSecrets: Boolean,
+    ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope, maxDepth, resolveSecrets, null)
+
+    override suspend fun interpolate(
+        value: String,
+        resolver: PropertyResolver,
+        requestingScope: ConfigLevel,
+        maxDepth: Int?,
+        resolveSecrets: Boolean,
+        scopeIdentifier: String?,
     ): IdkResult<String, IdkError> {
         val protectedResolver = resolver as? ProtectedPropertyResolver
         val effectiveMaxDepth = maxDepth ?: this.maxDepth
-        return interpolateRecursive(value, resolver, protectedResolver, requestingScope, mutableSetOf(), 0, effectiveMaxDepth, resolveSecrets)
+        return interpolateRecursive(
+            value,
+            resolver,
+            protectedResolver,
+            requestingScope,
+            scopeIdentifier,
+            mutableSetOf(),
+            0,
+            effectiveMaxDepth,
+            resolveSecrets,
+        )
     }
 
     private suspend fun interpolateRecursive(
@@ -268,6 +337,7 @@ class DefaultPropertyInterpolator(
         resolver: PropertyResolver,
         protectedResolver: ProtectedPropertyResolver?,
         requestingScope: ConfigLevel?,
+        scopeIdentifier: String?,
         visited: MutableSet<String>,
         depth: Int,
         effectiveMaxDepth: Int = maxDepth,
@@ -334,7 +404,7 @@ class DefaultPropertyInterpolator(
                                 result = result // No change
                                 continue
                             }
-                            resolveSecret(token, requestingScope, resolver)
+                            resolveSecret(token, requestingScope, scopeIdentifier, resolver)
                         }
                     }
 
@@ -370,6 +440,7 @@ class DefaultPropertyInterpolator(
                             resolver,
                             protectedResolver,
                             requestingScope,
+                            scopeIdentifier,
                             visited.toMutableSet(),
                             depth + 1,
                             effectiveMaxDepth,
@@ -495,65 +566,27 @@ class DefaultPropertyInterpolator(
     private suspend fun resolveSecret(
         token: PlaceholderToken,
         requestingScope: ConfigLevel?,
+        scopeIdentifier: String?,
         callingResolver: PropertyResolver? = null,
     ): IdkResult<String, IdkError> {
-        val provider = token.provider ?: return Err(ConfigErrors.secretResolutionFailed(token.key, "unknown", "No provider specified"))
-        val path = token.path ?: return Err(ConfigErrors.secretResolutionFailed(token.key, provider, "No path specified"))
+        // provider may be null: that is the cascade form (`${secret:<key>}`), where the
+        // resolver selects the tenant -> app -> env provider chain itself.
+        val provider = token.provider
+        val path =
+            token.path
+                ?: return Err(ConfigErrors.secretResolutionFailed(token.key, provider ?: "cascade", "No path specified"))
 
         if (secretResolver == null) {
-            return Err(ConfigErrors.secretResolutionFailed(token.key, provider, "No secret resolver configured"))
+            return Err(ConfigErrors.secretResolutionFailed(token.key, provider ?: "cascade", "No secret resolver configured"))
         }
 
-        // Secrets are automatically protected from cross-scope interpolation by default
-        // unless explicitly allowed. For now, secrets can only be resolved at APP scope.
-        if (requestingScope != null && requestingScope != ConfigLevel.APP) {
-            // Check if this is a tenant-scoped secret path (e.g., tenants/{id}/*)
-            // which would be allowed for that specific tenant
-            if (!isSecretPathAllowedForScope(path, requestingScope)) {
-                return Err(
-                    ProtectionErrors.interpolationNotAllowed(
-                        "secret:$provider:$path",
-                        ConfigLevel.APP,
-                        requestingScope,
-                    ),
-                )
-            }
-        }
-
-        return secretResolver.resolve(provider, path, token.key, requestingScope, null, callingResolver)
-    }
-
-    /**
-     * Check if a secret path is allowed for the given scope.
-     *
-     * By default, secrets are only accessible at APP scope. Exceptions:
-     * - Tenant-specific paths (tenants/tenant-id/...) are accessible at TENANT scope
-     * - Principal-specific paths are accessible at PRINCIPAL scope
-     *
-     * This is a basic implementation; production deployments may need more sophisticated
-     * path-based access control.
-     */
-    private fun isSecretPathAllowedForScope(
-        path: String,
-        scope: ConfigLevel,
-    ): Boolean {
-        // System-level secrets are always APP-only
-        if (path.startsWith("system/") || path.startsWith("app/")) {
-            return false
-        }
-
-        // Tenant-specific secrets are allowed at TENANT scope or higher
-        if (path.startsWith("tenant/") || path.startsWith("tenants/")) {
-            return scope.level <= ConfigLevel.TENANT.level
-        }
-
-        // Principal-specific secrets are allowed at PRINCIPAL scope or higher
-        if (path.startsWith("principal/") || path.startsWith("principals/") || path.startsWith("user/") || path.startsWith("users/")) {
-            return scope.level <= ConfigLevel.PRINCIPAL.level
-        }
-
-        // Default: only APP scope can access unrecognized paths
-        return false
+        // NOTE: Per-scope isolation (which provider a tenant/principal may reach, and how a
+        // tenant's secrets are sharded away from other tenants') is enforced downstream by the
+        // SecretAddressResolver / per-scope provider selection (Phase 2). The interpolator no
+        // longer hard-codes an APP-only path gate here, because that pre-empted legitimate
+        // tenant-scoped cascade resolution. The scopeIdentifier is threaded through so the
+        // resolver can scope/shard correctly.
+        return secretResolver.resolve(provider, path, token.key, requestingScope, scopeIdentifier, callingResolver)
     }
 
     override fun containsPlaceholders(value: String): Boolean {
@@ -647,10 +680,17 @@ class DefaultPropertyInterpolator(
         fullMatch: String,
         content: String,
     ): PlaceholderToken {
-        // Check for secret pattern: ${secret:provider:path} or ${secret:provider:path:key}
+        // Check for secret pattern:
+        //   cascade: ${secret:<key>} / ${secret:<key>:<subkey>}        (provider omitted)
+        //   pinned : ${secret:@<provider>:<key>} / ${secret:@<provider>:<key>:<subkey>}
         secretPattern.matchEntire(content)?.let { secretMatch ->
-            val provider = secretMatch.groupValues[1]
-            val path = secretMatch.groupValues[2]
+            // group1 is empty string when no leading @<provider>: was present -> cascade
+            val provider = secretMatch.groupValues[SECRET_PROVIDER_GROUP_INDEX].takeIf { it.isNotEmpty() }
+            // The logical key is passed through verbatim; normalization (so dotted == UPPER_SNAKE ==
+            // hyphen == slash forms collapse to one canonical address) is owned solely by the
+            // SecretAddressResolver during resolution, so it happens once and consistently for the
+            // env floor and every provider.
+            val path = secretMatch.groupValues[SECRET_PATH_GROUP_INDEX]
             val key = secretMatch.groupValues.getOrNull(SECRET_KEY_GROUP_INDEX)?.takeIf { it.isNotEmpty() }
             return PlaceholderToken.secret(fullMatch, provider, path, key)
         }
@@ -688,6 +728,8 @@ class DefaultPropertyInterpolator(
     }
 
     companion object {
+        private const val SECRET_PROVIDER_GROUP_INDEX = 1
+        private const val SECRET_PATH_GROUP_INDEX = 2
         private const val SECRET_KEY_GROUP_INDEX = 3
     }
 }
@@ -702,13 +744,14 @@ interface SecretResolver {
     /**
      * Resolve a secret value.
      *
-     * @param provider The secret provider identifier (e.g., "env", "vault", "azure")
-     * @param path The secret path
+     * @param provider The secret provider identifier (e.g., "env", "vault", "azure"), or
+     *   `null` for cascade resolution (tenant-selected -> app-selected -> env).
+     * @param path The (normalized) secret logical key / path
      * @param key Optional key within the secret (for structured secrets)
      * @return The resolved secret value, or error if resolution fails
      */
     suspend fun resolve(
-        provider: String,
+        provider: String?,
         path: String,
         key: String?,
     ): IdkResult<String, IdkError>
@@ -716,15 +759,15 @@ interface SecretResolver {
     /**
      * Resolve a secret value with scope context for tenant/principal isolation.
      *
-     * @param provider The secret provider identifier (e.g., "env", "vault", "azure")
-     * @param path The secret path
+     * @param provider The secret provider identifier, or `null` for cascade resolution.
+     * @param path The (normalized) secret logical key / path
      * @param key Optional key within the secret (for structured secrets)
      * @param scope The configuration scope level for access control
      * @param scopeIdentifier The tenant or principal ID for scope-specific secrets
      * @return The resolved secret value, or error if resolution fails
      */
     suspend fun resolve(
-        provider: String,
+        provider: String?,
         path: String,
         key: String?,
         scope: ConfigLevel?,
@@ -737,8 +780,8 @@ interface SecretResolver {
      * The [resolver] provides access to scope-specific configuration, enabling cloud providers
      * to resolve tenant-specific connection details (e.g., different vault URLs per tenant).
      *
-     * @param provider The secret provider identifier (e.g., "env", "vault", "azure")
-     * @param path The secret path
+     * @param provider The secret provider identifier, or `null` for cascade resolution.
+     * @param path The (normalized) secret logical key / path
      * @param key Optional key within the secret (for structured secrets)
      * @param scope The configuration scope level for access control
      * @param scopeIdentifier The tenant or principal ID for scope-specific secrets
@@ -746,7 +789,7 @@ interface SecretResolver {
      * @return The resolved secret value, or error if resolution fails
      */
     suspend fun resolve(
-        provider: String,
+        provider: String?,
         path: String,
         key: String?,
         scope: ConfigLevel?,
@@ -765,21 +808,22 @@ class BasicSecretResolver(
     private val secretMaps: Map<String, Map<String, String>> = emptyMap(),
 ) : SecretResolver {
     override suspend fun resolve(
-        provider: String,
+        provider: String?,
         path: String,
         key: String?,
     ): IdkResult<String, IdkError> = resolve(provider, path, key, null, null)
 
     override suspend fun resolve(
-        provider: String,
+        provider: String?,
         path: String,
         key: String?,
         scope: ConfigLevel?,
         scopeIdentifier: String?,
     ): IdkResult<String, IdkError> {
-        // Basic resolver doesn't enforce scope restrictions - delegated to caller
+        // Basic resolver doesn't enforce scope restrictions - delegated to caller.
+        // A null provider is the cascade form; the IDK floor for cascade is env.
         return when (provider) {
-            "env" -> resolveEnvSecret(path)
+            null, "env" -> resolveEnvSecret(path)
             "map" -> resolveMapSecret(path, key)
             else -> Err(ConfigErrors.secretResolutionFailed(key ?: path, provider, "Unknown provider: $provider"))
         }

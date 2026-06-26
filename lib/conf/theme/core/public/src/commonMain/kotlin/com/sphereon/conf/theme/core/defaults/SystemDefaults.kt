@@ -106,8 +106,8 @@ object SystemDefaults {
         color(TokenKeyConstants.PALETTE_ERROR_500, "#D14500")
         color(TokenKeyConstants.PALETTE_ERROR_600, "#B53A00")
         color(TokenKeyConstants.PALETTE_ERROR_700, "#8E2D06")
-        color(TokenKeyConstants.PALETTE_ERROR_800, "#531B6C")
-        color(TokenKeyConstants.PALETTE_ERROR_900, "#7A271A")
+        color(TokenKeyConstants.PALETTE_ERROR_800, "#52190B")
+        color(TokenKeyConstants.PALETTE_ERROR_900, "#320C04")
 
         // Warning — amber
         color(TokenKeyConstants.PALETTE_WARNING_50, "#FFFAEB")
@@ -118,8 +118,8 @@ object SystemDefaults {
         color(TokenKeyConstants.PALETTE_WARNING_500, "#E0B910")
         color(TokenKeyConstants.PALETTE_WARNING_600, "#DC9A02")
         color(TokenKeyConstants.PALETTE_WARNING_700, "#985A0B")
-        color(TokenKeyConstants.PALETTE_WARNING_800, "#5F4D3E")
-        color(TokenKeyConstants.PALETTE_WARNING_900, "#44E108")
+        color(TokenKeyConstants.PALETTE_WARNING_800, "#674A0D")
+        color(TokenKeyConstants.PALETTE_WARNING_900, "#412D05")
 
         // Success — green
         color(TokenKeyConstants.PALETTE_SUCCESS_50, "#CCFFDF")
@@ -394,7 +394,7 @@ object SystemDefaults {
         val sans = "Poppins, 'Plus Jakarta Sans', system-ui, sans-serif"
         val secondary = "'Plus Jakarta Sans', Poppins, system-ui, sans-serif"
         val meta = "Inter, system-ui, sans-serif"
-        val mono = "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace"
+        val mono = "ui-monospace, 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace"
 
         // Wallet-native family tokens
         fontFamily(TokenKeyConstants.TEXT_FAMILY_SANS, sans)
@@ -771,14 +771,16 @@ object SystemDefaults {
 
     @Suppress("LongMethod")
     private fun TokenBuilder.addComponentTokens() {
-        // Button — primary (gradient handled by app code; token holds the solid)
-        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND, "{color.primary}")
-        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_HOVER, "{palette.brand.600}")
-        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_ACTIVE, "{palette.brand.700}")
+        // Button — primary. Uses the darker brand stop directly so light and dark
+        // variants keep the same solid primary action color. Gradient
+        // handled by app/web code; this token holds the solid for Compose.
+        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND, "{palette.brand.700}")
+        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_HOVER, "{palette.brand.800}")
+        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_ACTIVE, "{palette.brand.800}")
         color(TokenKeyConstants.COMP_BUTTON_PRIMARY_FOREGROUND, "{color.onPrimary}")
-        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BORDER, "{color.primary}")
+        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BORDER, "{palette.brand.700}")
         dimension(TokenKeyConstants.COMP_BUTTON_PRIMARY_BORDER_WIDTH, "{borderWidth.none}")
-        dimension(TokenKeyConstants.COMP_BUTTON_PRIMARY_RADIUS, "{shape.radius.3}")
+        dimension(TokenKeyConstants.COMP_BUTTON_PRIMARY_RADIUS, "{shape.radius.md}")
         shadow(TokenKeyConstants.COMP_BUTTON_PRIMARY_SHADOW, "{shadow.subtle}")
         spacing(TokenKeyConstants.COMP_BUTTON_PRIMARY_PADDING_X, "{spacing.inline.md}")
         spacing(TokenKeyConstants.COMP_BUTTON_PRIMARY_PADDING_Y, "{spacing.stack.sm}")
@@ -817,10 +819,97 @@ object SystemDefaults {
         color(TokenKeyConstants.COMP_CARD_BACKGROUND, "{color.surfaceContainerLow}")
         color(TokenKeyConstants.COMP_CARD_FOREGROUND, "{color.onSurface}")
         color(TokenKeyConstants.COMP_CARD_BORDER, "{color.border.subtle}")
+        color(TokenKeyConstants.COMP_CARD_BORDER_HOVER, "{palette.brand.600}")
         dimension(TokenKeyConstants.COMP_CARD_BORDER_WIDTH, "{borderWidth.thin}")
-        dimension(TokenKeyConstants.COMP_CARD_RADIUS, "{shape.radius.xl}")
+        dimension(TokenKeyConstants.COMP_CARD_RADIUS, "{shape.radius.lg}")
         shadow(TokenKeyConstants.COMP_CARD_SHADOW, "{shadow.raised}")
+        shadow(
+            TokenKeyConstants.COMP_CARD_SHADOW_HOVER,
+            "{shadow.subtle}, 0 0 0 1px {palette.brand.600}, 0 0 0 3px color-mix(in srgb, {palette.brand.600} 16%, transparent), 0 0 18px 4px color-mix(in srgb, {palette.brand.600} 30%, transparent), 0 0 48px 10px color-mix(in srgb, {palette.brand.500} 18%, transparent)"
+        )
+        shadow(TokenKeyConstants.COMP_CARD_RING_HOVER, "0 0 0 3px color-mix(in srgb, {palette.brand.600} 52%, transparent)")
         spacing(TokenKeyConstants.COMP_CARD_PADDING, "{spacing.inset.md}")
+
+        // App shell
+        dimension(TokenKeyConstants.COMP_APPSHELL_TOP_HEIGHT, "{spacing.14}")
+        color(TokenKeyConstants.COMP_APPSHELL_TOP_BACKGROUND, "{color.surface}")
+        color(TokenKeyConstants.COMP_APPSHELL_TOP_FOREGROUND, "{color.text.primary}")
+        color(TokenKeyConstants.COMP_APPSHELL_TOP_BORDER, "{color.border.subtle}")
+        spacing(TokenKeyConstants.COMP_APPSHELL_TOP_PADDING, "0 {spacing.5}")
+        spacing(TokenKeyConstants.COMP_APPSHELL_TOP_GAP, "{spacing.4}")
+        color(TokenKeyConstants.COMP_APPSHELL_BRAND_FOREGROUND, "{color.text.primary}")
+        color(TokenKeyConstants.COMP_APPSHELL_MAIN_BACKGROUND, "{color.background}")
+        color(TokenKeyConstants.COMP_APPSHELL_CONTROL_FOREGROUND, "{color.text.secondary}")
+        color(TokenKeyConstants.COMP_APPSHELL_CONTROL_FOREGROUND_HOVER, "{color.text.primary}")
+        color(TokenKeyConstants.COMP_APPSHELL_CONTROL_BACKGROUND_HOVER, "{color.interactive.hover}")
+        dimension(TokenKeyConstants.COMP_APPSHELL_CONTROL_RADIUS, "{shape.radius.md}")
+
+        // Sidebar navigation
+        dimension(TokenKeyConstants.COMP_SNAV_WIDTH, "248dp")
+        dimension(TokenKeyConstants.COMP_SNAV_WIDTH_RAIL, "68dp")
+        spacing(TokenKeyConstants.COMP_SNAV_PAD, "{spacing.3}")
+        spacing(TokenKeyConstants.COMP_SNAV_GAP, "{spacing.0_5}")
+        color(TokenKeyConstants.COMP_SNAV_BG, "{color.surface}")
+        color(TokenKeyConstants.COMP_SNAV_BORDER, "{color.border.subtle}")
+        dimension(TokenKeyConstants.COMP_SNAV_ITEM_HEIGHT, "40dp")
+        dimension(TokenKeyConstants.COMP_SNAV_ITEM_RADIUS, "{shape.radius.md}")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_FG, "{color.text.secondary}")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_FG_HOVER, "{color.text.primary}")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_BG_HOVER, "{color.interactive.hover}")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_FG_ACTIVE, "{color.navigation.activeForeground}")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_BG_ACTIVE, "{color.primaryContainer}")
+        string(
+            TokenKeyConstants.COMP_SNAV_ITEM_BACKGROUND_ACTIVE,
+            "linear-gradient(90deg, color-mix(in srgb, {color.primary} 18%, transparent) 0%, color-mix(in srgb, {color.primary} 10%, transparent) 58%, transparent 100%)"
+        )
+        color(TokenKeyConstants.COMP_SNAV_ITEM_BORDER_ACTIVE, "color-mix(in srgb, {color.primary} 34%, transparent)")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_ICON, "{color.text.disabled}")
+        color(TokenKeyConstants.COMP_SNAV_ITEM_ICON_ACTIVE, "{color.primary}")
+        color(TokenKeyConstants.COMP_SNAV_GROUP_FG, "{color.text.secondary}")
+        color(TokenKeyConstants.COMP_SNAV_DIVIDER, "{color.border.subtle}")
+        color(TokenKeyConstants.COMP_SNAV_BADGE_BG, "{color.primary}")
+        color(TokenKeyConstants.COMP_SNAV_BADGE_FG, "{color.onPrimary}")
+        color(TokenKeyConstants.COMP_SNAV_TIP_BG, "{color.inverseSurface}")
+        color(TokenKeyConstants.COMP_SNAV_TIP_FG, "{color.inverseOnSurface}")
+        string(TokenKeyConstants.COMP_SNAV_EASE, "{motion.easing.emphasized}")
+        duration(TokenKeyConstants.COMP_SNAV_DUR, "{motion.duration.medium2}")
+
+        // Table
+        color(TokenKeyConstants.COMP_TABLE_HEADER_BACKGROUND, "{color.surfaceContainer}")
+        color(TokenKeyConstants.COMP_TABLE_HEADER_FOREGROUND, "{color.text.secondary}")
+        spacing(TokenKeyConstants.COMP_TABLE_HEADER_PADDING, "{spacing.2_5} {spacing.5}")
+        dimension(TokenKeyConstants.COMP_TABLE_HEADER_FONT_SIZE, "{text.style.micro1.desktop.fontSize}")
+        string(TokenKeyConstants.COMP_TABLE_HEADER_FONT_WEIGHT, "600")
+        color(TokenKeyConstants.COMP_TABLE_ROW_BACKGROUND, "{color.surface}")
+        color(TokenKeyConstants.COMP_TABLE_ROW_BACKGROUND_HOVER, "{color.interactive.hover}")
+        color(TokenKeyConstants.COMP_TABLE_ROW_BACKGROUND_SELECTED, "{color.primaryContainer}")
+        color(TokenKeyConstants.COMP_TABLE_ROW_FOREGROUND, "{color.text.primary}")
+        dimension(TokenKeyConstants.COMP_TABLE_ROW_FONT_SIZE, "{text.style.micro1.desktop.fontSize}")
+        spacing(TokenKeyConstants.COMP_TABLE_ROW_PADDING, "{spacing.2_5} {spacing.5}")
+        color(TokenKeyConstants.COMP_TABLE_ROW_DIVIDER, "{color.border.subtle}")
+        color(TokenKeyConstants.COMP_TABLE_ROW_BORDER, "{color.border.default}")
+
+        // Status pill
+        dimension(TokenKeyConstants.COMP_STATUSPILL_RADIUS, "{shape.radius.full}")
+        dimension(TokenKeyConstants.COMP_STATUSPILL_BORDER_WIDTH, "{borderWidth.thin}")
+        spacing(TokenKeyConstants.COMP_STATUSPILL_PADDING, "{spacing.0_5} {spacing.2}")
+        dimension(TokenKeyConstants.COMP_STATUSPILL_FONT_SIZE, "{text.style.micro2.desktop.fontSize}")
+        string(TokenKeyConstants.COMP_STATUSPILL_FONT_WEIGHT, "600")
+        color(TokenKeyConstants.COMP_STATUSPILL_SUCCESS_BACKGROUND, "{color.feedback.successContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_SUCCESS_FOREGROUND, "{color.feedback.onSuccessContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_SUCCESS_BORDER, "{color.feedback.successBorder}")
+        color(TokenKeyConstants.COMP_STATUSPILL_WARNING_BACKGROUND, "{color.feedback.warningContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_WARNING_FOREGROUND, "{color.feedback.onWarningContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_WARNING_BORDER, "{color.feedback.warningBorder}")
+        color(TokenKeyConstants.COMP_STATUSPILL_ERROR_BACKGROUND, "{color.feedback.errorContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_ERROR_FOREGROUND, "{color.feedback.onErrorContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_ERROR_BORDER, "{color.feedback.errorBorder}")
+        color(TokenKeyConstants.COMP_STATUSPILL_INFO_BACKGROUND, "{color.feedback.infoContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_INFO_FOREGROUND, "{color.feedback.onInfoContainer}")
+        color(TokenKeyConstants.COMP_STATUSPILL_INFO_BORDER, "{color.feedback.infoBorder}")
+        color(TokenKeyConstants.COMP_STATUSPILL_NEUTRAL_BACKGROUND, "{color.surfaceVariant}")
+        color(TokenKeyConstants.COMP_STATUSPILL_NEUTRAL_FOREGROUND, "{color.text.secondary}")
+        color(TokenKeyConstants.COMP_STATUSPILL_NEUTRAL_BORDER, "{color.border.default}")
 
         // Badge
         color(TokenKeyConstants.COMP_BADGE_BACKGROUND, "{color.secondaryContainer}")
@@ -880,26 +969,26 @@ object SystemDefaults {
         color(TokenKeyConstants.COMP_TAB_BORDER, "{color.border.subtle}")
 
         // Navigation — side
-        color(TokenKeyConstants.COMP_NAV_SIDE_BACKGROUND, "{palette.gray.100}")
+        color(TokenKeyConstants.COMP_NAV_SIDE_BACKGROUND, "{color.surface}")
         color(TokenKeyConstants.COMP_NAV_SIDE_FOREGROUND, "{color.text.primary}")
-        color(TokenKeyConstants.COMP_NAV_SIDE_ACTIVE_BACKGROUND, "{palette.brand.50}")
-        color(TokenKeyConstants.COMP_NAV_SIDE_ACTIVE_FOREGROUND, "{color.primary}")
+        color(TokenKeyConstants.COMP_NAV_SIDE_ACTIVE_BACKGROUND, "{color.primaryContainer}")
+        color(TokenKeyConstants.COMP_NAV_SIDE_ACTIVE_FOREGROUND, "{color.navigation.activeForeground}")
         color(TokenKeyConstants.COMP_NAV_SIDE_SECTION_LABEL, "{color.text.secondary}")
-        color(TokenKeyConstants.COMP_NAV_SIDE_DIVIDER, "{color.border.default}")
-        dimension(TokenKeyConstants.COMP_NAV_SIDE_WIDTH, "200dp")
+        color(TokenKeyConstants.COMP_NAV_SIDE_DIVIDER, "{color.border.subtle}")
+        dimension(TokenKeyConstants.COMP_NAV_SIDE_WIDTH, "248dp")
         dimension(TokenKeyConstants.COMP_NAV_SIDE_ITEM_HEIGHT, "40dp")
 
         // Navigation — top
-        color(TokenKeyConstants.COMP_NAV_TOP_BACKGROUND, "{palette.blue.900}")
-        color(TokenKeyConstants.COMP_NAV_TOP_FOREGROUND, "{color.onPrimary}")
-        dimension(TokenKeyConstants.COMP_NAV_TOP_HEIGHT, "70dp")
-        color(TokenKeyConstants.COMP_NAV_TOP_DIVIDER, "{palette.blue.600}")
+        color(TokenKeyConstants.COMP_NAV_TOP_BACKGROUND, "{color.surface}")
+        color(TokenKeyConstants.COMP_NAV_TOP_FOREGROUND, "{color.text.primary}")
+        dimension(TokenKeyConstants.COMP_NAV_TOP_HEIGHT, "56dp")
+        color(TokenKeyConstants.COMP_NAV_TOP_DIVIDER, "{color.border.subtle}")
 
         // Navigation — bottom
         color(TokenKeyConstants.COMP_NAV_BOTTOM_BACKGROUND, "{color.surface}")
         color(TokenKeyConstants.COMP_NAV_BOTTOM_FOREGROUND, "{color.text.secondary}")
         color(TokenKeyConstants.COMP_NAV_BOTTOM_ACTIVE, "{color.primary}")
-        color(TokenKeyConstants.COMP_NAV_BOTTOM_DIVIDER, "{palette.blue.600}")
+        color(TokenKeyConstants.COMP_NAV_BOTTOM_DIVIDER, "{color.border.subtle}")
         dimension(TokenKeyConstants.COMP_NAV_BOTTOM_HEIGHT, "52dp")
         dimension(TokenKeyConstants.COMP_NAV_BOTTOM_TARGET, "42dp")
 
@@ -999,6 +1088,110 @@ object SystemDefaults {
         dimension(TokenKeyConstants.COMP_BLOB_EXPLORER_DETAIL_WIDTH, "320dp")
         color(TokenKeyConstants.COMP_BLOB_EXPLORER_EMPTY_FOREGROUND, "{color.text.secondary}")
         color(TokenKeyConstants.COMP_BLOB_EXPLORER_EMPTY_ICON_COLOR, "{color.border.subtle}")
+
+// Menu
+        color(TokenKeyConstants.COMP_MENU_BACKGROUND, "{color.surface}")
+        color(TokenKeyConstants.COMP_MENU_BORDER, "{color.border.default}")
+        dimension(TokenKeyConstants.COMP_MENU_MIN_WIDTH, "180px")
+        spacing(TokenKeyConstants.COMP_MENU_PADDING, "{spacing.1_5}")
+        dimension(TokenKeyConstants.COMP_MENU_RADIUS, "{shape.radius.md}")
+        shadow(TokenKeyConstants.COMP_MENU_SHADOW, "{shadow.overlay}")
+        spacing(TokenKeyConstants.COMP_MENU_ITEM_PADDING, "{spacing.2_5} {spacing.3}")
+        dimension(TokenKeyConstants.COMP_MENU_ITEM_RADIUS, "{shape.radius.sm}")
+        color(TokenKeyConstants.COMP_MENU_ITEM_BACKGROUND_HOVER, "{color.interactive.hover}")
+        dimension(TokenKeyConstants.COMP_MENU_ITEM_FONT_SIZE, "{text.style.subtitle1.desktop.fontSize}")
+        color(TokenKeyConstants.COMP_MENU_ITEM_FOREGROUND, "{color.text.primary}")
+        color(TokenKeyConstants.COMP_MENU_ITEM_DANGER_FOREGROUND, "{palette.error.500}")
+        color(TokenKeyConstants.COMP_MENU_ITEM_DANGER_BACKGROUND_HOVER, "{palette.error.50}")
+
+        // Panel
+        color(TokenKeyConstants.COMP_PANEL_BACKGROUND, "{color.surface}")
+        color(TokenKeyConstants.COMP_PANEL_BORDER, "{color.border.default}")
+        color(TokenKeyConstants.COMP_PANEL_HEADER_BACKGROUND, "{color.surfaceVariant}")
+        color(TokenKeyConstants.COMP_PANEL_HEADER_FOREGROUND, "{color.text.primary}")
+        dimension(TokenKeyConstants.COMP_PANEL_HEADER_HEIGHT, "{spacing.14}")
+        string(TokenKeyConstants.COMP_PANEL_WIDTH_SM, "100%")
+        dimension(TokenKeyConstants.COMP_PANEL_WIDTH_MD, "380px")
+        dimension(TokenKeyConstants.COMP_PANEL_WIDTH_LG, "420px")
+        dimension(TokenKeyConstants.COMP_PANEL_WIDTH_XL, "480px")
+        shadow(TokenKeyConstants.COMP_PANEL_SHADOW, "{shadow.overlay}")
+
+        // Statustab
+        spacing(TokenKeyConstants.COMP_STATUSTAB_PADDING, "{spacing.2} {spacing.3_5}")
+        dimension(TokenKeyConstants.COMP_STATUSTAB_RADIUS, "{shape.radius.md}")
+        dimension(TokenKeyConstants.COMP_STATUSTAB_FONT_SIZE, "{text.style.subtitle1.desktop.fontSize}")
+        string(TokenKeyConstants.COMP_STATUSTAB_FONT_WEIGHT, "500")
+        color(TokenKeyConstants.COMP_STATUSTAB_BACKGROUND, "transparent")
+        color(TokenKeyConstants.COMP_STATUSTAB_BACKGROUND_ACTIVE, "{palette.brand.50}")
+        color(TokenKeyConstants.COMP_STATUSTAB_FOREGROUND, "{color.text.secondary}")
+        color(TokenKeyConstants.COMP_STATUSTAB_FOREGROUND_ACTIVE, "{color.primary}")
+
+        // Form
+        color(TokenKeyConstants.COMP_FORM_BACKGROUND, "{color.surfaceContainerLow}")
+        color(TokenKeyConstants.COMP_FORM_BORDER, "{color.border.default}")
+        dimension(TokenKeyConstants.COMP_FORM_RADIUS, "{shape.radius.xxxl}")
+        spacing(TokenKeyConstants.COMP_FORM_PADDING, "{spacing.12} {spacing.6}")
+
+        // Formsection
+        color(TokenKeyConstants.COMP_FORMSECTION_BORDER, "{color.border.default}")
+        dimension(TokenKeyConstants.COMP_FORMSECTION_RADIUS, "{shape.radius.md}")
+        spacing(TokenKeyConstants.COMP_FORMSECTION_PADDING, "{spacing.4}")
+        spacing(TokenKeyConstants.COMP_FORMSECTION_GAP, "{spacing.3}")
+        color(TokenKeyConstants.COMP_FORMSECTION_LEGEND_BACKGROUND, "{color.surfaceContainerLow}")
+        color(TokenKeyConstants.COMP_FORMSECTION_LEGEND_FOREGROUND, "{color.text.secondary}")
+        spacing(TokenKeyConstants.COMP_FORMSECTION_LEGEND_PADDING_X, "{spacing.2}")
+        dimension(TokenKeyConstants.COMP_FORMSECTION_LEGEND_FONT_SIZE, "{text.style.micro1.desktop.fontSize}")
+        string(TokenKeyConstants.COMP_FORMSECTION_LEGEND_FONT_WEIGHT, "600")
+
+        // Forminput
+        color(TokenKeyConstants.COMP_FORMINPUT_BACKGROUND, "{color.surface}")
+        color(TokenKeyConstants.COMP_FORMINPUT_BACKGROUND_READONLY, "transparent")
+        color(TokenKeyConstants.COMP_FORMINPUT_BORDER, "{color.border.default}")
+        color(TokenKeyConstants.COMP_FORMINPUT_BORDER_HOVER, "{color.text.disabled}")
+        color(TokenKeyConstants.COMP_FORMINPUT_BORDER_FOCUS, "{color.primary}")
+        color(TokenKeyConstants.COMP_FORMINPUT_BORDER_READONLY, "transparent")
+        dimension(TokenKeyConstants.COMP_FORMINPUT_RADIUS, "{shape.radius.md}")
+        spacing(TokenKeyConstants.COMP_FORMINPUT_PADDING, "{spacing.3} {spacing.3_5}")
+        dimension(TokenKeyConstants.COMP_FORMINPUT_FONT_SIZE, "{text.style.subtitle1.desktop.fontSize}")
+
+        // Emptystate
+        dimension(TokenKeyConstants.COMP_EMPTYSTATE_ICON_SIZE, "{spacing.16}")
+        dimension(TokenKeyConstants.COMP_EMPTYSTATE_MAX_WIDTH, "400px")
+        color(TokenKeyConstants.COMP_EMPTYSTATE_FOREGROUND, "{color.text.secondary}")
+        dimension(TokenKeyConstants.COMP_EMPTYSTATE_TITLE_FONT_SIZE, "{text.style.h2.desktop.fontSize}")
+        string(TokenKeyConstants.COMP_EMPTYSTATE_TITLE_FONT_WEIGHT, "600")
+        dimension(TokenKeyConstants.COMP_EMPTYSTATE_BODY_FONT_SIZE, "{text.style.subtitle1.desktop.fontSize}")
+        spacing(TokenKeyConstants.COMP_EMPTYSTATE_GAP, "{spacing.3}")
+
+        // Selection
+        color(TokenKeyConstants.COMP_SELECTION_BACKGROUND, "{color.primaryContainer}")
+        color(TokenKeyConstants.COMP_SELECTION_FOREGROUND, "{color.onPrimaryContainer}")
+        color(TokenKeyConstants.COMP_SELECTION_DESELECT_BORDER, "{color.primary}")
+        color(TokenKeyConstants.COMP_SELECTION_DESELECT_BACKGROUND_HOVER, "{color.primary}")
+        color(TokenKeyConstants.COMP_SELECTION_DESELECT_FOREGROUND_HOVER, "{color.onPrimary}")
+        color(TokenKeyConstants.COMP_SELECTION_DELETE_BACKGROUND, "{color.error}")
+        color(TokenKeyConstants.COMP_SELECTION_DELETE_BACKGROUND_HOVER, "{palette.error.600}")
+        color(TokenKeyConstants.COMP_SELECTION_DELETE_FOREGROUND, "{color.onError}")
+
+        // Confirm
+        color(TokenKeyConstants.COMP_CONFIRM_OVERLAY_BACKGROUND, "color-mix(in oklab, black 50%, transparent)")
+        color(TokenKeyConstants.COMP_CONFIRM_MODAL_BACKGROUND, "{color.surface}")
+        dimension(TokenKeyConstants.COMP_CONFIRM_MODAL_RADIUS, "{shape.radius.lg}")
+        shadow(TokenKeyConstants.COMP_CONFIRM_MODAL_SHADOW, "0 20px 40px color-mix(in oklab, black 20%, transparent)")
+        dimension(TokenKeyConstants.COMP_CONFIRM_MODAL_WIDTH, "400px")
+        dimension(TokenKeyConstants.COMP_CONFIRM_ICON_SIZE, "56px")
+        color(TokenKeyConstants.COMP_CONFIRM_ICON_BACKGROUND, "{palette.error.50}")
+        color(TokenKeyConstants.COMP_CONFIRM_ICON_FOREGROUND, "{palette.error.500}")
+        dimension(TokenKeyConstants.COMP_CONFIRM_TITLE_FONT_SIZE, "18px")
+        dimension(TokenKeyConstants.COMP_CONFIRM_MESSAGE_FONT_SIZE, "14px")
+        color(TokenKeyConstants.COMP_CONFIRM_MESSAGE_FOREGROUND, "{color.text.secondary}")
+
+        // Meatball
+        dimension(TokenKeyConstants.COMP_MEATBALL_SIZE, "32px")
+        color(TokenKeyConstants.COMP_MEATBALL_BACKGROUND, "transparent")
+        color(TokenKeyConstants.COMP_MEATBALL_BACKGROUND_HOVER, "{palette.gray.100}")
+        color(TokenKeyConstants.COMP_MEATBALL_FOREGROUND, "{color.text.disabled}")
+        color(TokenKeyConstants.COMP_MEATBALL_FOREGROUND_HOVER, "{color.text.primary}")
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -1019,6 +1212,9 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_ON_PRIMARY, "#FBFBFB")
                     color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "{palette.brand.50}")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "{palette.brand.800}")
+                    color(TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND, "{palette.brand.700}")
+                    // Accent — interactive brand accent (mirrors primary)
+                    color(TokenKeyConstants.COLOR_ACCENT, "{palette.brand.500}")
 
                     // Secondary
                     color(TokenKeyConstants.COLOR_SECONDARY, "{palette.blue.500}")
@@ -1073,14 +1269,20 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER, "{palette.success.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS_CONTAINER, "{palette.success.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_BORDER, "{palette.success.200}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.600}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_CONTAINER, "{palette.warning.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING, "{palette.gray.900}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING_CONTAINER, "{palette.warning.700}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_BORDER, "{palette.warning.200}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_INFO, "{palette.pending.500}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_INFO_CONTAINER, "{palette.pending.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO_CONTAINER, "{palette.pending.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_BORDER, "{palette.pending.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_CONTAINER, "{palette.error.50}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_ERROR_CONTAINER, "{palette.error.700}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_BORDER, "{palette.error.200}")
 
                     // Text
                     color(TokenKeyConstants.COLOR_TEXT_PRIMARY, "{palette.gray.900}")
@@ -1107,17 +1309,22 @@ object SystemDefaults {
             scope = ThemeScope.SYSTEM,
             tokens =
                 buildTokens {
-                    // Primary — lighter for AA on dark
-                    color(TokenKeyConstants.COLOR_PRIMARY, "{palette.brand.300}")
-                    color(TokenKeyConstants.COLOR_ON_PRIMARY, "{palette.brand.900}")
-                    color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "{palette.brand.800}")
+                    // Primary — deeper saturated brand purple on dark (brand.400).
+                    // brand.300 reads too light/lavender; brand.400 keeps a clear
+                    // purple identity. See dark-mode overview in the theme docs.
+                    color(TokenKeyConstants.COLOR_PRIMARY, "{palette.brand.500}")
+                    color(TokenKeyConstants.COLOR_ON_PRIMARY, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "color-mix(in srgb, {palette.brand.500} 18%, transparent)")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "{palette.brand.100}")
+                    color(TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND, "{color.onPrimary}")
+                    // Accent — interactive brand accent (mirrors primary)
+                    color(TokenKeyConstants.COLOR_ACCENT, "{palette.brand.500}")
 
                     // Secondary
-                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.blue.200}")
+                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.brand.200}")
                     color(TokenKeyConstants.COLOR_ON_SECONDARY, "{palette.blue.900}")
-                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "{palette.blue.700}")
-                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.blue.100}")
+                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "#1D212C")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.brand.100}")
 
                     // Tertiary — selenas, lifted for AA on dark
                     color(TokenKeyConstants.COLOR_TERTIARY, "{palette.selenas.300}")
@@ -1125,26 +1332,26 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_TERTIARY_CONTAINER, "{palette.selenas.800}")
                     color(TokenKeyConstants.COLOR_ON_TERTIARY_CONTAINER, "{palette.selenas.100}")
 
-                    // Error — lift 300 for contrast on dark
-                    color(TokenKeyConstants.COLOR_ERROR, "{palette.error.300}")
+                    // Error — lift 400 for contrast on dark
+                    color(TokenKeyConstants.COLOR_ERROR, "{palette.error.400}")
                     color(TokenKeyConstants.COLOR_ON_ERROR, "{palette.error.900}")
                     color(TokenKeyConstants.COLOR_ERROR_CONTAINER, "{palette.error.800}")
                     color(TokenKeyConstants.COLOR_ON_ERROR_CONTAINER, "{palette.error.100}")
 
-                    // Surface — wallet's blue dark-panel ramp (Figma blue.900/800/700)
-                    color(TokenKeyConstants.COLOR_SURFACE, "{palette.blue.800}")
-                    color(TokenKeyConstants.COLOR_ON_SURFACE, "#FBFBFB")
-                    color(TokenKeyConstants.COLOR_SURFACE_VARIANT, "{palette.blue.700}")
-                    color(TokenKeyConstants.COLOR_ON_SURFACE_VARIANT, "{palette.gray.200}")
-                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER, "{palette.blue.900}")
-                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_HIGH, "{palette.blue.700}")
-                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_HIGHEST, "{palette.blue.600}")
-                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_LOW, "{palette.blue.800}")
-                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_LOWEST, "{palette.blue.900}")
+                    // Surface — neutral charcoal dark ramp, layered by elevation
+                    color(TokenKeyConstants.COLOR_SURFACE, "#161922")
+                    color(TokenKeyConstants.COLOR_ON_SURFACE, "#ECECF1")
+                    color(TokenKeyConstants.COLOR_SURFACE_VARIANT, "#1D212C")
+                    color(TokenKeyConstants.COLOR_ON_SURFACE_VARIANT, "#8B8FA3")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER, "#12151D")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_HIGH, "#1D212C")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_HIGHEST, "#1D212C")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_LOW, "#161922")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_LOWEST, "#0D0F14")
 
                     // Background
-                    color(TokenKeyConstants.COLOR_BACKGROUND, "{palette.blue.900}")
-                    color(TokenKeyConstants.COLOR_ON_BACKGROUND, "#FBFBFB")
+                    color(TokenKeyConstants.COLOR_BACKGROUND, "#0D0F14")
+                    color(TokenKeyConstants.COLOR_ON_BACKGROUND, "#ECECF1")
 
                     // Inverse — toast/snackbar gets a light surface on dark page
                     color(TokenKeyConstants.COLOR_INVERSE_SURFACE, "{palette.gray.50}")
@@ -1152,42 +1359,48 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_INVERSE_PRIMARY, "{palette.brand.500}")
 
                     // Outlines & scrim
-                    color(TokenKeyConstants.COLOR_OUTLINE, "{palette.blue.600}")
-                    color(TokenKeyConstants.COLOR_OUTLINE_VARIANT, "{palette.blue.700}")
+                    color(TokenKeyConstants.COLOR_OUTLINE, "#2A2F3A")
+                    color(TokenKeyConstants.COLOR_OUTLINE_VARIANT, "#22262F")
                     color(TokenKeyConstants.COLOR_SCRIM, "rgba(0,0,0,0.7)")
                     color(TokenKeyConstants.COLOR_SHADOW, "rgba(0,0,0,0.5)")
 
                     // Interactive
-                    color(TokenKeyConstants.COLOR_INTERACTIVE_HOVER, "rgba(255,255,255,0.06)")
-                    color(TokenKeyConstants.COLOR_INTERACTIVE_PRESSED, "rgba(255,255,255,0.10)")
-                    color(TokenKeyConstants.COLOR_INTERACTIVE_DISABLED, "rgba(255,255,255,0.12)")
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_HOVER, "color-mix(in srgb, {color.onPrimary} 6%, transparent)")
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_PRESSED, "color-mix(in srgb, {color.onPrimary} 10%, transparent)")
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_DISABLED, "#1D212C")
                     color(TokenKeyConstants.COLOR_INTERACTIVE_FOCUS, "{color.primary}")
 
                     // Feedback — wallet dark stops
                     color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS, "{palette.success.400}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER, "{palette.success.800}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER, "color-mix(in srgb, {palette.success.500} 12%, transparent)")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS, "{palette.success.900}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS_CONTAINER, "{palette.success.100}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.300}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_CONTAINER, "{palette.warning.700}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS_CONTAINER, "#5FE39B")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_BORDER, "color-mix(in srgb, {palette.success.300} 28%, transparent)")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.400}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_CONTAINER, "color-mix(in srgb, {palette.warning.400} 12%, transparent)")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING, "{palette.warning.900}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING_CONTAINER, "{palette.warning.100}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO, "{palette.pending.300}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_CONTAINER, "{palette.pending.800}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING_CONTAINER, "#F4C24E")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_BORDER, "color-mix(in srgb, {palette.warning.300} 28%, transparent)")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO, "{palette.pending.400}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_CONTAINER, "color-mix(in srgb, {palette.pending.400} 14%, transparent)")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO, "{palette.pending.900}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO_CONTAINER, "{palette.pending.100}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO_CONTAINER, "#5DABFF")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_BORDER, "color-mix(in srgb, {palette.pending.300} 28%, transparent)")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_CONTAINER, "color-mix(in srgb, {palette.error.400} 14%, transparent)")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_ERROR_CONTAINER, "#F0A091")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_BORDER, "color-mix(in srgb, {palette.error.300} 28%, transparent)")
 
                     // Text
-                    color(TokenKeyConstants.COLOR_TEXT_PRIMARY, "#FBFBFB")
-                    color(TokenKeyConstants.COLOR_TEXT_SECONDARY, "{palette.gray.200}")
-                    color(TokenKeyConstants.COLOR_TEXT_DISABLED, "{palette.gray.500}")
+                    color(TokenKeyConstants.COLOR_TEXT_PRIMARY, "#ECECF1")
+                    color(TokenKeyConstants.COLOR_TEXT_SECONDARY, "#8B8FA3")
+                    color(TokenKeyConstants.COLOR_TEXT_DISABLED, "#5B6070")
                     color(TokenKeyConstants.COLOR_TEXT_INVERSE, "{color.inverseOnSurface}")
 
                     // Border
-                    color(TokenKeyConstants.COLOR_BORDER_DEFAULT, "{palette.blue.600}")
+                    color(TokenKeyConstants.COLOR_BORDER_DEFAULT, "#2A2F3A")
                     color(TokenKeyConstants.COLOR_BORDER_STRONG, "{palette.gray.200}")
-                    color(TokenKeyConstants.COLOR_BORDER_SUBTLE, "{palette.blue.700}")
-                    color(TokenKeyConstants.COLOR_BORDER_DISABLED, "{palette.blue.700}")
+                    color(TokenKeyConstants.COLOR_BORDER_SUBTLE, "#22262F")
+                    color(TokenKeyConstants.COLOR_BORDER_DISABLED, "#22262F")
 
                     addVariantIndependentExtensions()
 
@@ -1219,6 +1432,9 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_ON_PRIMARY, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "{palette.brand.50}")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "{palette.brand.900}")
+                    color(TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND, "{palette.brand.900}")
+                    // Accent — interactive brand accent (mirrors primary, darker for contrast)
+                    color(TokenKeyConstants.COLOR_ACCENT, "{palette.brand.700}")
 
                     // Secondary
                     color(TokenKeyConstants.COLOR_SECONDARY, "{palette.blue.700}")
@@ -1272,14 +1488,20 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER, "{palette.success.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS_CONTAINER, "{palette.success.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_BORDER, "{palette.success.700}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.700}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_CONTAINER, "{palette.warning.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING_CONTAINER, "{palette.warning.700}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_BORDER, "{palette.warning.700}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_INFO, "{palette.pending.700}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_INFO_CONTAINER, "{palette.pending.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO_CONTAINER, "{palette.pending.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_BORDER, "{palette.pending.700}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_CONTAINER, "{palette.error.50}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_ERROR_CONTAINER, "{palette.error.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_BORDER, "{palette.error.700}")
 
                     // Text
                     color(TokenKeyConstants.COLOR_TEXT_PRIMARY, "#000000")

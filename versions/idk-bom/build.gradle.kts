@@ -96,6 +96,9 @@ dependencies {
         // Data Store - Party
         api("com.sphereon.idk:lib-data-store-party-public:$version")
 
+        // Data Integration
+        api("com.sphereon.idk:lib-data-integration-public:$version")
+
         // DID libraries
         api("com.sphereon.idk:lib-did-core-public:$version")
         api("com.sphereon.idk:lib-did-resolver-public:$version")

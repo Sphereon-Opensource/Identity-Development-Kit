@@ -191,9 +191,9 @@ class TokenProcessingParityTest {
     fun systemDefaultsLightDarkColorDifference() {
         val light = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         val dark = TokenFlattener.merge(listOf(SystemDefaults.baselineDark))
-        // Colors should differ between light and dark
-        assertTrue(light[TokenKeyConstants.COLOR_PRIMARY] != dark[TokenKeyConstants.COLOR_PRIMARY])
+        // Theme surfaces and soft containers differ between light and dark.
         assertTrue(light[TokenKeyConstants.COLOR_SURFACE] != dark[TokenKeyConstants.COLOR_SURFACE])
+        assertTrue(light[TokenKeyConstants.COLOR_PRIMARY_CONTAINER] != dark[TokenKeyConstants.COLOR_PRIMARY_CONTAINER])
         // Typography should be the same
         assertEquals(
             light[TokenKeyConstants.TYPOGRAPHY_DISPLAY_LARGE_FONT_SIZE],
@@ -372,6 +372,43 @@ class TokenProcessingParityTest {
     }
 
     @Test
+    fun systemDefaultsCardInteractionTokensPresentAndResolve() {
+        val tokens = TokenFlattener.merge(listOf(SystemDefaults.baseline))
+        assertTrue(tokens.containsKey(TokenKeyConstants.COMP_CARD_BORDER_HOVER))
+        assertTrue(tokens.containsKey(TokenKeyConstants.COMP_CARD_SHADOW_HOVER))
+        assertTrue(tokens.containsKey(TokenKeyConstants.COMP_CARD_RING_HOVER))
+
+        val resolved = TokenReferenceResolver.resolve(tokens)
+        assertEquals(resolved[TokenKeyConstants.PALETTE_BRAND_600], resolved[TokenKeyConstants.COMP_CARD_BORDER_HOVER])
+        assertTrue(resolved[TokenKeyConstants.COMP_CARD_SHADOW_HOVER]!!.contains(resolved[TokenKeyConstants.PALETTE_BRAND_600]!!))
+        assertTrue(resolved[TokenKeyConstants.COMP_CARD_SHADOW_HOVER]!!.contains(resolved[TokenKeyConstants.PALETTE_BRAND_500]!!))
+        assertTrue(resolved[TokenKeyConstants.COMP_CARD_RING_HOVER]!!.contains(resolved[TokenKeyConstants.PALETTE_BRAND_600]!!))
+    }
+
+    @Test
+    fun systemDefaultsShellAndStatusTokensResolveFromDarkTheme() {
+        val tokens = TokenFlattener.merge(listOf(SystemDefaults.baselineDark))
+        val resolved = TokenReferenceResolver.resolve(tokens)
+
+        assertEquals("color-mix(in srgb, #7C40E8 18%, transparent)", resolved[TokenKeyConstants.COLOR_PRIMARY_CONTAINER])
+        assertEquals("color-mix(in srgb, #00E963 12%, transparent)", resolved[TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER])
+        assertEquals("color-mix(in srgb, #66BFA0 28%, transparent)", resolved[TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_BORDER])
+        assertEquals(resolved[TokenKeyConstants.COLOR_ON_PRIMARY], resolved[TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND])
+        assertEquals(resolved[TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND], resolved[TokenKeyConstants.COMP_SNAV_ITEM_FG_ACTIVE])
+        assertEquals("color-mix(in srgb, #7C40E8 18%, transparent)", resolved[TokenKeyConstants.COMP_SNAV_ITEM_BG_ACTIVE])
+        assertEquals(
+            "linear-gradient(90deg, color-mix(in srgb, #7C40E8 18%, transparent) 0%, color-mix(in srgb, #7C40E8 10%, transparent) 58%, transparent 100%)",
+            resolved[TokenKeyConstants.COMP_SNAV_ITEM_BACKGROUND_ACTIVE],
+        )
+        assertEquals("color-mix(in srgb, #7C40E8 34%, transparent)", resolved[TokenKeyConstants.COMP_SNAV_ITEM_BORDER_ACTIVE])
+        assertEquals("color-mix(in srgb, #00E963 12%, transparent)", resolved[TokenKeyConstants.COMP_STATUSPILL_SUCCESS_BACKGROUND])
+        assertEquals("color-mix(in srgb, #FFFFFF 6%, transparent)", resolved[TokenKeyConstants.COMP_APPSHELL_CONTROL_BACKGROUND_HOVER])
+        assertFalse(resolved[TokenKeyConstants.COMP_SNAV_ITEM_BG_ACTIVE]!!.contains("{"))
+        assertFalse(resolved[TokenKeyConstants.COMP_SNAV_ITEM_BACKGROUND_ACTIVE]!!.contains("{"))
+        assertFalse(resolved[TokenKeyConstants.COMP_STATUSPILL_SUCCESS_BACKGROUND]!!.contains("{"))
+    }
+
+    @Test
     fun systemDefaultsShapeRadiusTokensPresent() {
         val tokens = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         assertTrue(tokens.containsKey(TokenKeyConstants.SHAPE_RADIUS_NONE))
@@ -429,6 +466,9 @@ class TokenProcessingParityTest {
         // All should have semantic colors
         assertTrue(dark.containsKey(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS))
         assertTrue(hc.containsKey(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS))
+        // All should have card interaction tokens
+        assertTrue(dark.containsKey(TokenKeyConstants.COMP_CARD_SHADOW_HOVER))
+        assertTrue(hc.containsKey(TokenKeyConstants.COMP_CARD_SHADOW_HOVER))
     }
 
     @Test

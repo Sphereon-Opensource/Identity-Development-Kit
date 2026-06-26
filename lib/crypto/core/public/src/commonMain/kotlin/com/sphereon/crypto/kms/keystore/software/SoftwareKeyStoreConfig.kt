@@ -49,6 +49,18 @@ interface SoftwareKeyStoreConfig : KeyStoreConfig {
     val persist: Boolean
     val path: String?
 
+    /**
+     * Root directory under which per-tenant keystore files are derived.
+     *
+     * When [path] is explicitly configured, tenant-aware resolution still places that file or
+     * subpath under `<keystoreRoot>/<tenantId>/...`. When [path] is null/blank, the effective file
+     * resolves to `<keystoreRoot>/<tenantId>/<id>.<ext>` so each tenant gets its own keystore file
+     * and each provider name (`id`) gets its own file within the tenant directory.
+     *
+     * Defaults to [TenantKeyStorePathResolver.DEFAULT_KEYSTORE_ROOT] when null/blank.
+     */
+    val keystoreRoot: String?
+
     @Serializable(with = Base64UrlSerializer::class)
     val bytes: ByteArray?
     val password: String?
@@ -79,6 +91,7 @@ abstract class AbstractSoftwareKeyStoreConfig :
     abstract override val defaultConfigValues: Map<String, String>
     abstract override val password: String?
     abstract override val path: String?
+    abstract override val keystoreRoot: String?
     abstract override val bytes: ByteArray?
 
     @SerialName("accessMode")
@@ -114,6 +127,8 @@ Pkcs12KeyStoreConfig
         override val password: String,
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val keystoreRoot: String? = null,
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         override val bytes: ByteArray? = null,
         @EncodeDefault(EncodeDefault.Mode.ALWAYS)
@@ -170,6 +185,9 @@ Pkcs12KeyStoreConfig
             if (path != other.path) {
                 return false
             }
+            if (keystoreRoot != other.keystoreRoot) {
+                return false
+            }
             if (!bytes.contentEquals(other.bytes)) {
                 return false
             }
@@ -200,6 +218,7 @@ Pkcs12KeyStoreConfig
             result = 31 * result + defaultConfigValues.hashCode()
             result = 31 * result + password.hashCode()
             result = 31 * result + (path?.hashCode() ?: 0)
+            result = 31 * result + (keystoreRoot?.hashCode() ?: 0)
             result = 31 * result + (bytes?.contentHashCode() ?: 0)
             result = 31 * result + accessMode.hashCode()
             result = 31 * result + keyVisibility.hashCode()
@@ -232,6 +251,8 @@ JksKeyStoreConfig
         override val password: String,
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val keystoreRoot: String? = null,
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         override val bytes: ByteArray? = null,
         @EncodeDefault(EncodeDefault.Mode.ALWAYS)
@@ -287,6 +308,9 @@ JksKeyStoreConfig
             if (path != other.path) {
                 return false
             }
+            if (keystoreRoot != other.keystoreRoot) {
+                return false
+            }
             if (!bytes.contentEquals(other.bytes)) {
                 return false
             }
@@ -317,6 +341,7 @@ JksKeyStoreConfig
             result = 31 * result + defaultConfigValues.hashCode()
             result = 31 * result + password.hashCode()
             result = 31 * result + (path?.hashCode() ?: 0)
+            result = 31 * result + (keystoreRoot?.hashCode() ?: 0)
             result = 31 * result + (bytes?.contentHashCode() ?: 0)
             result = 31 * result + accessMode.hashCode()
             result = 31 * result + keyVisibility.hashCode()
@@ -349,6 +374,8 @@ AppleKeyStoreConfig
         override val password: String? = null,
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val keystoreRoot: String? = null,
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         override val bytes: ByteArray? = null,
         @EncodeDefault(EncodeDefault.Mode.ALWAYS)

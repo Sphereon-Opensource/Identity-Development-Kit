@@ -68,7 +68,7 @@ class OAuth2AuthorizationHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_AUTHORIZATION"
+        const val ID: String = "oauth2.as.authorization"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

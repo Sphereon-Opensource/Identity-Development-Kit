@@ -29,6 +29,7 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.impl.pipeline.OfferPipelineInitializer
 import com.sphereon.openid.oid4vci.issuer.pipeline.PipelineConfigurationResolver
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -60,11 +61,13 @@ class CreateCredentialOfferCommandImplPipelineTest {
         override val outputTypeToken: TypeToken<InitPipelineSessionResult> = typeToken()
 
         var invocations: Int = 0
+        var lastArgs: InitPipelineSessionArgs? = null
 
         override suspend fun supports(args: Any): Boolean = args is InitPipelineSessionArgs
 
         override suspend fun execute(args: InitPipelineSessionArgs): IdkResult<InitPipelineSessionResult, IdkError> {
             invocations += 1
+            lastArgs = args
             return Ok(InitPipelineSessionResult(sessionId = resultSessionId, correlationId = resultCorrelationId))
         }
     }
@@ -108,6 +111,32 @@ class CreateCredentialOfferCommandImplPipelineTest {
             assertEquals(1, initCmd.invocations, "initPipelineSessionCommand must be called exactly once")
             val stored = sessionStore.created.first()
             assertEquals("corr-1", stored.pipelineCorrelationId, "stored session must carry pipelineCorrelationId from pipeline init")
+        }
+
+    @Test
+    fun preSeededAttributesArePassedToPipelineInitialAttributes() =
+        runTest {
+            val initCmd = RecordingInitPipelineSessionCommand()
+            val initializer =
+                OfferPipelineInitializer(
+                    pipelineConfigurationResolver = FixedPipelineConfigurationResolver(minimalPipelineConfig()),
+                    initPipelineSessionCommand = initCmd,
+                )
+
+            initializer.initializePipeline(
+                sampleArgs().copy(
+                    preSeededAttributes =
+                        mapOf(
+                            "given_name" to JsonPrimitive("Ada"),
+                            "family_name" to JsonPrimitive("Lovelace"),
+                        ),
+                ),
+            )
+
+            val initialAttributes = requireNotNull(initCmd.lastArgs).initialAttributes
+            assertEquals(listOf("given_name", "family_name"), initialAttributes.map { it.path.value })
+            assertEquals(JsonPrimitive("Ada"), initialAttributes[0].jsonValue)
+            assertEquals(JsonPrimitive("Lovelace"), initialAttributes[1].jsonValue)
         }
 
     @Test

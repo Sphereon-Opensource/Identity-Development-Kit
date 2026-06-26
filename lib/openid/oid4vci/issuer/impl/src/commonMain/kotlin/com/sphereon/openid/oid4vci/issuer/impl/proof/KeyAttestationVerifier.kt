@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.proof
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.generateJwkThumbprint
@@ -307,7 +308,6 @@ class KeyAttestationVerifier(
      * Split the JWS compact form and parse just the protected header + payload as JSON.
      * Returns null on any structural failure; callers convert that into a precise error.
      */
-    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
     private fun peekJwsHeaderAndPayload(jwt: String): Pair<JsonObject, JsonObject>? {
         val parts = jwt.split('.')
         if (parts.size != THREE_JWS_SEGMENTS) return null
@@ -322,12 +322,7 @@ class KeyAttestationVerifier(
         }
     }
 
-    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
-    private fun base64UrlDecode(encoded: String): ByteArray {
-        val padded = encoded + "=".repeat((4 - encoded.length % 4) % 4)
-        return kotlin.io.encoding.Base64.UrlSafe
-            .decode(padded)
-    }
+    private fun base64UrlDecode(encoded: String): ByteArray = encoded.decodeFromBase64Url()
 
     private fun stringList(element: kotlinx.serialization.json.JsonElement): List<String> =
         runCatching { element.jsonArray.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } }

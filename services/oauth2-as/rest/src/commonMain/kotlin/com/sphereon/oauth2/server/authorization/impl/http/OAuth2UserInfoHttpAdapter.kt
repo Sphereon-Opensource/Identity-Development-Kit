@@ -63,7 +63,7 @@ class OAuth2UserInfoHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_USERINFO"
+        const val ID: String = "oauth2.as.userinfo"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> = listOf(userInfoEndpointCommand)

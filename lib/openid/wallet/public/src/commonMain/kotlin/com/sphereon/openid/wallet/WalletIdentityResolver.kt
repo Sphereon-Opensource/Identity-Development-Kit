@@ -24,13 +24,13 @@ import com.sphereon.data.store.party.model.IdentityRole
  * SPI that links a wallet [IdentifierRef] to the identity book.
  *
  * Implementations may record the ref as an [com.sphereon.data.store.party.model.Identity]
- * with a [com.sphereon.data.store.party.model.CorrelationIdentifier] and return a copy
- * enriched with the resulting [IdentifierRef.correlationId]. The IDK default is a
+ * with a [com.sphereon.data.store.party.model.IdentityIdentifier] and return a copy
+ * enriched with the resulting [IdentifierRef.identityIdentifierId]. The IDK default is a
  * no-op that returns [ref] unchanged; the EDK wires the real identity repository.
  */
 interface WalletIdentityResolver {
     /**
-     * Returns [ref] enriched with a [IdentifierRef.correlationId] linking it to the
+     * Returns [ref] enriched with a [IdentifierRef.identityIdentifierId] linking it to the
      * identity book, or [ref] unchanged if no identity book is available.
      *
      * @param ref the identifier reference to resolve (issuer URL, DID, verifier client_id, etc.)

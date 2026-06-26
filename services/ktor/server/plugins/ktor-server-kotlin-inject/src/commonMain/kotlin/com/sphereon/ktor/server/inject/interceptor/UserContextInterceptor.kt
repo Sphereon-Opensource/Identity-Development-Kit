@@ -23,8 +23,10 @@ import com.sphereon.core.defaults.context.toSecuredDetails
 import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.context.RequestScopedContext
+import com.sphereon.ktor.server.inject.requestContext
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
+import com.sphereon.ktor.server.inject.sessionInstance
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 import io.ktor.util.AttributeKey
@@ -83,7 +85,7 @@ class UserContextInterceptor(
             val tenantInput = tenantResolver.resolve(call)
             val principalInput = principalResolver.resolve(call)
 
-            appLogger.debug("Processing request [tenant=$tenantInput, principal=$principalInput]")
+            appLogger.debug("Processing request [tenant=${tenantInput.tenant}, principal=${principalInput.principal}]")
 
             // Create or get user context (ID-based, no active state)
             val contextInstance =

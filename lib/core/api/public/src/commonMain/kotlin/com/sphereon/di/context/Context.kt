@@ -29,6 +29,15 @@ interface UserContext :
     val id: String
     val secureDetails: SecuredTenantContextDetails?
 
+    /**
+     * Classification of the resolved principal for policy decisions.
+     *
+     * Defaults to [PrincipalType.USER] so that a context that fails to carry
+     * a classification is treated as the least-privileged non-anonymous
+     * caller. Service-restricted commands must check this value explicitly.
+     */
+    val principalType: PrincipalType get() = PrincipalType.USER
+
     // Constants for special context types
     companion object {
         const val BACKGROUND_SERVICE = IdentityConstants.ANONYMOUS_ID + ":" + IdentityConstants.ANONYMOUS_ID + ":background-service"
@@ -100,6 +109,7 @@ object AnonymousContext : UserContext {
     override val principal: Any? = IdentityConstants.ANONYMOUS_PRINCIPAL_ID
     override val secureDetails: SecuredTenantContextDetails?
         get() = null
+    override val principalType: PrincipalType = PrincipalType.ANONYMOUS
 
     override fun toString(): String = "AnonymousUserContext(id='$id', tenant=$tenant, principal=$principal"
 }

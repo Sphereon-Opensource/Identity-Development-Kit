@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.common.serializer
 
+import com.sphereon.core.api.log.Log
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import com.sphereon.openid.oid4vci.common.model.CredentialRequestProofs
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
@@ -33,6 +34,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 internal object CredentialRequestSerializer : KSerializer<CredentialRequest> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("CredentialRequest")
+    private val logger = Log.app().withTag("CredentialRequestSerializer")
 
     private const val KEY_CONFIG_ID = "credential_configuration_id"
     private const val KEY_CREDENTIAL_ID = "credential_identifier"
@@ -95,7 +97,7 @@ internal object CredentialRequestSerializer : KSerializer<CredentialRequest> {
             jsonObject[KEY_PROOFS]?.let {
                 json.decodeFromJsonElement(CredentialRequestProofs.serializer(), it)
             } ?: jsonObject[KEY_PROOF]?.let { proofElement ->
-                println("[WARN] Credential request uses deprecated singular 'proof' field. OID4VCI 1.0+ requires 'proofs' (plural). Upgrading automatically.")
+                logger.warn("Credential request uses deprecated singular 'proof' field. OID4VCI 1.0+ requires 'proofs' (plural). Upgrading automatically.")
                 val proofObj = proofElement.jsonObject
                 val proofType = proofObj["proof_type"]?.jsonPrimitive?.content ?: return@let null
                 val proofValue = proofObj[proofType] ?: return@let null

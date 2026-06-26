@@ -21,6 +21,7 @@ import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.server.authorization.impl.config.DefaultAsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -32,11 +33,9 @@ import dev.zacsweers.metro.createGraphFactory
 
 /**
  * Provides a null-resolving AS signing identifier for native tests.
- * Must live in the test source set because Metro's KSP cannot discover
- * @ContributesTo / @ContributesBinding modules from main klibs during native test compilation,
- * so [DefaultAsServerSigningIdentifierResolver] is not visible here and no `replaces` is needed.
+ * Replaces [DefaultAsServerSigningIdentifierResolver], which would otherwise auto-seed one.
  */
-@ContributesTo(SessionScope::class)
+@ContributesTo(SessionScope::class, replaces = [DefaultAsServerSigningIdentifierResolver::class])
 interface NativeTestOAuth2ServerIdentifierModule {
     @Provides
     @SingleIn(SessionScope::class)

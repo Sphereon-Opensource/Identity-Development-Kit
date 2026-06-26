@@ -32,6 +32,8 @@ import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
+import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.FetchRequestUriArgs
 import com.sphereon.ktor.http.client.FetchRequestUriCommand
@@ -71,8 +73,10 @@ import kotlin.time.Clock
  *   3. Decode the JWS header without trusting it. Refuse `alg=none` (RFC 9101 §6 / RFC 8725 §2.1).
  *   4. Resolve the client by the JWT's `iss` / `client_id` claim (cross-checking against the
  *      front-channel `client_id` hint when the caller supplied one, OIDC Core §6.1).
- *   5. Build the trusted JWKS from the client's inline `jwks` (the JWKS-URI fetch path is a
- *      flagged follow-up at this layer) and call [VerifyJwsCommand] in pinned-JWKS mode.
+ *   5. Select the verification key by precedence: the client's inline `jwks` (pinned-JWKS mode,
+ *      resolvers disabled) when present, otherwise resolve the client's registered https
+ *      `jwks_uri` (kid-pinned) via [VerifyJwsCommand]'s identifier-resolution path; fail closed
+ *      when neither is configured.
  *   6. Validate `typ`, `aud`, `iss`, `exp`, `iat` per RFC 9101 §10.
  *   7. Strip JWT-only claims and merge the JAR claims onto the front-channel parameters per
  *      RFC 9101 §6.1 (signed claims win).
@@ -245,23 +249,58 @@ class VerifyRequestObjectCommandImpl(
             )
         }
 
-        val trustedJwks =
-            buildTrustedJwks(client)
-                ?: return Err(
-                    AuthorizationServerError.InvalidRequestObject(
-                        details =
-                            "Client '$resolvedClientId' has no inline 'jwks' configured for JAR verification " +
-                                "(jwks_uri fetch is not yet implemented at this layer)",
-                    ),
-                )
+        // Select the verification key source by STRICT precedence:
+        //  1. inline `jwks` present -> pinned mode (resolvers disabled; inline always wins);
+        //  2. else registered `jwks_uri` -> resolve via the identifier-resolution system, kid-pinned;
+        //  3. else -> fail closed.
+        // The two paths are mutually exclusive (exactly one of trustedJwks/identifier is passed):
+        // VerifyJwsCommand only consults resolvers when trustedJwks is null.
+        val inlineJwks = buildTrustedJwks(client)
+        val verifyArgs =
+            when {
+                inlineJwks != null -> {
+                    VerifyJwsArgs(jws = JwsCompact(signedJwt), trustedJwks = inlineJwks)
+                }
 
-        val verify =
-            verifyJwsCommand.execute(
-                VerifyJwsArgs(
-                    jws = JwsCompact(signedJwt),
-                    trustedJwks = trustedJwks,
-                ),
-            )
+                !client.jwksUri.isNullOrBlank() -> {
+                    // SSRF / scheme-downgrade guard: only an https jwks_uri may be resolved.
+                    if (!client.jwksUri!!.startsWith("https://", ignoreCase = true)) {
+                        return Err(
+                            AuthorizationServerError.InvalidRequestObject(
+                                details = "Client '$resolvedClientId' jwks_uri must be https for JAR verification",
+                            ),
+                        )
+                    }
+                    // Require an explicit `kid` so the resolver binds to exactly that key rather than
+                    // its kid-absent first()-pick, keeping the jwks_uri path as strict as pinned mode.
+                    val headerKid = header["kid"]?.jsonPrimitive?.content
+                    if (headerKid.isNullOrBlank()) {
+                        return Err(
+                            AuthorizationServerError.InvalidRequestObject(
+                                details = "JAR header must carry 'kid' to select a key from the client's jwks_uri",
+                            ),
+                        )
+                    }
+                    VerifyJwsArgs(
+                        jws = JwsCompact(signedJwt),
+                        identifier =
+                            ExternalIdentifierJwksUrlOpts(
+                                identifier = client.jwksUri!!,
+                                lookup = AdditionalIdentifierLookup(kid = headerKid),
+                            ),
+                    )
+                }
+
+                else -> {
+                    return Err(
+                        AuthorizationServerError.InvalidRequestObject(
+                            details = "Client '$resolvedClientId' has no 'jwks' or 'jwks_uri' configured for JAR verification",
+                        ),
+                    )
+                }
+            }
+
+        val verify = verifyJwsCommand.execute(verifyArgs)
         if (verify.isErr) {
             return Err(
                 AuthorizationServerError.InvalidRequestObject(

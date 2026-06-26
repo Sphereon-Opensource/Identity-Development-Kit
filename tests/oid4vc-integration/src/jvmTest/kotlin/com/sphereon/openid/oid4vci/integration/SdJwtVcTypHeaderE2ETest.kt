@@ -102,7 +102,7 @@ class SdJwtVcTypHeaderE2ETest {
                 credentialConfiguration =
                     CredentialConfigurationSupported(
                         format = format,
-                        vct = "https://issuer.example.com/oid4vci/vct/TestCredential",
+                        vct = "https://issuer.example.com/public/schema/vct/TestCredential",
                     ),
                 holderBindingKey = holderJwk,
                 holderIdentifier = null,

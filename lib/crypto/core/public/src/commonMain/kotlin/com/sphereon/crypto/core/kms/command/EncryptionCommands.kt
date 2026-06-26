@@ -49,7 +49,7 @@ data class
 EncryptArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
         val plaintext: ByteArray = byteArrayOf(),
         val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
@@ -181,7 +181,7 @@ data class
 DecryptArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
         val ciphertext: ByteArray = byteArrayOf(),
         val algorithm: ContentEncryptionAlgorithm = ContentEncryptionAlgorithm.A256GCM,
@@ -301,7 +301,7 @@ data class
 WrapKeyArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val wrappingKeyInfo: KeyInfoType<*>? = null,
         val keyToWrap: ByteArray = byteArrayOf(),
         val algorithm: KeyWrapAlgorithm = KeyWrapAlgorithm.A256KW,
@@ -399,7 +399,7 @@ data class
 UnwrapKeyArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val unwrappingKeyInfo: KeyInfoType<*>? = null,
         val wrappedKey: ByteArray = byteArrayOf(),
         val algorithm: KeyWrapAlgorithm = KeyWrapAlgorithm.A256KW,
@@ -498,9 +498,9 @@ data class
 PerformKeyAgreementArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val privateKeyInfo: KeyInfoType<*>? = null,
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val publicKeyInfo: KeyInfoType<*>? = null,
         val algorithm: KeyAgreementAlgorithm = KeyAgreementAlgorithm.ECDH_ES,
         val keyDataLen: Int? = null,

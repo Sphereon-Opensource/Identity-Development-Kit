@@ -29,20 +29,20 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
- * X.509 certificate identifier, extending [CorrelationIdentifier] with certificate-specific data.
+ * X.509 certificate identifier, extending [IdentityIdentifier] with certificate-specific data.
  *
  * This uses composition to include all base identifier fields plus X.509-specific extensions.
- * The [identifierType] of the embedded [correlationIdentifier] should be [IdentifierType.X509].
+ * The [identifierType] of the embedded [identityIdentifier] should be [IdentifierType.X509].
  *
  * Usage:
  * ```kotlin
  * val x509Id = IdentifierX509(
- *     correlationIdentifier = CorrelationIdentifier(
- *         correlationId = Uuid.random(),
+ *     identityIdentifier = IdentityIdentifier(
+ *         identityIdentifierId = Uuid.random(),
  *         identityId = identityUuid,
  *         tenantId = tenantUuid,
  *         identifierType = IdentifierType.X509,
- *         value = "CN=...",
+ *         lookupValue = "CN=...",
  *         validFrom = Clock.System.now(),
  *         createdAt = Clock.System.now(),
  *         updatedAt = Clock.System.now()
@@ -52,9 +52,9 @@ import kotlin.uuid.Uuid
  *     serialNumber = "123456"
  * )
  *
- * // Access base fields via correlationIdentifier
- * val id = x509Id.id // Delegates to correlationIdentifier.id
- * val value = x509Id.correlationIdentifier.value
+ * // Access base fields via identityIdentifier
+ * val id = x509Id.id // Delegates to identityIdentifier.id
+ * val lookupValue = x509Id.identityIdentifier.lookupValue
  * ```
  */
 @JsExportCompat
@@ -62,9 +62,9 @@ import kotlin.uuid.Uuid
 data class IdentifierX509
     @JvmOverloads
     constructor(
-        /** The base correlation identifier containing common fields */
-        @SerialName("correlationIdentifier")
-        val correlationIdentifier: CorrelationIdentifier,
+        /** The base identity identifier containing common fields */
+        @SerialName("identityIdentifier")
+        val identityIdentifier: IdentityIdentifier,
         /** Distinguished Name of the certificate issuer */
         @SerialName("issuerDn")
         val issuerDn: String? = null,
@@ -84,18 +84,18 @@ data class IdentifierX509
         @SerialName("notAfter")
         val notAfter: Instant? = null,
     ) : HasId {
-        /** Delegates to the embedded correlation identifier's ID */
-        override val id: String get() = correlationIdentifier.id
+        /** Delegates to the embedded identity identifier's ID */
+        override val id: String get() = identityIdentifier.id
 
-        /** The correlation identifier's UUID */
-        val correlationId: Uuid get() = correlationIdentifier.correlationId
+        /** The identity identifier's UUID */
+        val identityIdentifierId: Uuid get() = identityIdentifier.identityIdentifierId
 
         /** Convenience accessor for the identity this identifier belongs to */
-        val identityId: Uuid get() = correlationIdentifier.identityId
+        val identityId: Uuid get() = identityIdentifier.identityId
 
         /** Convenience accessor for the tenant */
-        val tenantId: String get() = correlationIdentifier.tenantId
+        val tenantId: String get() = identityIdentifier.tenantId
 
-        /** Convenience accessor for the identifier value (typically subject DN or fingerprint) */
-        val value: String get() = correlationIdentifier.value
+        /** Convenience accessor for the stored lookup token. */
+        val lookupValue: String get() = identityIdentifier.lookupValue
     }

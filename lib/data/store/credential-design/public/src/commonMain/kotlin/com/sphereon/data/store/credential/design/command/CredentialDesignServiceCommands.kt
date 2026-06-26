@@ -388,3 +388,12 @@ interface GetDesignAssetServiceCommand : ServiceCommand<GetDesignAssetArgs, Reso
         const val COMMAND_ID = "credential-design.assets.get"
     }
 }
+
+@JsExportCompat
+interface GetDesignAssetByHashServiceCommand : ServiceCommand<GetDesignAssetByHashArgs, ResolvedDesignAsset, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "credential-design.assets.get-by-hash"
+    }
+}

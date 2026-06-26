@@ -23,7 +23,10 @@ class CssTokenMapperTest {
     @Test
     fun tokenKeyToCssVarConvertsDots() {
         assertEquals("--color-primary", CssTokenMapper.tokenKeyToCssVar("color.primary"))
-        assertEquals("--typography-displayLarge-fontSize", CssTokenMapper.tokenKeyToCssVar("typography.displayLarge.fontSize"))
+        assertEquals("--color-on-surface", CssTokenMapper.tokenKeyToCssVar("color.onSurface"))
+        assertEquals("--typography-display-large-font-size", CssTokenMapper.tokenKeyToCssVar("typography.displayLarge.fontSize"))
+        assertEquals("--comp-card-border-hover", CssTokenMapper.tokenKeyToCssVar("comp.card.borderHover"))
+        assertEquals("--comp-card-border-width", CssTokenMapper.tokenKeyToCssVar("comp.card.borderWidth"))
     }
 
     @Test
@@ -44,7 +47,7 @@ class CssTokenMapperTest {
             )
         val result = CssTokenMapper.tokensToCssVars(tokens)
         assertEquals("#6750A4", result["--color-primary"])
-        assertEquals("16px", result["--typography-bodyLarge-fontSize"])
+        assertEquals("16px", result["--typography-body-large-font-size"])
     }
 
     @Test

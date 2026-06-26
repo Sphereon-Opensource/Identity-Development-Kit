@@ -74,6 +74,10 @@ interface StatusListDriver {
     /** Returns null when no entry matches [ref]. */
     suspend fun getEntry(ref: EntryRef): IdkResult<StatusListEntry?, IdkError>
 
-    /** The signed, hostable token reflecting the current bit state; null when [ref] is unknown. */
+    /**
+     * The stored, signed, hostable token projection reflecting the last persisted bit state; null
+     * when [ref] is unknown. Implementations refresh this projection during create/status mutation
+     * paths and must not re-sign on read, because public hosting reads can be anonymous.
+     */
     suspend fun getStatusListToken(ref: StatusListRef): IdkResult<StatusListToken?, IdkError>
 }

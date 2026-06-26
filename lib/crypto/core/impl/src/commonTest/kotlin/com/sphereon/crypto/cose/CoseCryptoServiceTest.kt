@@ -20,6 +20,7 @@ package com.sphereon.crypto.cose
 import com.sphereon.crypto.core.CoseCryptoServiceImpl
 import com.sphereon.crypto.core.DefaultCallbacks
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -30,6 +31,11 @@ import kotlin.test.assertTrue
  * Tests for CoseCryptoService implementation.
  */
 class CoseCryptoServiceTest {
+    @AfterTest
+    fun tearDown() {
+        DefaultCallbacks.setCoseCryptoDefault(null)
+    }
+
     @Test
     fun serviceShouldBeEnabledByDefault() {
         val service = CoseCryptoServiceImpl()
@@ -384,6 +390,30 @@ class CoseCryptoServiceTest {
         DefaultCallbacks.setCoseCryptoDefault(null)
     }
 
+    @Test
+    fun explicitPlatformCallbackShouldWinOverGlobalDefault() {
+        val globalDefault = mockCallback(byteArrayOf(1))
+        val explicitCallback = mockCallback(byteArrayOf(2))
+        DefaultCallbacks.setCoseCryptoDefault(globalDefault)
+
+        val service = CoseCryptoServiceImpl(platformCallback = explicitCallback)
+
+        assertEquals(explicitCallback, service.platform(), "Explicit platform callback must not be replaced by the global default")
+    }
+
+    @Test
+    fun platformShouldNotCacheGlobalDefaultAsExplicitPlatform() {
+        val firstDefault = mockCallback(byteArrayOf(1))
+        val secondDefault = mockCallback(byteArrayOf(2))
+        val service = CoseCryptoServiceImpl()
+
+        DefaultCallbacks.setCoseCryptoDefault(firstDefault)
+        assertEquals(firstDefault, service.platform(), "First platform() call should use the current global default")
+
+        DefaultCallbacks.setCoseCryptoDefault(secondDefault)
+        assertEquals(secondDefault, service.platform(), "Global fallback must not be copied into service-local session state")
+    }
+
     // =========== Sign1/Verify1 with disabled service tests ===========
 
     @Test
@@ -461,5 +491,29 @@ class CoseCryptoServiceTest {
                     requireX5Chain = false,
                 )
             }
+        }
+
+    private fun mockCallback(signature: ByteArray): com.sphereon.crypto.core.CoseCryptoCallbackCoroutines =
+        object : com.sphereon.crypto.core.CoseCryptoCallbackCoroutines {
+            override suspend fun sign(
+                input: com.sphereon.crypto.core.cose.ToBeSignedCbor,
+                requireX5Chain: Boolean?,
+            ): ByteArray = signature
+
+            override suspend fun verify1(
+                input: com.sphereon.crypto.core.cose.CoseSign1<*>,
+                keyInfo: com.sphereon.crypto.core.KeyInfoType<*>?,
+                requireX5Chain: Boolean?,
+            ): com.sphereon.crypto.core.generic.VerifySignatureResultType<com.sphereon.crypto.core.cose.CoseKeyType> = throw NotImplementedError()
+
+            override suspend fun mac0(
+                input: com.sphereon.crypto.core.cose.CoseMac0InputCbor,
+                sharedSecret: ByteArray,
+                alg: com.sphereon.crypto.core.generic.SignatureAlgorithm,
+            ): com.sphereon.crypto.core.CoseMac0Result = throw NotImplementedError()
+
+            override suspend fun <KeyType : com.sphereon.crypto.core.KeyType> resolvePublicKey(
+                keyInfo: com.sphereon.crypto.core.KeyInfoType<KeyType>,
+            ): com.sphereon.crypto.core.ResolvedKeyInfoType<KeyType> = throw NotImplementedError()
         }
 }

@@ -783,6 +783,7 @@ class DeactivateDidServiceCommandImpl(
 @ContributesBinding(SessionScope::class, binding = binding<ResolveDidServiceCommand>())
 class ResolveDidServiceCommandImpl(
     execution: SessionExecution,
+    private val didManager: DidManager,
     private val resolverRegistry: DidResolverRegistry,
 ) : TypedServiceCommandAdapter<ResolveDidInput, DidResolutionResult, IdkError>(
         commandId = ResolveDidServiceCommand.COMMAND_ID,
@@ -798,6 +799,15 @@ class ResolveDidServiceCommandImpl(
         applyDuring: (ResolveDidInput) -> ResolveDidInput,
     ): IdkResult<DidResolutionResult, IdkError> {
         val input = applyDuring(args)
+        val managed = didManager.get(input.did)
+        if (managed.isOk) {
+            val document = managed.value.document ?: return Ok(DidResolutionResult.notFound(input.did))
+            return Ok(DidResolutionResult.success(document))
+        }
+        if (managed.error.code != "NOT_FOUND_ERROR") {
+            return Err(managed.error)
+        }
+
         val options = DidResolutionOptions(accept = input.accept)
         return resolverRegistry.resolve(input.did, options)
     }

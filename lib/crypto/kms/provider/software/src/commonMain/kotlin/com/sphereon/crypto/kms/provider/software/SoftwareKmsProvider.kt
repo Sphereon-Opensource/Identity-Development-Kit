@@ -77,6 +77,7 @@ import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.HasKeyStoreService
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyStorageType
+import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KeyStoreManager
 import com.sphereon.crypto.core.kms.KeyStoreService
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
@@ -95,6 +96,8 @@ import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.core.x509.CertificateCreationUtils
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreConfigType
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreService
+import com.sphereon.crypto.kms.keystore.software.JksKeyStoreConfig
+import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
 import dev.whyoleg.cryptography.BinarySize.Companion.bits
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.CryptographyProviderApi
@@ -148,13 +151,13 @@ class SoftwareKmsProviderImpl(
     override val order = config.order
     override val enabled = config.enabled
     private var privateKeyStore: KeyStoreService? =
-        this.config.keyStore?.let {
+        this.config.keyStore?.withProviderScopedFileId(config.id)?.let {
             log.debug("KeyStore config type: ${it::class.simpleName}, keyStoreType: ${it.keyStoreType}, keyStoreManager: ${keyStoreManager != null}")
             keyStoreManager?.createFromKeyStoreConfig(config = it, execution = execution) ?: run {
-                require(this.config.keyStore is MemoryKeyStoreConfigType) {
+                require(it is MemoryKeyStoreConfigType) {
                     "A key store manager is required when key store configuration is supplied and not of type MemoryKeyStoreConfig. Config: $config"
                 }
-                MemoryKeyStoreService(this.config.keyStore!!)
+                MemoryKeyStoreService(it)
             }
         }
 
@@ -653,11 +656,20 @@ class SoftwareKmsProviderImpl(
             }
         if (certOpts != null && keyInfo.x5c == null) {
             // Create a self-signed certificate if no cert chain is provided and the option is enabled
-            val (subjectKeyInfo, subject, issuerKeyInfo, issuer, serialNumber, notBefore, notAfter) = certOpts
             val certResult =
-                CertificateCreationUtils.createCertificate(issuerKeyInfo, issuer, subjectKeyInfo, subject, serialNumber, notBefore, notAfter, {
-                    this.createRawSignature(keyInfo = keyInfo, input = it, requireX5Chain = false)
-                })
+                CertificateCreationUtils.createCertificate(
+                    issuerKeyInfo = certOpts.issuerKeyInfo,
+                    issuer = certOpts.issuer,
+                    subjectKeyInfo = certOpts.subjectKeyInfo,
+                    subject = certOpts.subject,
+                    serialNumber = certOpts.serialNumber,
+                    extensions = certOpts.extensions,
+                    notBefore = certOpts.notBefore,
+                    notAfter = certOpts.notAfter,
+                    signatureFunction = {
+                        this.createRawSignature(keyInfo = keyInfo, input = it, requireX5Chain = false)
+                    },
+                )
             // Let's populate the certchain and also update the keyInfo with the cert chain
             certChain = arrayOf(certResult.certificate)
             keyInfo = certResult.certificate.amendJwkKeyInfo(keyInfo)
@@ -1034,11 +1046,17 @@ class SoftwareKmsProviderImpl(
         // key with a thumbprint kid won't match an alias passed as kid, and
         // vice-versa. Forward the original `KeyInfo` so the keystore performs
         // the lookup against the same field the caller populated.
+        //
+        // Request PRIVATE visibility explicitly: every KMS operation that resolves through here
+        // (sign, decrypt, unwrapKey, performKeyAgreement) needs the private key material. KeyInfo's
+        // keyVisibility defaults to PUBLIC, which makes the keystore strip the private `d`/`k`
+        // component and hand back a public-only key — the license JWE unwrap then fails because the
+        // recipient key has no private scalar. Pinning PRIVATE here exports the private material.
         val lookup =
             when {
-                keyInfo.alias != null -> KeyInfo<Jwk>(alias = keyInfo.alias)
+                keyInfo.alias != null -> KeyInfo<Jwk>(alias = keyInfo.alias, keyVisibility = KeyVisibility.PRIVATE)
 
-                keyInfo.kid != null -> KeyInfo<Jwk>(kid = keyInfo.kid)
+                keyInfo.kid != null -> KeyInfo<Jwk>(kid = keyInfo.kid, keyVisibility = KeyVisibility.PRIVATE)
 
                 else -> throw IllegalArgumentException(
                     "KeyInfo has no key material and no alias/kid to resolve from keystore",
@@ -1140,7 +1158,15 @@ class SoftwareKmsProviderImpl(
     }
 
     private suspend fun resolveHmacKeyBytes(keyId: String): ByteArray {
-        val managedKey = keyStore.getKey(KeyInfo<Jwk>(kid = keyId))
+        val managedKey =
+            runCatching { keyStore.getKey(KeyInfo<Jwk>(alias = keyId)) }
+                .getOrElse { aliasFailure ->
+                    runCatching { keyStore.getKey(KeyInfo<Jwk>(kid = keyId)) }
+                        .getOrElse { kidFailure ->
+                            kidFailure.addSuppressed(aliasFailure)
+                            throw kidFailure
+                        }
+                }
         val jwk =
             managedKey.key as? JwkType
                 ?: throw IllegalArgumentException("Key '$keyId' cannot be resolved as JWK")
@@ -1206,3 +1232,10 @@ class SoftwareKmsProviderImpl(
 
     override fun keyVisibility(): KeyVisibility = keyStore.keyVisibility()
 }
+
+internal fun KeyStoreConfig.withProviderScopedFileId(providerId: String): KeyStoreConfig =
+    when (this) {
+        is Pkcs12KeyStoreConfig -> copy(id = providerId)
+        is JksKeyStoreConfig -> copy(id = providerId)
+        else -> this
+    }

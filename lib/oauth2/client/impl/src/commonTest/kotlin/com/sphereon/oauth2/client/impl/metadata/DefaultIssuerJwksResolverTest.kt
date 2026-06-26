@@ -21,16 +21,24 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.cache.CacheManager
-import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.core.jose.JwkType
+import com.sphereon.crypto.resolution.IIdentifierMethod
+import com.sphereon.crypto.resolution.IdentifierMethodDefaults
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
+import com.sphereon.crypto.resolution.extern.JwksUrlExternalIdentifierResolutionService
 import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
-import com.sphereon.oauth2.client.command.FetchJwksArgs
-import com.sphereon.oauth2.client.command.FetchJwksCommand
 import com.sphereon.oauth2.client.command.FetchServerMetadataArgs
 import com.sphereon.oauth2.client.testutil.createOAuth2ClientTestAppGraph
 import com.sphereon.oauth2.common.error.MetadataError
@@ -56,8 +64,8 @@ class DefaultIssuerJwksResolverTest {
 
     private fun newResolver(
         metadata: CountingFetchMetadata,
-        jwks: CountingFetchJwks,
-    ): DefaultIssuerJwksResolver = DefaultIssuerJwksResolver(metadata, jwks, cacheManager)
+        jwksResolver: CountingJwksResolver,
+    ): DefaultIssuerJwksResolver = DefaultIssuerJwksResolver(metadata, jwksResolver, cacheManager)
 
     private val sampleJwks =
         JwkSet(
@@ -98,26 +106,55 @@ class DefaultIssuerJwksResolverTest {
         }
     }
 
-    private inner class CountingFetchJwks(
+    /**
+     * Hand-written concrete double for the IDK identifier-resolution service the production
+     * resolver now delegates JWKS fetching to. (mockk is JVM-only and unusable in commonTest,
+     * so this is a real implementation of every [JwksUrlExternalIdentifierResolutionService]
+     * member.) [respond] yields the raw [JwkSet] (or error) for a given `jwks_uri`; [resolve]
+     * bridges that to an [ExternalIdentifierResult.JwksUrl] the same way the production impl
+     * (JwksUrlExternalIdentifierResolutionServiceImpl) does.
+     */
+    private class CountingJwksResolver(
         private val respond: (String) -> IdkResult<JwkSet, IdkError>,
-    ) : TypedServiceCommandAdapter<FetchJwksArgs, JwkSet, IdkError>(
-            commandId = FetchJwksCommand.COMMAND_ID,
-            execution = execution,
-            inputTypeToken = typeToken<FetchJwksArgs>(),
-            outputTypeToken = typeToken<JwkSet>(),
-        ),
-        FetchJwksCommand {
+    ) : JwksUrlExternalIdentifierResolutionService {
         var calls = 0
-        override val commandId: String get() = FetchJwksCommand.COMMAND_ID
 
-        override suspend fun supports(args: Any): Boolean = args is FetchJwksArgs
+        override val supportedIdentifierMethods: List<IIdentifierMethod> = listOf(IdentifierMethodDefaults.JWKS_URL)
 
-        override suspend fun doExecute(
-            args: FetchJwksArgs,
-            applyDuring: (FetchJwksArgs) -> FetchJwksArgs,
-        ): IdkResult<JwkSet, IdkError> {
+        override suspend fun isSupportedIdentifier(identifier: Any): Boolean =
+            identifier is String &&
+                (identifier.startsWith("https://", ignoreCase = true) || identifier.startsWith("http://", ignoreCase = true)) &&
+                identifier.contains("://")
+
+        override suspend fun isSupportedIdentifierMethod(identifierMethod: IIdentifierMethod): Boolean = identifierMethod == IdentifierMethodDefaults.JWKS_URL
+
+        override suspend fun isSupportedOpts(opts: ExternalIdentifierOptsOrResult): Boolean = opts is ExternalIdentifierJwksUrlOpts
+
+        override suspend fun asSupportedOpts(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierOpts, IdkErrorType> =
+            if (opts is ExternalIdentifierJwksUrlOpts) {
+                Ok(opts)
+            } else {
+                Err(IdkError.COMMAND_ARG_NOT_SUPPORTED_ERROR())
+            }
+
+        @Suppress("UNCHECKED_CAST")
+        override suspend fun resolve(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierResult.JwksUrl, IdkErrorType> {
             calls += 1
-            return respond(args.jwksUri)
+            val jwksOpts = opts as ExternalIdentifierJwksUrlOpts
+            val jwkSet = respond(jwksOpts.identifier).getOrElse { return Err(it) }
+            val resolvedKeys =
+                jwkSet.keys
+                    .map { ResolvedKeyInfo.fromKey(it) as ResolvedKeyInfoType<JwkType> }
+                    .toTypedArray()
+            return Ok(
+                ExternalIdentifierResult.JwksUrl(
+                    identifierOpts = jwksOpts,
+                    jwks = resolvedKeys,
+                    keyInfo = resolvedKeys.first(),
+                    jwksUrl = jwksOpts.identifier,
+                    selectedKid = jwksOpts.lookup.kid,
+                ),
+            )
         }
     }
 
@@ -125,8 +162,8 @@ class DefaultIssuerJwksResolverTest {
     fun resolve_fetchesMetadataThenJwks() =
         runTest {
             val metadata = CountingFetchMetadata { Ok(sampleMetadata) }
-            val jwks = CountingFetchJwks { Ok(sampleJwks) }
-            val resolver = newResolver(metadata, jwks)
+            val jwksResolver = CountingJwksResolver { Ok(sampleJwks) }
+            val resolver = newResolver(metadata, jwksResolver)
             resolver.invalidate(sampleMetadata.issuer)
 
             val result = resolver.resolve(sampleMetadata.issuer)
@@ -134,15 +171,15 @@ class DefaultIssuerJwksResolverTest {
             assertTrue(result.isOk)
             assertEquals(sampleJwks, result.value)
             assertEquals(1, metadata.calls)
-            assertEquals(1, jwks.calls)
+            assertEquals(1, jwksResolver.calls)
         }
 
     @Test
     fun resolve_cachedWithinTtl_noRefetch() =
         runTest {
             val metadata = CountingFetchMetadata { Ok(sampleMetadata) }
-            val jwks = CountingFetchJwks { Ok(sampleJwks) }
-            val resolver = newResolver(metadata, jwks)
+            val jwksResolver = CountingJwksResolver { Ok(sampleJwks) }
+            val resolver = newResolver(metadata, jwksResolver)
             resolver.invalidate(sampleMetadata.issuer)
 
             resolver.resolve(sampleMetadata.issuer)
@@ -150,15 +187,15 @@ class DefaultIssuerJwksResolverTest {
             resolver.resolve(sampleMetadata.issuer)
 
             assertEquals(1, metadata.calls, "metadata fetched once")
-            assertEquals(1, jwks.calls, "jwks fetched once")
+            assertEquals(1, jwksResolver.calls, "jwks fetched once")
         }
 
     @Test
     fun resolve_invalidateForcesRefetch() =
         runTest {
             val metadata = CountingFetchMetadata { Ok(sampleMetadata) }
-            val jwks = CountingFetchJwks { Ok(sampleJwks) }
-            val resolver = newResolver(metadata, jwks)
+            val jwksResolver = CountingJwksResolver { Ok(sampleJwks) }
+            val resolver = newResolver(metadata, jwksResolver)
             resolver.invalidate(sampleMetadata.issuer)
 
             resolver.resolve(sampleMetadata.issuer)
@@ -166,7 +203,7 @@ class DefaultIssuerJwksResolverTest {
             resolver.resolve(sampleMetadata.issuer)
 
             assertEquals(2, metadata.calls)
-            assertEquals(2, jwks.calls)
+            assertEquals(2, jwksResolver.calls)
         }
 
     @Test
@@ -174,15 +211,15 @@ class DefaultIssuerJwksResolverTest {
         runTest {
             val insecureMetadata = sampleMetadata.copy(jwksUri = "http://not-secure.example.com/jwks")
             val metadata = CountingFetchMetadata { Ok(insecureMetadata) }
-            val jwks = CountingFetchJwks { Ok(sampleJwks) }
-            val resolver = newResolver(metadata, jwks)
+            val jwksResolver = CountingJwksResolver { Ok(sampleJwks) }
+            val resolver = newResolver(metadata, jwksResolver)
             resolver.invalidate(sampleMetadata.issuer)
 
             val result = resolver.resolve(insecureMetadata.issuer)
 
             assertTrue(result.isErr)
             assertTrue(result.error is MetadataError.InvalidUrl, "expected InvalidUrl, got ${result.error}")
-            assertEquals(0, jwks.calls, "must not fetch insecure JWKS URI")
+            assertEquals(0, jwksResolver.calls, "must not fetch insecure JWKS URI")
         }
 
     @Test
@@ -190,8 +227,8 @@ class DefaultIssuerJwksResolverTest {
         runTest {
             val noJwks = sampleMetadata.copy(jwksUri = null)
             val metadata = CountingFetchMetadata { Ok(noJwks) }
-            val jwks = CountingFetchJwks { Ok(sampleJwks) }
-            val resolver = newResolver(metadata, jwks)
+            val jwksResolver = CountingJwksResolver { Ok(sampleJwks) }
+            val resolver = newResolver(metadata, jwksResolver)
             resolver.invalidate(sampleMetadata.issuer)
 
             val result = resolver.resolve(noJwks.issuer)
@@ -212,13 +249,13 @@ class DefaultIssuerJwksResolverTest {
                         ),
                     )
                 }
-            val jwks = CountingFetchJwks { Ok(sampleJwks) }
-            val resolver = newResolver(metadata, jwks)
+            val jwksResolver = CountingJwksResolver { Ok(sampleJwks) }
+            val resolver = newResolver(metadata, jwksResolver)
             resolver.invalidate(sampleMetadata.issuer)
 
             val result = resolver.resolve(sampleMetadata.issuer)
 
             assertTrue(result.isErr)
-            assertEquals(0, jwks.calls)
+            assertEquals(0, jwksResolver.calls)
         }
 }

@@ -41,6 +41,35 @@ import com.sphereon.statuslist.StatusListBinding
 interface Oid4vciIssuerConfigProvider {
     val issuerIdentifier: String
 
+    /**
+     * Optional protocol version configured for this issuer. If not configured, the issuer defaults
+     * to OID4VCI 1.0. The version drives derived format shapes, including the SD-JWT VC type
+     * metadata draft paired with that OID4VCI version.
+     */
+    val oid4vciSpecVersion: Oid4vciSpecVersion
+        get() = Oid4vciSpecVersion.V1_0
+
+    /**
+     * Resolved protocol profile that controls wire shapes derived by this issuer.
+     *
+     * OID4VCI 1.0 Final normatively references SD-JWT VC draft-ietf-oauth-sd-jwt-vc-11,
+     * so VCT metadata produced under the default profile uses that draft's `lang` fields,
+     * `claims[].sd`, and simple rendering shape. New OID4VCI / SD-JWT VC revisions must be
+     * added as explicit profiles before changing emitted metadata.
+     */
+    val specProfile: Oid4vciIssuerSpecProfile
+        get() = Oid4vciIssuerSpecProfile.forVersion(oid4vciSpecVersion)
+
+    /**
+     * Hook called by the metadata endpoint (and any other read-path that needs a fully-built
+     * view) **before** reading [credentialConfigurations]. The default is a no-op so existing
+     * providers that never needed a build step require no change. Providers that build their
+     * configuration lazily (e.g. [HybridOid4vciIssuerConfigProvider]) override this to trigger
+     * the build exactly once per session.
+     */
+    @JsExportIgnoreCompat
+    suspend fun prepare() {}
+
     @JsExportIgnoreCompat
     val credentialConfigurations: Map<String, CredentialConfigurationSupported>
     val authorizationServers: List<String>?
@@ -209,6 +238,45 @@ interface Oid4vciIssuerConfigProvider {
      */
     val issuanceClockSkewInSeconds: Long
         get() = 60L
+}
+
+@JsExportCompat
+enum class Oid4vciSpecVersion(
+    val value: String,
+) {
+    V1_0("1.0");
+
+    companion object {
+        fun parse(value: String?): Oid4vciSpecVersion =
+            when (value?.trim()?.lowercase()) {
+                null, "", "1", "1.0", "v1.0", "oid4vci-1.0" -> V1_0
+                else -> throw IllegalArgumentException("Unsupported OID4VCI issuer spec version '$value'")
+            }
+    }
+}
+
+@JsExportCompat
+enum class Oid4vciIssuerSpecProfile(
+    val version: Oid4vciSpecVersion,
+    val oid4vciSpec: String,
+    val sdJwtVcSpec: SdJwtVcSpecProfile,
+) {
+    OID4VCI_1_0_FINAL(
+        version = Oid4vciSpecVersion.V1_0,
+        oid4vciSpec = "openid-4-verifiable-credential-issuance-1_0-final",
+        sdJwtVcSpec = SdJwtVcSpecProfile.DRAFT_11,
+    );
+
+    companion object {
+        fun forVersion(version: Oid4vciSpecVersion): Oid4vciIssuerSpecProfile = entries.single { it.version == version }
+    }
+}
+
+@JsExportCompat
+enum class SdJwtVcSpecProfile(
+    val draft: String,
+) {
+    DRAFT_11("draft-ietf-oauth-sd-jwt-vc-11"),
 }
 
 /**

@@ -78,10 +78,19 @@ class DefaultHttpAdapterDispatcherTest {
 
     private fun createCatalog(providers: Set<HttpAdapterDescriptorProvider>): HttpAdapterCatalog = DefaultHttpAdapterCatalog(providers, com.sphereon.core.api.http.config.UniversalHttpConfig.DEFAULT)
 
+    /**
+     * Mirrors production DI: the dispatcher's parity guard compares the runtime adapter id set
+     * against the RAW descriptor-provider id set. The helper derives that provider set from the
+     * catalog so the happy-path tests (paired adapter + descriptor) construct cleanly. Tests that
+     * exercise the parity / collision guards pass explicit, deliberately-mismatched sets.
+     */
+    private fun providersFromCatalog(catalog: HttpAdapterCatalog): Set<HttpAdapterDescriptorProvider> = catalog.describeAll().map { TestDescriptorProvider(it.id, it.mount, it.endpoints) }.toSet()
+
     private fun createDispatcher(
         catalog: HttpAdapterCatalog,
         adapters: Set<HttpAdapter>,
-    ): DefaultHttpAdapterDispatcher = DefaultHttpAdapterDispatcher(catalog, adapters)
+        descriptorProviders: Set<HttpAdapterDescriptorProvider> = providersFromCatalog(catalog),
+    ): DefaultHttpAdapterDispatcher = DefaultHttpAdapterDispatcher(catalog, adapters, descriptorProviders)
 
     // ========== Path normalization tests (TenantPathMode.OFF) ==========
 
@@ -712,9 +721,11 @@ class DefaultHttpAdapterDispatcherTest {
         }
 
     @Test
-    fun dispatchReturns500WhenAmbiguousMatch() =
+    fun dispatchReturns500WhenEndpointsCollide() =
         runTest {
-            // Two adapters with identical mounts and endpoints
+            // Two adapters with identical mounts and endpoints — an ambiguous route. The
+            // fail-fast collision guard rejects this at construction instead of returning a
+            // runtime 500 only when the colliding route is hit.
             val adapter1 =
                 TestAdapter(
                     id = "ADAPTER_A",
@@ -736,18 +747,20 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(providers)
-            val dispatcher = createDispatcher(catalog, setOf(adapter1, adapter2))
 
+            val dispatcher = createDispatcher(catalog, setOf(adapter1, adapter2))
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/items"))
 
             assertEquals(500, response.statusCode)
-            assertTrue(response.body?.contains("Ambiguous") == true)
+            assertTrue(response.body?.contains("Ambiguous adapter match") == true, "unexpected body: ${response.body}")
         }
 
     @Test
-    fun dispatchReturns500WhenNoRuntimeAdapterForMatchedDescriptor() =
+    fun dispatchReturns404WhenDescriptorHasNoRuntimeAdapter() =
         runTest {
-            // Catalog has a descriptor but no runtime adapter with that ID
+            // Catalog has a descriptor but no runtime adapter with that id. The descriptor
+            // advertises a route nothing can serve, so dispatch hides the wiring detail behind
+            // the same 404 shape as any other unserved route.
             val provider =
                 TestDescriptorProvider(
                     id = "MISSING_ADAPTER",
@@ -756,11 +769,43 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, emptySet())
 
+            val dispatcher = createDispatcher(catalog, emptySet())
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/missing"))
 
-            assertEquals(500, response.statusCode)
-            assertTrue(response.body?.contains("No runtime adapter") == true)
+            assertEquals(404, response.statusCode)
+            assertTrue(response.body?.contains("Not found") == true, "unexpected body: ${response.body}")
+        }
+
+    @Test
+    fun dispatchReturns404WhenAdapterHasNoDescriptor() =
+        runTest {
+            // The silent-404 case this guard exists to kill: an adapter is contributed to
+            // Set<HttpAdapter> but its AppScope descriptor provider was forgotten, so the catalog
+            // never advertises its routes.
+            val withDescriptor =
+                TestAdapter(
+                    id = "HAS_DESCRIPTOR",
+                    adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/a"),
+                    routeSpecs = listOf(HttpMethod.GET to "/"),
+                )
+            val orphanAdapter =
+                TestAdapter(
+                    id = "NO_DESCRIPTOR",
+                    adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/b"),
+                    routeSpecs = listOf(HttpMethod.GET to "/"),
+                )
+            val catalog =
+                createCatalog(
+                    setOf(
+                        TestDescriptorProvider("HAS_DESCRIPTOR", withDescriptor.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/a"))),
+                    ),
+                )
+
+            val dispatcher = createDispatcher(catalog, setOf(withDescriptor, orphanAdapter))
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/b"))
+
+            assertEquals(404, response.statusCode)
+            assertTrue(response.body?.contains("Not found") == true, "unexpected body: ${response.body}")
         }
 }

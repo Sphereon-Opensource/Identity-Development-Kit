@@ -277,6 +277,23 @@ class SphereonBrandedLoginPageRendererTest {
             assertTrue(html.contains("Doorgaan met P"), "Dutch button-prefix label must be applied")
         }
 
+    @Test
+    fun formActionsUseTrustedBaseNotReturnUrl() =
+        runTest {
+            val ctx =
+                LoginPageContext(
+                    asInstanceId = "default",
+                    tenantId = null,
+                    sessionId = "s",
+                    returnUrl = "https://evil.example/authorize/callback?session_id=s",
+                    locale = "en",
+                    formActionBase = "https://as.trusted",
+                )
+            val html = renderer.render(ctx).value.html
+            assertFalse(html.contains("action=\"https://evil.example"), "Form actions must not use the hostile returnUrl base")
+            assertTrue(html.contains("action=\"https://as.trusted/login\""), "Login action must use formActionBase")
+        }
+
     companion object {
         private val FORBIDDEN_TOKENS =
             listOf(

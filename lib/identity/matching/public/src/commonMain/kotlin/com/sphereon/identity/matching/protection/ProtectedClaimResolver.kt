@@ -13,7 +13,7 @@
 package com.sphereon.identity.matching.protection
 
 import com.sphereon.data.store.party.model.IdentifierProtectionMode
-import com.sphereon.data.store.party.result.CorrelationIdentifierResult
+import com.sphereon.data.store.party.result.IdentityIdentifierResult
 import kotlin.uuid.ExperimentalUuidApi
 
 /**
@@ -34,7 +34,7 @@ import kotlin.uuid.ExperimentalUuidApi
 class ProtectedClaimResolver(
     private val protector: IdentifierProtector,
 ) {
-    suspend fun claimValue(identifier: CorrelationIdentifierResult): String? {
+    suspend fun claimValue(identifier: IdentityIdentifierResult): String? {
         val envelope =
             identifier.protectedValue
                 ?: return identifier.value

@@ -489,6 +489,29 @@ open class IdkError(
 
         @JvmStatic
         @JsStatic
+        fun SERVICE_UNAVAILABLE_ERROR(
+            severity: Severity = Severity.ERROR,
+            causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
+            message: String = "Service temporarily unavailable",
+            throwable: Throwable? = null,
+        ): IdkError =
+            object : IdkError(
+                code = "SERVICE_UNAVAILABLE",
+                message =
+                    Message(
+                        i18nKey = "com.sphereon.core.error.service-unavailable",
+                        defaultMessage = message,
+                    ),
+                severity = severity,
+                category = ErrorCategory.UNAVAILABLE,
+                causes = causes,
+                exception = throwable,
+            ) {
+                override val retryability: Retryability get() = Retryability.TRANSIENT
+            }
+
+        @JvmStatic
+        @JsStatic
         fun UNSUPPORTED_OPERATION_ERROR(
             operation: String,
             reason: String? = null,

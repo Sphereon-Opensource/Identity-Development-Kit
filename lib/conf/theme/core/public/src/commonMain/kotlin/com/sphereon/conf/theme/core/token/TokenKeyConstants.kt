@@ -29,6 +29,12 @@ object TokenKeyConstants {
     const val COLOR_PRIMARY_CONTAINER = "color.primaryContainer"
     const val COLOR_ON_PRIMARY_CONTAINER = "color.onPrimaryContainer"
 
+    // Accent — the interactive brand accent used by components for hover/selection
+    // tints, focus rings, and link text (mirrors color.primary's brand stop per
+    // variant). Components that theme off an "accent" resolve this instead of
+    // falling back to a hardcoded off-brand color.
+    const val COLOR_ACCENT = "color.accent"
+
     // Secondary colors
     const val COLOR_SECONDARY = "color.secondary"
     const val COLOR_ON_SECONDARY = "color.onSecondary"
@@ -338,22 +344,30 @@ object TokenKeyConstants {
     const val COLOR_INTERACTIVE_PRESSED = "color.interactive.pressed"
     const val COLOR_INTERACTIVE_DISABLED = "color.interactive.disabled"
     const val COLOR_INTERACTIVE_FOCUS = "color.interactive.focus"
+    const val COLOR_NAVIGATION_ACTIVE_FOREGROUND = "color.navigation.activeForeground"
 
     // Feedback colors (success/warning/info)
     const val COLOR_FEEDBACK_SUCCESS = "color.feedback.success"
     const val COLOR_FEEDBACK_SUCCESS_CONTAINER = "color.feedback.successContainer"
     const val COLOR_FEEDBACK_ON_SUCCESS = "color.feedback.onSuccess"
     const val COLOR_FEEDBACK_ON_SUCCESS_CONTAINER = "color.feedback.onSuccessContainer"
+    const val COLOR_FEEDBACK_SUCCESS_BORDER = "color.feedback.successBorder"
 
     const val COLOR_FEEDBACK_WARNING = "color.feedback.warning"
     const val COLOR_FEEDBACK_WARNING_CONTAINER = "color.feedback.warningContainer"
     const val COLOR_FEEDBACK_ON_WARNING = "color.feedback.onWarning"
     const val COLOR_FEEDBACK_ON_WARNING_CONTAINER = "color.feedback.onWarningContainer"
+    const val COLOR_FEEDBACK_WARNING_BORDER = "color.feedback.warningBorder"
 
     const val COLOR_FEEDBACK_INFO = "color.feedback.info"
     const val COLOR_FEEDBACK_INFO_CONTAINER = "color.feedback.infoContainer"
     const val COLOR_FEEDBACK_ON_INFO = "color.feedback.onInfo"
     const val COLOR_FEEDBACK_ON_INFO_CONTAINER = "color.feedback.onInfoContainer"
+    const val COLOR_FEEDBACK_INFO_BORDER = "color.feedback.infoBorder"
+
+    const val COLOR_FEEDBACK_ERROR_CONTAINER = "color.feedback.errorContainer"
+    const val COLOR_FEEDBACK_ON_ERROR_CONTAINER = "color.feedback.onErrorContainer"
+    const val COLOR_FEEDBACK_ERROR_BORDER = "color.feedback.errorBorder"
 
     // Text semantic colors
     const val COLOR_TEXT_PRIMARY = "color.text.primary"
@@ -596,10 +610,91 @@ object TokenKeyConstants {
     const val COMP_CARD_BACKGROUND = "comp.card.background"
     const val COMP_CARD_FOREGROUND = "comp.card.foreground"
     const val COMP_CARD_BORDER = "comp.card.border"
+    const val COMP_CARD_BORDER_HOVER = "comp.card.borderHover"
     const val COMP_CARD_BORDER_WIDTH = "comp.card.borderWidth"
     const val COMP_CARD_RADIUS = "comp.card.radius"
     const val COMP_CARD_SHADOW = "comp.card.shadow"
+    const val COMP_CARD_SHADOW_HOVER = "comp.card.shadowHover"
+    const val COMP_CARD_RING_HOVER = "comp.card.ringHover"
     const val COMP_CARD_PADDING = "comp.card.padding"
+
+    // App shell
+    const val COMP_APPSHELL_TOP_HEIGHT = "comp.appshell.topHeight"
+    const val COMP_APPSHELL_TOP_BACKGROUND = "comp.appshell.topBackground"
+    const val COMP_APPSHELL_TOP_FOREGROUND = "comp.appshell.topForeground"
+    const val COMP_APPSHELL_TOP_BORDER = "comp.appshell.topBorder"
+    const val COMP_APPSHELL_TOP_PADDING = "comp.appshell.topPadding"
+    const val COMP_APPSHELL_TOP_GAP = "comp.appshell.topGap"
+    const val COMP_APPSHELL_BRAND_FOREGROUND = "comp.appshell.brandForeground"
+    const val COMP_APPSHELL_MAIN_BACKGROUND = "comp.appshell.mainBackground"
+    const val COMP_APPSHELL_CONTROL_FOREGROUND = "comp.appshell.controlForeground"
+    const val COMP_APPSHELL_CONTROL_FOREGROUND_HOVER = "comp.appshell.controlForegroundHover"
+    const val COMP_APPSHELL_CONTROL_BACKGROUND_HOVER = "comp.appshell.controlBackgroundHover"
+    const val COMP_APPSHELL_CONTROL_RADIUS = "comp.appshell.controlRadius"
+
+    // Sidebar navigation
+    const val COMP_SNAV_WIDTH = "comp.snav.width"
+    const val COMP_SNAV_WIDTH_RAIL = "comp.snav.widthRail"
+    const val COMP_SNAV_PAD = "comp.snav.pad"
+    const val COMP_SNAV_GAP = "comp.snav.gap"
+    const val COMP_SNAV_BG = "comp.snav.bg"
+    const val COMP_SNAV_BORDER = "comp.snav.border"
+    const val COMP_SNAV_ITEM_HEIGHT = "comp.snav.itemHeight"
+    const val COMP_SNAV_ITEM_RADIUS = "comp.snav.itemRadius"
+    const val COMP_SNAV_ITEM_FG = "comp.snav.itemFg"
+    const val COMP_SNAV_ITEM_FG_HOVER = "comp.snav.itemFgHover"
+    const val COMP_SNAV_ITEM_BG_HOVER = "comp.snav.itemBgHover"
+    const val COMP_SNAV_ITEM_FG_ACTIVE = "comp.snav.itemFgActive"
+    const val COMP_SNAV_ITEM_BG_ACTIVE = "comp.snav.itemBgActive"
+    const val COMP_SNAV_ITEM_BACKGROUND_ACTIVE = "comp.snav.itemBackgroundActive"
+    const val COMP_SNAV_ITEM_BORDER_ACTIVE = "comp.snav.itemBorderActive"
+    const val COMP_SNAV_ITEM_ICON = "comp.snav.itemIcon"
+    const val COMP_SNAV_ITEM_ICON_ACTIVE = "comp.snav.itemIconActive"
+    const val COMP_SNAV_GROUP_FG = "comp.snav.groupFg"
+    const val COMP_SNAV_DIVIDER = "comp.snav.divider"
+    const val COMP_SNAV_BADGE_BG = "comp.snav.badgeBg"
+    const val COMP_SNAV_BADGE_FG = "comp.snav.badgeFg"
+    const val COMP_SNAV_TIP_BG = "comp.snav.tipBg"
+    const val COMP_SNAV_TIP_FG = "comp.snav.tipFg"
+    const val COMP_SNAV_EASE = "comp.snav.ease"
+    const val COMP_SNAV_DUR = "comp.snav.dur"
+
+    // Table
+    const val COMP_TABLE_HEADER_BACKGROUND = "comp.table.header.background"
+    const val COMP_TABLE_HEADER_FOREGROUND = "comp.table.header.foreground"
+    const val COMP_TABLE_HEADER_PADDING = "comp.table.header.padding"
+    const val COMP_TABLE_HEADER_FONT_SIZE = "comp.table.header.fontSize"
+    const val COMP_TABLE_HEADER_FONT_WEIGHT = "comp.table.header.fontWeight"
+    const val COMP_TABLE_ROW_BACKGROUND = "comp.table.row.background"
+    const val COMP_TABLE_ROW_BACKGROUND_HOVER = "comp.table.row.backgroundHover"
+    const val COMP_TABLE_ROW_BACKGROUND_SELECTED = "comp.table.row.backgroundSelected"
+    const val COMP_TABLE_ROW_FOREGROUND = "comp.table.row.foreground"
+    const val COMP_TABLE_ROW_FONT_SIZE = "comp.table.row.fontSize"
+    const val COMP_TABLE_ROW_PADDING = "comp.table.row.padding"
+    const val COMP_TABLE_ROW_DIVIDER = "comp.table.row.divider"
+    const val COMP_TABLE_ROW_BORDER = "comp.table.row.border"
+
+    // Status pill
+    const val COMP_STATUSPILL_RADIUS = "comp.statuspill.radius"
+    const val COMP_STATUSPILL_BORDER_WIDTH = "comp.statuspill.borderWidth"
+    const val COMP_STATUSPILL_PADDING = "comp.statuspill.padding"
+    const val COMP_STATUSPILL_FONT_SIZE = "comp.statuspill.fontSize"
+    const val COMP_STATUSPILL_FONT_WEIGHT = "comp.statuspill.fontWeight"
+    const val COMP_STATUSPILL_SUCCESS_BACKGROUND = "comp.statuspill.success.background"
+    const val COMP_STATUSPILL_SUCCESS_FOREGROUND = "comp.statuspill.success.foreground"
+    const val COMP_STATUSPILL_SUCCESS_BORDER = "comp.statuspill.success.border"
+    const val COMP_STATUSPILL_WARNING_BACKGROUND = "comp.statuspill.warning.background"
+    const val COMP_STATUSPILL_WARNING_FOREGROUND = "comp.statuspill.warning.foreground"
+    const val COMP_STATUSPILL_WARNING_BORDER = "comp.statuspill.warning.border"
+    const val COMP_STATUSPILL_ERROR_BACKGROUND = "comp.statuspill.error.background"
+    const val COMP_STATUSPILL_ERROR_FOREGROUND = "comp.statuspill.error.foreground"
+    const val COMP_STATUSPILL_ERROR_BORDER = "comp.statuspill.error.border"
+    const val COMP_STATUSPILL_INFO_BACKGROUND = "comp.statuspill.info.background"
+    const val COMP_STATUSPILL_INFO_FOREGROUND = "comp.statuspill.info.foreground"
+    const val COMP_STATUSPILL_INFO_BORDER = "comp.statuspill.info.border"
+    const val COMP_STATUSPILL_NEUTRAL_BACKGROUND = "comp.statuspill.neutral.background"
+    const val COMP_STATUSPILL_NEUTRAL_FOREGROUND = "comp.statuspill.neutral.foreground"
+    const val COMP_STATUSPILL_NEUTRAL_BORDER = "comp.statuspill.neutral.border"
 
     // Badge / Chip
     const val COMP_BADGE_BACKGROUND = "comp.badge.background"
@@ -786,6 +881,111 @@ object TokenKeyConstants {
     const val COMP_LIVE_PREVIEW_BORDER_WIDTH = "comp.livePreview.borderWidth"
     const val COMP_LIVE_PREVIEW_RADIUS = "comp.livePreview.radius"
     const val COMP_LIVE_PREVIEW_PADDING = "comp.livePreview.padding"
+
+    // ── Post-drift comp groups (synced from tokens.json) ──
+// menu
+    const val COMP_MENU_BACKGROUND = "comp.menu.background"
+    const val COMP_MENU_BORDER = "comp.menu.border"
+    const val COMP_MENU_MIN_WIDTH = "comp.menu.minWidth"
+    const val COMP_MENU_PADDING = "comp.menu.padding"
+    const val COMP_MENU_RADIUS = "comp.menu.radius"
+    const val COMP_MENU_SHADOW = "comp.menu.shadow"
+    const val COMP_MENU_ITEM_PADDING = "comp.menu.item.padding"
+    const val COMP_MENU_ITEM_RADIUS = "comp.menu.item.radius"
+    const val COMP_MENU_ITEM_BACKGROUND_HOVER = "comp.menu.item.backgroundHover"
+    const val COMP_MENU_ITEM_FONT_SIZE = "comp.menu.item.fontSize"
+    const val COMP_MENU_ITEM_FOREGROUND = "comp.menu.item.foreground"
+    const val COMP_MENU_ITEM_DANGER_FOREGROUND = "comp.menu.item.danger.foreground"
+    const val COMP_MENU_ITEM_DANGER_BACKGROUND_HOVER = "comp.menu.item.danger.backgroundHover"
+
+    // panel
+    const val COMP_PANEL_BACKGROUND = "comp.panel.background"
+    const val COMP_PANEL_BORDER = "comp.panel.border"
+    const val COMP_PANEL_HEADER_BACKGROUND = "comp.panel.header.background"
+    const val COMP_PANEL_HEADER_FOREGROUND = "comp.panel.header.foreground"
+    const val COMP_PANEL_HEADER_HEIGHT = "comp.panel.header.height"
+    const val COMP_PANEL_WIDTH_SM = "comp.panel.width.sm"
+    const val COMP_PANEL_WIDTH_MD = "comp.panel.width.md"
+    const val COMP_PANEL_WIDTH_LG = "comp.panel.width.lg"
+    const val COMP_PANEL_WIDTH_XL = "comp.panel.width.xl"
+    const val COMP_PANEL_SHADOW = "comp.panel.shadow"
+
+    // statustab
+    const val COMP_STATUSTAB_PADDING = "comp.statustab.padding"
+    const val COMP_STATUSTAB_RADIUS = "comp.statustab.radius"
+    const val COMP_STATUSTAB_FONT_SIZE = "comp.statustab.fontSize"
+    const val COMP_STATUSTAB_FONT_WEIGHT = "comp.statustab.fontWeight"
+    const val COMP_STATUSTAB_BACKGROUND = "comp.statustab.background"
+    const val COMP_STATUSTAB_BACKGROUND_ACTIVE = "comp.statustab.backgroundActive"
+    const val COMP_STATUSTAB_FOREGROUND = "comp.statustab.foreground"
+    const val COMP_STATUSTAB_FOREGROUND_ACTIVE = "comp.statustab.foregroundActive"
+
+    // form
+    const val COMP_FORM_BACKGROUND = "comp.form.background"
+    const val COMP_FORM_BORDER = "comp.form.border"
+    const val COMP_FORM_RADIUS = "comp.form.radius"
+    const val COMP_FORM_PADDING = "comp.form.padding"
+
+    // formsection
+    const val COMP_FORMSECTION_BORDER = "comp.formsection.border"
+    const val COMP_FORMSECTION_RADIUS = "comp.formsection.radius"
+    const val COMP_FORMSECTION_PADDING = "comp.formsection.padding"
+    const val COMP_FORMSECTION_GAP = "comp.formsection.gap"
+    const val COMP_FORMSECTION_LEGEND_BACKGROUND = "comp.formsection.legend.background"
+    const val COMP_FORMSECTION_LEGEND_FOREGROUND = "comp.formsection.legend.foreground"
+    const val COMP_FORMSECTION_LEGEND_PADDING_X = "comp.formsection.legend.paddingX"
+    const val COMP_FORMSECTION_LEGEND_FONT_SIZE = "comp.formsection.legend.fontSize"
+    const val COMP_FORMSECTION_LEGEND_FONT_WEIGHT = "comp.formsection.legend.fontWeight"
+
+    // forminput
+    const val COMP_FORMINPUT_BACKGROUND = "comp.forminput.background"
+    const val COMP_FORMINPUT_BACKGROUND_READONLY = "comp.forminput.backgroundReadonly"
+    const val COMP_FORMINPUT_BORDER = "comp.forminput.border"
+    const val COMP_FORMINPUT_BORDER_HOVER = "comp.forminput.borderHover"
+    const val COMP_FORMINPUT_BORDER_FOCUS = "comp.forminput.borderFocus"
+    const val COMP_FORMINPUT_BORDER_READONLY = "comp.forminput.borderReadonly"
+    const val COMP_FORMINPUT_RADIUS = "comp.forminput.radius"
+    const val COMP_FORMINPUT_PADDING = "comp.forminput.padding"
+    const val COMP_FORMINPUT_FONT_SIZE = "comp.forminput.fontSize"
+
+    // emptystate
+    const val COMP_EMPTYSTATE_ICON_SIZE = "comp.emptystate.iconSize"
+    const val COMP_EMPTYSTATE_MAX_WIDTH = "comp.emptystate.maxWidth"
+    const val COMP_EMPTYSTATE_FOREGROUND = "comp.emptystate.foreground"
+    const val COMP_EMPTYSTATE_TITLE_FONT_SIZE = "comp.emptystate.title.fontSize"
+    const val COMP_EMPTYSTATE_TITLE_FONT_WEIGHT = "comp.emptystate.title.fontWeight"
+    const val COMP_EMPTYSTATE_BODY_FONT_SIZE = "comp.emptystate.body.fontSize"
+    const val COMP_EMPTYSTATE_GAP = "comp.emptystate.gap"
+
+    // selection
+    const val COMP_SELECTION_BACKGROUND = "comp.selection.background"
+    const val COMP_SELECTION_FOREGROUND = "comp.selection.foreground"
+    const val COMP_SELECTION_DESELECT_BORDER = "comp.selection.deselect.border"
+    const val COMP_SELECTION_DESELECT_BACKGROUND_HOVER = "comp.selection.deselect.backgroundHover"
+    const val COMP_SELECTION_DESELECT_FOREGROUND_HOVER = "comp.selection.deselect.foregroundHover"
+    const val COMP_SELECTION_DELETE_BACKGROUND = "comp.selection.delete.background"
+    const val COMP_SELECTION_DELETE_BACKGROUND_HOVER = "comp.selection.delete.backgroundHover"
+    const val COMP_SELECTION_DELETE_FOREGROUND = "comp.selection.delete.foreground"
+
+    // confirm
+    const val COMP_CONFIRM_OVERLAY_BACKGROUND = "comp.confirm.overlay.background"
+    const val COMP_CONFIRM_MODAL_BACKGROUND = "comp.confirm.modal.background"
+    const val COMP_CONFIRM_MODAL_RADIUS = "comp.confirm.modal.radius"
+    const val COMP_CONFIRM_MODAL_SHADOW = "comp.confirm.modal.shadow"
+    const val COMP_CONFIRM_MODAL_WIDTH = "comp.confirm.modal.width"
+    const val COMP_CONFIRM_ICON_SIZE = "comp.confirm.icon.size"
+    const val COMP_CONFIRM_ICON_BACKGROUND = "comp.confirm.icon.background"
+    const val COMP_CONFIRM_ICON_FOREGROUND = "comp.confirm.icon.foreground"
+    const val COMP_CONFIRM_TITLE_FONT_SIZE = "comp.confirm.title.fontSize"
+    const val COMP_CONFIRM_MESSAGE_FONT_SIZE = "comp.confirm.message.fontSize"
+    const val COMP_CONFIRM_MESSAGE_FOREGROUND = "comp.confirm.message.foreground"
+
+    // meatball
+    const val COMP_MEATBALL_SIZE = "comp.meatball.size"
+    const val COMP_MEATBALL_BACKGROUND = "comp.meatball.background"
+    const val COMP_MEATBALL_BACKGROUND_HOVER = "comp.meatball.backgroundHover"
+    const val COMP_MEATBALL_FOREGROUND = "comp.meatball.foreground"
+    const val COMP_MEATBALL_FOREGROUND_HOVER = "comp.meatball.foregroundHover"
 
     // ── Shape — numeric Figma stops (Tier 1 mirror of M3 aliases) ─────
     // Designers write these by Figma name; Tier 2 aliases (sm/md/lg/...) reference them.

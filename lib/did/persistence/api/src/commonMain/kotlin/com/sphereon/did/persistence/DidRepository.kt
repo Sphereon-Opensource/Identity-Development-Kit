@@ -33,8 +33,9 @@ import kotlin.time.Instant
  * - Returns [IdkResult] with [IdkError]. "Not found" returns `Ok(null)`, not an `Err` —
  *   see `vdx/CLAUDE.md` §Result Type.
  * - Timestamps are [kotlin.time.Instant].
- * - [tenantId] is nullable on the Memory + SQLite IDK dev dialects; PostgreSQL + MySQL
- *   require a non-null tenant and return [IdkError.ILLEGAL_ARGUMENT_ERROR] when passed `null`.
+ * - [tenantId] is nullable for public web-location lookups because DID hosting receives unauthenticated
+ *   `did.json` resolver requests. Tenant management operations in PostgreSQL + MySQL still require a
+ *   non-null tenant and return [IdkError.ILLEGAL_ARGUMENT_ERROR] when passed `null`.
  * - Aggregate operations are transactional: SQL dialects use `transaction { }`; Memory wraps
  *   the same work in a single `Mutex.withLock`.
  * - Aggregate save is **delete-then-insert** for child rows — simple, idempotent, fine at the
@@ -72,8 +73,9 @@ interface DidRepository {
     /**
      * Loads the aggregate whose [DidRecord.webLocation] matches — the method/SCID-independent
      * lookup used by DID hosting to resolve a `did.json`/`did.jsonl` request (which carries the
-     * host+path but not the method or did:webvh SCID). Because the live `(tenant_id, web_location)`
-     * index is unique, at most one non-deleted record matches. Returns `Ok(null)` when no row matches.
+     * host+path but not the method or did:webvh SCID). A null [tenantId] means public hosting lookup by
+     * web location across tenants; deployments must keep public web locations unique.
+     * Returns `Ok(null)` when no row matches.
      *
      * @param webLocation the normalised web location (see [com.sphereon.did.utils.WebLocation]).
      */

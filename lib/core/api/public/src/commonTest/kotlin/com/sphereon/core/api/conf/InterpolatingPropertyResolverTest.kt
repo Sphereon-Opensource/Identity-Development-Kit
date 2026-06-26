@@ -184,7 +184,7 @@ class PropertyResolverFactoryTest {
     @Test
     fun withInterpolationWithSecretResolver() {
         val source = MutableMapPropertySource("test")
-        source.addProperty("password", "\${secret:map:creds:pass}")
+        source.addProperty("password", "\${secret:@map:creds:pass}")
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
@@ -256,7 +256,7 @@ class InterpolatingPropertyResolverWithInterpolationTest {
     fun interpolatesSecretReferences() {
         val resolver =
             createResolver(
-                "api.key" to "\${secret:map:api:key}",
+                "api.key" to "\${secret:@map:api:key}",
                 secretMaps = mapOf("api" to mapOf("key" to "api-secret-123")),
             )
 

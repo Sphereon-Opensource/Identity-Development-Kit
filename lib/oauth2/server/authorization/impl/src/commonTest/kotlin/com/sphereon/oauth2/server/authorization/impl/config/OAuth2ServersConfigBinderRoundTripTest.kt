@@ -22,6 +22,7 @@ import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.conf.PropertySource
 import com.sphereon.core.api.conf.PropertySources
 import com.sphereon.core.api.conf.TenantConfigService
@@ -166,6 +167,7 @@ class OAuth2ServersConfigBinderRoundTripTest {
         assertEquals("sentinel-jwks-uri", server.jwksUri, "jwksUri")
         // Internal service-to-service clients
         assertEquals("sentinel-issuer-client-id" to "sentinel-issuer-client-secret", server.internalClients["issuer"], "internalClients[issuer]")
+        assertEquals("sentinel-kms-client-id" to "sentinel-kms-client-secret", server.internalClients["kms"], "internalClients[kms]")
         assertEquals("sentinel-verifier-client-id" to "sentinel-verifier-client-secret", server.internalClients["verifier"], "internalClients[verifier]")
         // Public clients
         assertEquals(true, server.publicClients.allowAny, "publicClients.allowAny")
@@ -257,6 +259,8 @@ class OAuth2ServersConfigBinderRoundTripTest {
             // Internal clients
             "$prefix.internal-clients.issuer.client-id" to "sentinel-issuer-client-id",
             "$prefix.internal-clients.issuer.client-secret" to "sentinel-issuer-client-secret",
+            "$prefix.internal-clients.kms.client-id" to "sentinel-kms-client-id",
+            "$prefix.internal-clients.kms.client-secret" to "sentinel-kms-client-secret",
             "$prefix.internal-clients.verifier.client-id" to "sentinel-verifier-client-id",
             "$prefix.internal-clients.verifier.client-secret" to "sentinel-verifier-client-secret",
             // Public clients
@@ -268,8 +272,42 @@ class OAuth2ServersConfigBinderRoundTripTest {
             "$prefix.session.absolute-ttl-seconds" to 7_002,
         )
 
-    private fun newBinder(properties: Map<String, Any>): OAuth2ServersConfigBinder {
-        val configService = TypeAwarePrincipalConfigService(properties)
+    @Test
+    fun internalClientsWithDashedRoleNamesSurviveNormalizedPropertySources() {
+        val serverId = "platform"
+        val serverPrefix = "${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.$serverId"
+        val secret = "edk-internal-local-only"
+        val binder =
+            newBinder(
+                mapOf(
+                    "${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default-server" to serverId,
+                    "$serverPrefix.mode" to "HOSTED",
+                    "$serverPrefix.issuer" to "https://platform.saas.localtest.me",
+                    "$serverPrefix.internal-clients.authorization-server.client-id" to "tenant-as-service",
+                    "$serverPrefix.internal-clients.authorization-server.client-secret" to secret,
+                    "$serverPrefix.internal-clients.issuer.client-id" to "issuer-service",
+                    "$serverPrefix.internal-clients.issuer.client-secret" to secret,
+                ),
+                normalizeKeys = true,
+            )
+
+        val server =
+            binder.getServer(serverId)
+                ?: fail("binder returned null for normalized serverId='$serverId'")
+
+        assertEquals("tenant-as-service" to secret, server.internalClients["authorization.server"], "internalClients[authorization.server]")
+        assertEquals("issuer-service" to secret, server.internalClients["issuer"], "internalClients[issuer]")
+        assertTrue(
+            server.internalClients.values.contains("tenant-as-service" to secret),
+            "configured internal clients must expose tenant-as-service to the client registry",
+        )
+    }
+
+    private fun newBinder(
+        properties: Map<String, Any>,
+        normalizeKeys: Boolean = false,
+    ): OAuth2ServersConfigBinder {
+        val configService = TypeAwarePrincipalConfigService(properties, normalizeKeys = normalizeKeys)
         val execution = TestSessionExecution(configService)
         return OAuth2ServersConfigBinder(execution)
     }
@@ -298,8 +336,18 @@ class OAuth2ServersConfigBinderRoundTripTest {
  * sources).
  */
 internal class TypeAwarePrincipalConfigService(
-    private val properties: Map<String, Any>,
+    properties: Map<String, Any>,
+    private val subPropertiesOverride: ((Set<String>, Boolean, Map<String, Any>) -> Map<String, Any>)? = null,
+    private val normalizeKeys: Boolean = false,
 ) : PrincipalConfigService {
+    private val keyNormalizer = PropertyKeyNormalizerImpl.Default
+    private val properties: Map<String, Any> =
+        if (normalizeKeys) {
+            properties.mapKeys { (key, _) -> keyNormalizer.normalize(key) }
+        } else {
+            properties
+        }
+
     override val parent: TenantConfigService
         get() = error("parent not used in this test")
 
@@ -320,7 +368,7 @@ internal class TypeAwarePrincipalConfigService(
     @Suppress("DEPRECATION")
     override fun getNamespace(): String = ""
 
-    override fun containsProperty(key: String): Boolean = properties.containsKey(key)
+    override fun containsProperty(key: String): Boolean = properties.containsKey(normalizeKey(key))
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> getProperty(
@@ -328,7 +376,7 @@ internal class TypeAwarePrincipalConfigService(
         targetType: KClass<T>,
         defaultValue: T?,
     ): T? {
-        val raw = properties[key] ?: return defaultValue
+        val raw = properties[normalizeKey(key)] ?: return defaultValue
         if (targetType.isInstance(raw)) {
             return raw as T
         }
@@ -369,7 +417,7 @@ internal class TypeAwarePrincipalConfigService(
     override fun getPropertyAsString(
         key: String,
         defaultValue: String?,
-    ): String? = properties[key]?.toString() ?: defaultValue
+    ): String? = properties[normalizeKey(key)]?.toString() ?: defaultValue
 
     override fun <T : Any> getRequiredProperty(
         key: String,
@@ -394,17 +442,26 @@ internal class TypeAwarePrincipalConfigService(
         prefixes: Set<String>,
         stripPrefix: Boolean,
     ): Map<String, Any> {
+        subPropertiesOverride?.let { return it(prefixes, stripPrefix, properties) }
         val matched = mutableMapOf<String, Any>()
         for (prefix in prefixes) {
+            val normalizedPrefix = normalizeKey(prefix)
             for ((key, value) in properties) {
-                val matches = key.startsWith("$prefix.") || key == prefix
+                val matches = key.startsWith("$normalizedPrefix.") || key == normalizedPrefix
                 if (!matches) continue
-                val outKey = if (stripPrefix) key.removePrefix("$prefix.") else key
+                val outKey = if (stripPrefix) key.removePrefix("$normalizedPrefix.") else key
                 matched[outKey] = value
             }
         }
         return matched
     }
+
+    private fun normalizeKey(key: String): String =
+        if (normalizeKeys) {
+            keyNormalizer.normalize(key)
+        } else {
+            key
+        }
 
     override fun getSubPropertiesAsString(
         prefixes: Set<String>,

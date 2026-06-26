@@ -20,6 +20,7 @@ package com.sphereon.di.app
 import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.conf.PropertiesFileAppPropertySource
 import com.sphereon.core.api.conf.PropertySourceBootstrap
+import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.di.context.UserContextManager
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -109,6 +110,7 @@ abstract class AbstractAppGraph : AppGraph {
                 appConfigService.addPropertySource(propertiesSource)
             }
         }
+        (this as? SecretProviderBootstrap.Graph)?.secretProviderBootstrap?.registerSecretProviders()
         return this
     }
 

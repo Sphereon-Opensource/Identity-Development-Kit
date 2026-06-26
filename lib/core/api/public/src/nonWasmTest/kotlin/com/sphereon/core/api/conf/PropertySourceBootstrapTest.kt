@@ -944,7 +944,7 @@ class PropertySourceBootstrapImplTest {
     }
 
     @Test
-    fun registerTenantSourcesIsIdempotentPerTenant() {
+    fun registerTenantSourcesIsIdempotentPerConfigService() {
         val logService = createLogService()
         val appConfigService = createAppConfigService()
         val tenantConfigService = createMockConfigService()
@@ -976,6 +976,84 @@ class PropertySourceBootstrapImplTest {
                 .getPropertySources(includeParents = false)
                 .count { it.getName() == "tenant-idempotent-source" }
         assertEquals(1, duplicateCount)
+    }
+
+    @Test
+    fun registerTenantSourcesEvaluatesEnablementFromAppConfigOnly() {
+        val logService = createLogService()
+        val appConfigService = createAppConfigService()
+        val tenantConfigService = createMockConfigService()
+        var existingTenantSourceReads = 0
+
+        tenantConfigService.addPropertySource(
+            object : MapPropertySource("existing-tenant-source", emptyMap()) {
+                override fun <T : Any> getProperty(
+                    name: String,
+                    targetType: KClass<T>,
+                ): T? {
+                    existingTenantSourceReads++
+                    throw IllegalStateException("tenant source must not be queried for provider enablement")
+                }
+            },
+        )
+
+        val tenantContribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.TENANT
+                override val providerId = "tenant-bootstrap-only"
+
+                override fun isEnabled(resolver: PropertyResolver): Boolean =
+                    resolver.getProperty("config.providers.$providerId.enabled", Boolean::class, true) != false
+
+                override fun getPropertySource(): PropertySource<*> = MapPropertySource("tenant-bootstrap-only-source", emptyMap())
+
+                override fun getOrder() = 50
+            }
+
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = appConfigService,
+                contributions = setOf(tenantContribution),
+                logService = logService,
+            )
+
+        bootstrap.registerTenantSources(tenantConfigService, "tenant-123")
+
+        assertEquals(0, existingTenantSourceReads)
+        assertTrue(tenantConfigService.getPropertySources(includeParents = false).contains("tenant-bootstrap-only-source"))
+    }
+
+    @Test
+    fun registerTenantSourcesRegistersSameTenantInDifferentConfigServices() {
+        val logService = createLogService()
+        val appConfigService = createAppConfigService()
+        val firstTenantConfigService = createMockConfigService()
+        val secondTenantConfigService = createMockConfigService()
+
+        val tenantContribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.TENANT
+                override val providerId = "tenant-per-context"
+
+                override fun isEnabled(resolver: PropertyResolver) = true
+
+                override fun getPropertySource(): PropertySource<*> = MapPropertySource("tenant-per-context-source", emptyMap())
+
+                override fun getOrder() = 50
+            }
+
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = appConfigService,
+                contributions = setOf(tenantContribution),
+                logService = logService,
+            )
+
+        bootstrap.registerTenantSources(firstTenantConfigService, "tenant-123")
+        bootstrap.registerTenantSources(secondTenantConfigService, "tenant-123")
+
+        assertTrue(firstTenantConfigService.getPropertySources(includeParents = false).contains("tenant-per-context-source"))
+        assertTrue(secondTenantConfigService.getPropertySources(includeParents = false).contains("tenant-per-context-source"))
     }
 
     @Test
@@ -1067,7 +1145,7 @@ class PropertySourceBootstrapImplTest {
     }
 
     @Test
-    fun registerPrincipalSourcesIsIdempotentPerPrincipal() {
+    fun registerPrincipalSourcesIsIdempotentPerConfigService() {
         val logService = createLogService()
         val appConfigService = createAppConfigService()
         val principalConfigService = createMockConfigService()
@@ -1099,6 +1177,39 @@ class PropertySourceBootstrapImplTest {
                 .getPropertySources(includeParents = false)
                 .count { it.getName() == "principal-idempotent-source" }
         assertEquals(1, duplicateCount)
+    }
+
+    @Test
+    fun registerPrincipalSourcesRegistersSamePrincipalInDifferentConfigServices() {
+        val logService = createLogService()
+        val appConfigService = createAppConfigService()
+        val firstPrincipalConfigService = createMockConfigService()
+        val secondPrincipalConfigService = createMockConfigService()
+
+        val principalContribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.PRINCIPAL
+                override val providerId = "principal-per-context"
+
+                override fun isEnabled(resolver: PropertyResolver) = true
+
+                override fun getPropertySource(): PropertySource<*> = MapPropertySource("principal-per-context-source", emptyMap())
+
+                override fun getOrder() = 50
+            }
+
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = appConfigService,
+                contributions = setOf(principalContribution),
+                logService = logService,
+            )
+
+        bootstrap.registerPrincipalSources(firstPrincipalConfigService, "tenant-123", "principal-456")
+        bootstrap.registerPrincipalSources(secondPrincipalConfigService, "tenant-123", "principal-456")
+
+        assertTrue(firstPrincipalConfigService.getPropertySources(includeParents = false).contains("principal-per-context-source"))
+        assertTrue(secondPrincipalConfigService.getPropertySources(includeParents = false).contains("principal-per-context-source"))
     }
 
     @Test

@@ -26,13 +26,14 @@
   justify-content: center;
   width: var(--comp-checkbox-size, 20px);
   height: var(--comp-checkbox-size, 20px);
-  border: var(--comp-checkbox-borderWidth, 2px) solid var(--comp-checkbox-border);
+  border: var(--comp-checkbox-border-width, 2px) solid var(--comp-checkbox-border);
   border-radius: var(--comp-checkbox-radius, 2px);
   background: transparent;
   transition: background-color 150ms, border-color 150ms;
-  /* Ensure 44px touch target with padding */
-  padding: 12px;
-  box-sizing: content-box;
+  /* The visible box is exactly --comp-checkbox-size; the 44px touch target comes from the
+     .wrapper min-height, NOT from padding on the bordered control (which made the box render
+     huge). box-sizing:border-box keeps any future padding inside the declared size. */
+  box-sizing: border-box;
 }
 
 .checked,

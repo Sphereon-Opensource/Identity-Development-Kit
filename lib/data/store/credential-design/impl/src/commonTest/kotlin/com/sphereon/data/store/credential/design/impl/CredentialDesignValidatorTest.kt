@@ -32,6 +32,7 @@ import com.sphereon.data.store.credential.design.model.EntityLocaleDesign
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
 import com.sphereon.data.store.credential.design.model.RenderVariantKind
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
+import com.sphereon.data.store.credential.design.model.VctHostingMode
 import com.sphereon.data.store.credential.design.validation.createCredentialDesignValidator
 import com.sphereon.data.store.credential.design.validation.createIssuerDesignValidator
 import com.sphereon.data.store.credential.design.validation.createRenderVariantValidator
@@ -170,6 +171,57 @@ class CredentialDesignValidatorTest {
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "test")),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "")),
+                    ),
+            )
+        assertTrue(validator(args) is Invalid)
+    }
+
+    @Test
+    fun hostedVctPlainStringPasses() {
+        val validator = createCredentialDesignValidator(defaultConfig)
+        val args =
+            CreateCredentialDesignArgs(
+                tenantId = "t1",
+                input =
+                    CreateCredentialDesignInput(
+                        bindings = listOf(DesignBinding(vct = "EmployeeBadge", vctHostingMode = VctHostingMode.HOSTED)),
+                        displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Employee Badge")),
+                    ),
+            )
+        assertTrue(validator(args) is Valid)
+    }
+
+    @Test
+    fun hostedVctCanBeDerivedFromCredentialConfigurationId() {
+        val validator = createCredentialDesignValidator(defaultConfig)
+        val args =
+            CreateCredentialDesignArgs(
+                tenantId = "t1",
+                input =
+                    CreateCredentialDesignInput(
+                        bindings =
+                            listOf(
+                                DesignBinding(
+                                    credentialConfigurationId = "EmployeeBadge",
+                                    vctHostingMode = VctHostingMode.HOSTED,
+                                ),
+                            ),
+                        displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Employee Badge")),
+                    ),
+            )
+        assertTrue(validator(args) is Valid)
+    }
+
+    @Test
+    fun externalVctRequiresAbsoluteUri() {
+        val validator = createCredentialDesignValidator(defaultConfig)
+        val args =
+            CreateCredentialDesignArgs(
+                tenantId = "t1",
+                input =
+                    CreateCredentialDesignInput(
+                        bindings = listOf(DesignBinding(vct = "EmployeeBadge", vctHostingMode = VctHostingMode.EXTERNAL)),
+                        displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Employee Badge")),
                     ),
             )
         assertTrue(validator(args) is Invalid)

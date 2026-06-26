@@ -64,7 +64,7 @@ class OAuth2EndSessionHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_END_SESSION"
+        const val ID: String = "oauth2.as.end-session"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

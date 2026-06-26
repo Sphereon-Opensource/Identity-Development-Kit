@@ -33,6 +33,7 @@ import com.sphereon.data.store.credential.design.command.FindIssuerDesignByBindi
 import com.sphereon.data.store.credential.design.command.FindVerifierDesignByBindingKeyServiceCommand
 import com.sphereon.data.store.credential.design.command.FindVerifierDesignByBindingServiceCommand
 import com.sphereon.data.store.credential.design.command.GetCredentialDesignServiceCommand
+import com.sphereon.data.store.credential.design.command.GetDesignAssetByHashServiceCommand
 import com.sphereon.data.store.credential.design.command.GetDesignAssetServiceCommand
 import com.sphereon.data.store.credential.design.command.GetIssuerDesignServiceCommand
 import com.sphereon.data.store.credential.design.command.GetRenderVariantServiceCommand
@@ -227,4 +228,8 @@ interface CredentialDesignCommandDescriptors {
     @Provides @IntoMap
     @StringKey(GetDesignAssetServiceCommand.COMMAND_ID)
     fun getDesignAsset(impl: GetDesignAssetServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(GetDesignAssetByHashServiceCommand.COMMAND_ID)
+    fun getDesignAssetByHash(impl: GetDesignAssetByHashServiceCommandImpl): ServiceCommand<*, *, *> = impl
 }

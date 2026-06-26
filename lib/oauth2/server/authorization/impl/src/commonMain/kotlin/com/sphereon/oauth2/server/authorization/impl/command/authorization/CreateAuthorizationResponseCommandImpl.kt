@@ -126,7 +126,7 @@ class CreateAuthorizationResponseCommandImpl(
         // RFC 9207 OAuth 2.0 Authorization Server Issuer Identification: include `iss` in the
         // authorization response so the client can detect mix-up attacks where an auth code
         // from one AS is replayed at another. FAPI2-SP §5.3.2.2-7 and HAIP both require this.
-        val configuredIssuer = configProvider.serverConfig.issuer ?: args.baseUrlOverride
+        val configuredIssuer = args.baseUrlOverride?.takeIf { it.isNotBlank() } ?: configProvider.serverConfig.issuer
         if (configuredIssuer != null) {
             parameters["iss"] = configuredIssuer
         }
@@ -201,8 +201,8 @@ class CreateAuthorizationResponseCommandImpl(
             )
         }
         val issuerUrl =
-            config.issuer
-                ?: args.baseUrlOverride
+            args.baseUrlOverride?.takeIf { it.isNotBlank() }
+                ?: config.issuer
                 ?: return Err(
                     AuthorizationServerError.ServerError(
                         details = "JARM requires a configured issuer or a request-time baseUrlOverride",

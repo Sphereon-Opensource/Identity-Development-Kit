@@ -29,6 +29,7 @@ import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
+import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
@@ -108,8 +109,8 @@ class CreateAccessTokenCommandImpl(
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
         val issuerUrl =
-            configProvider.serverConfig.issuer
-                ?: applied.baseUrlOverride
+            applied.baseUrlOverride?.takeIf { it.isNotBlank() }
+                ?: configProvider.serverConfig.issuer
         if (issuerUrl == null) {
             val failure: IdkResult<StringResult, IdkError> =
                 Err(
@@ -228,6 +229,18 @@ class CreateAccessTokenCommandImpl(
                     put("exp", expiresAt.epochSeconds)
                     put("jti", jti)
 
+                    // Authorized-party (`azp`). For self-issued SERVICE tokens (the
+                    // client_credentials grant) the subject IS the client, so stamping `azp`
+                    // makes the token self-describe as a workload identity. Downstream the
+                    // binary/gRPC transport's AuthContextExtractor uses `sub == client_id == azp`
+                    // (with no `email`) to recognise a workload token and apply the internal
+                    // service-forwarding trust policy (target tenant carried in X-Tenant-Id atop
+                    // the validated service token). Only stamped when subject == clientId so
+                    // human (authorization_code) tokens, whose subject is the user, are unchanged.
+                    if (subject == clientId) {
+                        put("azp", clientId)
+                    }
+
                     // Audience (RFC 9068 Section 2.2.3)
                     if (audience.isNotEmpty()) {
                         if (audience.size == 1) {
@@ -282,6 +295,7 @@ class CreateAccessTokenCommandImpl(
                 CreateJwsArgs(
                     issuer = serverIdentifier,
                     payload = payload.toString(),
+                    mode = JwsIdentifierMode.KID,
                     opts =
                         CreateJwsOpts(
                             protectedHeader = header,

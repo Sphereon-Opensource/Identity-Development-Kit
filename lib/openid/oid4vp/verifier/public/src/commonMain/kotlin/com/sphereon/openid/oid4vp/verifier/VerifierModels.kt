@@ -123,6 +123,11 @@ data class CreateAuthorizationRequestArgs(
     val dcqlQueryId: String? = null,
     val dcqlQueryVersion: Int? = null,
     /**
+     * Optional business identifier of the verifier instance this request belongs to. EDK uses this
+     * to resolve verifier-level and verifier/DCQL trust-domain defaults during response validation.
+     */
+    val verifierId: String? = null,
+    /**
      * Optional per-DCQL-credential-query credential status policy, keyed by the DCQL credential query
      * `id`. Decides how the verifier treats a received credential's resolved status (accept revoked /
      * suspended, require a status list, fail-closed on unresolvable). Threaded onto the resulting
@@ -229,6 +234,16 @@ data class ValidateAuthorizationResponseArgs(
      * verification. Required for `direct_post.jwt`; null for plain `direct_post`.
      */
     val verifierEncryptionJwkThumbprint: ByteArray? = null,
+    /**
+     * Optional business identifier of the verifier instance this validation belongs to. When present,
+     * trust-domain validation can resolve verifier-level and verifier/DCQL bindings.
+     */
+    val verifierId: String? = null,
+    /**
+     * Optional stored DCQL query identifier this validation belongs to. This is distinct from
+     * a DCQL credential query id inside the vp_token.
+     */
+    val dcqlQueryId: String? = null,
 )
 
 /**
@@ -263,6 +278,8 @@ data class MatchedCredential(
     val format: String,
     val presentation: String,
     val disclosedClaims: Map<String, Any?> = emptyMap(),
+    val issuer: CredentialIssuerRef? = null,
+    val trust: CredentialTrustValidation? = null,
 )
 
 /**
@@ -465,6 +482,7 @@ data class Oid4vpVerifierSession(
  * @property jarmDecryptionKey Optional decryption key for encrypted JARM responses
  * @property jarmExpectedAudience Expected audience for JARM JWT validation (verifier's client_id)
  * @property responseCodeTtlSeconds Time-to-live for the response code in seconds (default: 300 = 5 minutes)
+ * @property verifierId Optional verifier identifier used by tenant overlays such as trust-domain resolution.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HandleDirectPostResponseArgs", exact = true)
@@ -480,6 +498,8 @@ data class HandleDirectPostResponseArgs(
     @kotlinx.serialization.Transient
     val jarmSignerIdentifier: ManagedIdentifierOptsOrResult? = null,
     val responseCodeTtlSeconds: Long = 300,
+    val verifierId: String? = null,
+    val dcqlQueryId: String? = null,
     /**
      * mDoc-only: raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's encryption-
      * key JWK, threaded into the §B.2.6 OpenID4VPHandover during DeviceAuth verification.

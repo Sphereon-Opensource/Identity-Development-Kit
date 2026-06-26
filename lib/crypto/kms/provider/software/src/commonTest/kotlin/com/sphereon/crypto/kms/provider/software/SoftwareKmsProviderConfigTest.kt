@@ -27,6 +27,7 @@ import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderConfigBinderImpl
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
+import com.sphereon.crypto.kms.keystore.software.TenantKeyStorePathResolver
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import com.sphereon.di.Order
 import dev.whyoleg.cryptography.CryptographyProvider
@@ -165,6 +166,20 @@ class SoftwareKmsProviderConfigTest {
             val softwareKmsProvider = ctx.kmsProviderManager.createFromProviderConfig(config, ctx.session.sessionExecution)
             assertNotNull(softwareKmsProvider)
             assertEquals("test-software", softwareKmsProvider.id)
+        }
+
+    @Test
+    fun fileBackedKeyStoreUsesProviderIdForDerivedPath() =
+        runTest {
+            val keyStore =
+                Pkcs12KeyStoreConfig(
+                    password = "password",
+                )
+            val scoped = keyStore.withProviderScopedFileId("license")
+
+            assertTrue(scoped is Pkcs12KeyStoreConfig)
+            assertEquals("license", scoped.id)
+            assertEquals("/keystore/acme/license.p12", TenantKeyStorePathResolver.resolvePath(scoped, "acme"))
         }
 
     @Test

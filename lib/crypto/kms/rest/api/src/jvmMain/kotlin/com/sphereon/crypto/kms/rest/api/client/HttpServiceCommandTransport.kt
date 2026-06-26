@@ -23,6 +23,19 @@ import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyOutput
+import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.GetKeyInput
+import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ListKeysInput
+import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
+import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
+import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKey
+import com.sphereon.crypto.kms.rest.api.generated.models.ImportKeyResponse
+import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
 import com.sphereon.di.session.SessionContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -39,10 +52,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.serializer
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * HTTP-based implementation of [ServiceCommandTransport] for IDK's KMS REST client.
@@ -106,15 +121,15 @@ class HttpServiceCommandTransport(
         val pathTemplate = route.second
 
         // Build URL with path parameter substitution
-        val url = buildUrl(pathTemplate, input)
+        val url = buildUrl(commandId, pathTemplate, input)
 
         try {
             val response =
                 when (httpMethod.uppercase()) {
-                    "GET" -> requestExecutor.executeGet(url, input)
-                    "POST" -> requestExecutor.executePost(url, input)
-                    "PUT" -> requestExecutor.executePut(url, input)
-                    "DELETE" -> requestExecutor.executeDelete(url, input)
+                    "GET" -> requestExecutor.executeGet(commandId, url, pathTemplate, input)
+                    "POST" -> requestExecutor.executePost(commandId, url, input)
+                    "PUT" -> requestExecutor.executePut(commandId, url, input)
+                    "DELETE" -> requestExecutor.executeDelete(commandId, url, pathTemplate, input)
                     else -> return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unsupported HTTP method: $httpMethod"))
                 }
 
@@ -133,10 +148,7 @@ class HttpServiceCommandTransport(
                 return Err(IdkError.INVALID_STATE(message = "Empty response body for command $commandId"))
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val serializer = kotlinx.serialization.serializer(outputTypeToken.kType)
-            val result = json.decodeFromString(serializer, responseBody) as T
-            return Ok(result)
+            return Ok(decodeResponse(commandId, responseBody))
         } catch (expected: Exception) {
             return Err(
                 IdkError.UNKNOWN_ERROR(
@@ -153,14 +165,15 @@ class HttpServiceCommandTransport(
      * Path parameters like {aliasOrKid} are replaced with values from the input object.
      */
     private fun buildUrl(
+        commandId: String,
         pathTemplate: String,
         input: Any,
     ): String {
         var path = pathTemplate
 
         // Extract path parameters using reflection or serialization
-        val inputJson = encodeToJson(input)
-        val inputMap = json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(inputJson)
+        val inputJson = encodeToJson(commandId, input)
+        val inputMap = json.decodeFromString<Map<String, JsonElement>>(inputJson)
 
         // Replace path parameters like {aliasOrKid} with actual values
         val pathParamRegex = "\\{([^}]+)\\}".toRegex()
@@ -169,7 +182,7 @@ class HttpServiceCommandTransport(
             val value =
                 inputMap[paramName]?.let {
                     when (it) {
-                        is kotlinx.serialization.json.JsonPrimitive -> it.content
+                        is JsonPrimitive -> it.content
                         else -> it.toString()
                     }
                 }
@@ -185,11 +198,13 @@ class HttpServiceCommandTransport(
         private val sessionContext: SessionContext,
     ) {
         suspend fun executeGet(
+            commandId: String,
             url: String,
+            pathTemplate: String,
             input: Any,
         ): HttpResponse {
             // Extract query parameters from input (fields not in path)
-            val queryParams = extractQueryParams(input, url)
+            val queryParams = extractQueryParams(commandId, input, pathTemplate)
 
             return httpClient.get(url) {
                 addAuthHeaders()
@@ -200,30 +215,34 @@ class HttpServiceCommandTransport(
         }
 
         suspend fun executePost(
+            commandId: String,
             url: String,
             input: Any,
         ): HttpResponse =
             httpClient.post(url) {
                 addAuthHeaders()
                 contentType(ContentType.Application.Json)
-                setBody(extractRequestBody(input))
+                setBody(extractRequestBody(commandId, input))
             }
 
         suspend fun executePut(
+            commandId: String,
             url: String,
             input: Any,
         ): HttpResponse =
             httpClient.put(url) {
                 addAuthHeaders()
                 contentType(ContentType.Application.Json)
-                setBody(extractRequestBody(input))
+                setBody(extractRequestBody(commandId, input))
             }
 
         suspend fun executeDelete(
+            commandId: String,
             url: String,
+            pathTemplate: String,
             input: Any,
         ): HttpResponse {
-            val queryParams = extractQueryParams(input, url)
+            val queryParams = extractQueryParams(commandId, input, pathTemplate)
 
             return httpClient.delete(url) {
                 addAuthHeaders()
@@ -257,22 +276,23 @@ class HttpServiceCommandTransport(
      * Extracts query parameters from input, excluding path parameters.
      */
     private fun extractQueryParams(
+        commandId: String,
         input: Any,
-        url: String,
+        pathTemplate: String,
     ): Map<String, String> {
-        val inputJson = encodeToJson(input)
-        val inputMap = json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(inputJson)
+        val inputJson = encodeToJson(commandId, input)
+        val inputMap = json.decodeFromString<Map<String, JsonElement>>(inputJson)
 
         // Find which params are already in the path
-        val pathParams = "\\{([^}]+)\\}".toRegex().findAll(url).map { it.groupValues[1] }.toSet()
+        val pathParams = "\\{([^}]+)\\}".toRegex().findAll(pathTemplate).map { it.groupValues[1] }.toSet()
 
         // Return non-path params as query params (only non-null primitives)
         return inputMap.entries
             .filter { it.key !in pathParams }
             .mapNotNull { (key, value) ->
                 when (value) {
-                    is kotlinx.serialization.json.JsonNull -> null
-                    is kotlinx.serialization.json.JsonPrimitive -> key to value.content
+                    is JsonNull -> null
+                    is JsonPrimitive -> key to value.content
                     else -> null // Skip complex objects
                 }
             }.toMap()
@@ -280,24 +300,14 @@ class HttpServiceCommandTransport(
 
     /**
      * Extracts the request body for POST/PUT requests.
-     * For wrapped inputs (like GenerateKeyGlobal.generateKey), unwraps to the inner object.
+     *
+     * KMS command inputs are the wire bodies directly; they are not wrapped in
+     * command envelopes.
      */
-    private fun extractRequestBody(input: Any): String {
-        val inputJson = encodeToJson(input)
-        val inputMap = json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(inputJson)
-
-        // Check if input has a single nested object field (wrapper pattern)
-        // e.g., GenerateKeyGlobal { generateKey: GenerateKeyGlobal }
-        // In this case, send just the inner object
-        if (inputMap.size == 1) {
-            val singleValue = inputMap.values.first()
-            if (singleValue is kotlinx.serialization.json.JsonObject) {
-                return singleValue.toString()
-            }
-        }
-
-        return inputJson
-    }
+    private fun extractRequestBody(
+        commandId: String,
+        input: Any,
+    ): String = encodeToJson(commandId, input)
 
     private fun <T : Any> parseErrorResponse(
         statusCode: Int,
@@ -339,10 +349,38 @@ class HttpServiceCommandTransport(
         }
     }
 
-    @OptIn(InternalSerializationApi::class)
-    private fun encodeToJson(input: Any): String {
-        @Suppress("UNCHECKED_CAST")
-        val serializer = input::class.serializer() as kotlinx.serialization.KSerializer<Any>
-        return json.encodeToString(serializer, input)
-    }
+    private fun encodeToJson(
+        commandId: String,
+        input: Any,
+    ): String =
+        when (commandId) {
+            GenerateKeyServiceCommand.COMMAND_ID -> json.encodeToString(input as GenerateKeyGlobal)
+            GetKeyServiceCommand.COMMAND_ID -> json.encodeToString(input as GetKeyInput)
+            ListKeysServiceCommand.COMMAND_ID -> json.encodeToString(input as ListKeysInput)
+            DeleteKeyServiceCommand.COMMAND_ID -> json.encodeToString(input as DeleteKeyInput)
+            ImportKeyServiceCommand.COMMAND_ID -> json.encodeToString(input as ImportKey)
+            else -> {
+                throw IllegalStateException(
+                    "No compile-time serializer registered for command $commandId input",
+                )
+            }
+        }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : Any> decodeResponse(
+        commandId: String,
+        responseBody: String,
+    ): T =
+        when (commandId) {
+            GenerateKeyServiceCommand.COMMAND_ID -> json.decodeFromString<GenerateKeyResponse>(responseBody) as T
+            GetKeyServiceCommand.COMMAND_ID -> json.decodeFromString<GetKeyResponse>(responseBody) as T
+            ListKeysServiceCommand.COMMAND_ID -> json.decodeFromString<ListKeysResponse>(responseBody) as T
+            DeleteKeyServiceCommand.COMMAND_ID -> json.decodeFromString<DeleteKeyOutput>(responseBody) as T
+            ImportKeyServiceCommand.COMMAND_ID -> json.decodeFromString<ImportKeyResponse>(responseBody) as T
+            else -> {
+                throw IllegalStateException(
+                    "No compile-time serializer registered for command $commandId response",
+                )
+            }
+        }
 }

@@ -26,11 +26,13 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.requirePathParam
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
@@ -42,6 +44,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 
 /**
@@ -76,6 +79,7 @@ interface GetJwtVcIssuerMetadataRootEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("oid4vci-issuer", "sd-jwt-vc", "metadata"),
                 summary = "SD-JWT VC Issuer Metadata (bare — for root-hosted issuers)",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }
@@ -92,6 +96,7 @@ interface GetJwtVcIssuerMetadataScopedEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("oid4vci-issuer", "sd-jwt-vc", "metadata"),
                 summary = "SD-JWT VC Issuer Metadata (path-scoped — RFC 8615 insert)",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }
@@ -104,6 +109,7 @@ private suspend fun buildBody(
     configProvider: Oid4vciIssuerConfigProvider,
     keyIdResolver: IssuerKeyIdResolver,
 ): IdkResult<JsonObject, IdkError> {
+    configProvider.prepare()
     val issuer = configProvider.issuerIdentifier.trimEnd('/')
     if (issuer.isEmpty()) {
         return Err(IdkError.fromString(code = "misconfigured", message = "Issuer identifier is not configured"))
@@ -151,6 +157,7 @@ private suspend fun buildBody(
                 if (kid != null) put("kid", JsonPrimitive(kid))
             }
         }
+    val display: List<DisplayProperties>? = configProvider.display?.takeIf { it.isNotEmpty() }
 
     val body =
         buildJsonObject {
@@ -161,6 +168,9 @@ private suspend fun buildBody(
                     put("keys", buildJsonArray { keys.forEach { add(it) } })
                 },
             )
+            if (display != null) {
+                put("display", jwtVcIssuerJson.encodeToJsonElement(display))
+            }
         }
     return Ok(body)
 }

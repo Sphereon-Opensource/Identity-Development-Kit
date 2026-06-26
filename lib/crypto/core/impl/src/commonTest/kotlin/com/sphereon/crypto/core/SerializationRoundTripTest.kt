@@ -26,6 +26,8 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.json.CryptoJsonSupport
+import com.sphereon.crypto.core.kms.command.ResolvePublicKeyResult
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -719,5 +721,56 @@ class SerializationRoundTripTest {
         assertEquals(null, deserialized.alias)
         assertEquals(null, deserialized.providerId)
         assertEquals(null, deserialized.keyType)
+    }
+
+    // ==================== ResolvePublicKeyResult (KMS command result) Serialization ====================
+
+    // The `kms.key.resolve` result crosses the binary command transport east-west (satellite -> tenant-kms),
+    // where the codec resolves serializers only from the compile-time registry with no reflective fallback.
+    // ResolvePublicKeyResult must therefore have a working generated serializer that round-trips.
+
+    @Test
+    fun testResolvePublicKeyResultSerialization() {
+        val jwk =
+            Jwk(
+                kty = JwaKeyType.EC,
+                crv = JwaCurve.P_256,
+                x = "WbbEfK3hWXcRbFJLuVf1JOXU3VqlJvq7xQ_KMiLfdHQ",
+                y = "ZC1XxhNDxR4lFMJqHQON3QmJXCHbERnp-S4y2pLxT-4",
+                kid = "resolve-result-key",
+            )
+
+        val result =
+            ResolvePublicKeyResult(
+                resolvedKeyInfo =
+                    ResolvedKeyInfo(
+                        kid = jwk.kid,
+                        key = jwk,
+                        keyVisibility = KeyVisibility.PUBLIC,
+                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        alias = "resolve-alias",
+                        providerId = "resolve-provider",
+                    ),
+            )
+
+        // Use the production crypto Json, which registers Jwk/CoseKeyJson as KeyType subclasses
+        // (the polymorphic key serialization the field's ResolvedKeyInfoSerializer requires), matching
+        // how this result is encoded when it crosses the command transport.
+        val cryptoJson = CryptoJsonSupport.serializer
+        val serialized = cryptoJson.encodeToString(ResolvePublicKeyResult.serializer(), result)
+        val deserialized = cryptoJson.decodeFromString(ResolvePublicKeyResult.serializer(), serialized)
+
+        assertNotNull(deserialized.resolvedKeyInfo)
+        assertTrue(serialized.contains("resolve-result-key"))
+    }
+
+    @Test
+    fun testEmptyResolvePublicKeyResultSerialization() {
+        val result = ResolvePublicKeyResult()
+
+        val serialized = json.encodeToString(ResolvePublicKeyResult.serializer(), result)
+        val deserialized = json.decodeFromString(ResolvePublicKeyResult.serializer(), serialized)
+
+        assertEquals(null, deserialized.resolvedKeyInfo)
     }
 }

@@ -45,6 +45,11 @@ kotlin {
                 implementation(projects.libAttributePipelinePublic)
                 implementation(projects.libOpenidOid4vciCommonPublic)
 
+                // Public design-asset path constants + per-tenant URI resolver (PublicDesignAssetPaths):
+                // the metadata + VCT endpoints rewrite stored RELATIVE design-asset URIs to absolute
+                // per-tenant URLs at serve time. Pure model module, no heavy transitive deps.
+                implementation(projects.libDataStoreCredentialDesignPublic)
+
                 // JSON-LD validation bindings — `VcLdJsonJwtFormatHandler` (in
                 // libOpenidOid4vciIssuerImpl) injects ValidateJsonLdContextServiceCommand
                 // and ValidateJsonLdSchemaServiceCommand. The standalone Ktor server's

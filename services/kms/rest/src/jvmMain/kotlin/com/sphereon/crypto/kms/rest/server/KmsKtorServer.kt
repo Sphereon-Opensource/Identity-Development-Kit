@@ -4,6 +4,7 @@ import com.sphereon.crypto.kms.rest.server.ktor.kmsRouting
 import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -43,11 +44,25 @@ import io.ktor.server.routing.routing
  * }
  * ```
  */
-fun Application.configureKms(appGraph: AppGraph) {
+fun Application.configureKms(
+    appGraph: AppGraph,
+    /**
+     * Strategy for deriving the session tenant from the request. Defaults to a fixed `default` tenant
+     * (standalone/dev IDK use). Enterprise deployments pass a resolver that honors the Layer-1-resolved
+     * (host/JWT) tenant — e.g. EDK's `AttributeTenantResolver` — so KMS sessions are per-tenant and the
+     * per-tenant keystore/config derivation keys off the real tenant.
+     */
+    tenantResolver: TenantResolver = FixedTenantResolver("default"),
+    /**
+     * Whether to install the default StatusPages plugin. Enterprise containers that install their own
+     * StatusPages (e.g. a GraalVM-native-safe handler) pass false to avoid a Ktor DuplicatePluginException.
+     */
+    installStatusPages: Boolean = true,
+) {
     // Install kotlin-inject plugin with AppGraph
     install(KotlinInjectPlugin) {
         this.appGraph = appGraph // ← AppGraph passed to plugin!
-        tenantResolver = FixedTenantResolver("default")
+        this.tenantResolver = tenantResolver
     }
     log.info("KotlinInject plugin installed - full DI enabled")
 
@@ -55,12 +70,14 @@ fun Application.configureKms(appGraph: AppGraph) {
         json()
     }
 
-    install(StatusPages) {
-        exception<Throwable> { call, cause ->
-            call.respondText(
-                text = """{"error": "${cause.message}"}""",
-                status = HttpStatusCode.InternalServerError,
-            )
+    if (installStatusPages) {
+        install(StatusPages) {
+            exception<Throwable> { call, cause ->
+                call.respondText(
+                    text = """{"error": "${cause.message}"}""",
+                    status = HttpStatusCode.InternalServerError,
+                )
+            }
         }
     }
 

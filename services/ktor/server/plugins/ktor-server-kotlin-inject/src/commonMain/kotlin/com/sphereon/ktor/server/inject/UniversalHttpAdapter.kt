@@ -23,12 +23,16 @@ import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
 import dev.zacsweers.metro.createGraph
 import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.log
+import io.ktor.server.request.contentLength
+import io.ktor.server.request.contentType
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.request.receiveChannel
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
@@ -38,6 +42,8 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.util.AttributeKey
+import io.ktor.utils.io.core.readBytes
+import io.ktor.utils.io.readRemaining
 
 /**
  * Per-call attribute holding the Layer 1 resolved base tenant id.
@@ -87,6 +93,51 @@ class UniversalHttpAdapterConfig {
      * If null, a default 500 response is returned.
      */
     var errorHandler: (suspend (ApplicationCall, Throwable) -> Unit)? = null
+
+    /**
+     * Route prefixes served WITHOUT the [corsInstaller]. Use for browser top-level-navigation
+     * endpoints (e.g. the OAuth2 AS `/login` and `/authorize` form POSTs): a navigation following a
+     * cross-origin OIDC redirect carries an opaque `Origin: null`, which a CORS allow-list rejects
+     * with 403 before the handler runs — even though browsers never apply CORS to navigations.
+     * Both the exact prefix and its subpaths are routed CORS-free; everything else keeps CORS.
+     * CSRF for such endpoints is the login double-submit (`session_code`) + cookie, not Origin.
+     */
+    var corsExemptPrefixes: List<String> = emptyList()
+
+    /**
+     * Optional route-scoped plugin installer (typically `install(CORS) { ... }`) applied to the XHR
+     * catch-all route but NOT to [corsExemptPrefixes]. Provided by the caller so this module needs
+     * no CORS dependency. When null, no route-scoped plugin is installed (default).
+     */
+    var corsInstaller: (Route.() -> Unit)? = null
+}
+
+/**
+ * Shared dispatch: convert the Ktor call to a [GenericHttpRequest], run it through the
+ * SessionScope [HttpAdapterDispatcher], and write the [GenericHttpResponse] back.
+ */
+private suspend fun ApplicationCall.dispatchUniversal(config: UniversalHttpAdapterConfig) {
+    try {
+        val dispatcher = (this.sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
+        val genericRequest = this.toGenericHttpRequest()
+        if (config.verboseLogging) {
+            this.application.log.info("Dispatching: ${genericRequest.method} ${genericRequest.path}")
+        }
+        val genericResponse = dispatcher.dispatch(genericRequest)
+        this.respondWithGenericResponse(genericResponse)
+    } catch (expected: Throwable) {
+        val handler = config.errorHandler
+        if (handler != null) {
+            handler(this, expected)
+        } else {
+            this.application.log.error("Error in UniversalHttpAdapter dispatch", expected)
+            this.respondText(
+                text = "Internal server error: ${expected.message}",
+                contentType = ContentType.Text.Plain,
+                status = HttpStatusCode.InternalServerError,
+            )
+        }
+    }
 }
 
 /**
@@ -122,39 +173,23 @@ fun Application.installUniversalHttpAdapters(configure: UniversalHttpAdapterConf
     val config = UniversalHttpAdapterConfig().apply(configure)
 
     routing {
-        // Create a catch-all route
-        route(config.pathPrefix ?: "{...}") {
-            handle {
-                try {
-                    // Get the dispatcher from the session graph directly
-                    val dispatcher = (call.sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
-
-                    // Convert Ktor call to GenericHttpRequest
-                    val genericRequest = call.toGenericHttpRequest()
-
-                    if (config.verboseLogging) {
-                        call.application.log.info("Dispatching: ${genericRequest.method} ${genericRequest.path}")
-                    }
-
-                    // Dispatch and get response
-                    val genericResponse = dispatcher.dispatch(genericRequest)
-
-                    // Convert GenericHttpResponse to Ktor response
-                    call.respondWithGenericResponse(genericResponse)
-                } catch (expected: Throwable) {
-                    val handler = config.errorHandler
-                    if (handler != null) {
-                        handler(call, expected)
-                    } else {
-                        call.application.log.error("Error in UniversalHttpAdapter dispatch", expected)
-                        call.respondText(
-                            text = "Internal server error: ${expected.message}",
-                            contentType = ContentType.Text.Plain,
-                            status = HttpStatusCode.InternalServerError,
-                        )
-                    }
-                }
+        // CORS-exempt navigation prefixes (e.g. the AS /login, /authorize) are routed WITHOUT the
+        // caller's route-scoped CORS installer, so a browser navigation POST carrying `Origin: null`
+        // is not 403'd by CORS before dispatch. Constant prefixes outscore the catch-all tailcard,
+        // so only these exact paths + their subpaths bypass CORS; everything else keeps it.
+        val installer = config.corsInstaller
+        if (installer != null) {
+            for (prefix in config.corsExemptPrefixes) {
+                route(prefix) { handle { call.dispatchUniversal(config) } }
+                route("$prefix/{...}") { handle { call.dispatchUniversal(config) } }
             }
+        }
+
+        // Catch-all route (XHR API surface). The caller's CORS installer, when present, is applied
+        // route-scoped HERE — not globally — so it never reaches the exempt navigation prefixes.
+        route(config.pathPrefix ?: "{...}") {
+            installer?.invoke(this)
+            handle { call.dispatchUniversal(config) }
         }
     }
 }
@@ -253,13 +288,21 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
             .filter { (key, _) -> key != "..." } // Filter out the catch-all parameter
             .associate { (name, values) -> name to values.firstOrNull().orEmpty() }
 
-    // Create lazy body supplier
-    // Note: We read the body once and cache it since receiveText() can only be called once
-    val bodyText =
+    // Read the body once and cache it since Ktor request bodies can only be consumed once.
+    val bodyContent =
         try {
-            receiveText()
+            val contentLength = request.contentLength()
+            if (request.httpMethod.mayCarryRequestBody() && contentLength != 0L) {
+                if (request.contentType().isTextLikeRequestBody()) {
+                    GenericHttpBody.Text(receiveText())
+                } else {
+                    GenericHttpBody.Bytes(receiveChannel().readRemaining().readBytes())
+                }
+            } else {
+                GenericHttpBody.Empty
+            }
         } catch (_: Exception) {
-            null
+            GenericHttpBody.Empty
         }
 
     // RFC 8705: when the engine terminated TLS with `verifyClient = true` and the peer
@@ -277,15 +320,20 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
         multiValueHeaders = multiValueHeaders,
         queryParameters = queryParameters,
         pathParameters = pathParameters,
-        bodySupplier =
-            if (bodyText != null) {
-                { bodyText }
-            } else {
-                null
-            },
+        bodyContent = bodyContent,
         clientCertificateChain = clientCertificateChain,
     )
 }
+
+private fun ContentType.isTextLikeRequestBody(): Boolean {
+    val value = toString().lowercase()
+    return value.startsWith("text/") ||
+        value.contains("json") ||
+        value.contains("xml") ||
+        value.startsWith("application/x-www-form-urlencoded")
+}
+
+private fun HttpMethod.mayCarryRequestBody(): Boolean = this == HttpMethod.Post || this == HttpMethod.Put || this == HttpMethod.Patch
 
 /**
  * Platform hook for extracting the TLS client certificate chain (DER, leaf-first) from a

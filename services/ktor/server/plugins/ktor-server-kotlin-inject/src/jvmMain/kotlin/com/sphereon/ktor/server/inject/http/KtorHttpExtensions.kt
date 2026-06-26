@@ -25,6 +25,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.LazyMap
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.ApplicationRequest
@@ -32,10 +33,13 @@ import io.ktor.server.request.contentLength
 import io.ktor.server.request.contentType
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.request.receiveChannel
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
+import io.ktor.utils.io.readAvailable
+import java.io.ByteArrayOutputStream
 import com.sphereon.ktor.server.inject.BaseTenantIdAttribute as SharedBaseTenantIdAttribute
 
 /**
@@ -90,19 +94,24 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
     val method = this.httpMethod.value
     val request = this
 
-    // Read body immediately (Ktor's receiveText is suspend and can only be called once)
-    // Only attempt to read body if Content-Type is JSON or Content-Length indicates content
-    val body =
+    // Read body immediately (Ktor's receiveText is suspend and can only be called once).
+    // Chunked clients do not always send Content-Length, so body-capable methods must still
+    // be read when the length is unknown.
+    val bodyContent =
         try {
-            if (request.contentType()?.match(ContentType.Application.Json) == true ||
-                request.contentLength()?.let { it > 0 } == true
-            ) {
-                call.receiveText()
+            val contentType = request.contentType()
+            val contentLength = request.contentLength()
+            if (request.httpMethod.mayCarryRequestBody() && contentLength != 0L) {
+                if (contentType.isTextLikeRequestBody()) {
+                    GenericHttpBody.Text(call.receiveText())
+                } else {
+                    GenericHttpBody.Bytes(call.receiveBodyBytes())
+                }
             } else {
-                null
+                GenericHttpBody.Empty
             }
         } catch (_: Exception) {
-            null
+            GenericHttpBody.Empty
         }
 
     // Layer 1 resolved tenant id, stamped on the call by the tenant-resolution
@@ -155,9 +164,30 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
                 }
                 queryMap
             },
-        // Body supplier that returns already-read body
-        bodySupplier = { body },
+        bodyContent = bodyContent,
     )
+}
+
+private fun ContentType?.isTextLikeRequestBody(): Boolean {
+    val value = this?.toString()?.lowercase().orEmpty()
+    return value.startsWith("text/") ||
+        value.contains("json") ||
+        value.contains("xml") ||
+        value.startsWith("application/x-www-form-urlencoded")
+}
+
+private fun HttpMethod.mayCarryRequestBody(): Boolean = this == HttpMethod.Post || this == HttpMethod.Put || this == HttpMethod.Patch
+
+private suspend fun ApplicationCall.receiveBodyBytes(): ByteArray {
+    val channel = receiveChannel()
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (!channel.isClosedForRead) {
+        val read = channel.readAvailable(buffer, 0, buffer.size)
+        if (read < 0) break
+        if (read > 0) out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
 }
 
 /**

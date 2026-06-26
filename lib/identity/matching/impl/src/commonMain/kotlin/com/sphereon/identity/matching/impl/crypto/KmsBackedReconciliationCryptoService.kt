@@ -16,6 +16,8 @@
 
 package com.sphereon.identity.matching.impl.crypto
 
+import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
@@ -25,8 +27,6 @@ import com.sphereon.crypto.core.kms.command.GenerateMacCommand
 import com.sphereon.identity.matching.crypto.EncryptedPayload
 import com.sphereon.identity.matching.crypto.HashedIdentifier
 import com.sphereon.identity.matching.crypto.ReconciliationCryptoService
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * KMS-backed implementation of [ReconciliationCryptoService].
@@ -53,7 +53,6 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * @param previousEncryptionKeyVersion Optional version for previous Key C
  * @param providerId The KMS provider ID to use (e.g., "software")
  */
-@OptIn(ExperimentalEncodingApi::class)
 class KmsBackedReconciliationCryptoService(
     private val generateMacCommand: GenerateMacCommand,
     private val keyManagerService: KeyManagerService,
@@ -95,13 +94,13 @@ class KmsBackedReconciliationCryptoService(
         // Combine IV (12 bytes) + authTag (16 bytes) + ciphertext into a single blob
         val combined = encryptResult.iv + encryptResult.authTag + encryptResult.ciphertext
         return EncryptedPayload(
-            ciphertext = Base64.UrlSafe.encode(combined),
+            ciphertext = combined.encodeToBase64Url(),
             keyVersion = encryptionKeyVersion,
         )
     }
 
     override suspend fun decrypt(payload: EncryptedPayload): String {
-        val combined = Base64.UrlSafe.decode(payload.ciphertext)
+        val combined = payload.ciphertext.decodeFromBase64Url()
 
         // Extract IV (12 bytes), authTag (16 bytes), ciphertext (remaining)
         require(combined.size > 28) { "Invalid encrypted payload: too short" }

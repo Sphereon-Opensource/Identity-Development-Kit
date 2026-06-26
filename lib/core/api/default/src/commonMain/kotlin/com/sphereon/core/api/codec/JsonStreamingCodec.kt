@@ -22,17 +22,17 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.StreamingBody
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.json.JsonSupport
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.serializer
+import kotlin.reflect.KClass
 
 /**
  * JSON implementation of [StreamingCodec] using kotlinx.serialization.
@@ -65,8 +65,24 @@ import kotlinx.serialization.serializer
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<StreamingCodec>())
 class JsonStreamingCodec(
-    private val json: Json = defaultJson,
+    private val json: Json? = null,
+    /**
+     * Compile-time-resolved serializer entries aggregated via a Metro multibinding.
+     * Defaults to empty so graphs that contribute nothing still construct the codec;
+     * on a miss the codec falls back to the existing reflective serializer lookup.
+     */
+    serializerEntries: Set<CommandSerializerEntry> = emptySet(),
 ) : StreamingCodec {
+    private val effectiveJson: Json get() = json ?: defaultJson
+
+    /**
+     * Compile-time serializer registry, keyed by the serializable runtime class.
+     * Built once from the injected entries. A hit means we resolve the serializer
+     * without any reflection (required for GraalVM native-image command dispatch).
+     */
+    private val serializerByClass: Map<KClass<*>, KSerializer<*>> =
+        serializerEntries.associate { it.kClass to it.serializer }
+
     override val contentType: String = ContentTypes.JSON
 
     override val additionalContentTypes: Set<String> =
@@ -93,7 +109,7 @@ class JsonStreamingCodec(
                     }
 
                     is JsonElement -> {
-                        json.encodeToString(JsonElement.serializer(), value)
+                        effectiveJson.encodeToString(JsonElement.serializer(), value)
                     }
 
                     is Unit -> {
@@ -101,11 +117,20 @@ class JsonStreamingCodec(
                     }
 
                     else -> {
-                        // Use runtime serializer lookup (multiplatform-compatible)
-                        @OptIn(InternalSerializationApi::class)
+                        // Resolve the serializer from the compile-time registry only (zero
+                        // reflection, native-safe). A miss is a clean error — there is NO
+                        // reflective fallback (`value::class.serializer()`) because kotlin-reflect
+                        // is excluded from the runtime classpath for GraalVM native-image support.
+                        val registered =
+                            serializerByClass[value::class]
+                                ?: return Err(
+                                    CodecErrors.encodingError(
+                                        "No registered serializer for ${value::class.simpleName} — " +
+                                            "register it in the command serializer registry (CommandSerializerEntry).",
+                                    ),
+                                )
                         @Suppress("UNCHECKED_CAST")
-                        val serializer = value::class.serializer() as KSerializer<T>
-                        json.encodeToString(serializer, value)
+                        effectiveJson.encodeToString(registered as KSerializer<T>, value)
                     }
                 }
             Ok(StreamingBody.Text(text))
@@ -150,11 +175,22 @@ class JsonStreamingCodec(
         }
 
         return try {
-            // Get serializer from KType
-            val serializer = serializer(typeToken.kType)
+            // Resolve the serializer from the compile-time registry only (zero reflection,
+            // native-safe). A miss is a clean error — there is NO reflective fallback
+            // (`serializer(typeToken.kType)`) because kotlin-reflect is excluded from the
+            // runtime classpath for GraalVM native-image support.
+            val kClass = typeToken.kType.classifier as? KClass<*>
+            val serializer =
+                kClass?.let { serializerByClass[it] }
+                    ?: return Err(
+                        CodecErrors.decodingError(
+                            "No registered serializer for ${typeToken.simpleName} — " +
+                                "register it in the command serializer registry (CommandSerializerEntry).",
+                        ),
+                    )
 
             @Suppress("UNCHECKED_CAST")
-            val result = json.decodeFromString(serializer, text) as T
+            val result = effectiveJson.decodeFromString(serializer as KSerializer<T>, text)
             Ok(result)
         } catch (expected: Exception) {
             Err(CodecErrors.decodingError("Failed to decode JSON to ${typeToken.simpleName}: ${expected.message}", expected))
@@ -179,7 +215,7 @@ class JsonStreamingCodec(
                 ?: return Err(CodecErrors.decodingError("Cannot decode empty or binary body"))
 
         return try {
-            Ok(json.decodeFromString(serializer, text))
+            Ok(effectiveJson.decodeFromString(serializer, text))
         } catch (expected: Exception) {
             Err(CodecErrors.decodingError("Failed to decode JSON: ${expected.message}", expected))
         }
@@ -197,7 +233,7 @@ class JsonStreamingCodec(
         serializer: KSerializer<T>,
     ): IdkResult<StreamingBody, IdkError> =
         try {
-            val text = json.encodeToString(serializer, value)
+            val text = effectiveJson.encodeToString(serializer, value)
             Ok(StreamingBody.Text(text))
         } catch (expected: Exception) {
             Err(CodecErrors.encodingError("Failed to encode to JSON: ${expected.message}", expected))
@@ -211,13 +247,15 @@ class JsonStreamingCodec(
          * - encodeDefaults: false - Omit default values to reduce payload size
          * - prettyPrint: false - Compact output for network efficiency
          */
-        val defaultJson: Json =
-            Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-                encodeDefaults = false
-                prettyPrint = false
-            }
+        val defaultJson: Json
+            get() =
+                Json {
+                    serializersModule = JsonSupport.module
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                    encodeDefaults = false
+                    prettyPrint = false
+                }
     }
 }
 

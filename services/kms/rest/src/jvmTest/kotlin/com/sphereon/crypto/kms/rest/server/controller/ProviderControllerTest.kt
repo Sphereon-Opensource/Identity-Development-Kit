@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
@@ -49,6 +50,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ProviderControllerTest {
     private lateinit var appGraph: TestApiAppGraph
@@ -70,6 +73,26 @@ class ProviderControllerTest {
                 "$PROPERTY_PREFIX.keyStore.id" to "test-memory-keystore",
                 "$PROPERTY_PREFIX.keyStore.keyVisibility" to "private",
                 "$PROPERTY_PREFIX.keyStore.overwriteAlias" to "true",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.type" to "software",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.id" to PROTECTED_SLUG_PROVIDER_ID,
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.system" to "true",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.role" to "TENANT_AUTHORIZATION_SERVER",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.persistKeysDuringGeneration" to "true",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration" to "false",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.type" to "memory",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.id" to "acme-memory-keystore",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.keyVisibility" to "private",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.overwriteAlias" to "true",
+                "$INTERNAL_PROPERTY_PREFIX.type" to "software",
+                "$INTERNAL_PROPERTY_PREFIX.id" to INTERNAL_PROVIDER_ID,
+                "$INTERNAL_PROPERTY_PREFIX.system" to "true",
+                "$INTERNAL_PROPERTY_PREFIX.role" to "internal",
+                "$INTERNAL_PROPERTY_PREFIX.persistKeysDuringGeneration" to "false",
+                "$INTERNAL_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration" to "false",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.type" to "memory",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.id" to "internal-token-verifier-memory",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.keyVisibility" to "public",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.overwriteAlias" to "true",
             ),
         )
 
@@ -110,6 +133,26 @@ class ProviderControllerTest {
         DefaultPrincipalMapPropertySource.deleteProperty("$PROPERTY_PREFIX.keyStore.id")
         DefaultPrincipalMapPropertySource.deleteProperty("$PROPERTY_PREFIX.keyStore.keyVisibility")
         DefaultPrincipalMapPropertySource.deleteProperty("$PROPERTY_PREFIX.keyStore.overwriteAlias")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.system")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.role")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.persistKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.keyVisibility")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.overwriteAlias")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.system")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.role")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.persistKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.keyVisibility")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.overwriteAlias")
     }
 
     @Test
@@ -122,6 +165,15 @@ class ProviderControllerTest {
                     accept(ContentType.Application.Json)
                 }
             assertEquals(HttpStatusCode.OK, response.status)
+            val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            val providerIds =
+                body["providers"]!!
+                    .jsonArray
+                    .map { it.jsonObject["providerId"]!!.jsonPrimitive.content }
+
+            assertTrue(providerIds.contains("testsoftware"))
+            assertTrue(providerIds.contains(PROTECTED_SLUG_PROVIDER_ID))
+            assertFalse(providerIds.contains(INTERNAL_PROVIDER_ID))
         }
 
     @Test
@@ -134,6 +186,30 @@ class ProviderControllerTest {
                     accept(ContentType.Application.Json)
                 }
             assertEquals(HttpStatusCode.OK, response.status)
+        }
+
+    @Test
+    fun getProtectedSlugProvider() =
+        runTest {
+            val response =
+                client.get("http://localhost:$port/providers/$PROTECTED_SLUG_PROVIDER_ID") {
+                    header("X-Tenant-ID", TEST_TENANT_ID)
+                    header("X-User-ID", TEST_USER_ID)
+                    accept(ContentType.Application.Json)
+                }
+            assertEquals(HttpStatusCode.OK, response.status)
+        }
+
+    @Test
+    fun getSystemProviderReturnsNotFound() =
+        runTest {
+            val response =
+                client.get("http://localhost:$port/providers/$INTERNAL_PROVIDER_ID") {
+                    header("X-Tenant-ID", TEST_TENANT_ID)
+                    header("X-User-ID", TEST_USER_ID)
+                    accept(ContentType.Application.Json)
+                }
+            assertEquals(HttpStatusCode.NotFound, response.status)
         }
 
     @Test
@@ -318,6 +394,10 @@ class ProviderControllerTest {
     companion object {
         const val TEST_TENANT_ID = "test-tenant-123"
         const val TEST_USER_ID = "test-user-456"
+        private const val INTERNAL_PROVIDER_ID = "internal-token-verifier"
+        private const val PROTECTED_SLUG_PROVIDER_ID = "acme"
         private const val PROPERTY_PREFIX = "kms.providers.testsoftware"
+        private const val PROTECTED_SLUG_PROPERTY_PREFIX = "kms.providers.$PROTECTED_SLUG_PROVIDER_ID"
+        private const val INTERNAL_PROPERTY_PREFIX = "kms.providers.$INTERNAL_PROVIDER_ID"
     }
 }

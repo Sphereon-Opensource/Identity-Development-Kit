@@ -123,8 +123,6 @@ class PropertySourceBootstrapImpl(
 ) : PropertySourceBootstrap {
     private var _registeredAppSourceCount = 0
     private val registeredSources = mutableSetOf<String>()
-    private val registeredTenantSources = mutableSetOf<String>()
-    private val registeredPrincipalSources = mutableSetOf<String>()
 
     override val registeredAppSourceCount: Int
         get() = _registeredAppSourceCount
@@ -207,11 +205,7 @@ class PropertySourceBootstrapImpl(
         logService.debug("Registering ${tenantContributions.size} TENANT-level sources for tenant: $tenantId")
 
         for (contribution in tenantContributions) {
-            val registrationKey = "$tenantId:${contribution.providerId}"
-            if (registrationKey in registeredTenantSources) {
-                continue
-            }
-            if (contribution.isEnabled(tenantConfigService)) {
+            if (contribution.isEnabled(appConfigService)) {
                 val source = contribution.createScopedSource(tenantId) ?: continue
                 val scoped =
                     if (source is ScopedPropertySource<*>) {
@@ -219,8 +213,10 @@ class PropertySourceBootstrapImpl(
                     } else {
                         ScopedPropertySourceWrapper(source, contribution.configLevel)
                     }
+                if (tenantConfigService.getPropertySources(includeParents = false).contains(scoped.getName())) {
+                    continue
+                }
                 tenantConfigService.addPropertySource(scoped)
-                registeredTenantSources.add(registrationKey)
                 logService.debug("Registered tenant source: ${contribution.providerId} for tenant: $tenantId")
             }
         }
@@ -236,11 +232,7 @@ class PropertySourceBootstrapImpl(
         logService.debug("Registering ${principalContributions.size} PRINCIPAL-level sources for: $tenantId/$principalId")
 
         for (contribution in principalContributions) {
-            val registrationKey = "$tenantId:$principalId:${contribution.providerId}"
-            if (registrationKey in registeredPrincipalSources) {
-                continue
-            }
-            if (contribution.isEnabled(principalConfigService)) {
+            if (contribution.isEnabled(appConfigService)) {
                 val source = contribution.createScopedSource(tenantId, principalId) ?: continue
                 val scoped =
                     if (source is ScopedPropertySource<*>) {
@@ -248,8 +240,10 @@ class PropertySourceBootstrapImpl(
                     } else {
                         ScopedPropertySourceWrapper(source, contribution.configLevel)
                     }
+                if (principalConfigService.getPropertySources(includeParents = false).contains(scoped.getName())) {
+                    continue
+                }
                 principalConfigService.addPropertySource(scoped)
-                registeredPrincipalSources.add(registrationKey)
                 logService.debug("Registered principal source: ${contribution.providerId}")
             }
         }

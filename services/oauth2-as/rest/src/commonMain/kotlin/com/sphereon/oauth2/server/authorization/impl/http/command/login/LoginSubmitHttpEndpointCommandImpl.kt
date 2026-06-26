@@ -42,6 +42,7 @@ import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
+import com.sphereon.oauth2.server.authorization.provider.ClientApplicationResolver
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
@@ -73,6 +74,7 @@ class LoginSubmitHttpEndpointCommandImpl(
     private val userAuthProvider: UserAuthenticationProvider,
     private val loginSessionStore: OidcLoginSessionStore,
     private val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
+    private val clientApplicationResolver: ClientApplicationResolver,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
     private val clock: Clock,
@@ -156,18 +158,48 @@ class LoginSubmitHttpEndpointCommandImpl(
 
         // Load the pending authorization session (read-only: findById does NOT consume; the
         // callback flow's single-use removal stays where it is) so the provider receives the
-        // application id stamped at session mint. Fail-open: a lookup failure or missing
-        // session downgrades to an application-agnostic context, login continues.
+        // application id stamped at session mint. A missing/erroring pending session is an
+        // invalid login attempt, not an application-agnostic credential check.
         val pendingSession =
             pendingAuthorizationSessionStore
                 .findById(sessionId)
-                .getOrElse { null }
+                .getOrElse { error ->
+                    auditEmitter.emit(
+                        type = OAuth2AuditEventType.LOGIN_ERROR,
+                        metadata = mapOf("error_subcode" to "pending_session_lookup_failed"),
+                        errorCode = "invalid_request",
+                        errorMessage = error.message.defaultMessage,
+                    )
+                    return Ok(oauth2ErrorResponse(400, "invalid_request", "Unknown or expired login session", json))
+                }
+                ?: run {
+                    auditEmitter.emit(
+                        type = OAuth2AuditEventType.LOGIN_ERROR,
+                        metadata = mapOf("error_subcode" to "pending_session_not_found"),
+                        errorCode = "invalid_request",
+                    )
+                    return Ok(oauth2ErrorResponse(400, "invalid_request", "Unknown or expired login session", json))
+                }
+        val applicationId =
+            pendingSession.applicationId
+                ?: clientApplicationResolver
+                    .resolveApplicationId(clientId = pendingSession.clientId, requestHost = null)
+                    .getOrElse { error ->
+                        auditEmitter.emit(
+                            type = OAuth2AuditEventType.LOGIN_ERROR,
+                            clientId = pendingSession.clientId,
+                            metadata = mapOf("error_subcode" to "application_resolution_failed"),
+                            errorCode = "invalid_request",
+                            errorMessage = error.message.defaultMessage,
+                        )
+                        return Ok(oauth2ErrorResponse(400, "invalid_request", "Could not resolve login application", json))
+                    }
         val authResult =
             userAuthProvider.authenticateWithCredentials(
                 UserCredentials.UsernamePassword(username = username, password = password),
                 AuthenticationContext(
                     sessionId = sessionId,
-                    applicationId = pendingSession?.applicationId,
+                    applicationId = applicationId,
                 ),
             )
         if (!authResult.isOk) {

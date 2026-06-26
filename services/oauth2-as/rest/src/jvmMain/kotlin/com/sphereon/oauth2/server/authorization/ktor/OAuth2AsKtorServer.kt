@@ -1,5 +1,6 @@
 package com.sphereon.oauth2.server.authorization.ktor
 
+import com.sphereon.core.api.log.Log
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.AppGraph
@@ -7,10 +8,12 @@ import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -26,7 +29,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 
 fun main() {
-    println("Starting OAuth2 Authorization Server...")
+    Log.app().withTag("OAuth2AsKtorServer").info("Starting OAuth2 Authorization Server")
 
     val appGraph =
         createOAuth2AsAppGraph(
@@ -92,6 +95,15 @@ fun Application.configureOAuth2As(appGraph: AppGraph) {
 
 @DependencyGraph(AppScope::class)
 abstract class OAuth2AsAppGraph : AbstractAppGraph() {
+    // Default JWT-validation config for the STANDALONE IDK AS server. The internal signing-key
+    // provisioning endpoint injects JwtValidationService/IdpRegistry (to validate the platform's
+    // east-west bearer); their default impls need a JwtValidationConfig. The enterprise tenant-as
+    // assembly provides this via PlatformBearerAuth — this graph-local provider keeps the standalone
+    // server self-sufficient without colliding with that contributed binding.
+    @Provides
+    @SingleIn(AppScope::class)
+    fun provideJwtValidationConfig(): JwtValidationConfig = JwtValidationConfig()
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.BlobDescriptor
@@ -58,8 +59,6 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * HTTP client implementing [BlobService] by calling service-data's blob REST API.
@@ -146,7 +145,6 @@ class HttpBlobServiceClient(
 
     // ── Standard CRUD ──────────────────────────────────────────────────
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun storeBlob(
         target: BlobInfo,
         data: ByteArray,
@@ -162,7 +160,7 @@ class HttpBlobServiceClient(
                         BlobApiPutBody(
                             tenantId = target.tenantId ?: "default",
                             path = path,
-                            dataBase64 = Base64.encode(data),
+                            dataBase64 = data.encodeToBase64(),
                             metadata = metadata,
                             options = options,
                         ),
@@ -178,7 +176,6 @@ class HttpBlobServiceClient(
         }
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError> {
         if (info is ResolvedBlobInfo) {
             return Ok(info)
@@ -321,7 +318,6 @@ class HttpBlobServiceClient(
 
     // ── CAS operations ─────────────────────────────────────────────────
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun casStore(
         info: BlobInfo,
         data: ByteArray,
@@ -334,7 +330,7 @@ class HttpBlobServiceClient(
                     setBody(
                         CasStoreBody(
                             tenantId = info.tenantId ?: "default",
-                            dataBase64 = Base64.encode(data),
+                            dataBase64 = data.encodeToBase64(),
                             algorithm = algorithm,
                             storeId = info.storeId,
                             metadata = info.toBlobMetadata(),
@@ -351,7 +347,6 @@ class HttpBlobServiceClient(
         }
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun casGet(
         info: BlobInfo,
         address: ContentAddress,

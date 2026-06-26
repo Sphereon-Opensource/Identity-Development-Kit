@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.api.IdkResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -187,8 +188,10 @@ class DefaultPropertyInterpolatorParsePlaceholdersTest {
     }
 
     @Test
-    fun parsesSecretPlaceholder() {
-        val tokens = interpolator.parsePlaceholders("\${secret:vault:kv/data/myapp:password}")
+    fun parsesPinnedSecretPlaceholder() {
+        // Pinned provider via leading @. Provider-native slash paths (e.g. Vault kv paths) are
+        // NOT treated as key delimiters, so the path is preserved verbatim (only lowercased).
+        val tokens = interpolator.parsePlaceholders("\${secret:@vault:kv/data/myapp:password}")
         assertEquals(1, tokens.size)
         assertEquals(PlaceholderType.SECRET, tokens[0].type)
         assertEquals("vault", tokens[0].provider)
@@ -197,12 +200,37 @@ class DefaultPropertyInterpolatorParsePlaceholdersTest {
     }
 
     @Test
-    fun parsesSecretPlaceholderWithoutKey() {
-        val tokens = interpolator.parsePlaceholders("\${secret:env:API_KEY}")
+    fun parsesPinnedSecretPlaceholderWithoutSubKey() {
+        val tokens = interpolator.parsePlaceholders("\${secret:@env:API_KEY}")
         assertEquals(1, tokens.size)
         assertEquals(PlaceholderType.SECRET, tokens[0].type)
         assertEquals("env", tokens[0].provider)
+        // The logical key is passed through verbatim here; normalization is owned by the
+        // SecretAddressResolver during resolution.
         assertEquals("API_KEY", tokens[0].path)
+    }
+
+    @Test
+    fun parsesCascadeSecretPlaceholder() {
+        // No provider (cascade): provider is null, logical key normalized.
+        val tokens = interpolator.parsePlaceholders("\${secret:db.password}")
+        assertEquals(1, tokens.size)
+        assertEquals(PlaceholderType.SECRET, tokens[0].type)
+        assertNull(tokens[0].provider)
+        assertEquals("db.password", tokens[0].path)
+    }
+
+    @Test
+    fun cascadeSecretLogicalKeyIsPassedThroughVerbatim() {
+        // The parser does NOT normalize; it carries the raw logical key. Normalization equivalence
+        // (dotted == UPPER_SNAKE == hyphen == slash) is owned by SecretAddressResolver and covered
+        // by SecretAddressResolverTest.
+        val dotted = interpolator.parsePlaceholders("\${secret:example.secret.ref.value}")[0]
+        val upper = interpolator.parsePlaceholders("\${secret:EXAMPLE_SECRET_REF_VALUE}")[0]
+        assertEquals("example.secret.ref.value", dotted.path)
+        assertEquals("EXAMPLE_SECRET_REF_VALUE", upper.path)
+        assertNull(dotted.provider)
+        assertNull(upper.provider)
     }
 
     @Test
@@ -461,11 +489,11 @@ class PropertyInterpolatorWithSecretsTest {
     }
 
     @Test
-    fun interpolatesMapSecretReference() =
+    fun interpolatesPinnedMapSecretReference() =
         runTest {
             val (resolver, interpolator) =
                 createResolverAndInterpolator(
-                    properties = mapOf("db.password" to "\${secret:map:credentials:password}"),
+                    properties = mapOf("db.password" to "\${secret:@map:credentials:password}"),
                     secrets = mapOf("credentials" to mapOf("password" to "supersecret")),
                 )
 
@@ -479,14 +507,14 @@ class PropertyInterpolatorWithSecretsTest {
         }
 
     @Test
-    fun combinesRegularAndSecretInterpolation() =
+    fun combinesRegularAndPinnedSecretInterpolation() =
         runTest {
             val (resolver, interpolator) =
                 createResolverAndInterpolator(
                     properties =
                         mapOf(
                             "db.host" to "localhost",
-                            "db.url" to "jdbc:postgresql://\${db.host}:5432/mydb?password=\${secret:map:creds:pass}",
+                            "db.url" to "jdbc:postgresql://\${db.host}:5432/mydb?password=\${secret:@map:creds:pass}",
                         ),
                     secrets = mapOf("creds" to mapOf("pass" to "secret123")),
                 )
@@ -498,5 +526,102 @@ class PropertyInterpolatorWithSecretsTest {
 
             assertTrue(result.isOk)
             assertEquals("jdbc:postgresql://localhost:5432/mydb?password=secret123", result.value)
+        }
+}
+
+/**
+ * Captures the (provider, path, key, scope, scopeIdentifier) tuple the interpolator forwards,
+ * and returns a fixed value, to verify cascade + scope-identity threading end-to-end.
+ */
+private class CapturingSecretResolver(
+    private val returnValue: String = "resolved",
+) : SecretResolver {
+    var lastProvider: String? = null
+    var lastPath: String? = null
+    var lastKey: String? = null
+    var lastScope: ConfigLevel? = null
+    var lastScopeIdentifier: String? = null
+
+    override suspend fun resolve(
+        provider: String?,
+        path: String,
+        key: String?,
+    ): IdkResult<String, com.sphereon.core.api.error.IdkError> = resolve(provider, path, key, null, null, null)
+
+    override suspend fun resolve(
+        provider: String?,
+        path: String,
+        key: String?,
+        scope: ConfigLevel?,
+        scopeIdentifier: String?,
+    ): IdkResult<String, com.sphereon.core.api.error.IdkError> = resolve(provider, path, key, scope, scopeIdentifier, null)
+
+    override suspend fun resolve(
+        provider: String?,
+        path: String,
+        key: String?,
+        scope: ConfigLevel?,
+        scopeIdentifier: String?,
+        resolver: PropertyResolver?,
+    ): IdkResult<String, com.sphereon.core.api.error.IdkError> {
+        lastProvider = provider
+        lastPath = path
+        lastKey = key
+        lastScope = scope
+        lastScopeIdentifier = scopeIdentifier
+        return com.sphereon.core.api
+            .Ok(returnValue)
+    }
+}
+
+class PropertyInterpolatorScopeThreadingTest {
+    private fun emptyResolver(): PropertyResolver = PropertySourcesPropertyResolver(DefaultPropertySources())
+
+    @Test
+    fun cascadeSecretForwardsNullProviderAndScopeIdentifier() =
+        runTest {
+            val capturing = CapturingSecretResolver(returnValue = "tenant-secret")
+            val interpolator = DefaultPropertyInterpolator(secretResolver = capturing)
+
+            val result =
+                interpolator.interpolate(
+                    value = "\${secret:db.password}",
+                    resolver = emptyResolver(),
+                    requestingScope = ConfigLevel.TENANT,
+                    maxDepth = null,
+                    resolveSecrets = true,
+                    scopeIdentifier = "tenant-123",
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("tenant-secret", result.value)
+            // Cascade form -> null provider; normalized logical key; threaded scope identity.
+            assertNull(capturing.lastProvider)
+            assertEquals("db.password", capturing.lastPath)
+            assertEquals(ConfigLevel.TENANT, capturing.lastScope)
+            assertEquals("tenant-123", capturing.lastScopeIdentifier)
+        }
+
+    @Test
+    fun pinnedSecretForwardsProviderAndScopeIdentifier() =
+        runTest {
+            val capturing = CapturingSecretResolver()
+            val interpolator = DefaultPropertyInterpolator(secretResolver = capturing)
+
+            val result =
+                interpolator.interpolate(
+                    value = "\${secret:@vault:db.password}",
+                    resolver = emptyResolver(),
+                    requestingScope = ConfigLevel.PRINCIPAL,
+                    maxDepth = null,
+                    resolveSecrets = true,
+                    scopeIdentifier = "principal-7",
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("vault", capturing.lastProvider)
+            assertEquals("db.password", capturing.lastPath)
+            assertEquals(ConfigLevel.PRINCIPAL, capturing.lastScope)
+            assertEquals("principal-7", capturing.lastScopeIdentifier)
         }
 }

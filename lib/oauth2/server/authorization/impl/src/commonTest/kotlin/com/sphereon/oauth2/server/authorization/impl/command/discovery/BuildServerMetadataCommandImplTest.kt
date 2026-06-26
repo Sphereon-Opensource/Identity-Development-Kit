@@ -305,4 +305,25 @@ class BuildServerMetadataCommandImplTest {
             assertEquals("https://public.example.com", result.value.issuer)
             assertEquals("https://public.example.com/token", result.value.tokenEndpoint)
         }
+
+    @Test
+    fun testBaseUrlOverrideWinsOverConfiguredIssuer() =
+        runTest {
+            val config = OAuth2ServerInstanceConfig(issuer = "https://configured.example.com")
+            val configProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(servers = mapOf("default" to config)),
+                )
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
+
+            val result =
+                command.execute(
+                    BuildServerMetadataArgs(baseUrlOverride = "https://public.example.com"),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("https://public.example.com", result.value.issuer)
+            assertEquals("https://public.example.com/token", result.value.tokenEndpoint)
+            assertEquals("https://public.example.com/authorize", result.value.authorizationEndpoint)
+        }
 }

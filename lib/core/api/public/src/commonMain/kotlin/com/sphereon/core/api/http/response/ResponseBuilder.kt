@@ -122,18 +122,24 @@ object ResponseBuilder {
      * @param contentType the MIME type (e.g. `application/pdf`, `image/png`)
      * @param etag optional entity tag — emitted as `ETag: "<value>"` (quoted per RFC 7232)
      * @param cacheControl optional `Cache-Control` directive (e.g. `max-age=3600`)
+     * @param additionalHeaders extra response headers merged after the standard ones; later entries
+     *   win on key collision (case-sensitive). Intended for security headers (e.g.
+     *   `X-Content-Type-Options`, `Content-Security-Policy`) on endpoints that serve
+     *   active content such as SVG.
      */
     fun bytesResponse(
         data: ByteArray,
         contentType: String,
         etag: String? = null,
         cacheControl: String? = null,
+        additionalHeaders: Map<String, String> = emptyMap(),
     ): GenericHttpResponse {
         val headers =
             buildMap {
                 put("Content-Type", contentType)
                 etag?.let { put("ETag", "\"$it\"") }
                 cacheControl?.let { put("Cache-Control", it) }
+                putAll(additionalHeaders)
             }
         return GenericHttpResponse(
             statusCode = 200,

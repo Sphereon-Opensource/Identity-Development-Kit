@@ -214,7 +214,7 @@ class WalletE2ETest {
         // separate from CREDENTIAL_CONFIG_ID so fullIssuanceViaWalletFacade's jwt_vc_json
         // assertions are untouched.
         private const val SD_JWT_CONFIG_ID = "UniversityDegreeSdJwt"
-        private const val SD_JWT_VCT = "https://issuer.example.com/oid4vci/vct/UniversityDegreeSdJwt"
+        private const val SD_JWT_VCT = "https://issuer.example.com/public/schema/vct/UniversityDegreeSdJwt"
         private const val ISSUER_SIGNING_KEY_ALIAS = "issuer-vc-signing-key"
         private const val VERIFIER_SIGNING_KEY_ALIAS = "verifier-jar-signing-key"
         private const val WALLET_CLIENT_ID = "https://wallet.example.com"
@@ -703,7 +703,7 @@ class WalletE2ETest {
             // stays empty — that is also correct and must not crash.
             //
             // When subjects ARE populated every entry must have a non-blank value and the
-            // no-op identity resolver leaves correlationId null.
+            // no-op identity resolver leaves identityIdentifierId null.
             // =====================================================================
             for (subjectRef in doc.subjects) {
                 assertTrue(
@@ -712,8 +712,8 @@ class WalletE2ETest {
                 )
                 assertEquals(
                     null,
-                    subjectRef.correlationId,
-                    "No-op identity resolver leaves correlationId null",
+                    subjectRef.identityIdentifierId,
+                    "No-op identity resolver leaves identityIdentifierId null",
                 )
             }
             // If the issuer set the holder DID in `sub` (expected when a DID-bound proof
@@ -900,7 +900,7 @@ class WalletE2ETest {
                 // WalletImpl.present copies the presented instance with boundTo = verifierRef
                 // and upserts the document. The metadata derivation counts boundTo != null
                 // instances, so boundInstanceCount should now be 1 for the sd-jwt document.
-                // The no-op identity resolver leaves correlationId null — that is expected and
+                // The no-op identity resolver leaves identityIdentifierId null — that is expected and
                 // verified here (the ref is still set; correlationId is just absent).
                 // =====================================================================
                 val postPresentMetaResult = wallet.documents.findMetadataByCredentialType(SD_JWT_CONFIG_ID)
@@ -920,8 +920,8 @@ class WalletE2ETest {
                 assertNotNull(postPresentDoc, "Post-presentation document should not be null")
                 val boundInstance = postPresentDoc.credentials.firstOrNull { it.boundTo != null }
                 assertNotNull(boundInstance, "At least one instance should have boundTo set after presentation")
-                // correlationId is null because the no-op identity resolver does not enrich the ref
-                assertEquals(null, boundInstance.boundTo!!.correlationId, "no-op resolver leaves correlationId null")
+                // identityIdentifierId is null because the no-op identity resolver does not enrich the ref
+                assertEquals(null, boundInstance.boundTo!!.identityIdentifierId, "no-op resolver leaves identityIdentifierId null")
 
                 // =====================================================================
                 // Step 8: Assert the verifier session reached the RESPONSE_VERIFIED state

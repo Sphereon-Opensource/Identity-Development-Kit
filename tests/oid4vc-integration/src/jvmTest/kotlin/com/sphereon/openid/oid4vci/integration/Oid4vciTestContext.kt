@@ -1,5 +1,6 @@
 package com.sphereon.openid.oid4vci.integration
 
+import com.sphereon.core.api.conf.DefaultAppMapPropertySource
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.KeyInfo
@@ -9,7 +10,9 @@ import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import com.sphereon.di.app.AppGraph
+import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionInstance
+import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
@@ -46,6 +49,10 @@ class Oid4vciTestContext(
             "oid4vci.issuer.identifier",
             OID4VCI_TEST_ISSUER_URL,
         )
+        DefaultAppMapPropertySource.addProperty(
+            "oid4vci.issuer.protocol.base-path",
+            "/oid4vci",
+        )
     }
 
     val app: AppGraph = createOid4vciTestAppGraph(application = testInstance)
@@ -55,6 +62,8 @@ class Oid4vciTestContext(
     val signingKeyStore: SigningKeyStore = (app as Oid4vciSigningKeyStoreGraph).signingKeyStore
 
     init {
+        (session.graph as Oid4vciTenantOverrideSessionGraph).mutableResolvedTenantIdProvider.setCurrentTenantId(OID4VCI_TEST_TENANT_ID)
+
         // Register software KMS provider for crypto operations in tests
         val config = SoftwareKmsProviderConfig(id = "oid4vci-test-kms")
         val factory = (app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
@@ -111,4 +120,9 @@ class Oid4vciTestContext(
 @ContributesTo(AppScope::class)
 interface Oid4vciSigningKeyStoreGraph {
     val signingKeyStore: SigningKeyStore
+}
+
+@ContributesTo(SessionScope::class)
+interface Oid4vciTenantOverrideSessionGraph {
+    val mutableResolvedTenantIdProvider: MutableResolvedTenantIdProvider
 }

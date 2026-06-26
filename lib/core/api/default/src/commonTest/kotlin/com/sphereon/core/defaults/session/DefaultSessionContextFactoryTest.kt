@@ -50,6 +50,21 @@ class DefaultSessionContextFactoryTest {
     }
 
     @Test
+    fun propagatesPrincipalTypeFromResolution() {
+        val resolution =
+            IdentityResolutionResult(
+                tenantId = "t1",
+                principalId = "service-principal",
+                principalType = PrincipalType.SERVICE,
+                metadata = IdentityMetadata(),
+            )
+
+        val sessionContext = factory.create(sessionId = "s1", correlationId = "corr-s1", resolution = resolution)
+
+        assertEquals(PrincipalType.SERVICE, sessionContext.context.principalType)
+    }
+
+    @Test
     fun fallsBackToAnonymousConstantsWhenResolutionIsEmpty() {
         val resolution =
             IdentityResolutionResult(

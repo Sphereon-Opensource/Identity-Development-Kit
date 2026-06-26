@@ -6,6 +6,8 @@ import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.PropertySource
+import com.sphereon.core.api.conf.PropertySources
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.context.SessionExecution
@@ -17,6 +19,8 @@ import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
+import kotlinx.io.files.Path
+import kotlin.reflect.KClass
 
 internal class NoOpSessionLogService(
     override val sessionContext: SessionContext = NoOpSessionContext,
@@ -33,8 +37,71 @@ internal class NoOpSessionLogService(
     override fun toAsync(): AsyncLogService = throw NotImplementedError("Not needed for test")
 }
 
+internal object NoOpAppConfigService : AppConfigService {
+    override val configLevel: ConfigLevel = ConfigLevel.APP
+    override val level: ConfigLevel = ConfigLevel.APP
+    override val parent: ConfigService? = null
+
+    override fun addPropertySource(source: PropertySource<*>): ConfigService = this
+
+    override fun removePropertySource(source: PropertySource<*>): ConfigService = this
+
+    override fun getActiveProfile(): String = "test"
+
+    override fun getAppName(): String = "oid4vci-rest-test"
+
+    override fun getConfigLocation(): Path = Path(".")
+
+    override fun getPropertySources(includeParents: Boolean): PropertySources = throw NotImplementedError("Not needed for test")
+
+    override fun containsProperty(key: String): Boolean = false
+
+    override fun <T : Any> getProperty(
+        key: String,
+        targetType: KClass<T>,
+        defaultValue: T?,
+    ): T? = defaultValue
+
+    override fun getPropertyAsString(
+        key: String,
+        defaultValue: String?,
+    ): String? =
+        when (key) {
+            Oid4vciIssuerProtocolHttpAdapter.BASE_PATH_KEY -> "/oid4vci"
+            else -> defaultValue
+        }
+
+    override fun <T : Any> getRequiredProperty(
+        key: String,
+        targetType: KClass<T>,
+        defaultValue: T?,
+    ): T = defaultValue ?: throw IllegalStateException("No value for $key")
+
+    override fun getRequiredPropertyAsString(
+        key: String,
+        defaultValue: String?,
+    ): String = defaultValue ?: throw IllegalStateException("No value for $key")
+
+    override fun getAllProperties(): Map<String, Any> = emptyMap()
+
+    override fun getAllPropertiesAsString(redact: Boolean): Map<String, String> = emptyMap()
+
+    override fun getSubProperties(
+        prefixes: Set<String>,
+        stripPrefix: Boolean,
+    ): Map<String, Any> = emptyMap()
+
+    override fun getSubPropertiesAsString(
+        prefixes: Set<String>,
+        stripPrefix: Boolean,
+        redact: Boolean,
+    ): Map<String, String> = emptyMap()
+
+    override fun getNamespace(): String = "test"
+}
+
 internal class NoOpContextConfig : ContextConfig {
-    override val app: AppConfigService get() = throw NotImplementedError("Not needed for test")
+    override val app: AppConfigService = NoOpAppConfigService
     override val tenant: TenantConfigService get() = throw NotImplementedError("Not needed for test")
     override val principal: PrincipalConfigService get() = throw NotImplementedError("Not needed for test")
 

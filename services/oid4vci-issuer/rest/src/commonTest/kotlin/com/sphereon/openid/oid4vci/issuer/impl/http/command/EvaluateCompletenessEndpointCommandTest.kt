@@ -29,7 +29,6 @@ import com.sphereon.credential.issuance.pipeline.command.BindingCompletenessVerd
 import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessArgs
 import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessCommand
 import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessResult
-import com.sphereon.openid.oid4vci.issuer.config.NoOpVctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.impl.command.InMemoryOfferRateLimiter
 import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
 import com.sphereon.openid.oid4vci.issuer.impl.http.FakeCreateCredentialOfferCommand
@@ -269,6 +268,7 @@ class EvaluateCompletenessEndpointCommandTest {
                     execution,
                     NoOpRoutableSlugLookup(),
                     testTenantIdProvider(),
+                    com.sphereon.openid.oid4vci.issuer.impl.http.NoOpAppConfigService,
                     credentialOfferCommand,
                     nonceCommand,
                     credentialCommand,
@@ -281,7 +281,6 @@ class EvaluateCompletenessEndpointCommandTest {
                     ContributeViaCallbackEndpointCommandImpl(execution, callbackTokenService = null, contributeAttributesCommand = null, callbackCoordinator = null),
                     FailPipelineSourceEndpointCommandImpl(execution, failPipelineSourceCommand = null),
                     ApprovePipelineSessionEndpointCommandImpl(execution, approvePipelineSessionCommand = null),
-                    GetVctTypeMetadataEndpointCommandImpl(execution, NoOpVctTypeMetadataProvider),
                 )
 
             val request =

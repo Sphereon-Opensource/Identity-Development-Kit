@@ -25,6 +25,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.data.store.credential.design.command.GetDesignAssetArgs
+import com.sphereon.data.store.credential.design.command.GetDesignAssetByHashArgs
+import com.sphereon.data.store.credential.design.command.GetDesignAssetByHashServiceCommand
 import com.sphereon.data.store.credential.design.command.GetDesignAssetServiceCommand
 import com.sphereon.data.store.credential.design.command.UploadDesignAssetArgs
 import com.sphereon.data.store.credential.design.command.UploadDesignAssetServiceCommand
@@ -82,5 +84,29 @@ class GetDesignAssetServiceCommandImpl(
     ): IdkResult<ResolvedDesignAsset, IdkError> {
         val input = applyDuring(args)
         return designService.getDesignAsset(input.tenantId, input.input)
+    }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<GetDesignAssetByHashServiceCommand>())
+class GetDesignAssetByHashServiceCommandImpl(
+    execution: SessionExecution,
+    private val designService: CredentialDesignService,
+) : TypedServiceCommandAdapter<GetDesignAssetByHashArgs, ResolvedDesignAsset, IdkError>(
+        commandId = GetDesignAssetByHashServiceCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<GetDesignAssetByHashArgs>(),
+        outputTypeToken = typeToken<ResolvedDesignAsset>(),
+    ),
+    GetDesignAssetByHashServiceCommand {
+    override val commandId: String get() = GetDesignAssetByHashServiceCommand.COMMAND_ID
+
+    override suspend fun doExecute(
+        args: GetDesignAssetByHashArgs,
+        applyDuring: (GetDesignAssetByHashArgs) -> GetDesignAssetByHashArgs,
+    ): IdkResult<ResolvedDesignAsset, IdkError> {
+        val input = applyDuring(args)
+        return designService.getDesignAssetByHash(input.tenantId, input.hash)
     }
 }

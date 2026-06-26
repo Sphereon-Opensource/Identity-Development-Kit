@@ -28,6 +28,7 @@ import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.BaseApplicationPlugin
 import io.ktor.server.application.call
 import io.ktor.server.application.plugin
+import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
 
 /**
@@ -95,6 +96,7 @@ class KotlinInjectPlugin(
 
     val tenantResolver: TenantResolver = configuration.tenantResolver
     val principalResolver: PrincipalResolver = configuration.principalResolver
+    val ignoredPathPrefixes: List<String> = configuration.ignoredPathPrefixes
 
     // Get the app-scoped logger from the graph
     private val logger: LogService by lazy {
@@ -125,6 +127,11 @@ class KotlinInjectPlugin(
                 )
 
             pipeline.intercept(ApplicationCallPipeline.Plugins) {
+                if (plugin.ignoredPathPrefixes.any { call.request.path().startsWith(it) }) {
+                    proceed()
+                    return@intercept
+                }
+
                 val requestContext = interceptor.intercept(call)
                 try {
                     proceed()

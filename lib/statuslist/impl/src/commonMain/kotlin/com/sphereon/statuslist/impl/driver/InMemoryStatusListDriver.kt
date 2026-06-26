@@ -19,6 +19,7 @@ package com.sphereon.statuslist.impl.driver
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.pagination.Page
 import com.sphereon.di.session.SessionScope
@@ -56,6 +57,7 @@ import kotlin.uuid.Uuid
 /** Live state of one in-memory status list. */
 internal class ListState(
     val id: String,
+    val tenantId: String,
     val args: CreateStatusListArgs,
     val bitset: StatusBitset,
     val createdAt: Instant,
@@ -64,6 +66,13 @@ internal class ListState(
     val entriesByIndex = mutableMapOf<Int, StatusListEntry>()
     val indexByEntryCorrelationId = mutableMapOf<String, Int>()
     val indexByCredentialId = mutableMapOf<String, Int>()
+    var signedToken: StatusListToken? = null
+}
+
+/** Per-tenant in-memory state: lists keyed by id, with a correlation-id index. */
+internal class TenantState {
+    val lists = mutableMapOf<String, ListState>()
+    val correlationToId = mutableMapOf<String, String>()
 }
 
 /**
@@ -71,18 +80,30 @@ internal class ListState(
  * the live bit array, and entry rows; performs storage + index allocation but does **not** sign —
  * signing is session-scoped and lives in [InMemoryStatusListDriver]. EDK replaces the whole driver
  * (and thus this store) with a durable Postgres/MySQL implementation.
+ *
+ * Management state is partitioned per tenant. Status lists are globally unique by their hosting URL,
+ * so a tenant-agnostic [uriToId] index allows the public hosting endpoint to resolve a list across
+ * tenants by its full URL.
  */
 @OptIn(ExperimentalUuidApi::class)
 @Inject
 @SingleIn(AppScope::class)
 class InMemoryStatusListStore {
     private val mutex = Mutex()
-    private val lists = mutableMapOf<String, ListState>()
-    private val correlationToId = mutableMapOf<String, String>()
+    private val tenants = mutableMapOf<String, TenantState>()
 
-    internal suspend fun createStatusList(args: CreateStatusListArgs): IdkResult<ListState, IdkError> =
+    // Global, tenant-agnostic index from full hosting URL to (tenantId, listId).
+    private val uriToId = mutableMapOf<String, Pair<String, String>>()
+
+    private fun tenantState(tenantId: String): TenantState = tenants.getOrPut(tenantId) { TenantState() }
+
+    internal suspend fun createStatusList(
+        tenantId: String,
+        args: CreateStatusListArgs
+    ): IdkResult<ListState, IdkError> =
         mutex.withLock {
-            if (correlationToId.containsKey(args.correlationId)) {
+            val tenant = tenantState(tenantId)
+            if (tenant.correlationToId.containsKey(args.correlationId)) {
                 return@withLock Err(StatusListErrors.duplicateCorrelationId(args.correlationId))
             }
             if (args.bitsPerStatus !in intArrayOf(1, 2, 4, 8)) {
@@ -92,22 +113,46 @@ class InMemoryStatusListStore {
             val state =
                 ListState(
                     id = Uuid.random().toString(),
+                    tenantId = tenantId,
                     args = args,
                     bitset = StatusBitset.create(args.length, args.bitsPerStatus, StatusListCodec.bitOrderFor(args.spec)),
                     createdAt = now,
                     updatedAt = now,
                 )
-            lists[state.id] = state
-            correlationToId[args.correlationId] = state.id
+            tenant.lists[state.id] = state
+            tenant.correlationToId[args.correlationId] = state.id
+            uriToId[args.statusListUri] = tenantId to state.id
             Ok(state)
         }
 
-    internal suspend fun getState(ref: StatusListRef): ListState? = mutex.withLock { resolveList(ref) }
+    internal suspend fun getState(
+        tenantId: String,
+        ref: StatusListRef
+    ): ListState? = mutex.withLock { resolveList(tenantId, ref) }
 
-    suspend fun listSummaries(args: ListStatusListsArgs): Page<StatusListSummary> =
+    internal suspend fun getToken(
+        tenantId: String,
+        ref: StatusListRef
+    ): StatusListToken? = mutex.withLock { resolveList(tenantId, ref)?.signedToken }
+
+    internal suspend fun updateToken(
+        tenantId: String,
+        ref: StatusListRef,
+        token: StatusListToken,
+    ): IdkResult<Unit, IdkError> =
+        mutex.withLock {
+            val state = resolveList(tenantId, ref) ?: return@withLock Err(listNotFound(ref))
+            state.signedToken = token
+            Ok(Unit)
+        }
+
+    suspend fun listSummaries(
+        tenantId: String,
+        args: ListStatusListsArgs
+    ): Page<StatusListSummary> =
         mutex.withLock {
             val filtered =
-                lists.values.filter { s ->
+                tenantState(tenantId).lists.values.filter { s ->
                     (args.filter.spec == null || s.args.spec == args.filter.spec) &&
                         (args.filter.purpose == null || args.filter.purpose in s.args.purposes) &&
                         (args.filter.correlationId == null || s.args.correlationId == args.filter.correlationId)
@@ -123,17 +168,25 @@ class InMemoryStatusListStore {
             Page(items = window, totalCount = filtered.size.toLong(), limit = args.limit, offset = args.offset)
         }
 
-    suspend fun deleteStatusList(ref: StatusListRef): Boolean =
+    suspend fun deleteStatusList(
+        tenantId: String,
+        ref: StatusListRef
+    ): Boolean =
         mutex.withLock {
-            val state = resolveList(ref) ?: return@withLock false
-            lists.remove(state.id)
-            correlationToId.remove(state.args.correlationId)
+            val state = resolveList(tenantId, ref) ?: return@withLock false
+            val tenant = tenantState(state.tenantId)
+            tenant.lists.remove(state.id)
+            tenant.correlationToId.remove(state.args.correlationId)
+            uriToId.remove(state.args.statusListUri)
             true
         }
 
-    suspend fun allocateEntry(args: AllocateEntryArgs): IdkResult<StatusListEntry, IdkError> =
+    suspend fun allocateEntry(
+        tenantId: String,
+        args: AllocateEntryArgs
+    ): IdkResult<StatusListEntry, IdkError> =
         mutex.withLock {
-            val state = resolveList(args.statusList) ?: return@withLock Err(listNotFound(args.statusList))
+            val state = resolveList(tenantId, args.statusList) ?: return@withLock Err(listNotFound(args.statusList))
             val index = pickIndex(state, args.explicitIndex).getOrElse { return@withLock Err(it) }
             if (args.initialValue !in 0 until (1 shl state.args.bitsPerStatus)) {
                 return@withLock Err(StatusListErrors.invalidStatusValue(args.initialValue, state.args.bitsPerStatus))
@@ -154,10 +207,13 @@ class InMemoryStatusListStore {
             Ok(entry)
         }
 
-    suspend fun updateEntryStatus(args: UpdateEntryStatusArgs): IdkResult<StatusListEntry, IdkError> =
+    suspend fun updateEntryStatus(
+        tenantId: String,
+        args: UpdateEntryStatusArgs
+    ): IdkResult<StatusListEntry, IdkError> =
         mutex.withLock {
             val ref = args.entry
-            val state = resolveEntryListState(ref) ?: return@withLock Err(entryNotFound(ref))
+            val state = resolveEntryListState(tenantId, ref) ?: return@withLock Err(entryNotFound(ref))
             if (args.value !in 0 until (1 shl state.args.bitsPerStatus)) {
                 return@withLock Err(StatusListErrors.invalidStatusValue(args.value, state.args.bitsPerStatus))
             }
@@ -190,12 +246,13 @@ class InMemoryStatusListStore {
         }
 
     suspend fun bindCredential(
+        tenantId: String,
         entry: EntryRef,
         credentialId: String?,
         credentialHash: String?,
     ): IdkResult<StatusListEntry, IdkError> =
         mutex.withLock {
-            val (state, existing) = resolveEntry(entry) ?: return@withLock Err(entryNotFound(entry))
+            val (state, existing) = resolveEntry(tenantId, entry) ?: return@withLock Err(entryNotFound(entry))
             val updated =
                 existing.copy(
                     credentialId = credentialId ?: existing.credentialId,
@@ -206,7 +263,10 @@ class InMemoryStatusListStore {
             Ok(updated)
         }
 
-    suspend fun getEntry(ref: EntryRef): StatusListEntry? = mutex.withLock { resolveEntry(ref)?.second }
+    suspend fun getEntry(
+        tenantId: String,
+        ref: EntryRef
+    ): StatusListEntry? = mutex.withLock { resolveEntry(tenantId, ref)?.second }
 
     // region helpers
 
@@ -241,24 +301,42 @@ class InMemoryStatusListStore {
         entry.credentialId?.let { state.indexByCredentialId[it] = entry.statusListIndex }
     }
 
-    private fun resolveList(ref: StatusListRef): ListState? {
-        ref.id?.let { return lists[it] }
-        ref.correlationId?.let { cid -> return correlationToId[cid]?.let { lists[it] } }
+    private fun resolveList(
+        tenantId: String,
+        ref: StatusListRef
+    ): ListState? {
+        // Status lists are globally unique by hosting URL: resolve URI tenant-agnostic first.
+        ref.statusListUri?.let { uri ->
+            uriToId[uri]?.let { (ownerTenant, listId) ->
+                tenants[ownerTenant]?.lists?.get(listId)?.let { return it }
+            }
+        }
+        val tenant = tenantState(tenantId)
+        ref.id?.let { return tenant.lists[it] }
+        ref.correlationId?.let { cid -> return tenant.correlationToId[cid]?.let { tenant.lists[it] } }
         return null
     }
 
-    private fun resolveEntry(ref: EntryRef): Pair<ListState, StatusListEntry>? {
-        val state = resolveEntryListState(ref) ?: return null
+    private fun resolveEntry(
+        tenantId: String,
+        ref: EntryRef
+    ): Pair<ListState, StatusListEntry>? {
+        val state = resolveEntryListState(tenantId, ref) ?: return null
         val entry = findEntryIn(state, ref) ?: return null
         return state to entry
     }
 
-    private fun resolveEntryListState(ref: EntryRef): ListState? =
-        when {
-            ref.statusListId != null -> lists[ref.statusListId]
-            ref.correlationId != null -> correlationToId[ref.correlationId]?.let { lists[it] }
+    private fun resolveEntryListState(
+        tenantId: String,
+        ref: EntryRef
+    ): ListState? {
+        val tenant = tenantState(tenantId)
+        return when {
+            ref.statusListId != null -> tenants.values.firstNotNullOfOrNull { it.lists[ref.statusListId] }
+            ref.correlationId != null -> tenant.correlationToId[ref.correlationId]?.let { tenant.lists[it] }
             else -> null
         }
+    }
 
     private fun findEntryIn(
         state: ListState,
@@ -315,36 +393,52 @@ class InMemoryStatusListStore {
 class InMemoryStatusListDriver(
     private val store: InMemoryStatusListStore,
     private val signer: StatusListSigner,
+    private val execution: SessionExecution,
 ) : StatusListDriver {
+    private fun tenantId(): String = execution.tenantId.takeIf { it.isNotBlank() } ?: DEFAULT_TENANT
+
     override suspend fun createStatusList(args: CreateStatusListArgs): IdkResult<StatusListResult, IdkError> {
-        val state = store.createStatusList(args).getOrElse { return Err(it) }
+        val state = store.createStatusList(tenantId(), args).getOrElse { return Err(it) }
+        val token = signToken(state).getOrElse { return Err(it) }
+        store.updateToken(tenantId(), StatusListRef(id = state.id), token).getOrElse { return Err(it) }
         return buildResult(state)
     }
 
     override suspend fun getStatusList(ref: StatusListRef): IdkResult<StatusListResult?, IdkError> {
-        val state = store.getState(ref) ?: return Ok(null)
+        val state = store.getState(tenantId(), ref) ?: return Ok(null)
         return buildResult(state)
     }
 
-    override suspend fun listStatusLists(args: ListStatusListsArgs): IdkResult<Page<StatusListSummary>, IdkError> = Ok(store.listSummaries(args))
+    override suspend fun listStatusLists(args: ListStatusListsArgs): IdkResult<Page<StatusListSummary>, IdkError> = Ok(store.listSummaries(tenantId(), args))
 
-    override suspend fun deleteStatusList(ref: StatusListRef): IdkResult<Boolean, IdkError> = Ok(store.deleteStatusList(ref))
+    override suspend fun deleteStatusList(ref: StatusListRef): IdkResult<Boolean, IdkError> = Ok(store.deleteStatusList(tenantId(), ref))
 
-    override suspend fun allocateEntry(args: AllocateEntryArgs): IdkResult<StatusListEntry, IdkError> = store.allocateEntry(args)
+    override suspend fun allocateEntry(args: AllocateEntryArgs): IdkResult<StatusListEntry, IdkError> {
+        val entry = store.allocateEntry(tenantId(), args).getOrElse { return Err(it) }
+        refreshToken(StatusListRef(id = entry.statusListId)).getOrElse { return Err(it) }
+        return Ok(entry)
+    }
 
-    override suspend fun updateEntryStatus(args: UpdateEntryStatusArgs): IdkResult<StatusListEntry, IdkError> = store.updateEntryStatus(args)
+    override suspend fun updateEntryStatus(args: UpdateEntryStatusArgs): IdkResult<StatusListEntry, IdkError> {
+        val entry = store.updateEntryStatus(tenantId(), args).getOrElse { return Err(it) }
+        refreshToken(StatusListRef(id = entry.statusListId)).getOrElse { return Err(it) }
+        return Ok(entry)
+    }
 
     override suspend fun bindCredential(
         entry: EntryRef,
         credentialId: String?,
         credentialHash: String?,
-    ): IdkResult<StatusListEntry, IdkError> = store.bindCredential(entry, credentialId, credentialHash)
+    ): IdkResult<StatusListEntry, IdkError> = store.bindCredential(tenantId(), entry, credentialId, credentialHash)
 
-    override suspend fun getEntry(ref: EntryRef): IdkResult<StatusListEntry?, IdkError> = Ok(store.getEntry(ref))
+    override suspend fun getEntry(ref: EntryRef): IdkResult<StatusListEntry?, IdkError> = Ok(store.getEntry(tenantId(), ref))
 
-    override suspend fun getStatusListToken(ref: StatusListRef): IdkResult<StatusListToken?, IdkError> {
-        val state = store.getState(ref) ?: return Ok(null)
-        return signToken(state)
+    override suspend fun getStatusListToken(ref: StatusListRef): IdkResult<StatusListToken?, IdkError> = Ok(store.getToken(tenantId(), ref))
+
+    private suspend fun refreshToken(ref: StatusListRef): IdkResult<Unit, IdkError> {
+        val state = store.getState(tenantId(), ref) ?: return Err(listNotFound(ref))
+        val token = signToken(state).getOrElse { return Err(it) }
+        return store.updateToken(tenantId(), ref, token)
     }
 
     private suspend fun signToken(state: ListState): IdkResult<StatusListToken, IdkError> {
@@ -371,7 +465,7 @@ class InMemoryStatusListDriver(
     }
 
     private suspend fun buildResult(state: ListState): IdkResult<StatusListResult, IdkError> {
-        val token = signToken(state).getOrElse { return Err(it) }
+        val token = state.signedToken ?: signToken(state).getOrElse { return Err(it) }
         return Ok(
             StatusListResult(
                 id = state.id,
@@ -388,4 +482,11 @@ class InMemoryStatusListDriver(
             ),
         )
     }
+
+    private companion object {
+        // Fallback tenant when the session execution carries no tenant id.
+        private const val DEFAULT_TENANT = "default"
+    }
+
+    private fun listNotFound(ref: StatusListRef): IdkError = StatusListErrors.listNotFound(ref.statusListUri ?: ref.id ?: ref.correlationId ?: "<none>")
 }

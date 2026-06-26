@@ -1,0 +1,79 @@
+/*
+ * © 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0
+ */
+
+package com.sphereon.openid.oid4vp.verifier
+
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.compat.JsExportCompat
+import dev.zacsweers.metro.Multibinds
+import kotlinx.serialization.Serializable
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
+
+@JsExportCompat
+@Serializable
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("CredentialTrustValidationMode", exact = true)
+enum class CredentialTrustValidationMode {
+    DEFAULT_ENFORCE,
+    AUDIT,
+    DISABLED,
+}
+
+@JsExportCompat
+@Serializable
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("CredentialIssuerRef", exact = true)
+data class CredentialIssuerRef(
+    val issuer: String? = null,
+    val method: String? = null,
+    val did: String? = null,
+    val oidfedEntityId: String? = null,
+    val kid: String? = null,
+    val x5c: List<String> = emptyList(),
+)
+
+@JsExportCompat
+@Serializable
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("CredentialTrustValidation", exact = true)
+data class CredentialTrustValidation(
+    val enabled: Boolean,
+    val trusted: Boolean? = null,
+    val mode: CredentialTrustValidationMode = CredentialTrustValidationMode.DEFAULT_ENFORCE,
+    val method: String? = null,
+    val trustDomainIds: List<String> = emptyList(),
+    val matchedTrustDomainId: String? = null,
+    val matchedAnchorId: String? = null,
+    val status: String? = null,
+    val details: String? = null,
+    val diagnostics: List<String> = emptyList(),
+)
+
+@JsExportCompat
+@Serializable
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("Oid4vpCredentialTrustValidationArgs", exact = true)
+data class Oid4vpCredentialTrustValidationArgs(
+    val verifierId: String? = null,
+    val dcqlQueryId: String? = null,
+    val credentialQueryId: String,
+    val format: String,
+    val presentation: String,
+    val issuer: CredentialIssuerRef? = null,
+)
+
+interface Oid4vpCredentialTrustValidator {
+    suspend fun supports(args: Oid4vpCredentialTrustValidationArgs): Boolean = true
+
+    suspend fun validate(args: Oid4vpCredentialTrustValidationArgs): IdkResult<CredentialTrustValidation, IdkError>
+}
+
+interface Oid4vpCredentialTrustValidatorMultibinds {
+    @Multibinds(allowEmpty = true)
+    fun oid4vpCredentialTrustValidators(): Set<Oid4vpCredentialTrustValidator>
+}

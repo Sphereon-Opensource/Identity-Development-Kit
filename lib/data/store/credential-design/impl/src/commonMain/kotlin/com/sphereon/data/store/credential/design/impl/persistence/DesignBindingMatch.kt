@@ -25,6 +25,7 @@ internal fun DesignBinding.matchesKey(
 ): Boolean =
     when (key) {
         DesignBindingKey.VCT -> vct == value
+        DesignBindingKey.VCT_HOSTING_MODE -> vctHostingMode.name == value
         DesignBindingKey.CREDENTIAL_CONFIGURATION_ID -> credentialConfigurationId == value
         DesignBindingKey.SCHEMA_ID -> schemaId == value
         DesignBindingKey.DOC_TYPE -> docType == value

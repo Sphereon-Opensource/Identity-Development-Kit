@@ -18,6 +18,8 @@ package com.sphereon.openid.oid4vp.universal.impl.command
 
 import com.sphereon.openid.oid4vp.universal.VerifiedClaimsValue
 import com.sphereon.openid.oid4vp.universal.VerifiedData
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import kotlinx.serialization.json.Json
@@ -157,6 +159,8 @@ private fun buildCredentialMatches(validationResult: ValidationResult): JsonArra
                             },
                         )
                     }
+                    matched.issuer?.let { put("issuer", it.toJsonObject()) }
+                    matched.trust?.let { put("trust", it.toJsonObject()) }
                 },
             )
         }
@@ -193,3 +197,48 @@ private fun parseVpTokenJson(rawVpToken: String): JsonObject? =
     runCatching {
         verifiedDataJson.parseToJsonElement(rawVpToken) as? JsonObject
     }.getOrNull()
+
+private fun CredentialIssuerRef.toJsonObject(): JsonObject =
+    buildJsonObject {
+        issuer?.let { put("issuer", JsonPrimitive(it)) }
+        method?.let { put("method", JsonPrimitive(it)) }
+        did?.let { put("did", JsonPrimitive(it)) }
+        oidfedEntityId?.let { put("oidfed_entity_id", JsonPrimitive(it)) }
+        kid?.let { put("kid", JsonPrimitive(it)) }
+        if (x5c.isNotEmpty()) {
+            put(
+                "x5c",
+                buildJsonArray {
+                    x5c.forEach { add(JsonPrimitive(it)) }
+                },
+            )
+        }
+    }
+
+private fun CredentialTrustValidation.toJsonObject(): JsonObject =
+    buildJsonObject {
+        put("enabled", JsonPrimitive(enabled))
+        trusted?.let { put("trusted", JsonPrimitive(it)) }
+        put("mode", JsonPrimitive(mode.name))
+        method?.let { put("method", JsonPrimitive(it)) }
+        if (trustDomainIds.isNotEmpty()) {
+            put(
+                "trust_domain_ids",
+                buildJsonArray {
+                    trustDomainIds.forEach { add(JsonPrimitive(it)) }
+                },
+            )
+        }
+        matchedTrustDomainId?.let { put("matched_trust_domain_id", JsonPrimitive(it)) }
+        matchedAnchorId?.let { put("matched_anchor_id", JsonPrimitive(it)) }
+        status?.let { put("status", JsonPrimitive(it)) }
+        details?.let { put("details", JsonPrimitive(it)) }
+        if (diagnostics.isNotEmpty()) {
+            put(
+                "diagnostics",
+                buildJsonArray {
+                    diagnostics.forEach { add(JsonPrimitive(it)) }
+                },
+            )
+        }
+    }

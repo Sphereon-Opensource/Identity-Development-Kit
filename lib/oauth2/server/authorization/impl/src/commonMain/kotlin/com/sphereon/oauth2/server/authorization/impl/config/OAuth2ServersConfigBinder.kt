@@ -18,6 +18,7 @@ package com.sphereon.oauth2.server.authorization.impl.config
 
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
@@ -53,6 +54,8 @@ import dev.zacsweers.metro.binding
 class OAuth2ServersConfigBinder(
     private val execution: SessionExecution,
 ) : OAuth2ServersConfigProvider {
+    private val keyNormalizer = PropertyKeyNormalizerImpl.Default
+
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
@@ -96,11 +99,16 @@ class OAuth2ServersConfigBinder(
         val defaultServer =
             configService.getPropertyAsString(
                 "$prefix.default-server",
-                "default",
-            ) ?: "default"
+                null,
+            )
+                ?: configService.getPropertyAsString(
+                    "$prefix.default.server",
+                    null,
+                )
+                ?: "default"
 
         // Scan the oauth2.servers.* keyspace to find every configured server id.
-        val serverIds = discoverServerIds()
+        val serverIds = discoverServerIds(defaultServer)
 
         val servers =
             if (serverIds.isEmpty()) {
@@ -136,20 +144,31 @@ class OAuth2ServersConfigBinder(
      * `oauth2.servers.`; every other key path is `oauth2.servers.<id>.<...>` per the
      * [OAuth2ServerInstanceConfig] property layout.
      */
-    private fun discoverServerIds(): Set<String> {
+    private fun discoverServerIds(defaultServer: String): Set<String> {
         val stripped = configService.getSubProperties(prefixes = setOf(prefix), stripPrefix = true)
         if (stripped.isEmpty()) {
+            val selectedDefault = defaultServer.trim().takeIf { it.isNotEmpty() && it != "default" }
+            if (selectedDefault != null) {
+                return setOf(selectedDefault)
+            }
             return if (DEFAULT_SERVER_PROBE_KEYS.any { configService.containsProperty("$prefix.default.$it") }) {
                 setOf("default")
             } else {
                 emptySet()
             }
         }
+        val normalizedDefaultServer = keyNormalizer.normalize(defaultServer)
         return stripped.keys
             .asSequence()
-            .map { it.substringBefore('.') }
+            .filterNot { it == DEFAULT_SERVER_KEY || it == NORMALIZED_DEFAULT_SERVER_KEY }
+            .map { key ->
+                if (normalizedDefaultServer.isNotBlank() && (key == normalizedDefaultServer || key.startsWith("$normalizedDefaultServer."))) {
+                    defaultServer
+                } else {
+                    key.substringBefore('.')
+                }
+            }
             .filter { it.isNotEmpty() }
-            .filter { it != DEFAULT_SERVER_KEY }
             .toSet()
     }
 
@@ -161,6 +180,9 @@ class OAuth2ServersConfigBinder(
          * `default-server`.
          */
         const val DEFAULT_SERVER_KEY = "default-server"
+        const val NORMALIZED_DEFAULT_SERVER_KEY = "default.server"
+        const val CLIENT_ID_SUFFIX = ".client.id"
+        const val CLIENT_SECRET_SUFFIX = ".client.secret"
         val DEFAULT_SERVER_PROBE_KEYS =
             setOf(
                 "mode",
@@ -174,6 +196,7 @@ class OAuth2ServersConfigBinder(
                 "par",
                 "introspection",
                 "revocation",
+                "trust-forwarded-headers",
             )
     }
 
@@ -189,6 +212,18 @@ class OAuth2ServersConfigBinder(
                     ?: defaults.mode,
             issuerTemplate = configService.getPropertyAsString("$serverPrefix.issuer-template", null),
             issuer = configService.getPropertyAsString("$serverPrefix.issuer", null),
+            // When the AS has no configured issuer, outbound URLs fall back to the request's
+            // `X-Forwarded-Proto`/`Host`. Honoring those headers is only safe behind a trusted
+            // proxy, so deployments that terminate at an untrusted edge set this false and rely
+            // on a configured issuer or a per-tenant OAUTH2_AUTHORIZATION_SERVER binding instead.
+            // Default stays true (correct for a single trusted gateway); this binder makes the
+            // knob live so a hardened deployment can turn it off.
+            trustForwardedHeaders =
+                configService.getProperty(
+                    "$serverPrefix.trust-forwarded-headers",
+                    Boolean::class,
+                    defaults.trustForwardedHeaders,
+                ) ?: defaults.trustForwardedHeaders,
             accessTokenLifetimeSeconds =
                 configService.getProperty(
                     "$serverPrefix.access-token-lifetime-seconds",
@@ -486,11 +521,27 @@ class OAuth2ServersConfigBinder(
 
     private fun loadInternalClients(serverPrefix: String): Map<String, Pair<String, String>> {
         val clients = mutableMapOf<String, Pair<String, String>>()
-        for (role in listOf("issuer", "verifier")) {
-            val clientId = configService.getPropertyAsString("$serverPrefix.internal-clients.$role.client-id", null)
-            val clientSecret = configService.getPropertyAsString("$serverPrefix.internal-clients.$role.client-secret", null)
+        val internalClientsPrefix = "$serverPrefix.internal-clients"
+        val roleKeys =
+            configService
+                .getSubProperties(setOf(internalClientsPrefix), stripPrefix = true)
+                .keys
+                .asSequence()
+                .map { keyNormalizer.normalize(it) }
+                .mapNotNull { key ->
+                    when {
+                        key.endsWith(CLIENT_ID_SUFFIX) -> key.removeSuffix(CLIENT_ID_SUFFIX)
+                        key.endsWith(CLIENT_SECRET_SUFFIX) -> key.removeSuffix(CLIENT_SECRET_SUFFIX)
+                        else -> null
+                    }?.takeIf { it.isNotBlank() }
+                }
+                .distinct()
+                .sorted()
+        for (roleKey in roleKeys) {
+            val clientId = configService.getPropertyAsString("$internalClientsPrefix.$roleKey.client-id", null)
+            val clientSecret = configService.getPropertyAsString("$internalClientsPrefix.$roleKey.client-secret", null)
             if (clientId != null && clientSecret != null) {
-                clients[role] = clientId to clientSecret
+                clients[roleKey] = clientId to clientSecret
             }
         }
         return clients

@@ -32,6 +32,7 @@ import com.sphereon.oauth2.server.authorization.command.login.LoginPageHttpEndpo
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.ResponseCategory
 import com.sphereon.oauth2.server.authorization.impl.http.effectiveScheme
+import com.sphereon.oauth2.server.authorization.impl.http.isSameOriginCallback
 import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookieHeader
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
@@ -88,8 +89,18 @@ class LoginPageHttpEndpointCommandImpl(
         val sessionId =
             params["session_id"]
                 ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Missing session_id parameter", json))
-        val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
-        val returnUrl = params["return_url"] ?: "$baseUrl/authorize/callback?session_id=$sessionId"
+        val trustedBase = baseUrlResolver.resolveBaseUrl(request, configProvider).trimEnd('/')
+        val defaultReturnUrl = "$trustedBase/authorize/callback?session_id=$sessionId"
+        // `return_url` is reflected from the request. Only honor it when it is a same-origin
+        // callback on the trusted base; otherwise fall back to the trusted default (the user can
+        // still sign in). The form `action` never derives from this value (see formActionBase).
+        val requestedReturnUrl = params["return_url"]
+        val returnUrl =
+            when {
+                requestedReturnUrl == null -> defaultReturnUrl
+                isSameOriginCallback(requestedReturnUrl, trustedBase) -> requestedReturnUrl
+                else -> defaultReturnUrl
+            }
         val errorParam = params["error"]
         val errorMessage = if (errorParam == "invalid_credentials") errorParam else null
         val loginHint = params["login_hint"]
@@ -117,12 +128,17 @@ class LoginPageHttpEndpointCommandImpl(
                 sessionCode = csrf.sessionCode,
                 notice = configProvider.serverConfig.loginNotice,
                 federationOptions = federationOptions,
+                formActionBase = trustedBase,
             )
         val rendered = loginPageRenderer.render(ctx)
         if (!rendered.isOk) {
             return Ok(oauth2ErrorResponse(500, "server_error", rendered.error.message.defaultMessage, json))
         }
         val response = rendered.value
+        // The renderer returns the per-request CSP nonce it stamped onto its inline <style>/<script>
+        // (null when the rendered page carries no inline content). Thread it into the CSP header so
+        // style-src/script-src allow 'nonce-X' and the inline blocks are not blocked by the strict
+        // default-src 'self' baseline. Body and header stay in lockstep because both use this value.
         val secure = request.effectiveScheme(configProvider) == "https"
         return Ok(
             GenericHttpResponse(
@@ -135,7 +151,7 @@ class LoginPageHttpEndpointCommandImpl(
                         "Set-Cookie" to loginCsrfCookieHeader(csrf.tabId, secure),
                     ),
                 body = response.html,
-            ).withSecurityHeaders(ResponseCategory.HTML),
+            ).withSecurityHeaders(ResponseCategory.HTML, response.cspNonce),
         )
     }
 

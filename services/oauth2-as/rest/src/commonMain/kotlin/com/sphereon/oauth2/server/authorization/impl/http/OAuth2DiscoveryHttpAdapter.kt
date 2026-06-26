@@ -65,7 +65,7 @@ class OAuth2DiscoveryHttpAdapter(
         tenantIdProvider = tenantIdProvider,
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_DISCOVERY"
+        const val ID: String = "oauth2.as.discovery"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

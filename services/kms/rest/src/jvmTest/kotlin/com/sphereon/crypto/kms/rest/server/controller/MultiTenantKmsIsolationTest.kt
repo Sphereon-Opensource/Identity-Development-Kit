@@ -53,6 +53,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -202,6 +203,37 @@ class MultiTenantKmsIsolationTest {
             assertTrue(kidA != kidB, "Keys should have different KIDs despite same alias")
         }
 
+    @Test
+    fun providerScopedKeyListIsTenantIsolated() =
+        runTest {
+            val resultA = generateProviderKey(TENANT_A_ID, TENANT_A_USER, "provider-route-tenant-a", alg = "ECDSA_SHA256")
+            assertEquals(HttpStatusCode.Created, resultA.status)
+            val resultB = generateProviderKey(TENANT_B_ID, TENANT_B_USER, "provider-route-tenant-b", alg = "ECDSA_SHA384")
+            assertEquals(HttpStatusCode.Created, resultB.status)
+
+            val listA = listProviderKeys(TENANT_A_ID, TENANT_A_USER)
+            assertEquals(HttpStatusCode.OK, listA.status)
+            val aliasesA =
+                Json
+                    .parseToJsonElement(listA.bodyAsText())
+                    .jsonObject["keyInfos"]!!
+                    .jsonArray
+                    .map { it.jsonObject["alias"]!!.jsonPrimitive.content }
+            assertTrue(aliasesA.contains("provider-route-tenant-a"), "Tenant A should see its own provider key")
+            assertFalse(aliasesA.contains("provider-route-tenant-b"), "Tenant A must not see Tenant B's provider key")
+
+            val listB = listProviderKeys(TENANT_B_ID, TENANT_B_USER)
+            assertEquals(HttpStatusCode.OK, listB.status)
+            val aliasesB =
+                Json
+                    .parseToJsonElement(listB.bodyAsText())
+                    .jsonObject["keyInfos"]!!
+                    .jsonArray
+                    .map { it.jsonObject["alias"]!!.jsonPrimitive.content }
+            assertTrue(aliasesB.contains("provider-route-tenant-b"), "Tenant B should see its own provider key")
+            assertFalse(aliasesB.contains("provider-route-tenant-a"), "Tenant B must not see Tenant A's provider key")
+        }
+
     // ========================================
     // Key Retrieval Tests
     // ========================================
@@ -259,6 +291,29 @@ class MultiTenantKmsIsolationTest {
                 getResponse.status == HttpStatusCode.NotFound || getResponse.status == HttpStatusCode.BadRequest,
                 "Cross-tenant key retrieval should fail, got ${getResponse.status}",
             )
+        }
+
+    @Test
+    fun tenantBCannotRetrieveTenantAKeyFromProviderScopedRoute() =
+        runTest {
+            val genResponse = generateProviderKey(TENANT_A_ID, TENANT_A_USER, "provider-get-protected-a")
+            assertEquals(HttpStatusCode.Created, genResponse.status)
+
+            val kid =
+                Json
+                    .parseToJsonElement(genResponse.bodyAsText())
+                    .jsonObject["keyPair"]!!
+                    .jsonObject["kid"]!!
+                    .jsonPrimitive.content
+
+            val tenantBGet = getProviderKey(TENANT_B_ID, TENANT_B_USER, kid)
+            assertTrue(
+                tenantBGet.status == HttpStatusCode.NotFound || tenantBGet.status == HttpStatusCode.BadRequest,
+                "Provider-scoped cross-tenant key retrieval should fail, got ${tenantBGet.status}",
+            )
+
+            val tenantAGet = getProviderKey(TENANT_A_ID, TENANT_A_USER, kid)
+            assertEquals(HttpStatusCode.OK, tenantAGet.status)
         }
 
     // ========================================
@@ -336,6 +391,29 @@ class MultiTenantKmsIsolationTest {
             assertEquals(HttpStatusCode.OK, getResponse.status, "Tenant A's key should still exist after failed cross-tenant delete")
         }
 
+    @Test
+    fun tenantBCannotDeleteTenantAKeyFromProviderScopedRoute() =
+        runTest {
+            val genResponse = generateProviderKey(TENANT_A_ID, TENANT_A_USER, "provider-delete-protected-a")
+            assertEquals(HttpStatusCode.Created, genResponse.status)
+
+            val kid =
+                Json
+                    .parseToJsonElement(genResponse.bodyAsText())
+                    .jsonObject["keyPair"]!!
+                    .jsonObject["kid"]!!
+                    .jsonPrimitive.content
+
+            val tenantBDelete = deleteProviderKey(TENANT_B_ID, TENANT_B_USER, kid)
+            assertTrue(
+                tenantBDelete.status == HttpStatusCode.NotFound || tenantBDelete.status == HttpStatusCode.BadRequest,
+                "Provider-scoped cross-tenant key deletion should fail, got ${tenantBDelete.status}",
+            )
+
+            val tenantAGet = getProviderKey(TENANT_A_ID, TENANT_A_USER, kid)
+            assertEquals(HttpStatusCode.OK, tenantAGet.status, "Tenant A's provider key should still exist after failed cross-tenant delete")
+        }
+
     // ========================================
     // Comprehensive Integration Test
     // ========================================
@@ -404,6 +482,30 @@ class MultiTenantKmsIsolationTest {
         }
     }
 
+    private suspend fun generateProviderKey(
+        tenantId: String,
+        userId: String,
+        alias: String,
+        alg: String = "ECDSA_SHA256",
+    ): io.ktor.client.statement.HttpResponse {
+        val payload =
+            """
+            {
+                "alias": "$alias",
+                "use": "sig",
+                "alg": "$alg",
+                "keyOperations": ["sign"]
+            }
+            """.trimIndent()
+
+        return client.post("http://localhost:$port/providers/$SHARED_PROVIDER/keys") {
+            header("X-Tenant-ID", tenantId)
+            header("X-User-ID", userId)
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+    }
+
     private suspend fun listKeys(
         tenantId: String,
         userId: String,
@@ -412,6 +514,37 @@ class MultiTenantKmsIsolationTest {
             header("X-Tenant-ID", tenantId)
             header("X-User-ID", userId)
             accept(ContentType.Application.Json)
+        }
+
+    private suspend fun listProviderKeys(
+        tenantId: String,
+        userId: String,
+    ): io.ktor.client.statement.HttpResponse =
+        client.get("http://localhost:$port/providers/$SHARED_PROVIDER/keys") {
+            header("X-Tenant-ID", tenantId)
+            header("X-User-ID", userId)
+            accept(ContentType.Application.Json)
+        }
+
+    private suspend fun getProviderKey(
+        tenantId: String,
+        userId: String,
+        aliasOrKid: String,
+    ): io.ktor.client.statement.HttpResponse =
+        client.get("http://localhost:$port/providers/$SHARED_PROVIDER/keys/$aliasOrKid") {
+            header("X-Tenant-ID", tenantId)
+            header("X-User-ID", userId)
+            accept(ContentType.Application.Json)
+        }
+
+    private suspend fun deleteProviderKey(
+        tenantId: String,
+        userId: String,
+        aliasOrKid: String,
+    ): io.ktor.client.statement.HttpResponse =
+        client.delete("http://localhost:$port/providers/$SHARED_PROVIDER/keys/$aliasOrKid") {
+            header("X-Tenant-ID", tenantId)
+            header("X-User-ID", userId)
         }
 
     companion object {

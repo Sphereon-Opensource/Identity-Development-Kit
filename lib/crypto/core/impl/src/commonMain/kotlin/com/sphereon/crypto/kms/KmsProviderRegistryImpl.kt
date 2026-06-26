@@ -17,12 +17,16 @@
 
 package com.sphereon.crypto.kms
 
+import com.sphereon.core.api.conf.ConfigEnvironment
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.SyncConfigSnapshotCache
+import com.sphereon.core.api.conf.refreshableContentRevision
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KmsProvider
+import com.sphereon.crypto.core.kms.KmsProviderConfigBinder.Companion.KMS_PROVIDERS_PREFIX
 import com.sphereon.crypto.core.kms.KmsProviderManagerImpl
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.di.session.SessionScope
@@ -58,30 +62,38 @@ class KmsProviderRegistryImpl(
     private val contextConfig: PrincipalConfigService,
     private val kmsProviderManager: KmsProviderManagerImpl,
     private val execution: SessionExecution,
+    private val snapshotCache: SyncConfigSnapshotCache,
 ) : KmsProviderRegistry {
     // Lazy initialization: providers are created on first access
     // This allows cache warmup to complete before property resolution
     // Sort by ID to ensure deterministic iteration order for default selection
     private val kmsProvidersById: MutableMap<String, KmsProvider> by lazy {
-        kmsProviderManager
-            .createFromProperties(contextConfig, execution)
-            .sortedBy { it.id }
-            .associateBy { it.id }
-            .toMutableMap()
+        mutableMapOf<String, KmsProvider>().also { providers ->
+            refreshProvidersFromConfig(target = providers, force = true)
+        }
     }
 
     private var defaultProviderIdOverride: String? = null
+    private var lastProviderConfigRevision: Long? = null
+    private val configManagedProviderIds: MutableSet<String> = mutableSetOf()
 
     override fun defaultProviderId(): String {
+        refreshProvidersFromConfig()
         require(kmsProvidersById.isNotEmpty()) { "At least one KMS provider is required" }
         return defaultProviderIdOverride ?: kmsProvidersById.values.first().id
     }
 
-    override fun getProviderIds(): Array<String> = kmsProvidersById.keys.toTypedArray()
+    override fun getProviderIds(): Array<String> {
+        refreshProvidersFromConfig()
+        return kmsProvidersById.keys.toTypedArray()
+    }
 
-    override fun getProviderById(id: String): KmsProvider =
-        kmsProvidersById[id]
-            ?: throw PKIException("Invalid KMS id $id provider. Valid ids are: ${getProviderIds().joinToString(",")}")
+    override fun getProviderById(id: String): KmsProvider {
+        kmsProvidersById[id]?.let { return it }
+        refreshProvidersFromConfig(force = true)
+        return kmsProvidersById[id]
+            ?: throw PKIException("Invalid KMS id $id provider. Valid ids are: ${kmsProvidersById.keys.joinToString(",")}")
+    }
 
     override fun getProvider(
         providerId: String?,
@@ -93,9 +105,12 @@ class KmsProviderRegistryImpl(
         return getProviderById(providerId ?: defaultProviderId())
     }
 
-    override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider =
-        kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }
+    override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider {
+        kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }?.let { return it }
+        refreshProvidersFromConfig(force = true)
+        return kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }
             ?: throw PKIException("No KMS found for signature algorithm $signatureAlgorithm")
+    }
 
     override fun registerProvider(
         provider: KmsProvider,
@@ -105,5 +120,45 @@ class KmsProviderRegistryImpl(
         if (makeDefaultKms == true) {
             defaultProviderIdOverride = provider.id
         }
+    }
+
+    private fun refreshProvidersFromConfig(
+        target: MutableMap<String, KmsProvider> = kmsProvidersById,
+        force: Boolean = false,
+    ) {
+        val revision = configRevision(contextConfig)
+        if (!force && lastProviderConfigRevision == revision) {
+            return
+        }
+        if (force || lastProviderConfigRevision != null && lastProviderConfigRevision != revision) {
+            snapshotCache.invalidateByPrefix(KMS_PROVIDERS_PREFIX)
+        }
+        val configProviders =
+            kmsProviderManager
+            .createFromProperties(contextConfig, execution)
+            .sortedBy { it.id }
+        val nextConfigManagedProviderIds = configProviders.mapTo(mutableSetOf()) { it.id }
+
+        (configManagedProviderIds - nextConfigManagedProviderIds).forEach { removedProviderId ->
+            target.remove(removedProviderId)
+            if (defaultProviderIdOverride == removedProviderId) {
+                defaultProviderIdOverride = null
+            }
+        }
+        configProviders.forEach { provider ->
+            target[provider.id] = provider
+        }
+        configManagedProviderIds.clear()
+        configManagedProviderIds.addAll(nextConfigManagedProviderIds)
+        lastProviderConfigRevision = revision
+    }
+
+    private fun configRevision(config: ConfigEnvironment?): Long {
+        if (config == null) {
+            return 0L
+        }
+        val sources = config.getPropertySources(includeParents = false)
+        val localRevision = (sources.revision * 31L) + sources.refreshableContentRevision(refresh = true)
+        return (localRevision * 31L) + configRevision(config.parent)
     }
 }

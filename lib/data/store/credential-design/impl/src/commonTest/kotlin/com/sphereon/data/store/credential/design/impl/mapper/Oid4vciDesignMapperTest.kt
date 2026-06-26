@@ -17,6 +17,7 @@
 package com.sphereon.data.store.credential.design.impl.mapper
 
 import com.sphereon.data.store.credential.design.model.AppliedDesignLayer
+import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.ClaimLabel
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
@@ -369,9 +370,197 @@ class Oid4vciDesignMapperTest {
         assertEquals("fr-FR", metadataDisplay[2].locale)
     }
 
+    @Test
+    fun perLocaleVariantBrandingIsSelectedForEachDisplay() {
+        // Two displays (en, nl) each backed by a distinct SIMPLE_CARD variant.
+        // After the fix each display must carry its own variant's branding.
+        val variantEn =
+            RenderVariantRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000010"),
+                tenantId = "tenant-1",
+                kind = RenderVariantKind.SIMPLE_CARD,
+                localeApplicability = listOf("en"),
+                backgroundColor = "#111111",
+                logo =
+                    AssetReference(
+                        uri = "https://example.com/logo-en.png",
+                        altText = "EN Logo",
+                    ),
+            )
+        val variantNl =
+            RenderVariantRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000011"),
+                tenantId = "tenant-1",
+                kind = RenderVariantKind.SIMPLE_CARD,
+                localeApplicability = listOf("nl"),
+                backgroundColor = "#222222",
+                logo =
+                    AssetReference(
+                        uri = "https://example.com/logo-nl.png",
+                        altText = "NL Logo",
+                    ),
+            )
+        val design =
+            buildDesign(
+                displays =
+                    listOf(
+                        LocalizedCredentialDisplay(locale = "en", name = "Identity Card EN"),
+                        LocalizedCredentialDisplay(locale = "nl", name = "Identiteitskaart NL"),
+                    ),
+                renderVariants = listOf(variantEn, variantNl),
+            )
+
+        val config = Oid4vciDesignMapper.toCredentialConfiguration(design, "dc+sd-jwt")
+
+        val displays = config.credentialMetadata?.display
+        assertNotNull(displays)
+        assertEquals(2, displays.size)
+
+        val byLocale = displays.associateBy { it.locale }
+
+        val enDisplay = byLocale["en"]
+        assertNotNull(enDisplay)
+        assertEquals("#111111", enDisplay.backgroundColor)
+        assertEquals("https://example.com/logo-en.png", enDisplay.logo?.uri)
+
+        val nlDisplay = byLocale["nl"]
+        assertNotNull(nlDisplay)
+        assertEquals("#222222", nlDisplay.backgroundColor)
+        assertEquals("https://example.com/logo-nl.png", nlDisplay.logo?.uri)
+    }
+
+    @Test
+    fun singleVariantAppliesToAllLocales() {
+        // Regression: when there is only one variant it must still be applied to every display.
+        val variant =
+            RenderVariantRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000012"),
+                tenantId = "tenant-1",
+                kind = RenderVariantKind.SIMPLE_CARD,
+                localeApplicability = listOf("en"),
+                backgroundColor = "#AABBCC",
+                textColor = "#000000",
+            )
+        val design =
+            buildDesign(
+                displays =
+                    listOf(
+                        LocalizedCredentialDisplay(locale = "en", name = "Credential EN"),
+                        LocalizedCredentialDisplay(locale = "de", name = "Credential DE"),
+                        LocalizedCredentialDisplay(locale = "fr", name = "Credential FR"),
+                    ),
+                renderVariants = listOf(variant),
+            )
+
+        val config = Oid4vciDesignMapper.toCredentialConfiguration(design, "dc+sd-jwt")
+
+        val displays = config.credentialMetadata?.display
+        assertNotNull(displays)
+        assertEquals(3, displays.size)
+
+        // All three must carry the single variant's colors (fallback path)
+        for (display in displays) {
+            assertEquals("#AABBCC", display.backgroundColor, "Expected variant color for locale ${display.locale}")
+            assertEquals("#000000", display.textColor, "Expected variant textColor for locale ${display.locale}")
+        }
+    }
+
     // =========================================================================
     // Direction 2: OID4VCI → Design
     // =========================================================================
+
+    @Test
+    fun credentialDesignMapsToOid4vciFinalCredentialMetadataWithBrandingClaimsAndLocaleFallback() {
+        val variant =
+            RenderVariantRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000013"),
+                tenantId = "tenant-1",
+                kind = RenderVariantKind.SIMPLE_CARD,
+                localeApplicability = listOf("en-US"),
+                backgroundColor = "#003087",
+                textColor = "#FFFFFF",
+                logo =
+                    AssetReference(
+                        uri = "/public/assets/design/logo.png",
+                        altText = "Government logo",
+                    ),
+                backgroundImage =
+                    AssetReference(
+                        uri = "/public/assets/design/background.png",
+                        altText = "Credential background",
+                    ),
+            )
+        val design =
+            buildDesign(
+                displays =
+                    listOf(
+                        LocalizedCredentialDisplay(
+                            locale = "en-US",
+                            name = "Personal ID",
+                            description = "Government-issued identity document",
+                        ),
+                        LocalizedCredentialDisplay(locale = "nl-NL", name = "Persoonsbewijs"),
+                    ),
+                claims =
+                    listOf(
+                        ClaimPresentation(
+                            path = listOf(ClaimPathSegment.Property("given_name")),
+                            labels =
+                                listOf(
+                                    ClaimLabel(locale = "en-US", label = "Given Name"),
+                                    ClaimLabel(locale = "nl-NL", label = "Voornaam"),
+                                ),
+                            mandatory = true,
+                        ),
+                        ClaimPresentation(
+                            path = listOf(ClaimPathSegment.Property("address"), ClaimPathSegment.Property("street")),
+                            labels = listOf(ClaimLabel(locale = "en-US", label = "Street")),
+                        ),
+                    ),
+                renderVariants = listOf(variant),
+            )
+
+        val config = Oid4vciDesignMapper.toCredentialConfiguration(design, "dc+sd-jwt")
+
+        assertNull(config.display, "OID4VCI final metadata must not use top-level draft display")
+        assertNull(config.claims, "OID4VCI final metadata must not use top-level draft claims")
+
+        val metadata = config.credentialMetadata
+        assertNotNull(metadata)
+        val displays = metadata.display
+        assertNotNull(displays)
+        assertEquals(2, displays.size)
+
+        val en = displays.first { it.locale == "en-US" }
+        assertEquals("Personal ID", en.name)
+        assertEquals("Government-issued identity document", en.description)
+        assertEquals("/public/assets/design/logo.png", en.logo?.uri)
+        assertEquals("Government logo", en.logo?.altText)
+        assertEquals("/public/assets/design/background.png", en.backgroundImage?.uri)
+        assertEquals("#003087", en.backgroundColor)
+        assertEquals("#FFFFFF", en.textColor)
+
+        val nl = displays.first { it.locale == "nl-NL" }
+        assertEquals("Persoonsbewijs", nl.name)
+        assertEquals("/public/assets/design/logo.png", nl.logo?.uri)
+        assertEquals("/public/assets/design/background.png", nl.backgroundImage?.uri)
+
+        val claims = metadata.claims
+        assertNotNull(claims)
+        assertEquals(2, claims.size)
+
+        val givenName = claims.first { it.path == listOf(JsonPrimitive("given_name")) }
+        assertEquals(true, givenName.mandatory)
+        assertEquals(2, givenName.display?.size)
+        assertEquals("Given Name", givenName.display?.get(0)?.name)
+        assertEquals("en-US", givenName.display?.get(0)?.locale)
+        assertEquals("Voornaam", givenName.display?.get(1)?.name)
+        assertEquals("nl-NL", givenName.display?.get(1)?.locale)
+
+        val street = claims.first { it.path == listOf(JsonPrimitive("address"), JsonPrimitive("street")) }
+        assertNull(street.mandatory)
+        assertEquals("Street", street.display?.single()?.name)
+    }
 
     @Test
     fun fromCredentialConfigurationMaps11MetadataDisplays() {

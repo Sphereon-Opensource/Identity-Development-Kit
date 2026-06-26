@@ -37,6 +37,14 @@ enum class DesignHostingMode {
 
 @JsExportCompat
 @Serializable
+enum class VctHostingMode {
+    HOSTED,
+    EXTERNAL,
+    NONE,
+}
+
+@JsExportCompat
+@Serializable
 enum class DesignSourceType {
     LOCAL_OVERRIDE,
     LOCAL_SHARED,

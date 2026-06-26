@@ -3,14 +3,20 @@ package com.sphereon.openid.oid4vci.integration
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
+import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
 
 @DependencyGraph(AppScope::class)
 abstract class Oid4vciTestAppGraph : AbstractAppGraph() {
+    @Provides
+    @SingleIn(AppScope::class)
+    fun provideJwtValidationConfig(): JwtValidationConfig = JwtValidationConfig()
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

@@ -142,7 +142,7 @@ class PipelineDirectTest {
         val secretResolver = createDefaultSecretResolver()
         val properties =
             mapOf(
-                "secret.value" to "\${secret:env:PATH}",
+                "secret.value" to "\${secret:@env:PATH}",
             )
         val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
         val sources = DefaultPropertySources(mutableListOf(source))

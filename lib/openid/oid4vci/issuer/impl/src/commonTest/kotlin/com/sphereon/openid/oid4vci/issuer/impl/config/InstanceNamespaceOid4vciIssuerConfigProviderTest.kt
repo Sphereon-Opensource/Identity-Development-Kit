@@ -39,6 +39,7 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
 import kotlin.reflect.KClass
@@ -89,6 +90,41 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val configs = provider.credentialConfigurations
         assertEquals(setOf("AcmeDegree"), configs.keys)
         assertEquals("acme-degree", configs["AcmeDegree"]?.scope)
+    }
+
+    @Test
+    fun registryProviderFallsBackToSingularCredentialMechanicsWhenInstanceOmitsThem() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuer.identifier" to "https://singular.example.com",
+                "oid4vci.issuer.authorizationServers" to "https://as.singular.example.com",
+                "oid4vci.issuer.credentialConfigurationIds" to "EuPid,Mdl",
+                "oid4vci.issuer.credentials.[EuPid].format" to "dc+sd-jwt",
+                "oid4vci.issuer.credentials.[EuPid].vct" to "https://singular.example.com/public/schema/vct/EuPid",
+                "oid4vci.issuer.credentials.[EuPid].scope" to "eu-pid",
+                "oid4vci.issuer.credentials.[EuPid].signingKeyMode" to "did:jwk",
+                "oid4vci.issuer.credentials.[EuPid].statusListId" to "eupid-revocation",
+                "oid4vci.issuer.credentials.[Mdl].format" to "mso_mdoc",
+                "oid4vci.issuer.credentials.[Mdl].doctype" to "org.iso.18013.5.1.mDL",
+                "oid4vci.issuer.credentials.[Mdl].signingKeyMode" to "did:jwk",
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.signingKeyAlias" to "issuer-signing-acme",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        assertEquals("https://acme.example.com", provider.issuerIdentifier)
+        assertEquals(listOf("https://as.singular.example.com"), provider.authorizationServers)
+
+        val configs = provider.credentialConfigurations
+        assertEquals(setOf("EuPid", "Mdl"), configs.keys)
+        assertEquals("eu-pid", configs["EuPid"]?.scope)
+        assertEquals("https://singular.example.com/public/schema/vct/EuPid", configs["EuPid"]?.vct)
+        assertEquals("mso_mdoc", configs["Mdl"]?.format)
+
+        val signingConfig = provider.credentialSigningConfigs["EuPid"]
+        assertEquals("issuer-signing-acme", signingConfig?.signingKeyAlias)
+        assertEquals(SigningKeyMode.Did("jwk"), signingConfig?.signingKeyMode)
     }
 
     @Test
@@ -143,6 +179,23 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val provider = ConfigDrivenOid4vciIssuerConfigProvider(TestSessionExecution(configService))
 
         assertEquals("https://singular.example.com", provider.issuerIdentifier)
+    }
+
+    @Test
+    fun credentialSigningConfigFallsBackToIssuerSigningAlias() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuer.signingKeyAlias" to "issuer-signing-tenant-default",
+                "oid4vci.issuer.credentialConfigurationIds" to "EuPid",
+                "oid4vci.issuer.credentials.[EuPid].format" to "dc+sd-jwt",
+                "oid4vci.issuer.credentials.[EuPid].scope" to "eu-pid",
+            )
+        val provider = ConfigDrivenOid4vciIssuerConfigProvider(TestSessionExecution(TestPrincipalConfigService(properties)))
+
+        assertEquals(
+            "issuer-signing-tenant-default",
+            provider.credentialSigningConfigs["EuPid"]?.signingKeyAlias,
+        )
     }
 
     @Test

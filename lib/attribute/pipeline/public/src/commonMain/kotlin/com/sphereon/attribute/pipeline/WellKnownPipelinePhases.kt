@@ -23,6 +23,7 @@ object WellKnownPipelinePhases {
     val ALL: Set<PipelinePhase> =
         setOf(
             PipelinePhase.SESSION_INIT,
+            PipelinePhase.RESOLUTION,
             PipelinePhase.IDV_COMPLETED,
             PipelinePhase.CREDENTIAL_ASSEMBLY,
             PipelinePhase.POST_ISSUANCE,

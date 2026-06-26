@@ -1,7 +1,7 @@
 .card {
   background: var(--comp-card-background);
   color: var(--comp-card-foreground);
-  border: var(--comp-card-borderWidth, 1px) solid var(--comp-card-border);
+  border: var(--comp-card-border-width, 1px) solid var(--comp-card-border);
   border-radius: var(--comp-card-radius);
   box-shadow: var(--comp-card-shadow);
   padding: var(--comp-card-padding);
@@ -9,20 +9,23 @@
 
 .interactive {
   cursor: pointer;
-  transition: box-shadow 150ms, transform 150ms;
+  transition: border-color 150ms, box-shadow 150ms, transform 150ms;
 }
 
 .interactive:hover {
-  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+  border-color: var(--comp-card-border-hover, var(--comp-card-border));
+  box-shadow: var(--comp-card-shadow-hover, var(--shadow-raised));
 }
 
 .interactive:active {
-  transform: scale(0.98);
+  transform: translateY(-1px);
 }
 
 .interactive:focus-visible {
   outline: none;
-  box-shadow: var(--shadow-state-focus, 0 0 0 3px rgba(66, 133, 244, 0.5));
+  border-color: var(--comp-card-border-hover, var(--comp-card-border));
+  box-shadow: var(--comp-card-ring-hover, var(--shadow-state-focus, 0 0 0 3px color-mix(in srgb, var(--color-primary) 30%, transparent)));
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -71,7 +71,7 @@ class OAuth2LoginHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_LOGIN"
+        const val ID: String = "oauth2.as.login"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

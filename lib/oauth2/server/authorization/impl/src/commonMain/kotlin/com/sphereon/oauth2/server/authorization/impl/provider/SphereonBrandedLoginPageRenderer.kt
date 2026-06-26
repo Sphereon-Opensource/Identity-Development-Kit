@@ -109,7 +109,7 @@ class SphereonBrandedLoginPageRenderer : LoginPageRenderer {
         // needs to share is everything before `/authorize/callback`. Same trick the redirect
         // builder in `StandardAuthorizeRequestCommandImpl.buildLoginUrl` uses, applied here so
         // form action + asset URLs all carry the same public prefix.
-        val basePath = ctx.returnUrl.substringBefore("/authorize/callback")
+        val basePath = ctx.formActionBase.ifBlank { ctx.returnUrl.substringBefore("/authorize/callback") }
         val tokens =
             mapOf(
                 "locale" to escapeHtml(locale),
@@ -178,7 +178,7 @@ class SphereonBrandedLoginPageRenderer : LoginPageRenderer {
         msg: Map<String, String>,
     ): String {
         if (ctx.federationOptions.isEmpty()) return ""
-        val basePath = ctx.returnUrl.substringBefore("/authorize/callback")
+        val basePath = ctx.formActionBase.ifBlank { ctx.returnUrl.substringBefore("/authorize/callback") }
         val dividerLabel = escapeHtml(msg["loginFederationDivider"] ?: "Or continue with")
         val buttonPrefix = escapeHtml(msg["loginFederationButtonPrefix"] ?: "Continue with")
         val buttons =

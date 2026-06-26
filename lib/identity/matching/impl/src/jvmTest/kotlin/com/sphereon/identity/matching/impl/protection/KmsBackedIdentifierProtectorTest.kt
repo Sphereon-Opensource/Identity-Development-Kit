@@ -157,8 +157,9 @@ class KmsBackedIdentifierProtectorTest {
                     Ok(ProtectedIdentifierValue(mode = IdentifierProtectionMode.PLAINTEXT, plaintext = normalized))
                 }
 
+                IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
                 IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX -> {
-                    Ok(blinded(tenantId, identityId, type, normalized, IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX, "tenant"))
+                    Ok(blinded(tenantId, identityId, type, normalized, policy.mode, "tenant"))
                 }
 
                 IdentifierProtectionMode.SALTED_BLINDED -> {

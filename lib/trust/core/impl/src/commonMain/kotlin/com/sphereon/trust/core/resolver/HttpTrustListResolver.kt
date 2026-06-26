@@ -8,6 +8,8 @@ package com.sphereon.trust.core.resolver
 
 import com.sphereon.core.api.cache.CacheService
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFromBase64
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
@@ -65,9 +67,7 @@ class HttpTrustListResolver(
         if (options.useCache) {
             val cached = cache.getApp(uri)
             if (cached != null) {
-                val data =
-                    kotlin.io.encoding.Base64
-                        .decode(cached)
+                val data = cached.decodeFromBase64()
                 logger.debug("Using cached trust list for $uri")
                 return TrustListData(
                     data = data,
@@ -112,8 +112,7 @@ class HttpTrustListResolver(
             if (options.useCache) {
                 cache.putApp(
                     uri,
-                    kotlin.io.encoding.Base64
-                        .encode(data),
+                    data.encodeToBase64(),
                 )
             }
 

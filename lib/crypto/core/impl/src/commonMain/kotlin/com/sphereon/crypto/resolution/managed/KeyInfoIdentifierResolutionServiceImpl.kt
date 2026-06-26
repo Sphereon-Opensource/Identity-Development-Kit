@@ -113,6 +113,11 @@ class KeyInfoIdentifierResolutionServiceImpl(
             }
         log.debug("Retrieved key with signatureAlgorithm = ${managedKeyInfo.signatureAlgorithm}")
 
+        val requestedKid = opts.identifier.kid?.takeIf { it.isNotBlank() }
+        if (requestedKid != null && managedKeyInfo.kid != requestedKid) {
+            managedKeyInfo = managedKeyInfo.withRequestedKid(requestedKid)
+        }
+
         // If the opts.identifier has a signatureAlgorithm hint (e.g., from JWT header),
         // and the retrieved key doesn't have one (or has a different default), prefer the hint
         val algorithmHint = opts.identifier.signatureAlgorithm
@@ -147,6 +152,26 @@ class KeyInfoIdentifierResolutionServiceImpl(
         ).asOkResult()
             .also { log.debug("Resolved managed key identifier: ${args.identifier.toString().take(100)}") }
     }
+
+    private fun ManagedKeyInfoType<*>.withRequestedKid(kid: String): ManagedKeyInfoType<*> =
+        ManagedKeyInfo(
+            alias = alias,
+            providerId = providerId,
+            resolvedKeyInfo =
+                ResolvedKeyInfo(
+                    key = key,
+                    signatureAlgorithm = signatureAlgorithm,
+                    kid = kid,
+                    alias = alias,
+                    providerId = providerId,
+                    keyVisibility = keyVisibility,
+                    keyType = keyType,
+                    keyEncoding = keyEncoding,
+                    x5c = x5c,
+                    opts = opts,
+                    noCache = noCache,
+                ),
+        )
 
     override suspend fun supports(args: Any): Boolean = supportsManagedIdentifierArgs(args)
 

@@ -20,6 +20,8 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.openid.oid4vc.common.DisplayProperties
+import com.sphereon.openid.oid4vc.common.LogoProperties
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
@@ -73,16 +75,22 @@ class JwtVcIssuerMetadataEndpointTest {
     private fun fakeConfig(
         issuerIdentifier: String = "https://issuer.example.com/oid4vci",
         aliases: List<String> = listOf("TestCredential", "PID"),
+        displaySupplier: () -> List<DisplayProperties>? = { null },
+        onPrepare: () -> Unit = {},
     ) = object : com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider {
         override val issuerIdentifier: String = issuerIdentifier
         override val credentialConfigurations: Map<String, CredentialConfigurationSupported> =
             aliases.associateWith { CredentialConfigurationSupported(format = "dc+sd-jwt") }
         override val authorizationServers: List<String>? = null
-        override val display: List<com.sphereon.openid.oid4vc.common.DisplayProperties>? = null
+        override val display: List<DisplayProperties>? get() = displaySupplier()
         override val credentialSigningConfigs: Map<String, CredentialSigningConfig> =
             aliases.associateWith {
                 CredentialSigningConfig(signingKeyAlias = it, signingKeyMode = SigningKeyMode.Did("jwk"))
             }
+
+        override suspend fun prepare() {
+            onPrepare()
+        }
     }
 
     private fun buildCommands(
@@ -187,5 +195,47 @@ class JwtVcIssuerMetadataEndpointTest {
             val leaks = jwkMembers - allowedMembers
             assertTrue(leaks.isEmpty(), "JWK entry must not expose metadata; leaked: $leaks")
             assertEquals("EC", entry["kty"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun issuerDesignBrandingIsPreparedAndPublishedAsSdJwtIssuerMetadataDisplay() =
+        runTest {
+            var prepared = false
+            val designDisplay =
+                listOf(
+                    DisplayProperties(
+                        name = "Acme Workforce Issuer",
+                        locale = "en-US",
+                        logo = LogoProperties(uri = "/public/assets/design/acme-issuer-logo.png", altText = "Acme"),
+                    ),
+                    DisplayProperties(name = "Acme Werkgever", locale = "nl-NL"),
+                )
+            val execution = TestSessionExecution()
+            val config =
+                fakeConfig(
+                    displaySupplier = { if (prepared) designDisplay else null },
+                    onPrepare = { prepared = true },
+                )
+            val scoped = GetJwtVcIssuerMetadataScopedEndpointCommandImpl(execution, config, FakeKeyIdResolver())
+            val req =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/.well-known/jwt-vc-issuer/oid4vci",
+                    pathParameters = mapOf("issuer_path" to "oid4vci"),
+                )
+
+            val response = scoped.execute(req).getOrThrow()
+            assertTrue(prepared, "SD-JWT issuer metadata must prepare the config provider before reading issuer branding")
+            val body = json.parseToJsonElement(response.body!!).jsonObject
+            val display = body["display"]!!.jsonArray
+            assertEquals(2, display.size)
+            val en = display[0].jsonObject
+            assertEquals("Acme Workforce Issuer", en["name"]!!.jsonPrimitive.content)
+            assertEquals("en-US", en["locale"]!!.jsonPrimitive.content)
+            assertEquals("/public/assets/design/acme-issuer-logo.png", en["logo"]!!.jsonObject["uri"]!!.jsonPrimitive.content)
+            assertEquals("Acme", en["logo"]!!.jsonObject["alt_text"]!!.jsonPrimitive.content)
+            val nl = display[1].jsonObject
+            assertEquals("Acme Werkgever", nl["name"]!!.jsonPrimitive.content)
+            assertEquals("nl-NL", nl["locale"]!!.jsonPrimitive.content)
         }
 }

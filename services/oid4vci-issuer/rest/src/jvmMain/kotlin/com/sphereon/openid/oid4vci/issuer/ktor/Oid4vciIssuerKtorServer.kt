@@ -1,5 +1,6 @@
 package com.sphereon.openid.oid4vci.issuer.ktor
 
+import com.sphereon.core.api.log.Log
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.AppGraph
@@ -27,7 +28,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 
 fun main() {
-    println("Starting OID4VCI Issuer Server...")
+    val logger = Log.app().withTag("Oid4vciIssuerKtorServer")
+    logger.info("Starting OID4VCI Issuer Server")
 
     val appGraph =
         createOid4vciIssuerAppGraph(
@@ -49,7 +51,7 @@ fun main() {
         val provisioner = (session.graph as StatusListProvisioner.Graph).statusListProvisioner
         val result = provisioner.provisionConfigured()
         if (result.isErr) {
-            println("WARN: status list provisioning failed (status lists will be unavailable): ${result.error}")
+            logger.warn("Status list provisioning failed; status lists will be unavailable: ${result.error}")
         }
     }
 

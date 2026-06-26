@@ -212,6 +212,11 @@ class DefaultConfigBinderListTest {
         return DefaultConfigBinder(resolver)
     }
 
+    @Serializable
+    data class CollectionFieldConfig(
+        val ids: Set<String> = emptySet(),
+    )
+
     @Test
     fun bindsIndexedList() {
         val binder =
@@ -272,6 +277,20 @@ class DefaultConfigBinderListTest {
         assertEquals("second", list[1].value)
         assertEquals("third", list[2].value)
     }
+
+    @Test
+    fun bindsIndexedCollectionField() {
+        val binder =
+            createBinder(
+                "config.ids[0]" to "alpha",
+                "config.ids[1]" to "beta",
+            )
+
+        val config: CollectionFieldConfig? = binder.getConfig("config")
+
+        assertNotNull(config)
+        assertEquals(setOf("alpha", "beta"), config.ids)
+    }
 }
 
 class DefaultConfigBinderMapTest {
@@ -301,6 +320,19 @@ class DefaultConfigBinderMapTest {
         assertTrue(map.containsKey("replica"))
         assertEquals("primary.db.com", map["primary"]?.host)
         assertEquals("replica.db.com", map["replica"]?.host)
+    }
+
+    @Test
+    fun bindsBracketQuotedMapKeyContainingDots() {
+        val binder =
+            createBinder(
+                "commands.[kms.signature.verify].value" to "LOCAL",
+            )
+
+        val map = binder.getConfigMap<SimpleConfig>("commands")
+
+        assertEquals(setOf("kms.signature.verify"), map.keys)
+        assertEquals("LOCAL", map["kms.signature.verify"]?.value)
     }
 
     @Test
@@ -1298,6 +1330,16 @@ class DefaultConfigBinderCamelCaseTest {
         val phoneNumber: String? = null,
     )
 
+    @Serializable
+    data class CamelCaseMapValueConfig(
+        val timeoutMs: Long = 30_000,
+    )
+
+    @Serializable
+    data class NestedCamelCaseMapConfig(
+        val commands: Map<String, CamelCaseMapValueConfig> = emptyMap(),
+    )
+
     @Test
     fun bindsCamelCaseFieldFromNormalizedKey() {
         // Given: properties using normalized keys (as stored by MutableMapPropertySource)
@@ -1425,6 +1467,20 @@ class DefaultConfigBinderCamelCaseTest {
         assertEquals("http://localhost:8080/certs", map["keycloak"]?.jwksUri)
         assertEquals("azure", map["azure"]?.id)
         assertEquals(30, map["azure"]?.clockSkewSeconds)
+    }
+
+    @Test
+    fun getConfigWithNestedMapReconstructsCamelCaseValueFields() {
+        val binder =
+            createBinder(
+                "routing.commands.[application.license.get-effective].timeoutMs" to 5_000L,
+            )
+
+        val config = binder.getConfig<NestedCamelCaseMapConfig>("routing")
+
+        assertNotNull(config)
+        assertEquals(setOf("application.license.get-effective"), config.commands.keys)
+        assertEquals(5_000L, config.commands["application.license.get-effective"]?.timeoutMs)
     }
 
     @Test

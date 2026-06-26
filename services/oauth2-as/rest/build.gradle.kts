@@ -43,6 +43,14 @@ kotlin {
                 // OAuth2 client (for introspection/metadata)
                 implementation(projects.libOauth2ClientImpl)
 
+                // JWT validation: the internal signing-key provisioning endpoint authenticates the
+                // platform's east-west bearer (signature vs the platform JWKS + per-tenant audience)
+                // via the IDK JwtValidationService + IdpRegistry, mirroring the operator bearer path.
+                // The -impl module supplies the SessionScope JwtValidationService + AppScope IdpRegistry
+                // bindings the provisioning command injects.
+                implementation(projects.libOauth2JwtValidationApi)
+                implementation(projects.libOauth2JwtValidationImpl)
+
                 // Core
                 api(projects.libCoreApiPublic)
                 implementation(projects.libCoreApiDefault)

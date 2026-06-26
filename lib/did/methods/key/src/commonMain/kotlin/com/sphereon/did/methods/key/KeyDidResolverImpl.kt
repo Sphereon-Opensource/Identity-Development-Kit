@@ -20,6 +20,7 @@ package com.sphereon.did.methods.key
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.KeyTypeMapping
@@ -51,8 +52,6 @@ import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Resolver for the did:key DID method.
@@ -214,7 +213,6 @@ class KeyDidResolverImpl : KeyDidResolver {
     /**
      * Builds a DID document from the decoded key material.
      */
-    @OptIn(ExperimentalEncodingApi::class)
     private suspend fun buildDidDocument(
         did: String,
         multibaseKey: String,
@@ -259,7 +257,7 @@ class KeyDidResolverImpl : KeyDidResolver {
                     Jwk(
                         kty = JwaKeyType.OKP,
                         crv = JwaCurve.X25519,
-                        x = Base64.UrlSafe.encode(x25519KeyBytes).trimEnd('='),
+                        x = x25519KeyBytes.encodeToBase64Url(),
                     )
 
                 val x25519Vm =
@@ -303,7 +301,6 @@ class KeyDidResolverImpl : KeyDidResolver {
      * For EC keys, uses the platform crypto provider (via dev.whyoleg.cryptography) to
      * decompress compressed EC points, avoiding custom big-integer arithmetic.
      */
-    @OptIn(ExperimentalEncodingApi::class)
     private suspend fun buildJwk(
         codecPrefix: MulticodecPrefix,
         rawKeyBytes: ByteArray,
@@ -319,7 +316,7 @@ class KeyDidResolverImpl : KeyDidResolver {
                 Jwk(
                     kty = JwaKeyType.OKP,
                     crv = crv,
-                    x = Base64.UrlSafe.encode(rawKeyBytes).trimEnd('='),
+                    x = rawKeyBytes.encodeToBase64Url(),
                 )
             }
 
@@ -362,8 +359,8 @@ class KeyDidResolverImpl : KeyDidResolver {
                     Jwk(
                         kty = JwaKeyType.EC,
                         crv = crv,
-                        x = Base64.UrlSafe.encode(x).trimEnd('='),
-                        y = Base64.UrlSafe.encode(y).trimEnd('='),
+                        x = x.encodeToBase64Url(),
+                        y = y.encodeToBase64Url(),
                     )
                 }
             }

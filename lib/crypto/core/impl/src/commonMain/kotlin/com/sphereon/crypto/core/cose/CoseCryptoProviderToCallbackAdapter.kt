@@ -160,6 +160,9 @@ class CoseCryptoProviderToCallbackAdapter(
     ): ByteArray {
         val keyInfo = input.keyInfo
         val alg = keyInfo.signatureAlgorithm ?: input.alg
+        keyManagerService?.let {
+            return it.createRawSignature(keyInfo, input.value, requireX5Chain == true)
+        }
         return assertedSignatureProvider(alg = alg, kms = keyInfo.providerId).createRawSignature(keyInfo, input.value, requireX5Chain == true)
     }
 
@@ -219,7 +222,11 @@ class CoseCryptoProviderToCallbackAdapter(
                 headerCodec = coseHeaderCborCodec,
             ).getOrElse { throw it.toException() }
         val validSig =
-            assertedSignatureProvider(alg = alg, kms = resolvedKeyInfo.providerId).isValidRawSignature(
+            keyManagerService?.isValidRawSignature(
+                resolvedKeyInfo,
+                input = recalculatedToBeSignedCbor.value,
+                signature = input.signature.value,
+            ) ?: assertedSignatureProvider(alg = alg, kms = resolvedKeyInfo.providerId).isValidRawSignature(
                 resolvedKeyInfo,
                 input = recalculatedToBeSignedCbor.value,
                 signature = input.signature.value,

@@ -121,11 +121,19 @@ GenerateKeyArgs
 /**
  * Result of a key generation operation.
  *
- * @property keyPair The generated managed key pair
+ * `@Serializable` so the result round-trips over the binary/gRPC transport (east-west KMS generate):
+ * without it the codec and the kotlinx JSON fallback both fail and the adapter falls back to a
+ * non-decodable `toString()`, so a remote caller sees the generate as failed even though the key was
+ * created. [keyPair] stays `@Transient` — the freshly generated PRIVATE key material is deliberately
+ * never serialized over the wire; it lives in the (remote) KMS and the caller only needs the success
+ * outcome. The result therefore serializes as an empty object.
+ *
+ * @property keyPair The generated managed key pair (in-process only; never serialized).
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyResult", exact = true)
 @JsExportCompat
+@Serializable
 data class
 GenerateKeyResult
     @JvmOverloads
@@ -177,11 +185,11 @@ ListKeysArgs
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ListKeysResult", exact = true)
 @JsExportCompat
+@Serializable
 data class
 ListKeysResult
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
         val keys: Array<ManagedKeyReference> = emptyArray(),
     ) {
         override fun equals(other: Any?): Boolean {
@@ -232,7 +240,7 @@ data class
 GetKeyArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
     )
 
@@ -244,11 +252,11 @@ GetKeyArgs
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GetKeyResult", exact = true)
 @JsExportCompat
+@Serializable
 data class
 GetKeyResult
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
         val key: ManagedKeyInfoType<*>? = null,
     )
 
@@ -287,11 +295,10 @@ data class
 StoreKeyArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.ResolvedKeyInfoSerializer::class)
         val keyInfo: ResolvedKeyInfoType<*>? = null,
         val providerId: String = "",
         val alias: String = "",
-        @kotlinx.serialization.Transient
         val certChain: Array<Certificate>? = null,
     ) {
         override fun equals(other: Any?): Boolean {
@@ -344,11 +351,11 @@ StoreKeyArgs
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("StoreKeyResult", exact = true)
 @JsExportCompat
+@Serializable
 data class
 StoreKeyResult
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
         val key: ManagedKeyInfoType<*>? = null,
     )
 
@@ -384,7 +391,7 @@ data class
 DeleteKeyArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
     )
 

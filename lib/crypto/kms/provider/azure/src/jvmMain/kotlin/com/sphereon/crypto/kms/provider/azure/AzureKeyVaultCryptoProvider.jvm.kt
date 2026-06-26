@@ -68,7 +68,6 @@ import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.toKeyReference
 import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
 import java.util.concurrent.TimeoutException
@@ -90,6 +89,7 @@ import com.sphereon.crypto.core.generic.CoseKeyPair
 import com.sphereon.crypto.core.generic.CryptoAlg
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.generic.JoseKeyPair
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.ManagedKeyPair
@@ -262,7 +262,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
     }
 
     private fun hash(digestAlg: com.sphereon.crypto.core.generic.DigestAlg, input: ByteArray): ByteArray {
-        return MessageDigest.getInstance(digestAlg.javaName).digest(input)
+        return hash(input, digestAlg)
     }
 
     /**

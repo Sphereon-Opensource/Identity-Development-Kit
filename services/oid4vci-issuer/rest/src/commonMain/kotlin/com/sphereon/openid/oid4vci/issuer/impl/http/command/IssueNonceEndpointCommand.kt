@@ -23,6 +23,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -55,6 +56,8 @@ interface IssueNonceEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("oid4vci-issuer"),
                 summary = "Issue a nonce for credential request proof",
+                // Anonymous: the wallet fetches a nonce before it has an access token.
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }

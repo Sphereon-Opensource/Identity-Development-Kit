@@ -128,6 +128,25 @@ abstract class DidRepositoryContract {
         }
 
     @Test
+    fun findsPublicHostedDidByWebLocationWithoutTenant() =
+        runTest {
+            before()
+            val repo = repository()
+            val rec =
+                webRecord(
+                    did = "did:web:public.example.com",
+                    method = "web",
+                    webLocation = "public.example.com",
+                )
+            (repo.save(DidDetail(record = rec)) as? Ok) ?: error("save failed")
+
+            val found = repo.findByWebLocation(null, "public.example.com")
+            assertTrue(found is Ok, "public findByWebLocation should succeed")
+            assertNotNull(found.value, "expected public DID hosting lookup to find the record")
+            assertEquals(rec.did, found.value!!.record.did)
+        }
+
+    @Test
     fun rejectsSecondMethodAtSameWebLocation() =
         runTest {
             before()

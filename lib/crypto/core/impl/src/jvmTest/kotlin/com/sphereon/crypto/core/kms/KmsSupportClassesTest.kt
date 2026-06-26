@@ -561,6 +561,45 @@ class KmsSupportClassesTest {
     }
 
     @Test
+    fun kmsProviderConfigBinderShouldIgnoreTenantAdminProviderMetadata() {
+        app as JvmCryptoTestAppGraph
+        val configService = (app as AppConfigService.Graph).appConfigService
+        val binder = (app as KmsProviderConfigBinder.Graph).kmsProviderConfigBinder
+
+        clearConfigCache()
+
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.id", "platform")
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.type", "software")
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.enabled", "true")
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.system", "true")
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.role", "PLATFORM_AUTHORIZATION_SERVER")
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.autoCreateCertificate", "true")
+
+        try {
+            val config = binder.getKmsProviderConfig(configService, "platform")
+            assertEquals("platform", config.id)
+            assertEquals("software", config.kmsProviderType)
+            assertTrue(config.enabled)
+            assertTrue(config is SoftwareKmsProviderConfig)
+            assertTrue(config.autoCreateCertificate)
+
+            val configs = binder.getKmsProviderConfigs(configService)
+            assertTrue(
+                configs.any { it.id == "platform" && it.enabled },
+                "batch provider binding should include the metadata-backed platform provider",
+            )
+        } finally {
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.id")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.type")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.enabled")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.system")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.role")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.autoCreateCertificate")
+            clearConfigCache()
+        }
+    }
+
+    @Test
     fun kmsProviderConfigBinderShouldReadLowercaseFlatPropertyNames() {
         app as JvmCryptoTestAppGraph
         val configService = (app as AppConfigService.Graph).appConfigService
@@ -646,6 +685,32 @@ class KmsSupportClassesTest {
             assertTrue(config.id == "auto-id-prov" || config.id == "auto.id.prov", "ID should be auto-id-prov or auto.id.prov but was ${config.id}")
         } finally {
             DefaultAppMapPropertySource.deleteProperty("kms.providers.auto-id-prov.type")
+            clearConfigCache()
+        }
+    }
+
+    @Test
+    fun kmsProviderConfigBinderShouldPreserveExplicitCanonicalProviderId() {
+        app as JvmCryptoTestAppGraph
+        val configService = (app as AppConfigService.Graph).appConfigService
+        val binder = (app as KmsProviderConfigBinder.Graph).kmsProviderConfigBinder
+
+        clearConfigCache()
+
+        DefaultAppMapPropertySource.addProperty("kms.providers.license.id", "license")
+        DefaultAppMapPropertySource.addProperty("kms.providers.license.type", "software")
+        DefaultAppMapPropertySource.addProperty("kms.providers.license.enabled", true)
+
+        try {
+            val ids = binder.getKmsProviderIds(configService).toSet()
+            val configs = binder.getKmsProviderConfigs(configService)
+
+            assertTrue("license" in ids, "explicit provider id must be preserved in provider ids: $ids")
+            assertTrue(configs.any { it.id == "license" }, "explicit provider id must be preserved in provider configs: ${configs.map { it.id }}")
+        } finally {
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.license.id")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.license.type")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.license.enabled")
             clearConfigCache()
         }
     }

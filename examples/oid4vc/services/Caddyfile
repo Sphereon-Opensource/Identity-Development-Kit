@@ -32,10 +32,10 @@
 # imports this file and references this snippet — touching a route in one place updates both
 # surfaces.
 (routes) {
-	# VCT type metadata is now served dynamically by the issuer (GET /oid4vci/vct/{vctId}), derived
-	# from the same `oid4vci.issuer` config that drives the OID4VCI metadata — one authoring source.
-	# It falls through to the `/oid4vci/*` reverse_proxy below (the issuer strips the /oid4vci prefix
-	# and matches its `/vct/{vctId}` endpoint). No static VCT files are mounted anymore.
+	# VCT type metadata is served dynamically by the issuer on its public hosting surface
+	# (GET /public/schema/vct/{vctId}), derived from the same `oid4vci.issuer` config that drives the OID4VCI
+	# metadata — one authoring source. Routed via the dedicated `/public/schema/vct/*` handler below
+	# (alongside `/public/statuslists/*`). No static VCT files are mounted.
 
 	# Static assets (logos, background images) — same-origin only.
 	handle /assets/* {
@@ -85,6 +85,11 @@
 	}
 
 	# OID4VCI protocol + backend routes
+	handle /api/oid4vci/v1/* {
+		import cors
+		reverse_proxy oid4vci-issuer:8080
+	}
+
 	handle /oid4vci/* {
 		import cors
 		reverse_proxy oid4vci-issuer:8080
@@ -93,6 +98,15 @@
 	# Credential status list hosting (public, cacheable) — GET /public/statuslists/{id}.
 	# Protocol-neutral public path; the issuer service serves the signed status-list token here.
 	handle /public/statuslists/* {
+		import cors
+		reverse_proxy oid4vci-issuer:8080
+	}
+
+	# Public schema hosting (public, cacheable) — e.g. SD-JWT VC type metadata at
+	# GET /public/schema/vct/{vctId}. Stable, unauthenticated paths that issued credentials embed
+	# (e.g. their `vct`); the issuer serves the documents here, decoupled from the `/oid4vci` protocol
+	# surface. Routed at the `/public/schema` parent so future schema types need no new gateway rule.
+	handle /public/schema/* {
 		import cors
 		reverse_proxy oid4vci-issuer:8080
 	}

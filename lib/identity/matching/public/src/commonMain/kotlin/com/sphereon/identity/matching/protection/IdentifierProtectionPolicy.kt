@@ -26,9 +26,9 @@ import com.sphereon.data.store.party.model.IdentifierType
  * Couples the storage [mode] with the [normalization] used to canonicalize the value before
  * blind indexing or encryption. [searchable] indicates whether the resulting representation can
  * be looked up at login time; by default this is derived from the mode but it can be overridden by
- * a policy source. PLAINTEXT (looked up by the cleartext column) and SEARCHABLE_BLIND_INDEX (looked
- * up by the deterministic tenant-wide blind index) are both searchable; only SALTED_BLINDED is not,
- * because its per-identity salt makes a global lookup impossible.
+ * a policy source. PLAINTEXT (looked up by the cleartext column), SEARCHABLE_ENCRYPTED, and
+ * SEARCHABLE_BLIND_INDEX (looked up by the deterministic tenant-wide blind index) are searchable;
+ * only SALTED_BLINDED is not, because its per-identity salt makes a global lookup impossible.
  */
 @JsExportCompat
 data class IdentifierProtectionPolicy(

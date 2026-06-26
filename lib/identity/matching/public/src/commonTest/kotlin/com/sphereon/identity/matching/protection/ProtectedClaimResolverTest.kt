@@ -19,7 +19,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.data.store.party.model.IdentifierProtectionMode
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.ProtectedIdentifierValue
-import com.sphereon.data.store.party.result.CorrelationIdentifierResult
+import com.sphereon.data.store.party.result.IdentityIdentifierResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,7 +30,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
- * Claim-value resolution for protected correlation identifiers:
+ * Claim-value resolution for protected identity identifiers:
  *  - plaintext rows surface as-is,
  *  - reversible envelopes are revealed via the protector,
  *  - non-reversible blinded rows yield null (claim value omitted, verified flag
@@ -99,9 +99,9 @@ class ProtectedClaimResolverTest {
     private fun identifierRow(
         value: String,
         envelope: ProtectedIdentifierValue?,
-    ): CorrelationIdentifierResult =
-        CorrelationIdentifierResult(
-            correlationId = Uuid.random(),
+    ): IdentityIdentifierResult =
+        IdentityIdentifierResult(
+            identityIdentifierId = Uuid.random(),
             identityId = identityId,
             tenantId = tenant,
             identifierType = IdentifierType("email"),
@@ -139,6 +139,7 @@ private class CiphertextPrefixProtector : IdentifierProtector {
                 )
             }
 
+            IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
             IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX -> {
                 Ok(
                     ProtectedIdentifierValue(

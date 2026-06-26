@@ -110,6 +110,11 @@ class CredentialDesignConfigBinderImpl(
             policy = bindPolicy("$prefix.policy", defaults.policy),
             refresh = bindRefresh("$prefix.refresh", defaults.refresh),
             validation = bindValidation("$prefix.validation", defaults.validation),
+            externalBaseUrl =
+                configService
+                    .getPropertyAsString("$prefix.external-base-url")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.trimEnd('/'),
         )
     }
 

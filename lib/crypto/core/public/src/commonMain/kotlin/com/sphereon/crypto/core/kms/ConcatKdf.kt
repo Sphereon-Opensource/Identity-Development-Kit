@@ -250,7 +250,7 @@ object ConcatKdf {
      * Gets the algorithm identifier to use in Concat KDF.
      *
      * For ECDH-ES (direct), the "enc" algorithm is used.
-     * For ECDH-ES+AxxxKW, the "alg" algorithm is used.
+     * For ECDH-ES+AxxxKW, the AES key-wrap algorithm name is used.
      *
      * @param algorithm The JWE "alg" value
      * @param encAlgorithm The JWE "enc" value
@@ -262,8 +262,8 @@ object ConcatKdf {
     ): String =
         when (algorithm) {
             KeyAgreementAlgorithm.ECDH_ES -> encAlgorithm
-
-            // Use enc for direct
-            else -> algorithm.identifier // Use alg for key wrapping
+            KeyAgreementAlgorithm.ECDH_ES_A128KW -> "A128KW"
+            KeyAgreementAlgorithm.ECDH_ES_A192KW -> "A192KW"
+            KeyAgreementAlgorithm.ECDH_ES_A256KW -> "A256KW"
         }
 }

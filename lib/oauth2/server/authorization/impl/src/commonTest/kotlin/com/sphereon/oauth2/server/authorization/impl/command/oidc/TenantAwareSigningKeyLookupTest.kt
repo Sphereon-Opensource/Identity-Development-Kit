@@ -24,7 +24,6 @@ import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TenantOverrideSessionExecution
-import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
@@ -43,7 +42,7 @@ import kotlin.time.Clock
  *
  * The critical contract: a session belonging to tenant "acme" must publish ONLY the key
  * registered under "acme", not the key registered under "beta"; a session with a blank
- * tenant must fall back to "default" (single-tenant compatibility).
+ * tenant must fail closed rather than publishing another tenant's keys.
  */
 class TenantAwareSigningKeyLookupTest {
     private val ctx = OAuth2ServerTestContext("tenant-aware-jwks-test", this)
@@ -57,7 +56,7 @@ class TenantAwareSigningKeyLookupTest {
             seedActiveKey(store, tenantId = "beta", kid = "k-beta")
 
             val acmeExecution = TenantOverrideSessionExecution(ctx.execution, "acme")
-            val command = GetJwksCommandImpl(acmeExecution, store, ctx.identifierService, fixedSigningIdentifierResolver())
+            val command = GetJwksCommandImpl(acmeExecution, store, ctx.identifierService)
 
             val result = command.execute(GetJwksArgs())
 
@@ -78,7 +77,7 @@ class TenantAwareSigningKeyLookupTest {
             val betaKey = seedActiveKey(store, tenantId = "beta", kid = "k-beta")
 
             val betaExecution = TenantOverrideSessionExecution(ctx.execution, "beta")
-            val command = GetJwksCommandImpl(betaExecution, store, ctx.identifierService, fixedSigningIdentifierResolver())
+            val command = GetJwksCommandImpl(betaExecution, store, ctx.identifierService)
 
             val result = command.execute(GetJwksArgs())
 
@@ -92,25 +91,20 @@ class TenantAwareSigningKeyLookupTest {
         }
 
     @Test
-    fun blankTenantFallsBackToDefaultTenant() =
+    fun blankTenantFailsClosed() =
         runTest {
-            // Single-tenant deployments run with a blank/anonymous tenantId; the fallback to
-            // "default" must preserve their behaviour so they don't lose their signing key.
+            // Tenant resolution must happen before JWKS publication. A blank tenant means
+            // the request bypassed tenant resolution, so the command must not publish
+            // "default" keys as a fallback.
             val store: SigningKeyStore = InMemorySigningKeyStore()
-            val defaultKey = seedActiveKey(store, tenantId = "default", kid = "k-default")
+            seedActiveKey(store, tenantId = "default", kid = "k-default")
 
             val blankExecution = TenantOverrideSessionExecution(ctx.execution, "")
-            val command = GetJwksCommandImpl(blankExecution, store, ctx.identifierService, fixedSigningIdentifierResolver())
+            val command = GetJwksCommandImpl(blankExecution, store, ctx.identifierService)
 
             val result = command.execute(GetJwksArgs())
 
-            assertTrue(result.isOk, "GetJwks with blank tenant must succeed: ${if (result.isErr) result.error else ""}")
-            val publishedKids = result.value.keys.map { it.kid }
-            assertEquals(
-                listOf(defaultKey.kid),
-                publishedKids,
-                "blank-tenant session must fall back to the 'default' tenant's key",
-            )
+            assertTrue(result.isErr, "GetJwks with blank tenant must fail closed")
         }
 
     @Test

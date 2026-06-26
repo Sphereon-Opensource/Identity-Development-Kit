@@ -19,6 +19,7 @@ package com.sphereon.core.defaults.session
 
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.IdentityResolutionResult
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
@@ -69,6 +70,7 @@ class DefaultSessionContextFactory : SessionContextFactory {
                 id = "$resolvedTenantId:$resolvedPrincipalId:default",
                 tenant = DefaultTenantContextData(resolvedTenantId),
                 principal = resolvedPrincipalId,
+                principalType = resolution.principalType,
             )
 
         return DefaultSessionContext(
@@ -88,6 +90,7 @@ internal data class DefaultUserContext(
     override val tenant: TenantContextData,
     override val principal: Any?,
     override val secureDetails: SecuredTenantContextDetails? = null,
+    override val principalType: PrincipalType = PrincipalType.USER,
 ) : UserContext
 
 internal data class DefaultSessionContext(

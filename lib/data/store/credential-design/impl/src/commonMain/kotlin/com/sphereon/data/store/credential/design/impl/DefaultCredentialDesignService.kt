@@ -21,10 +21,16 @@ package com.sphereon.data.store.credential.design.impl
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64
+import com.sphereon.core.api.encodeToHex
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobService
 import com.sphereon.data.store.credential.design.CredentialDesignService
+import com.sphereon.data.store.credential.design.PublicDesignAssetPaths
+import com.sphereon.data.store.credential.design.config.CredentialDesignConfigProvider
 import com.sphereon.data.store.credential.design.impl.mapper.SdJwtVctDesignMapper
 import com.sphereon.data.store.credential.design.impl.resolution.CredentialTemplateDesignProvider
 import com.sphereon.data.store.credential.design.impl.resolution.DesignResolutionEngine
@@ -101,6 +107,7 @@ class DefaultCredentialDesignService(
     private val derivedRenderHintsRepository: DerivedRenderHintsRepository,
     private val blobService: BlobService,
     private val externalFetcher: DesignExternalFetcher,
+    private val configProvider: CredentialDesignConfigProvider,
 ) : CredentialDesignService {
     private val importJson = Json { ignoreUnknownKeys = true }
     private val mapper = SdJwtVctDesignMapper()
@@ -932,17 +939,38 @@ class DefaultCredentialDesignService(
         tenantId: String,
         input: UploadDesignAssetInput,
     ): IdkResult<AssetReference, IdkError> {
-        val blobPath = assetBlobPath(tenantId, input.designId, input.locale, input.assetType.name)
-        val storeResult =
-            blobService.storeBlob(
-                target = BlobInfo(path = blobPath, tenantId = tenantId, contentType = input.contentType),
-                data = input.data,
-            )
-        if (storeResult.isErr) return Err(storeResult.error)
+        // Content-address the asset: identical bytes collapse to ONE hash (and ONE public URL),
+        // so a wallet that pre-fetches assets downloads byte-identical images exactly once.
+        // The locale stays in the DISPLAY metadata, not in the image URL.
+        val digest = hash(input.data, DigestAlg.SHA256)
+        val hexHash = digest.encodeToHex() // lowercase 64-char hex; URL-safe + snapshot-stable
+        val b64 = digest.encodeToBase64() // standard padded base64 for the SRI integrity string
+
+        val blobPath = assetBlobPath(tenantId, hexHash)
+
+        // Dedup: only write when this content is not already stored for the tenant. The content
+        // type is persisted with the blob so it can be served back later by hash.
+        val existing = blobService.getBlobInfo(BlobInfo(path = blobPath, tenantId = tenantId))
+        if (existing.isErr) {
+            val storeResult =
+                blobService.storeBlob(
+                    target = BlobInfo(path = blobPath, tenantId = tenantId, contentType = input.contentType),
+                    data = input.data,
+                )
+            if (storeResult.isErr) return Err(storeResult.error)
+        }
+
+        // Store the asset URI RELATIVE (content-addressed under PublicDesignAssetPaths.BASE_PATH).
+        // The absolute host is applied at SERVE time from the SAME per-tenant external base the
+        // issuer advertises for `credential_issuer` / `vct` (see PublicDesignAssetPaths.toAbsolute),
+        // so in multi-tenant gateway mode each tenant's logo URI carries that tenant's host rather
+        // than one static configured host. Content-addressing is unchanged — only the host differs.
+        val publicUri = PublicDesignAssetPaths.assetPath(hexHash, input.contentType)
 
         val reference =
             AssetReference(
-                uri = blobPath,
+                uri = publicUri,
+                integrity = "sha256-$b64",
                 contentType = input.contentType,
                 localBlob = BlobInfo(path = blobPath, tenantId = tenantId),
             )
@@ -953,7 +981,9 @@ class DefaultCredentialDesignService(
         tenantId: String,
         input: GetDesignAssetInput,
     ): IdkResult<ResolvedDesignAsset, IdkError> {
-        val blobPath = assetBlobPath(tenantId, input.designId, input.locale, input.assetType.name)
+        // Legacy per-(designId,locale,assetType) authenticated download API. Retained for the
+        // management surface; the PUBLIC hosting surface uses [getDesignAssetByHash].
+        val blobPath = legacyAssetBlobPath(tenantId, input.designId, input.locale, input.assetType.name)
         val blobResult = blobService.getBlob(BlobInfo(path = blobPath, tenantId = tenantId))
         if (blobResult.isErr) {
             return Err(IdkError.NOT_FOUND_ERROR(message = "Design asset not found: ${input.assetType} for design ${input.designId}"))
@@ -975,7 +1005,46 @@ class DefaultCredentialDesignService(
         )
     }
 
+    override suspend fun getDesignAssetByHash(
+        tenantId: String,
+        hash: String,
+    ): IdkResult<ResolvedDesignAsset, IdkError> {
+        if (!hash.matches(HASH_PATTERN)) {
+            return Err(IdkError.NOT_FOUND_ERROR(message = "Design asset not found"))
+        }
+        val blobPath = assetBlobPath(tenantId, hash)
+        val blobResult = blobService.getBlob(BlobInfo(path = blobPath, tenantId = tenantId))
+        if (blobResult.isErr) {
+            return Err(IdkError.NOT_FOUND_ERROR(message = "Design asset not found for hash: $hash"))
+        }
+
+        val resolved = blobResult.value
+        val contentType = resolved.contentType ?: "application/octet-stream"
+        return Ok(
+            ResolvedDesignAsset(
+                data = resolved.data,
+                contentType = contentType,
+                reference =
+                    AssetReference(
+                        uri = PublicDesignAssetPaths.assetPath(hash),
+                        contentType = contentType,
+                        localBlob = BlobInfo(path = blobPath, tenantId = tenantId),
+                    ),
+            ),
+        )
+    }
+
+    /**
+     * Content-addressed, tenant-scoped blob path. Identical bytes dedup within a tenant; tenants
+     * stay isolated by the `$tenantId` segment.
+     */
     private fun assetBlobPath(
+        tenantId: String,
+        hash: String,
+    ): String = "vc-designs/$tenantId/assets/by-hash/$hash"
+
+    /** Path scheme used by the legacy authenticated [getDesignAsset] download API. */
+    private fun legacyAssetBlobPath(
         tenantId: String,
         designId: Uuid,
         locale: String,
@@ -1065,4 +1134,8 @@ class DefaultCredentialDesignService(
                 null
             } // Unknown or unsupported source type — create shell record
         }
+
+    private companion object {
+        val HASH_PATTERN = Regex("^[0-9a-f]{64}$")
+    }
 }

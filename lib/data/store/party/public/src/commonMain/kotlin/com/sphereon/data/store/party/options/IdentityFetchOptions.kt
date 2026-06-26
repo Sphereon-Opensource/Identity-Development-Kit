@@ -33,7 +33,7 @@ import kotlin.jvm.JvmOverloads
  * // Load only core identity data
  * IdentityFetchOptions.MINIMAL
  *
- * // Load identity with all correlation identifiers
+ * // Load identity with all identity identifiers
  * IdentityFetchOptions.WITH_IDENTIFIERS
  *
  * // Load everything
@@ -41,7 +41,7 @@ import kotlin.jvm.JvmOverloads
  *
  * // Custom selection
  * IdentityFetchOptions(
- *     includeCorrelationIdentifiers = true,
+ *     includeIdentityIdentifiers = true,
  *     includeX509Extensions = true
  * )
  * ```
@@ -51,41 +51,50 @@ import kotlin.jvm.JvmOverloads
 data class IdentityFetchOptions
     @JvmOverloads
     constructor(
-        /** Include correlation identifiers (DIDs, emails, URLs, etc.) */
-        @SerialName("includeCorrelationIdentifiers")
-        val includeCorrelationIdentifiers: Boolean = false,
-        /** Include X.509 certificate extensions on correlation identifiers */
+        /** Include identity identifiers (DIDs, emails, URLs, etc.) */
+        @SerialName("includeIdentityIdentifiers")
+        val includeIdentityIdentifiers: Boolean = false,
+        /** Include X.509 certificate extensions on identity identifiers */
         @SerialName("includeX509Extensions")
         val includeX509Extensions: Boolean = false,
-        /** Include registration extensions on correlation identifiers */
+        /** Include registration extensions on identity identifiers */
         @SerialName("includeRegistrationExtensions")
         val includeRegistrationExtensions: Boolean = false,
-        /** Include electronic address extensions on correlation identifiers */
+        /** Include electronic address extensions on identity identifiers */
         @SerialName("includeElectronicExtensions")
         val includeElectronicExtensions: Boolean = false,
+        /** Include identity-to-Party bindings */
+        @SerialName("includePartyBindings")
+        val includePartyBindings: Boolean = false,
+        /** Value mode to use when identity identifiers are included. */
+        @SerialName("identifierValueMode")
+        val identifierValueMode: IdentityIdentifierValueMode = IdentityIdentifierValueMode.REVEALED,
     ) {
         companion object {
             /** Load only core identity data (default) */
             val MINIMAL = IdentityFetchOptions()
 
-            /** Load identity with correlation identifiers */
-            val WITH_IDENTIFIERS = IdentityFetchOptions(includeCorrelationIdentifiers = true)
+            /** Load identity with identity identifiers */
+            val WITH_IDENTIFIERS = IdentityFetchOptions(includeIdentityIdentifiers = true)
 
             /** Load identity with identifiers and all extensions */
             val WITH_IDENTIFIERS_AND_EXTENSIONS =
                 IdentityFetchOptions(
-                    includeCorrelationIdentifiers = true,
+                    includeIdentityIdentifiers = true,
                     includeX509Extensions = true,
                     includeRegistrationExtensions = true,
                     includeElectronicExtensions = true,
                 )
 
+            /** Load identity with Party bindings. */
+            val WITH_PARTY_BINDINGS = IdentityFetchOptions(includePartyBindings = true)
+
             /** Load everything (all associations and extensions) */
-            val FULL = WITH_IDENTIFIERS_AND_EXTENSIONS
+            val FULL = WITH_IDENTIFIERS_AND_EXTENSIONS.withPartyBindings()
         }
 
-        /** Builder method to include correlation identifiers */
-        fun withCorrelationIdentifiers() = copy(includeCorrelationIdentifiers = true)
+        /** Builder method to include identity identifiers */
+        fun withIdentityIdentifiers() = copy(includeIdentityIdentifiers = true)
 
         /** Builder method to include X.509 extensions */
         fun withX509Extensions() = copy(includeX509Extensions = true)
@@ -95,6 +104,11 @@ data class IdentityFetchOptions
 
         /** Builder method to include electronic extensions */
         fun withElectronicExtensions() = copy(includeElectronicExtensions = true)
+
+        /** Builder method to include identity-to-Party bindings */
+        fun withPartyBindings() = copy(includePartyBindings = true)
+
+        fun withIdentifierValueMode(valueMode: IdentityIdentifierValueMode) = copy(identifierValueMode = valueMode)
 
         /** Builder method to include all extensions */
         fun withAllExtensions() =

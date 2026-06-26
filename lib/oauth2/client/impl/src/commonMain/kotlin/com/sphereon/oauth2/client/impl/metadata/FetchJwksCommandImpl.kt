@@ -24,23 +24,17 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.api.validation.ValidationErrorDetail
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.JwksUrlExternalIdentifierResolutionService
 import com.sphereon.di.session.SessionScope
-import com.sphereon.ktor.http.client.provider.HttpClientFactory
-import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.client.command.FetchJwksArgs
 import com.sphereon.oauth2.client.command.FetchJwksCommand
 import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.common.error.MetadataError
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
-import io.ktor.client.call.body
-import io.ktor.client.request.accept
-import io.ktor.client.request.get
-import io.ktor.client.statement.HttpResponse
-import io.ktor.http.ContentType
-import io.ktor.http.isSuccess
-import kotlinx.serialization.json.Json
 
 /**
  * Implementation of FetchJwksCommand
@@ -52,7 +46,7 @@ import kotlinx.serialization.json.Json
 @SingleIn(SessionScope::class)
 class FetchJwksCommandImpl(
     execution: SessionExecution,
-    private val httpClientFactory: HttpClientFactory,
+    private val jwksUrlResolver: JwksUrlExternalIdentifierResolutionService,
 ) : TypedServiceCommandAdapter<FetchJwksArgs, JwkSet, IdkError>(
         commandId = FetchJwksCommand.COMMAND_ID,
         execution = execution,
@@ -61,12 +55,6 @@ class FetchJwksCommandImpl(
     ),
     FetchJwksCommand {
     override val commandId: String get() = FetchJwksCommand.COMMAND_ID
-
-    private val json =
-        Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-        }
 
     override suspend fun supports(args: Any): Boolean = args is FetchJwksArgs
 
@@ -89,73 +77,41 @@ class FetchJwksCommandImpl(
             )
         }
 
-        val httpClient =
-            httpClientFactory.createClient(
-                HttpClientOptions(
-                    engine = null,
-                    enableContentNegotiation = true,
-                ),
-            )
-
-        return try {
-            val response: HttpResponse =
-                httpClient.get(jwksUri) {
-                    // Accept both JWK Set and JSON content types
-                    accept(ContentType("application", "jwk-set+json"))
-                    accept(ContentType.Application.Json)
-                }
-
-            when {
-                !response.status.isSuccess() -> {
-                    Err(
-                        MetadataError.FetchFailed(
-                            url = jwksUri,
-                            reason = "HTTP ${response.status.value}: ${response.status.description}",
-                        ),
-                    )
-                }
-
-                else -> {
-                    val bodyText = response.body<String>()
-                    try {
-                        val jwkSet = json.decodeFromString<JwkSet>(bodyText)
-
-                        // Validate that keys array is not empty
-                        if (jwkSet.keys.isEmpty()) {
-                            return Err(
-                                MetadataError.ValidationFailed(
-                                    url = jwksUri,
-                                    details =
-                                        listOf(
-                                            ValidationErrorDetail(
-                                                path = "keys",
-                                                message = "JWK Set must contain at least one key",
-                                            ),
-                                        ),
-                                ),
-                            )
-                        }
-
-                        Ok(jwkSet)
-                    } catch (expected: Exception) {
-                        Err(
-                            MetadataError.FetchFailed(
-                                url = jwksUri,
-                                reason = "JWK Set parsing failed: ${expected.message}",
-                                exception = expected,
-                            ),
-                        )
-                    }
-                }
-            }
-        } catch (expected: Exception) {
-            Err(
+        // Delegate the JWKS fetch to the IDK identifier-resolution system (which owns the HTTP
+        // fetch + parse, a CacheManager-backed JWKS cache, and a bounded transient retry).
+        val jwksResult = jwksUrlResolver.resolve(ExternalIdentifierJwksUrlOpts(identifier = jwksUri))
+        if (jwksResult.isErr) {
+            return Err(
                 MetadataError.FetchFailed(
                     url = jwksUri,
-                    reason = "Network error: ${expected.message}",
-                    exception = expected,
+                    reason = jwksResult.error.message.defaultMessage ?: jwksResult.error.code,
                 ),
             )
         }
+
+        // Bridge the resolved keys back to a raw JwkSet (lossless via Jwk.from). No kid is passed
+        // to the resolver, so the FULL key set is returned — callers do their own kid/issuer
+        // selection, exactly as before.
+        val jwkSet =
+            JwkSet(
+                jwksResult.value.jwks
+                    .map { Jwk.from(it.key) }
+                    .toTypedArray()
+            )
+        if (jwkSet.keys.isEmpty()) {
+            return Err(
+                MetadataError.ValidationFailed(
+                    url = jwksUri,
+                    details =
+                        listOf(
+                            ValidationErrorDetail(
+                                path = "keys",
+                                message = "JWK Set must contain at least one key",
+                            ),
+                        ),
+                ),
+            )
+        }
+        return Ok(jwkSet)
     }
 }

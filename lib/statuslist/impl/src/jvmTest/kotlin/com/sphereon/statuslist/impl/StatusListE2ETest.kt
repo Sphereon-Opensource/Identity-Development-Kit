@@ -16,6 +16,7 @@
 
 package com.sphereon.statuslist.impl
 
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.CoseCryptoService
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
@@ -109,6 +110,7 @@ class StatusListE2ETest {
                 NoopDidProviderRegistry,
                 CwtStatusListSigner(coseCryptoService, CoseSign1CborCodecImpl(), keyManagerService, NoopDidProviderRegistry),
             ),
+            (session.graph as SessionExecution.Graph).sessionExecution,
         ) to alias
     }
 

@@ -135,9 +135,18 @@ describe('resolveDesignSystemPalette', () => {
       const lightTokens = resolveDesignSystemPalette(config, 'light')
       const darkTokens = resolveDesignSystemPalette(config, 'dark')
 
-      // Light: brand.500; Dark: brand.300 (lighter for AA on dark surfaces).
+      // Primary-filled actions use the deep brand stop in both modes with a light label.
       expect(lightTokens['color.primary']).toBe('#7C40E8')
-      expect(darkTokens['color.primary']).toBe('#AE89F1')
+      expect(lightTokens['color.onPrimary']).toBe('#FBFBFB')
+      expect(lightTokens['color.primaryContainer']).toBe('#ECE4FC')
+      expect(lightTokens['color.navigation.activeForeground']).toBeUndefined()
+      expect(lightTokens['color.interactive.hover']).toBe('#F2F2F2')
+      expect(lightTokens['color.interactive.pressed']).toBe('#E3E3E3')
+      expect(darkTokens['color.primary']).toBe('#7C40E8')
+      expect(darkTokens['color.onPrimary']).toBe('#FFFFFF')
+      expect(darkTokens['color.primaryContainer']).toBe('color-mix(in srgb, #7C40E8 18%, transparent)')
+      expect(darkTokens['color.navigation.activeForeground']).toBeUndefined()
+      expect(darkTokens['color.interactive.hover']).toBe('color-mix(in srgb, #FFFFFF 6%, transparent)')
     })
   })
 

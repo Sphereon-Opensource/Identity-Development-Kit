@@ -60,7 +60,7 @@ class OAuth2OpenidDiscoveryPathIssuerHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2, required = true),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_OPENID_DISCOVERY_PATH_ISSUER"
+        const val ID: String = "oauth2.as.openid-discovery-path-issuer"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> = listOf(openidDiscoveryCommand)

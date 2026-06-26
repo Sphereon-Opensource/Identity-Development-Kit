@@ -38,8 +38,8 @@ class WebSystemDefaultsTest {
     fun darkDefaultsContainAllColorTokens() {
         val tokens = WebSystemDefaults.dark
         assertNotNull(tokens["color.primary"])
-        // Wallet dark primary, palette.brand.300 (lighter for AA on dark)
-        assertEquals("#AE89F1", tokens["color.primary"])
+        // Wallet dark primary, palette.brand.500
+        assertEquals("#7C40E8", tokens["color.primary"])
     }
 
     @Test

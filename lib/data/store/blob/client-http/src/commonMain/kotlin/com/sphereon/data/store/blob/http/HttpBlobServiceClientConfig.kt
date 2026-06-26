@@ -45,7 +45,7 @@ enum class HttpBlobAuthMode {
 @Serializable
 data class HttpBlobAuthConfig(
     val mode: HttpBlobAuthMode = HttpBlobAuthMode.BEARER,
-    /** Static bearer token (STATIC_TOKEN mode — use ${secret:env:BLOB_TOKEN} in config) */
+    /** Static bearer token (STATIC_TOKEN mode — use ${secret:@env:BLOB_TOKEN} in config) */
     val token: String? = null,
     /** OAuth2 token endpoint URL (CLIENT_CREDENTIALS mode) */
     @SerialName("tokenUri")
@@ -53,7 +53,7 @@ data class HttpBlobAuthConfig(
     /** OAuth2 client ID (CLIENT_CREDENTIALS mode) */
     @SerialName("clientId")
     val clientId: String? = null,
-    /** OAuth2 client secret (CLIENT_CREDENTIALS mode — use ${secret:env:BLOB_CLIENT_SECRET} in config) */
+    /** OAuth2 client secret (CLIENT_CREDENTIALS mode — use ${secret:@env:BLOB_CLIENT_SECRET} in config) */
     @SerialName("clientSecret")
     val clientSecret: String? = null,
     /** OAuth2 scopes to request */

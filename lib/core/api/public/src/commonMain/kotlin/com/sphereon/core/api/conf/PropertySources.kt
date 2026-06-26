@@ -90,6 +90,37 @@ interface ScopedPropertySource<T> : PropertySource<T> {
 }
 
 /**
+ * Marker for property sources whose backing data can change without the source
+ * being added to or removed from [PropertySources].
+ *
+ * Implementations should refresh synchronously from their backing source when
+ * [refreshIfNeeded] is called and increment [contentRevision] whenever the
+ * exposed property snapshot changes.
+ */
+@JsExportCompat
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("RefreshablePropertySource", exact = true)
+interface RefreshablePropertySource {
+    val contentRevision: Long
+
+    fun refreshIfNeeded()
+}
+
+fun PropertySources.refreshableContentRevision(refresh: Boolean = true): Long {
+    var revision = 0L
+    for (source in this) {
+        if (source is RefreshablePropertySource) {
+            if (refresh) {
+                source.refreshIfNeeded()
+            }
+            revision = (revision * 31L) + source.getName().hashCode().toLong()
+            revision = (revision * 31L) + source.contentRevision
+        }
+    }
+    return revision
+}
+
+/**
  * Type-safe shortcut for `getProperty(name, R::class)`: callers can write
  * `val n: Int? = src.getProperty("key")`.
  * Returns the value as generic type [R]
@@ -172,7 +203,11 @@ open class MapPropertySource(
     name: String,
     source: Map<String, Any>,
     order: Int = Order.MEDIUM.orderValue,
-) : AbstractPropertySource<Map<String, Any>>(name, source, order) {
+) : AbstractPropertySource<Map<String, Any>>(
+        name = name,
+        source = source.mapKeys { (key, _) -> PropertyKeyNormalizerImpl.Default.normalize(key) },
+        order = order,
+    ) {
     override val isPlatformSupported: Boolean = true
 
     override fun hasProperty(name: String): Boolean = getSource().keys.contains(keyNormalizer.normalize(name))

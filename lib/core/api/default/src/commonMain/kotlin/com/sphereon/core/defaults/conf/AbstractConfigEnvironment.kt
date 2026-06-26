@@ -162,7 +162,7 @@ abstract class AbstractConfigEnvironment(
          *
          * When [interpolator] is provided, creates an interpolating resolver for:
          * - Property interpolation (${...} placeholders)
-         * - Secret resolution (${secret:provider:path} references)
+         * - Secret resolution (${secret:<logical.key>} cascade and ${secret:@<provider>:<key>} pinned references)
          *
          * When [interpolator] is null but [secretResolver] is provided, creates a
          * default interpolator with the secret resolver.

@@ -21,6 +21,7 @@ import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
 import com.sphereon.core.api.conf.PropertySourceBootstrap
+import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.di.app.App
 import com.sphereon.di.app.RootScopeProvider
@@ -224,5 +225,6 @@ class AnonymousUserGraphManagerImpl(
 
         tenantConfigService?.let { propertySourceBootstrap.registerTenantSources(it, tenantId) }
         principalConfigService?.let { propertySourceBootstrap.registerPrincipalSources(it, tenantId, principalId) }
+        (contextGraph as? SecretProviderBootstrap.UserGraph)?.userSecretProviderBootstrap?.registerSecretProviders()
     }
 }

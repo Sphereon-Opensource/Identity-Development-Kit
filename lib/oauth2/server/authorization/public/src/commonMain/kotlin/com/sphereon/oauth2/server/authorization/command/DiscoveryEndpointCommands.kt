@@ -59,13 +59,14 @@ interface BuildServerMetadataCommand : ServiceCommand<BuildServerMetadataArgs, A
  * with the registered RFC 8414 §2 claims (sub, iat) overlaid as top-level members.
  *
  * [signingKey] identifies which key in the AS's KMS / SigningKeyStore to sign with.
- * [identifierMode] controls whether the `kid` header references the key by id or by
- * fully-resolved JWK; AUTO defers to the key resolver's default.
+ * [identifierMode] controls whether the protected header references the key by `kid`
+ * or another supported identifier form. The default is `KID`, matching the AS JWKS
+ * publication and rotation model.
  */
 data class BuildSignedAuthorizationServerMetadataArgs(
     val metadata: AuthorizationServerMetadata,
     val signingKey: com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult,
-    val identifierMode: com.sphereon.crypto.jose.jws.JwsIdentifierMode = com.sphereon.crypto.jose.jws.JwsIdentifierMode.AUTO,
+    val identifierMode: com.sphereon.crypto.jose.jws.JwsIdentifierMode = com.sphereon.crypto.jose.jws.JwsIdentifierMode.KID,
 )
 
 /**

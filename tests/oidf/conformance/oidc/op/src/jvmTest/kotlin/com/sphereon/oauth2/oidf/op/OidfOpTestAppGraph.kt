@@ -26,11 +26,13 @@ import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.core.events.EventService
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
+import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import com.sphereon.oauth2.server.authorization.storage.DeviceAuthorizationStorage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
 
 /**
@@ -43,6 +45,10 @@ import dev.zacsweers.metro.createGraphFactory
  */
 @DependencyGraph(AppScope::class)
 abstract class OidfOpTestAppGraph : AbstractAppGraph() {
+    @Provides
+    @SingleIn(AppScope::class)
+    fun provideJwtValidationConfig(): JwtValidationConfig = JwtValidationConfig()
+
     abstract val testClock: TestClock
     abstract val httpBodyCodecs: Set<HttpBodyCodec>
     abstract val loggers: Set<Logger>

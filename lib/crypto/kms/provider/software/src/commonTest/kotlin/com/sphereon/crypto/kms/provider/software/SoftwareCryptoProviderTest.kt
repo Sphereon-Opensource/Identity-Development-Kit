@@ -288,6 +288,31 @@ class SoftwareCryptoProviderTest {
         }
 
     @Test
+    fun testHmacGenerateMacResolvesAliasBeforeKid() =
+        runTest {
+            val persistConfig =
+                SoftwareKmsProviderConfig(
+                    id = "test-hmac-alias",
+                    cryptographyProvider = CryptographyProvider.Default.name,
+                    persistKeysDuringGeneration = true,
+                    exposePrivateKeysDuringGeneration = true,
+                )
+            val hmacProvider = ctx.softwareKmsProviderFactory.create(persistConfig, ctx.session.sessionExecution)
+            val alias = "idfr:bi:tenant-a"
+
+            hmacProvider.generateKeyAsync(
+                alias = alias,
+                alg = SignatureAlgorithm.HMAC_SHA256,
+            )
+
+            val message = "alias-first MAC lookup".encodeToByteArray()
+            val macByAlias = hmacProvider.generateMac(keyId = alias, message = message, digestAlgorithm = DigestAlg.SHA256)
+            val verifiedByAlias = hmacProvider.verifyMac(keyId = alias, message = message, mac = macByAlias, digestAlgorithm = DigestAlg.SHA256)
+
+            assertTrue(verifiedByAlias, "MAC operations must resolve the configured key alias directly")
+        }
+
+    @Test
     fun testHmacKeyRoundTripThroughKeyStore() =
         runTest {
             val persistConfig =

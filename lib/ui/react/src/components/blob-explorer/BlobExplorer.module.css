@@ -1,10 +1,10 @@
 .explorer {
   display: flex;
   flex-direction: column;
-  background: var(--comp-blobExplorer-background, var(--color-surface, #fffbfe));
-  color: var(--comp-blobExplorer-foreground, var(--color-onSurface, #1c1b1f));
-  border: 1px solid var(--comp-blobExplorer-border, var(--color-outline-variant, #cac4d0));
-  border-radius: var(--comp-blobExplorer-radius, 12px);
+  background: var(--comp-blob-explorer-background, var(--color-surface, #fffbfe));
+  color: var(--comp-blob-explorer-foreground, var(--color-on-surface, #1c1b1f));
+  border: 1px solid var(--comp-blob-explorer-border, var(--color-outline-variant, #cac4d0));
+  border-radius: var(--comp-blob-explorer-radius, 12px);
   overflow: hidden;
   height: 100%;
   font-family: inherit;
@@ -18,8 +18,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  background: var(--comp-blobExplorer-toolbar-background, var(--color-surfaceContainerLow, #f7f2fa));
-  border-bottom: 1px solid var(--comp-blobExplorer-toolbar-border, var(--color-outline-variant, #cac4d0));
+  background: var(--comp-blob-explorer-toolbar-background, var(--color-surface-container-low, #f7f2fa));
+  border-bottom: 1px solid var(--comp-blob-explorer-toolbar-border, var(--color-outline-variant, #cac4d0));
   min-height: 48px;
 }
 
@@ -33,11 +33,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: var(--comp-button-primary-paddingY, 10px) var(--comp-button-primary-paddingX, 20px);
+  padding: var(--comp-button-primary-padding-y, 10px) var(--comp-button-primary-padding-x, 20px);
   border: none;
   border-radius: var(--comp-button-primary-radius, 12px);
   background: var(--comp-button-primary-background, var(--color-primary, #6750a4));
-  color: var(--comp-button-primary-foreground, var(--color-onPrimary, #fff));
+  color: var(--comp-button-primary-foreground, var(--color-on-primary, #fff));
   font-size: 0.875rem;
   font-weight: 500;
   font-family: inherit;
@@ -100,7 +100,7 @@
   cursor: pointer;
   padding: 4px 8px;
   border-radius: var(--shape-radius-sm, 6px);
-  color: var(--comp-blobExplorer-breadcrumb-foreground, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-breadcrumb-foreground, var(--color-text-secondary, #49454f));
   font-size: 0.8125rem;
   white-space: nowrap;
   background: none;
@@ -110,16 +110,16 @@
 }
 
 .breadcrumbItem:hover {
-  background: var(--comp-blobExplorer-item-backgroundHover, var(--color-interactive-hover, rgba(103, 80, 164, 0.08)));
+  background: var(--comp-blob-explorer-item-background-hover, var(--color-interactive-hover, rgba(103, 80, 164, 0.08)));
 }
 
 .breadcrumbActive {
-  color: var(--comp-blobExplorer-breadcrumb-foregroundActive, var(--color-onSurface, #1c1b1f));
+  color: var(--comp-blob-explorer-breadcrumb-foreground-active, var(--color-on-surface, #1c1b1f));
   font-weight: 600;
 }
 
 .breadcrumbSeparator {
-  color: var(--comp-blobExplorer-breadcrumb-separator, var(--color-outline-variant, #cac4d0));
+  color: var(--comp-blob-explorer-breadcrumb-separator, var(--color-outline-variant, #cac4d0));
   font-size: 0.75rem;
   user-select: none;
   padding: 0 2px;
@@ -138,9 +138,9 @@
 
 .sidebar {
   display: none;
-  width: var(--comp-blobExplorer-sidebar-width, 200px);
-  background: var(--comp-blobExplorer-sidebar-background, var(--color-surfaceContainerLow, #f7f2fa));
-  border-right: 1px solid var(--comp-blobExplorer-sidebar-border, var(--color-outline-variant, #cac4d0));
+  width: var(--comp-blob-explorer-sidebar-width, 200px);
+  background: var(--comp-blob-explorer-sidebar-background, var(--color-surface-container-low, #f7f2fa));
+  border-right: 1px solid var(--comp-blob-explorer-sidebar-border, var(--color-outline-variant, #cac4d0));
   overflow-y: auto;
   flex-shrink: 0;
   padding: 0;
@@ -198,7 +198,7 @@
   border-bottom: 1px solid var(--color-outline-variant, #cac4d0);
   position: sticky;
   top: 0;
-  background: var(--comp-blobExplorer-background, var(--color-surface, #fffbfe));
+  background: var(--comp-blob-explorer-background, var(--color-surface, #fffbfe));
   z-index: 2;
   height: 36px;
   box-sizing: border-box;
@@ -255,23 +255,23 @@
   gap: 4px;
   padding: 8px 14px;
   margin: 1px 0;
-  background: var(--comp-blobExplorer-item-background, transparent);
-  border-radius: var(--comp-blobExplorer-item-radius, 8px);
+  background: var(--comp-blob-explorer-item-background, transparent);
+  border-radius: var(--comp-blob-explorer-item-radius, 8px);
   cursor: pointer;
   transition: background 100ms;
   user-select: none;
 }
 
 .listItem:hover {
-  background: var(--comp-blobExplorer-item-backgroundHover, var(--color-interactive-hover, rgba(103, 80, 164, 0.06)));
+  background: var(--comp-blob-explorer-item-background-hover, var(--color-interactive-hover, rgba(103, 80, 164, 0.06)));
 }
 
 .listItemSelected {
-  background: var(--comp-blobExplorer-item-backgroundSelected, var(--color-secondaryContainer, #e8def8));
+  background: var(--comp-blob-explorer-item-background-selected, var(--color-secondary-container, #e8def8));
 }
 
 .listItemSelected:hover {
-  background: var(--comp-blobExplorer-item-backgroundSelected, var(--color-secondaryContainer, #e8def8));
+  background: var(--comp-blob-explorer-item-background-selected, var(--color-secondary-container, #e8def8));
   filter: brightness(0.97);
 }
 
@@ -294,7 +294,7 @@
 }
 
 .itemName {
-  color: var(--comp-blobExplorer-item-foreground, var(--color-onSurface, #1c1b1f));
+  color: var(--comp-blob-explorer-item-foreground, var(--color-on-surface, #1c1b1f));
   font-size: 0.8125rem;
   font-weight: 450;
   white-space: nowrap;
@@ -304,7 +304,7 @@
 }
 
 .itemSize {
-  color: var(--comp-blobExplorer-item-foregroundSecondary, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-item-foreground-secondary, var(--color-text-secondary, #49454f));
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -312,19 +312,19 @@
 }
 
 .itemDate {
-  color: var(--comp-blobExplorer-item-foregroundSecondary, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-item-foreground-secondary, var(--color-text-secondary, #49454f));
   font-size: 0.75rem;
   white-space: nowrap;
 }
 
 .itemCreated {
-  color: var(--comp-blobExplorer-item-foregroundSecondary, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-item-foreground-secondary, var(--color-text-secondary, #49454f));
   font-size: 0.75rem;
   white-space: nowrap;
 }
 
 .itemType {
-  color: var(--comp-blobExplorer-item-foregroundSecondary, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-item-foreground-secondary, var(--color-text-secondary, #49454f));
   font-size: 0.75rem;
   white-space: nowrap;
   overflow: hidden;
@@ -372,7 +372,7 @@
 .contextMenu {
   position: fixed;
   z-index: 100;
-  background: var(--color-surfaceContainerHigh, #ece6f0);
+  background: var(--color-surface-container-high, #ece6f0);
   border: 1px solid var(--color-outline-variant, #cac4d0);
   border-radius: var(--shape-radius-md, 8px);
   padding: 4px 0;
@@ -398,7 +398,7 @@
   cursor: pointer;
   font-size: 0.8125rem;
   font-family: inherit;
-  color: var(--color-onSurface, #1c1b1f);
+  color: var(--color-on-surface, #1c1b1f);
   border-radius: 0;
   transition: background 80ms;
 }
@@ -434,10 +434,10 @@
 
 .detail {
   display: none;
-  width: var(--comp-blobExplorer-detail-width, 300px);
+  width: var(--comp-blob-explorer-detail-width, 300px);
   max-width: 40%;
-  background: var(--comp-blobExplorer-detail-background, var(--color-surfaceContainerLow, #f7f2fa));
-  border-left: 1px solid var(--comp-blobExplorer-detail-border, var(--color-outline-variant, #cac4d0));
+  background: var(--comp-blob-explorer-detail-background, var(--color-surface-container-low, #f7f2fa));
+  border-left: 1px solid var(--comp-blob-explorer-detail-border, var(--color-outline-variant, #cac4d0));
   overflow-y: auto;
   flex-shrink: 0;
   padding: 20px;
@@ -465,7 +465,7 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--comp-blobExplorer-item-foregroundSecondary, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-item-foreground-secondary, var(--color-text-secondary, #49454f));
   margin-bottom: 2px;
 }
 
@@ -488,8 +488,8 @@
   padding: 8px 16px;
   border: none;
   border-radius: var(--comp-button-primary-radius, 12px);
-  background: var(--color-secondaryContainer, #e8def8);
-  color: var(--color-onSecondaryContainer, #1d192b);
+  background: var(--color-secondary-container, #e8def8);
+  color: var(--color-on-secondary-container, #1d192b);
   font-size: 0.8125rem;
   font-weight: 500;
   font-family: inherit;
@@ -504,17 +504,17 @@
 
 .detailBtnPrimary {
   background: var(--comp-button-primary-background, var(--color-primary, #6750a4));
-  color: var(--comp-button-primary-foreground, var(--color-onPrimary, #fff));
+  color: var(--comp-button-primary-foreground, var(--color-on-primary, #fff));
 }
 
 .detailBtnDanger {
-  background: var(--color-errorContainer, #f9dedc);
-  color: var(--color-onErrorContainer, #410e0b);
+  background: var(--color-error-container, #f9dedc);
+  color: var(--color-on-error-container, #410e0b);
 }
 
 .detailBtnDanger:hover {
   background: var(--color-error, #b3261e);
-  color: var(--color-onError, #fff);
+  color: var(--color-on-error, #fff);
 }
 
 .detailBtn svg {
@@ -539,11 +539,11 @@
 }
 
 .treeNode:hover {
-  background: var(--comp-blobExplorer-item-backgroundHover, var(--color-interactive-hover, rgba(103, 80, 164, 0.06)));
+  background: var(--comp-blob-explorer-item-background-hover, var(--color-interactive-hover, rgba(103, 80, 164, 0.06)));
 }
 
 .treeNodeActive {
-  background: var(--comp-blobExplorer-item-backgroundSelected, var(--color-secondaryContainer, #e8def8));
+  background: var(--comp-blob-explorer-item-background-selected, var(--color-secondary-container, #e8def8));
   font-weight: 500;
 }
 
@@ -582,7 +582,7 @@
 }
 
 .emptyIcon {
-  color: var(--comp-blobExplorer-empty-iconColor, var(--color-outline-variant, #cac4d0));
+  color: var(--comp-blob-explorer-empty-icon-color, var(--color-outline-variant, #cac4d0));
 }
 
 .emptyIcon svg {
@@ -592,7 +592,7 @@
 }
 
 .emptyText {
-  color: var(--comp-blobExplorer-empty-foreground, var(--color-text-secondary, #49454f));
+  color: var(--comp-blob-explorer-empty-foreground, var(--color-text-secondary, #49454f));
   font-size: 0.875rem;
 }
 
@@ -643,7 +643,7 @@
 }
 
 .confirmDialog {
-  background: var(--color-surfaceContainerHigh, #ece6f0);
+  background: var(--color-surface-container-high, #ece6f0);
   border-radius: var(--shape-radius-md, 12px);
   padding: 24px;
   min-width: 280px;
@@ -654,7 +654,7 @@
 .confirmDialog p {
   margin: 0 0 16px;
   font-size: 0.875rem;
-  color: var(--color-onSurface, #1c1b1f);
+  color: var(--color-on-surface, #1c1b1f);
 }
 
 .confirmActions {
@@ -670,7 +670,7 @@
   border: 1px solid var(--color-outline-variant, #cac4d0);
   border-radius: var(--shape-radius-sm, 6px);
   background: var(--color-surface, #fffbfe);
-  color: var(--color-onSurface, #1c1b1f);
+  color: var(--color-on-surface, #1c1b1f);
   font-family: inherit;
   font-size: 0.875rem;
   box-sizing: border-box;

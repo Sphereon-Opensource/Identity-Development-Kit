@@ -38,11 +38,9 @@ interface IdentifierProtectionPolicyService {
  * Built-in [IdentifierProtectionPolicyService] with safe defaults and no tenant overrides.
  *
  * Defaults:
- * - email / phone / did / x509 are searchable blind indexes (email/phone/did each normalize
- *   to their natural canonical form).
- * - issuer / oidc_issuer / oid4vci_issuer are public URLs and stay plaintext (host-normalized).
- * - any unrecognized type falls back to a searchable blind index, which is the privacy-safe
- *   default for an unknown correlation identifier.
+ * - PII, natural-person official identifiers, x509, did, and unknown identifiers are searchable
+ *   encrypted values.
+ * - Public business and endpoint identifiers stay plaintext unless tenant policy overrides them.
  */
 class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyService {
     override suspend fun policyFor(
@@ -53,7 +51,7 @@ class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyServi
             "email" -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
-                    mode = IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX,
+                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
                     normalization = NormalizationProfile.EMAIL,
                 )
             }
@@ -61,7 +59,7 @@ class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyServi
             "phone" -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
-                    mode = IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX,
+                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
                     normalization = NormalizationProfile.PHONE_E164,
                 )
             }
@@ -69,20 +67,37 @@ class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyServi
             "did" -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
-                    mode = IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX,
+                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
                     normalization = NormalizationProfile.DID,
                 )
             }
 
-            "x509" -> {
+            "x509",
+            "pas",
+            "idc",
+            "pno",
+            "tin",
+            "tax",
+            "eid",
+            "natural_local",
+            "iban",
+            "iin",
+            "pan" -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
-                    mode = IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX,
+                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
                     normalization = NormalizationProfile.NONE,
                 )
             }
 
-            "issuer", "oidc_issuer", "oid4vci_issuer" -> {
+            "domain",
+            "url",
+            "website",
+            "issuer",
+            "oidc_issuer",
+            "oid4vci_issuer",
+            "verifier",
+            "jwks_url" -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
                     mode = IdentifierProtectionMode.PLAINTEXT,
@@ -90,10 +105,39 @@ class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyServi
                 )
             }
 
+            "vat",
+            "ntr",
+            "psd",
+            "lei",
+            "legal_local",
+            "eori",
+            "euid",
+            "vatin",
+            "legal_tin",
+            "excise",
+            "iso6523_org_id",
+            "vlei",
+            "bic",
+            "isni",
+            "isin",
+            "mic",
+            "uuid",
+            "oid",
+            "iso15459_id",
+            "vin",
+            "wmi",
+            "container_id" -> {
+                IdentifierProtectionPolicy(
+                    identifierType = type,
+                    mode = IdentifierProtectionMode.PLAINTEXT,
+                    normalization = NormalizationProfile.NONE,
+                )
+            }
+
             else -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
-                    mode = IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX,
+                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
                     normalization = NormalizationProfile.NONE,
                 )
             }

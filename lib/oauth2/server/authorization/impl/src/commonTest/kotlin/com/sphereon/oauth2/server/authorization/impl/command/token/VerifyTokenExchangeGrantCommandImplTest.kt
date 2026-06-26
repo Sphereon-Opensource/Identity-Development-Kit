@@ -512,7 +512,8 @@ class VerifyTokenExchangeGrantCommandImplTest {
             val registry = setupClientRegistry(tokenExchangeClient)
             val command = createCommand(registry)
 
-            val subjectJwt = createTestJwt(mapOf("sub" to "user123"))
+            // Subject token already holds the requested scopes, so they pass through.
+            val subjectJwt = createTestJwt(mapOf("sub" to "user123", "scope" to "read write admin"))
 
             val result =
                 command.execute(
@@ -533,6 +534,62 @@ class VerifyTokenExchangeGrantCommandImplTest {
             val grant = result.value
             assertEquals(listOf("https://api.example.com", "https://other.example.com"), grant.resource)
             assertEquals("read write", grant.scope)
+        }
+
+    @Test
+    fun testScopeIsDownscopedToSubjectToken() =
+        runTest {
+            val registry = setupClientRegistry(tokenExchangeClient)
+            val command = createCommand(registry)
+
+            // Subject only holds "read"; requesting "read write admin" must not
+            // mint scopes the subject never had (RFC 8693 downscope-only).
+            val subjectJwt = createTestJwt(mapOf("sub" to "user123", "scope" to "read"))
+
+            val result =
+                command.execute(
+                    VerifyTokenExchangeGrantArgs(
+                        subjectToken = subjectJwt,
+                        subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        actorToken = null,
+                        actorTokenType = null,
+                        resources = emptyList(),
+                        audiences = emptyList(),
+                        scope = "read write admin",
+                        requestedTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        clientId = tokenExchangeClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Should succeed")
+            assertEquals("read", result.value.scope, "Only the subject-held scope may be granted")
+        }
+
+    @Test
+    fun testScopeInheritedFromSubjectWhenNoneRequested() =
+        runTest {
+            val registry = setupClientRegistry(tokenExchangeClient)
+            val command = createCommand(registry)
+
+            val subjectJwt = createTestJwt(mapOf("sub" to "user123", "scope" to "read write"))
+
+            val result =
+                command.execute(
+                    VerifyTokenExchangeGrantArgs(
+                        subjectToken = subjectJwt,
+                        subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        actorToken = null,
+                        actorTokenType = null,
+                        resources = emptyList(),
+                        audiences = emptyList(),
+                        scope = null,
+                        requestedTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        clientId = tokenExchangeClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Should succeed")
+            assertEquals("read write", result.value.scope, "Subject scope is inherited when none is requested")
         }
 
     // --- ID token type tests ---

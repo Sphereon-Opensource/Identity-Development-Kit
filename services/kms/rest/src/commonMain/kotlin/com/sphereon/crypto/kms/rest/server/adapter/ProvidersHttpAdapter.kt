@@ -30,7 +30,6 @@ import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.http.response.noContentResponse
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.jose.JoseKeyOperations
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKey
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
@@ -251,7 +250,7 @@ class ProvidersHttpAdapter(
                     keyOperations =
                         generateRequest.keyOperations
                             ?.map<KeyOperationsRest, KeyOperations> {
-                                KeyOperations.fromJose(JoseKeyOperations.valueOf(it.value.uppercase()))
+                                KeyOperations.fromValue(it.value)
                             }?.toTypedArray(),
                     alg = generateRequest.alg?.let { SignatureAlgorithm.fromValue(it.value) },
                 )

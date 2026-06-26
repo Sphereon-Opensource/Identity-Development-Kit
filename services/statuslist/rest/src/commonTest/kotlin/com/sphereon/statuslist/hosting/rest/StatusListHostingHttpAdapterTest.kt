@@ -50,7 +50,7 @@ class StatusListHostingHttpAdapterTest {
                 execution = execution,
                 endpoints =
                     listOf(
-                        GetStatusListTokenByCorrelationIdEndpointCommandImpl(execution, stub),
+                        GetStatusListTokenByCorrelationIdEndpointCommandImpl(execution, stub, StatusListHostingConfig()),
                     ),
             )
     }
@@ -72,7 +72,7 @@ class StatusListHostingHttpAdapterTest {
             assertEquals("public, max-age=3600", response.headers["Cache-Control"])
             // The public `/{id}` route resolves the stable business key (the human-readable
             // correlationId that credentials embed) first, falling back to the technical id.
-            assertEquals(StatusListRef(correlationId = "sl-7"), f.stub.captured)
+            assertEquals(StatusListRef(correlationId = "sl-7", statusListUri = "http://localhost/public/statuslists/sl-7"), f.stub.captured)
         }
 
     @Test
@@ -85,7 +85,7 @@ class StatusListHostingHttpAdapterTest {
                 )
             assertEquals(200, response.statusCode)
             assertEquals(signedToken, response.bodyBytes?.decodeToString())
-            assertEquals(StatusListRef(correlationId = "corr-9"), f.stub.captured)
+            assertEquals(StatusListRef(correlationId = "corr-9", statusListUri = "http://localhost/public/statuslists/corr-9"), f.stub.captured)
         }
 
     @Test

@@ -299,6 +299,7 @@ class CreateAuthRequestServiceCommandImpl(
                 requestUriMethod = input.requestUriMethod?.takeIf { it.isNotBlank() },
                 dcqlQueryId = resolvedQuery?.dcqlQueryId,
                 dcqlQueryVersion = resolvedQuery?.version,
+                verifierId = input.verifierId,
                 credentialStatusPolicies = input.credentialStatusPolicies,
             )
 

@@ -264,6 +264,7 @@ class CreateAuthorizationRequestCommandImpl(
                 dcqlQuery = processedArgs.dcqlQuery,
                 dcqlQueryId = processedArgs.dcqlQueryId,
                 dcqlQueryVersion = processedArgs.dcqlQueryVersion,
+                verifierId = processedArgs.verifierId,
                 authorizationRequest = request,
                 status = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED,
                 error = null,

@@ -18,7 +18,13 @@ package com.sphereon.statuslist.impl.driver
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.context.ContextConfig
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionContextManager
 import com.sphereon.statuslist.AllocateEntryArgs
 import com.sphereon.statuslist.CreateStatusListArgs
 import com.sphereon.statuslist.EntryRef
@@ -39,12 +45,35 @@ import kotlin.test.assertTrue
 
 /** Test signer: echoes the encoded list so tests can assert the driver encoded the live bit state. */
 private class EchoStatusListSigner : StatusListSigner {
+    var signCount: Int = 0
+
     override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> =
-        Ok(StatusListToken(token = "signed:${args.encodedList}", contentType = args.proofFormat.contentType, ttlSeconds = args.ttlSeconds))
+        Ok(
+            StatusListToken(
+                token = "signed:${++signCount}:${args.encodedList}",
+                contentType = args.proofFormat.contentType,
+                ttlSeconds = args.ttlSeconds,
+            ),
+        )
+}
+
+/** Minimal session execution fixture: only the tenant id is consulted by the driver. */
+private class TestSessionExecution(
+    override val tenantId: String = "test-tenant",
+    override val sessionContext: SessionContext = NoOpSessionContext,
+) : SessionExecution {
+    override val sessionContextManager: SessionContextManager
+        get() = throw NotImplementedError("Not needed for test")
+    override val log: SessionLogService
+        get() = throw NotImplementedError("Not needed for test")
+    override val conf: ContextConfig
+        get() = throw NotImplementedError("Not needed for test")
 }
 
 class InMemoryStatusListDriverTest {
-    private fun driver() = InMemoryStatusListDriver(InMemoryStatusListStore(), EchoStatusListSigner())
+    private fun driver() = InMemoryStatusListDriver(InMemoryStatusListStore(), EchoStatusListSigner(), TestSessionExecution())
+
+    private fun driverWithSigner(signer: EchoStatusListSigner) = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
 
     private fun createArgs(
         correlationId: String = "sl-1",
@@ -161,6 +190,21 @@ class InMemoryStatusListDriverTest {
             val token = (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value
             assertNotNull(token)
             assertTrue(token!!.token.startsWith("signed:"), "echo signer carries the encoded list")
+        }
+
+    @Test
+    fun tokenReadReturnsStoredProjectionWithoutResigning() =
+        runTest {
+            val signer = EchoStatusListSigner()
+            val d = driverWithSigner(signer)
+            d.createStatusList(createArgs())
+            assertEquals(1, signer.signCount)
+
+            val first = (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value
+            val second = (d.getStatusListToken(StatusListRef(statusListUri = "https://issuer.example/statuslists/sl-1")) as Ok).value
+
+            assertEquals(1, signer.signCount, "token reads must not invoke KMS/signing")
+            assertEquals(first, second)
         }
 
     @Test

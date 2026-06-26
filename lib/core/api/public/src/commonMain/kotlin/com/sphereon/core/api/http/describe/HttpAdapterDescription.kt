@@ -36,6 +36,26 @@ enum class HttpMethod {
 }
 
 /**
+ * Declares whether an endpoint requires an accepted bearer token at the Layer-1
+ * authentication gate ([TenantResolutionPlugin][com.sphereon.ktor.server.tenant]).
+ *
+ * This is the authentication posture only. Layer-2 command authorization (role
+ * rules keyed by command id) always applies regardless of this value, so [PUBLIC]
+ * means "no operator bearer required to reach the handler", never "unauthorized".
+ */
+@JsExportCompat
+enum class EndpointAuthPolicy {
+    /** Default. The Layer-1 gate rejects requests without an accepted bearer token. */
+    PROTECTED,
+
+    /**
+     * Reachable without a bearer token. For protocol and discovery endpoints that
+     * carry their own authentication (well-known metadata, OID4VCI / OID4VP flows).
+     */
+    PUBLIC,
+}
+
+/**
  * Minimal, KMP-friendly media type model.
  *
  * This intentionally avoids Java types and avoids depending on any specific HTTP framework.
@@ -182,6 +202,12 @@ data class HttpEndpointDescriptor(
     val commandId: String? = null,
     val tags: Set<String> = emptySet(),
     val summary: String? = null,
+    /**
+     * Layer-1 authentication posture for this endpoint. Defaults to
+     * [EndpointAuthPolicy.PROTECTED] so a forgotten declaration fails closed
+     * (a bearer token is required).
+     */
+    val authPolicy: EndpointAuthPolicy = EndpointAuthPolicy.PROTECTED,
 ) {
     init {
         require(pathPatterns.isNotEmpty()) {
@@ -215,6 +241,7 @@ data class HttpEndpointDescriptor(
         commandId: String? = null,
         tags: Set<String> = emptySet(),
         summary: String? = null,
+        authPolicy: EndpointAuthPolicy = EndpointAuthPolicy.PROTECTED,
     ) : this(
         method = method,
         pathPatterns = listOf(pathPattern),
@@ -224,6 +251,7 @@ data class HttpEndpointDescriptor(
         commandId = commandId,
         tags = tags,
         summary = summary,
+        authPolicy = authPolicy,
     )
 }
 

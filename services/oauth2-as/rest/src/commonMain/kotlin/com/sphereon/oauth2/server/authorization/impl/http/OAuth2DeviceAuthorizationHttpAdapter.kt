@@ -65,7 +65,7 @@ class OAuth2DeviceAuthorizationHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_DEVICE_AUTHORIZATION"
+        const val ID: String = "oauth2.as.device-authorization"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> = listOf(deviceAuthorizationEndpointCommand)

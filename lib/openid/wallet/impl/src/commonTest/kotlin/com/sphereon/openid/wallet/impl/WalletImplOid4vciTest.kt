@@ -1078,7 +1078,7 @@ class WalletImplOid4vciTest {
             assertEquals(1, doc.subjects.size, "expected one subject extracted from credential")
             assertEquals(IdentifierType.DID, doc.subjects[0].type)
             assertEquals(subjectDid, doc.subjects[0].value)
-            // NoOpWalletIdentityResolver returns the ref unchanged — correlationId stays null
-            assertEquals(null, doc.subjects[0].correlationId)
+            // NoOpWalletIdentityResolver returns the ref unchanged — identityIdentifierId stays null
+            assertEquals(null, doc.subjects[0].identityIdentifierId)
         }
 }

@@ -76,4 +76,18 @@ data class CredentialDesignModuleConfig
         val policy: DesignResolutionPolicy = DesignResolutionPolicy(),
         val refresh: CredentialDesignRefreshConfig = CredentialDesignRefreshConfig(),
         val validation: CredentialDesignValidationConfig = CredentialDesignValidationConfig(),
+        /**
+         * Public origin this deployment is reachable at (e.g. `https://issuer.example.com`), used
+         * to build the absolute asset URI returned from
+         * [com.sphereon.data.store.credential.design.CredentialDesignService.uploadDesignAsset].
+         * When null, the service falls back to storing the relative path only and the caller must
+         * resolve the absolute URL externally (e.g. at metadata-build time).
+         *
+         * Configure via:
+         * ```yaml
+         * credential-design:
+         *   external-base-url: https://issuer.example.com
+         * ```
+         */
+        val externalBaseUrl: String? = null,
     )

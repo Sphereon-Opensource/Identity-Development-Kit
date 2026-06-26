@@ -25,7 +25,6 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.jose.JoseKeyOperations
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.key.persistence.impl.ManagedKeyReferenceRegistrar
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
@@ -234,7 +233,7 @@ class GenerateKeyServiceCommandImpl(
                     keyOperations =
                         generateRequest.keyOperations
                             ?.map<KeyOperationsRest, KeyOperations> {
-                                KeyOperations.fromJose(JoseKeyOperations.valueOf(it.value.uppercase()))
+                                KeyOperations.fromValue(it.value)
                             }?.toTypedArray(),
                     alg = generateRequest.alg?.let { SignatureAlgorithm.fromValue(it.value) },
                     providerId = generateRequest.providerId,

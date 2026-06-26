@@ -17,6 +17,10 @@
 
 package com.sphereon.core.api.auth
 
+import com.sphereon.di.context.SecuredTenantContextDetails
+import com.sphereon.di.context.TenantContextData
+import com.sphereon.di.context.UserContext
+import com.sphereon.di.session.SessionContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -560,6 +564,32 @@ class AuthContextExistingBehaviorTest {
 
         // Then the entry is added
         assertEquals("value1", updated.policyContext["key1"])
+    }
+}
+
+class SessionContextAuthPropagationTest {
+    @Test
+    fun toAuthContextDoesNotPropagateLegacyAnonymousPrincipalHeader() {
+        val session =
+            object : SessionContext {
+                override val context =
+                    object : UserContext {
+                        override val id = "default:anonymous:default"
+                        override val tenant =
+                            object : TenantContextData {
+                                override val tenantId = "default"
+                            }
+                        override val principal = "anonymous"
+                        override val secureDetails: SecuredTenantContextDetails? = null
+                    }
+                override val sessionId = "session-1"
+            }
+
+        val headers = session.toAuthContext(traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01").toHeaders()
+
+        assertEquals("default", headers[AuthHeaders.X_TENANT_ID])
+        assertNull(headers[AuthHeaders.X_PRINCIPAL_ID])
+        assertNull(headers[AuthHeaders.X_USER_ID])
     }
 }
 

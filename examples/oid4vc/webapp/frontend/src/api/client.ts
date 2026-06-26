@@ -217,9 +217,9 @@ export const api = {
 
   getIssuerMetadata: () => fetchJson<IssuerMetadata>('/issuer/metadata'),
 
-  // VCT is served directly by Caddy at the root path (not through the webapp proxy)
+  // VCT is served by the issuer's public hosting surface, proxied by Caddy at /public/schema/vct
   getVctMetadata: async (type: string): Promise<VctMetadata> => {
-    const res = await fetch(`/oid4vci/vct/${type}`)
+    const res = await fetch(`/public/schema/vct/${type}`)
     if (!res.ok) throw new Error(`VCT fetch failed: ${res.status}`)
     return res.json()
   },

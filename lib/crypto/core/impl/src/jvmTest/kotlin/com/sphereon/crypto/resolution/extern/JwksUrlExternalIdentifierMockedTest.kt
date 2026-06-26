@@ -16,7 +16,10 @@
 
 package com.sphereon.crypto.resolution.extern
 
+import com.sphereon.core.api.cache.CacheManager
+import com.sphereon.core.api.cache.ScopedCache
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.di.context.createAnonymousSessionContext
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
@@ -28,6 +31,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -445,6 +449,272 @@ class JwksUrlExternalIdentifierMockedTest {
             assertTrue(result.isOk, "Should succeed without kid, selecting first key")
             assertEquals(null, result.value.selectedKid, "selectedKid should be null when no kid was requested")
             assertEquals("first-key", result.value.keyInfo.kid, "Should select the first key from JWKS")
+        }
+
+    // ========================================================================
+    // Retry on transient failures (peer briefly unavailable / not-yet-ready)
+    // ========================================================================
+
+    @Test
+    fun testResolveRetriesOnTransient5xxThenSucceeds() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+
+            val validJwks = """{"keys":[{"kty":"EC","crv":"P-256","x":"WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA","y":"F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I","kid":"key-1"}]}"""
+            var callCount = 0
+            val mockEngine =
+                MockEngine { _ ->
+                    callCount++
+                    if (callCount == 1) {
+                        respond(
+                            content = "Service Unavailable",
+                            status = HttpStatusCode.ServiceUnavailable,
+                            headers = headersOf(HttpHeaders.ContentType, "text/plain"),
+                        )
+                    } else {
+                        respond(
+                            content = validJwks,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                        )
+                    }
+                }
+
+            val httpClient =
+                HttpClient(mockEngine) {
+                    install(ContentNegotiation) {
+                        json(Json { ignoreUnknownKeys = true })
+                    }
+                }
+
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+
+            val service =
+                JwksUrlExternalIdentifierResolutionServiceImpl(
+                    execution = mockExecution,
+                    httpClientFactory = mockHttpClientFactory,
+                )
+
+            val opts = ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json")
+            val result = service.resolve(opts)
+
+            assertTrue(result.isOk, "Should recover after a transient 5xx via retry")
+            assertEquals(2, callCount, "Should have retried once (2 attempts) after the transient 5xx")
+        }
+
+    @Test
+    fun testResolveRetriesOnTransportErrorThenSucceeds() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+
+            val validJwks = """{"keys":[{"kty":"EC","crv":"P-256","x":"WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA","y":"F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I","kid":"key-1"}]}"""
+            var callCount = 0
+            val mockEngine =
+                MockEngine { _ ->
+                    callCount++
+                    if (callCount == 1) {
+                        throw RuntimeException("connection refused")
+                    } else {
+                        respond(
+                            content = validJwks,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                        )
+                    }
+                }
+
+            val httpClient =
+                HttpClient(mockEngine) {
+                    install(ContentNegotiation) {
+                        json(Json { ignoreUnknownKeys = true })
+                    }
+                }
+
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+
+            val service =
+                JwksUrlExternalIdentifierResolutionServiceImpl(
+                    execution = mockExecution,
+                    httpClientFactory = mockHttpClientFactory,
+                )
+
+            val opts = ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json")
+            val result = service.resolve(opts)
+
+            assertTrue(result.isOk, "Should recover after a transient transport error via retry")
+            assertEquals(2, callCount, "Should have retried once (2 attempts) after the transport error")
+        }
+
+    @Test
+    fun testResolveDoesNotRetryOn4xx() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+
+            var callCount = 0
+            val mockEngine =
+                MockEngine { _ ->
+                    callCount++
+                    respond(
+                        content = "Forbidden",
+                        status = HttpStatusCode.Forbidden,
+                        headers = headersOf(HttpHeaders.ContentType, "text/plain"),
+                    )
+                }
+
+            val httpClient =
+                HttpClient(mockEngine) {
+                    install(ContentNegotiation) {
+                        json(Json { ignoreUnknownKeys = true })
+                    }
+                }
+
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+
+            val service =
+                JwksUrlExternalIdentifierResolutionServiceImpl(
+                    execution = mockExecution,
+                    httpClientFactory = mockHttpClientFactory,
+                )
+
+            val opts = ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json")
+            val result = service.resolve(opts)
+
+            assertTrue(result.isErr, "A 4xx is a definite error")
+            assertEquals(1, callCount, "A 4xx must NOT be retried")
+        }
+
+    // ========================================================================
+    // Positive JWKS cache (via the CacheManager abstraction)
+    // ========================================================================
+
+    /** Minimal stateful CacheManager backing a single JwkSet cache with a real map. */
+    private fun statefulCacheManager(): CacheManager {
+        val store = mutableMapOf<String, JwkSet>()
+        val cache = mockk<ScopedCache<String, JwkSet>>(relaxed = true)
+        coEvery { cache.getApp(any()) } answers { store[firstArg()] }
+        coEvery { cache.putApp(any(), any(), any()) } answers { store[firstArg<String>()] = secondArg<JwkSet>() }
+        val cm = mockk<CacheManager>(relaxed = true)
+        every { cm.getCache<String, JwkSet>(any()) } returns cache
+        every { cm.createStringCache<JwkSet>(any(), any()) } returns cache
+        return cm
+    }
+
+    private val ecKey1 =
+        """{"kty":"EC","crv":"P-256","x":"WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA","y":"F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I","kid":"key-1"}"""
+    private val ecKey2 =
+        """{"kty":"EC","crv":"P-256","x":"AHzxbLBCZH-aMj_JgJlv9HRJVMcdl2dPB3aQl8wANK8","y":"a0lfVhFX8JRrR7bG_ZZaC8I6XjH3VPYJ5Qj9r5-eVLc","kid":"key-2"}"""
+
+    private fun kidLookup(kid: String) =
+        com.sphereon.crypto.resolution
+            .AdditionalIdentifierLookup(kid = kid)
+
+    @Test
+    fun testResolveCacheHitDoesNotRefetch() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+
+            var fetchCount = 0
+            val factory = mockk<HttpClientFactory>()
+            every { factory.createClient(any<HttpClientOptions>()) } answers {
+                fetchCount++
+                HttpClient(MockEngine { _ -> respond("""{"keys":[$ecKey1]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }) {
+                    install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+                }
+            }
+
+            val service =
+                JwksUrlExternalIdentifierResolutionServiceImpl(
+                    execution = mockExecution,
+                    httpClientFactory = factory,
+                    cacheManager = statefulCacheManager(),
+                )
+            val opts = ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json", lookup = kidLookup("key-1"))
+
+            val first = service.resolve(opts)
+            val second = service.resolve(opts)
+
+            assertTrue(first.isOk, "first resolve should succeed")
+            assertTrue(second.isOk, "second resolve should succeed")
+            assertEquals(1, fetchCount, "second resolve (same url+kid) must hit the cache and NOT re-fetch")
+        }
+
+    @Test
+    fun testResolveKidMissRefetches() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+
+            var fetchCount = 0
+            val factory = mockk<HttpClientFactory>()
+            every { factory.createClient(any<HttpClientOptions>()) } answers {
+                fetchCount++
+                val body = if (fetchCount == 1) """{"keys":[$ecKey1]}""" else """{"keys":[$ecKey1,$ecKey2]}"""
+                HttpClient(MockEngine { _ -> respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }) {
+                    install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+                }
+            }
+
+            val service =
+                JwksUrlExternalIdentifierResolutionServiceImpl(
+                    execution = mockExecution,
+                    httpClientFactory = factory,
+                    cacheManager = statefulCacheManager(),
+                )
+            val url = "https://example.com/.well-known/jwks.json"
+
+            val r1 = service.resolve(ExternalIdentifierJwksUrlOpts(identifier = url, lookup = kidLookup("key-1")))
+            val r2 = service.resolve(ExternalIdentifierJwksUrlOpts(identifier = url, lookup = kidLookup("key-2")))
+
+            assertTrue(r1.isOk, "first resolve (key-1) should succeed")
+            assertTrue(r2.isOk, "second resolve (key-2) must re-resolve and find the rotated-in key")
+            assertEquals(2, fetchCount, "a kid absent from the cached JWKS must trigger a fresh fetch (rotation)")
+        }
+
+    @Test
+    fun testResolveNeverCachesFailure() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+
+            var fetchCount = 0
+            val factory = mockk<HttpClientFactory>()
+            every { factory.createClient(any<HttpClientOptions>()) } answers {
+                fetchCount++
+                val n = fetchCount
+                HttpClient(
+                    MockEngine { _ ->
+                        if (n == 1) {
+                            respond("Service Unavailable", HttpStatusCode.ServiceUnavailable, headersOf(HttpHeaders.ContentType, "text/plain"))
+                        } else {
+                            respond("""{"keys":[$ecKey1]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                        }
+                    },
+                ) {
+                    install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+                }
+            }
+
+            val service =
+                JwksUrlExternalIdentifierResolutionServiceImpl(
+                    execution = mockExecution,
+                    httpClientFactory = factory,
+                    cacheManager = statefulCacheManager(),
+                )
+            val opts = ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json", lookup = kidLookup("key-1"))
+
+            val firstFail = service.resolve(opts)
+            val secondOk = service.resolve(opts)
+
+            assertTrue(firstFail.isErr, "first resolve fails (peer down)")
+            assertTrue(secondOk.isOk, "after recovery the resolve succeeds — the failure was not cached")
+            assertEquals(2, fetchCount, "a failed fetch must NOT be cached; the next resolve must re-fetch")
         }
 
     // ========================================================================

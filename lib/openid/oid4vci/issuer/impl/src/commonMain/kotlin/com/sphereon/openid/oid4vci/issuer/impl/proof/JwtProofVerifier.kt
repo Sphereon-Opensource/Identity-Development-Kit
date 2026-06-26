@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.proof
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
@@ -362,7 +363,6 @@ class JwtProofVerifier(
      * Extract and parse the JWK embedded inside a `did:jwk:<base64url-of-JWK>#<fragment>` URL.
      * Returns null if the DID can't be parsed as did:jwk.
      */
-    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
     private fun decodeDidJwkEmbedded(didUrl: String): JsonObject? {
         val prefix = "did:jwk:"
         if (!didUrl.startsWith(prefix)) return null
@@ -371,10 +371,7 @@ class JwtProofVerifier(
         if (methodSpecificId.isEmpty()) return null
         return try {
             // RFC 7515 base64url: no padding expected, but tolerate both.
-            val padded = methodSpecificId + "=".repeat((4 - methodSpecificId.length % 4) % 4)
-            val bytes =
-                kotlin.io.encoding.Base64.UrlSafe
-                    .decode(padded)
+            val bytes = methodSpecificId.decodeFromBase64Url()
             val parsed =
                 kotlinx.serialization.json.Json
                     .parseToJsonElement(bytes.decodeToString())

@@ -17,21 +17,27 @@
 
 package com.sphereon.ktor.server.inject
 
+import com.sphereon.core.api.log.Log
 import kotlin.reflect.KClass
-import kotlin.reflect.full.memberFunctions
-import kotlin.reflect.full.memberProperties
 
 /**
  * JVM implementation of service resolution.
  *
  * Strategy:
- * 1. Try Java reflection first (works in GraalVM native image if properly configured)
- * 2. Fall back to Kotlin reflection if available (JVM only, not in native image)
+ * 1. Check the [ServiceProvider] registry (no reflection at all).
+ * 2. Fall back to Java reflection ([findServiceInClass]) — SVM-safe at the API level.
  *
- * This approach provides compatibility with both regular JVM and GraalVM native image.
+ * Both paths are GraalVM-native-image safe. We deliberately do NOT use kotlin-reflect
+ * (`kClass.memberProperties` / `memberFunctions`): kotlin-reflect is unsupported under
+ * GraalVM SVM (touching it raises `AssertionError: Built-in class kotlin.Any is not found`),
+ * and its mere presence on the runtime classpath rewires `kotlin.jvm.internal.Reflection`
+ * to the SVM-incompatible `ReflectionFactoryImpl`. Keeping this resolver reflection-free
+ * lets the artifact be excluded from the runtime classpath entirely.
  */
 @Suppress("TooGenericExceptionCaught")
 internal actual class GraphServiceResolver {
+    private val logger = Log.app().withTag("GraphServiceResolver")
+
     actual fun <T : Any> findService(
         graph: Any,
         serviceType: KClass<T>,
@@ -42,58 +48,17 @@ internal actual class GraphServiceResolver {
                 graph.getService(serviceType)?.let { return it }
             }
 
-            // SECOND: Try Java reflection (GraalVM compatible with proper config)
+            // SECOND: Try Java reflection (GraalVM compatible with proper config).
+            // NOTE: there is no kotlin-reflect fallback by design (see class KDoc) — the
+            // ServiceProvider registry + Java reflection cover the runtime, and excluding
+            // kotlin-reflect from the classpath is required for the native image to boot.
             findServiceInClass(graph, graph.javaClass, serviceType)
-                ?: tryKotlinReflection(graph, serviceType) // LAST: Fallback to Kotlin reflection (JVM only)
         } catch (expected: Exception) {
             // Log the error for debugging
             val debug = System.getProperty("debug.service.resolver") == "true"
             if (debug) {
-                println("[GraphServiceResolver] Error finding service ${serviceType.simpleName}: ${expected.message}")
-                expected.printStackTrace()
+                logger.error("Error finding service ${serviceType.simpleName}: ${expected.message}", exception = expected)
             }
-            null
-        }
-    }
-
-    /**
-     * Try using Kotlin reflection as fallback.
-     * This won't work in GraalVM native image but provides compatibility on regular JVM.
-     */
-    private fun <T : Any> tryKotlinReflection(
-        graph: Any,
-        serviceType: KClass<T>,
-    ): T? {
-        return try {
-            val kClass = graph::class
-
-            // First, try to find a property that returns the service type
-            val property =
-                kClass.memberProperties.find { prop ->
-                    prop.returnType.classifier == serviceType
-                }
-
-            if (property != null) {
-                @Suppress("UNCHECKED_CAST")
-                return property.call(graph) as? T
-            }
-
-            // If not found, try to find a zero-parameter function that returns the service type
-            val function =
-                kClass.memberFunctions.find { func ->
-                    func.parameters.size == 1 && // Only the instance parameter
-                        func.returnType.classifier == serviceType &&
-                        (
-                            func.name.startsWith("provide") ||
-                                func.name.startsWith("get") ||
-                                func.name.contains(serviceType.simpleName ?: "")
-                        )
-                }
-
-            @Suppress("UNCHECKED_CAST")
-            function?.call(graph) as? T
-        } catch (_: Exception) {
-            // Kotlin reflection not available (likely in native image)
             null
         }
     }
@@ -107,8 +72,8 @@ internal actual class GraphServiceResolver {
         val debug = System.getProperty("debug.service.resolver") == "true" // Set debug.service.resolver system property to true for debugging
 
         if (debug) {
-            println("[GraphServiceResolver] Looking for ${serviceType.simpleName} in ${javaClass.simpleName}")
-            println("[GraphServiceResolver] Target interface: ${targetClass.name}")
+            logger.debug("Looking for ${serviceType.simpleName} in ${javaClass.simpleName}")
+            logger.debug("Target interface: ${targetClass.name}")
         }
 
         // kotlin-inject generates val properties as getter methods
@@ -131,7 +96,7 @@ internal actual class GraphServiceResolver {
             }
 
             if (debug) {
-                println("[GraphServiceResolver] Found matching method: ${method.name} -> ${method.returnType.simpleName}")
+                logger.debug("Found matching method: ${method.name} -> ${method.returnType.simpleName}")
             }
 
             try {
@@ -146,8 +111,10 @@ internal actual class GraphServiceResolver {
                         } else {
                             expected
                         }
-                    println("[GraphServiceResolver] Failed to invoke ${method.name}: ${rootCause::class.simpleName}: ${rootCause.message}")
-                    rootCause.printStackTrace()
+                    logger.error(
+                        "Failed to invoke ${method.name}: ${rootCause::class.simpleName}: ${rootCause.message}",
+                        exception = rootCause,
+                    )
                 }
                 continue
             }
@@ -165,7 +132,7 @@ internal actual class GraphServiceResolver {
             }
 
             if (debug) {
-                println("[GraphServiceResolver] Found matching public method: ${method.name} -> ${method.returnType.simpleName}")
+                logger.debug("Found matching public method: ${method.name} -> ${method.returnType.simpleName}")
             }
 
             try {
@@ -180,8 +147,10 @@ internal actual class GraphServiceResolver {
                         } else {
                             expected
                         }
-                    println("[GraphServiceResolver] Failed to invoke ${method.name}: ${rootCause::class.simpleName}: ${rootCause.message}")
-                    rootCause.printStackTrace()
+                    logger.error(
+                        "Failed to invoke ${method.name}: ${rootCause::class.simpleName}: ${rootCause.message}",
+                        exception = rootCause,
+                    )
                 }
                 continue
             }

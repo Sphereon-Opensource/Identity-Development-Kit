@@ -111,9 +111,9 @@ fun JwkType.toRest(): JwkRest =
         x5tHashS256 = this.x5t_S256,
     )
 
-fun Array<KeyOperationsRest>?.toSdk() = this?.map { JoseKeyOperations.valueOf(it.value.uppercase()) }?.toTypedArray()
+fun Array<KeyOperationsRest>?.toSdk() = this?.map { KeyOperations.fromValue(it.value).jose }?.toTypedArray()
 
-fun Array<out KeyOperations>?.toRest() = this?.mapNotNull { KeyOperationsRest.decode(it.jose.value) }?.toTypedArray()
+fun Array<out KeyOperations>?.toRest() = this?.mapNotNull { KeyOperationsRest.decode(KeyOperations.toValue(it)) }?.toTypedArray()
 
 fun JwkRest.toSdk(): JwkType =
     Jwk(
@@ -139,7 +139,8 @@ fun JwkRest.toSdk(): JwkType =
         x5t_S256 = this.x5tHashS256,
     )
 
-fun Array<JoseKeyOperations>?.toRest(): Array<KeyOperationsRest>? = this?.map { KeyOperationsRest.decode(it.value)!! }?.toTypedArray()
+fun Array<JoseKeyOperations>?.toRest(): Array<KeyOperationsRest>? =
+    this?.mapNotNull { KeyOperationsRest.decode(KeyOperations.toValue(KeyOperations.fromJose(it))) }?.toTypedArray()
 
 fun CoseKeyType.toRest(): CoseKeyRest =
     CoseKeyRest(

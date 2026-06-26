@@ -27,8 +27,10 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.response.ResponseBuilder
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.hosting.DidHostingRegistry
+import com.sphereon.did.hosting.HostedDid
 import com.sphereon.did.hosting.rest.DidHostingApiConstants
 import com.sphereon.did.hosting.rest.DidHostingConfig
 import com.sphereon.did.hosting.rest.http.GetDidJsonEndpointCommand
@@ -73,22 +75,43 @@ class GetDidJsonEndpointCommandImpl(
                 ?: return Ok(ResponseBuilder.badRequest("Missing Host header"))
         val (host, port) = parseHostPort(hostHeader)
 
-        val tenantId = request.headers[CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER]
+        val tenantId =
+            request.headers[CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER]
+                ?.takeIf { it.isNotBlank() && it != IdentityConstants.ANONYMOUS_TENANT_ID }
+                ?: hostingConfig.publicFallbackTenantId
         val pathSegments = DidHostingApiConstants.PATH_SEGMENT_PARAMS.mapNotNull { request.pathParameters[it] }
-        val webLocation = WebLocation.fromRequest(host = host, port = port, pathSegments = pathSegments)
+        val candidateLocations =
+            if (port == null) {
+                listOf(WebLocation.fromRequest(host = host, port = null, pathSegments = pathSegments))
+            } else {
+                listOf(
+                    WebLocation.fromRequest(host = host, port = port, pathSegments = pathSegments),
+                    WebLocation.fromRequest(host = host, port = null, pathSegments = pathSegments),
+                ).distinct()
+            }
 
-        val hosted =
-            registry.resolveDidJson(tenantId, webLocation).getOrElse { return Err(it) }
-                ?: return Ok(ResponseBuilder.notFound("No DID document is hosted at '$webLocation'"))
+        var resolvedLocation = candidateLocations.first()
+        var hosted: HostedDid? = null
+        for (candidate in candidateLocations) {
+            resolvedLocation = candidate
+            hosted = registry.resolveDidJson(tenantId, candidate).getOrElse { return Err(it) }
+            if (hosted != null) break
+        }
+        val resolvedHosted =
+            hosted ?: return Ok(
+                ResponseBuilder.notFound(
+                    "No DID document is hosted at '${candidateLocations.joinToString("' or '")}'",
+                ),
+            )
 
-        if (hosted.deactivated) {
-            return Ok(ResponseBuilder.error(410, "GONE", "The DID hosted at '$webLocation' has been deactivated"))
+        if (resolvedHosted.deactivated) {
+            return Ok(ResponseBuilder.error(410, "GONE", "The DID hosted at '$resolvedLocation' has been deactivated"))
         }
 
-        val maxAge = hosted.cacheMaxAgeSeconds ?: hostingConfig.defaultCacheMaxAgeSeconds
+        val maxAge = resolvedHosted.cacheMaxAgeSeconds ?: hostingConfig.defaultCacheMaxAgeSeconds
         return Ok(
             ResponseBuilder.bytesResponse(
-                data = hosted.json.encodeToByteArray(),
+                data = resolvedHosted.json.encodeToByteArray(),
                 contentType = DidHostingApiConstants.DID_JSON_MEDIA_TYPE,
                 cacheControl = "public, max-age=$maxAge",
             ),

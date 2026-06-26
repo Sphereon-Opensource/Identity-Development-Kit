@@ -41,6 +41,7 @@ import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryp
 import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
 import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciSpecVersion
 import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.sdjwt.vc.ClaimSdMetadata
@@ -70,10 +71,9 @@ import kotlinx.serialization.json.jsonObject
  *  - per-credential keys: `<namespace>.credentials.[<configId>].<key>` via [credentialsNamespace]
  *
  * Subclasses choose the namespace:
- *  - [ConfigDrivenOid4vciIssuerConfigProvider] pins it to the singular `oid4vci.issuer` namespace,
- *    preserving the pure-IDK config-only single-issuer deploy.
+ *  - [ConfigDrivenOid4vciIssuerConfigProvider] pins it to the singular `oid4vci.issuer` namespace.
  *  - [RegistryBackedOid4vciIssuerConfigProvider] computes a per-instance namespace
- *    (`oid4vci.issuers.<instanceId>`) selected at request time, falling back to the singular one.
+ *    (`oid4vci.issuers.<instanceId>`) selected at request time.
  *
  * Evaluating the supplier per read (rather than caching it) matches the session-scoped lifecycle:
  * the active instance id may be set after this provider is constructed but before its first read.
@@ -98,6 +98,11 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     protected val namespace: String
         get() = namespaceProvider()
 
+    private fun namespaceProperty(relativeKey: String): String? =
+        configService.getPropertyAsString("${namespace}.$relativeKey")
+
+    private fun credentialConfigIds(): List<String>? = namespaceProperty("credentialConfigurationIds")?.splitComma()
+
     /**
      * Per-credential subtree root, derived from [namespace] so it tracks the selected instance.
      * The singular constant `CredentialIssuancePolicyConfig.CONFIG_NAMESPACE` (`oid4vci.issuer.credentials`)
@@ -106,6 +111,10 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     private val credentialsNamespace: String
         get() = "$namespace.credentials"
+
+    private fun credentialPrefix(configId: String): String {
+        return "$credentialsNamespace.[$configId]"
+    }
 
     override val issuerIdentifier: String
         get() {
@@ -118,19 +127,25 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             return value
         }
 
+    override val oid4vciSpecVersion: Oid4vciSpecVersion
+        get() =
+            Oid4vciSpecVersion.parse(
+                namespaceProperty("spec.version")
+                    ?: namespaceProperty("specVersion"),
+            )
+
     override val authorizationServers: List<String>?
         get() =
-            configService
-                .getPropertyAsString("$namespace.authorizationServers")
+            namespaceProperty("authorizationServers")
                 ?.splitComma()
                 ?.takeIf { it.isNotEmpty() }
 
     /** Raw metadata signing alias read from `<namespace>.signingKeyAlias`. */
     override val metadataSigningKeyAlias: String?
-        get() = configService.getPropertyAsString("$namespace.signingKeyAlias")?.takeIf { it.isNotBlank() }
+        get() = namespaceProperty("signingKeyAlias")?.takeIf { it.isNotBlank() }
 
     private val metadataSigningKmsProviderId: String?
-        get() = configService.getPropertyAsString("$namespace.signingKmsProviderId")?.takeIf { it.isNotBlank() }
+        get() = namespaceProperty("signingKmsProviderId")?.takeIf { it.isNotBlank() }
 
     /**
      * Issuer-wide clock-skew tolerance (seconds). YAML:
@@ -139,8 +154,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     override val issuanceClockSkewInSeconds: Long
         get() =
-            configService
-                .getPropertyAsString("$namespace.issuance.clock.skew.in.seconds")
+            namespaceProperty("issuance.clock.skew.in.seconds")
                 ?.toLongOrNull()
                 ?.coerceAtLeast(0L)
                 ?: 60L
@@ -158,7 +172,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     override val signingKey: ManagedIdentifierOptsOrResult?
         get() {
             val enabled =
-                configService.getPropertyAsString("$namespace.signed-metadata.enabled")?.toBoolean() ?: false
+                namespaceProperty("signed-metadata.enabled")?.toBoolean() ?: false
             if (!enabled) return null
             return metadataSigningKeyAlias?.let { alias ->
                 ManagedOptsKeyInfo(
@@ -185,8 +199,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     override val credentialRequestDecryptionKey: ManagedIdentifierOptsOrResult?
         get() =
-            configService
-                .getPropertyAsString("$namespace.encryption.request.decryptionKeyAlias")
+            namespaceProperty("encryption.request.decryptionKeyAlias")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { alias ->
                     ManagedOptsKeyInfo(
@@ -194,8 +207,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                             KeyInfo<KeyType>(
                                 alias = alias,
                                 providerId =
-                                    configService
-                                        .getPropertyAsString("$namespace.encryption.request.decryptionKmsProviderId")
+                                    namespaceProperty("encryption.request.decryptionKmsProviderId")
                                         ?.takeIf { it.isNotBlank() },
                                 keyVisibility = KeyVisibility.PRIVATE,
                             ),
@@ -204,21 +216,16 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     override val display: List<DisplayProperties>?
         get() {
-            val ns = namespace
             val name =
-                configService.getPropertyAsString("$ns.display.name")
+                namespaceProperty("display.name")
                     ?: return null
-            val locale = configService.getPropertyAsString("$ns.display.locale")
+            val locale = namespaceProperty("display.locale")
             return listOf(DisplayProperties(name = name, locale = locale))
         }
 
     override val credentialConfigurations: Map<String, CredentialConfigurationSupported>
         get() {
-            val ids =
-                configService
-                    .getPropertyAsString("$namespace.credentialConfigurationIds")
-                    ?.splitComma()
-                    ?: return emptyMap()
+            val ids = credentialConfigIds() ?: return emptyMap()
 
             return ids.associateWith { id -> buildCredentialConfiguration(id) }
         }
@@ -297,28 +304,20 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     override val batchCredentialIssuance: BatchCredentialIssuance?
         get() {
-            val batchSize = configService.getPropertyAsString("$namespace.batch.maxSize")?.toIntOrNull() ?: return null
+            val batchSize = namespaceProperty("batch.maxSize")?.toIntOrNull() ?: return null
             return BatchCredentialIssuance(batchSize = batchSize)
         }
 
     override val credentialSigningConfigs: Map<String, CredentialSigningConfig>
         get() {
-            val ids =
-                configService
-                    .getPropertyAsString("$namespace.credentialConfigurationIds")
-                    ?.splitComma()
-                    ?: return emptyMap()
+            val ids = credentialConfigIds() ?: return emptyMap()
 
             return ids.associateWith { id -> buildCredentialSigningConfig(id) }
         }
 
     override val keyAttesterTrustConfigs: Map<String, Map<String, KeyAttesterTrustConfig>>
         get() {
-            val ids =
-                configService
-                    .getPropertyAsString("$namespace.credentialConfigurationIds")
-                    ?.splitComma()
-                    ?: return emptyMap()
+            val ids = credentialConfigIds() ?: return emptyMap()
 
             return ids
                 .associateWith { id -> buildKeyAttesterTrustConfigsForCredential(id) }
@@ -330,7 +329,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     // -------------------------------------------------------------------------
 
     private fun buildCredentialConfiguration(configId: String): CredentialConfigurationSupported {
-        val prefix = "$credentialsNamespace.[$configId]"
+        val prefix = credentialPrefix(configId)
 
         val formatValue = configService.getPropertyAsString("$prefix.format")
         val format =
@@ -539,10 +538,10 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     /** Served-VCT id (last `vct` URL segment) -> its config id + full URL, for every sd-jwt cred. */
     private fun vctRefs(): Map<String, VctRef> {
-        val ids = configService.getPropertyAsString("$namespace.credentialConfigurationIds")?.splitComma() ?: return emptyMap()
+        val ids = credentialConfigIds() ?: return emptyMap()
         val out = LinkedHashMap<String, VctRef>()
         for (configId in ids) {
-            val prefix = "$credentialsNamespace.[$configId]"
+            val prefix = credentialPrefix(configId)
             val vctUrl = configService.getPropertyAsString("$prefix.vct")?.takeIf { it.isNotEmpty() } ?: continue
             val bare = vctUrl.substringAfterLast('/').takeIf { it.isNotEmpty() } ?: configId
             out[bare] = VctRef(configId, vctUrl)
@@ -558,7 +557,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     }
 
     private fun buildVctTypeMetadataInput(ref: VctRef): VctTypeMetadataInput? {
-        val prefix = "$credentialsNamespace.[${ref.configId}]"
+        val prefix = credentialPrefix(ref.configId)
         val displays =
             buildCredentialDisplays(prefix).map { (locale, d) ->
                 VctDisplayInput(
@@ -631,7 +630,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     }
 
     private fun buildCredentialSigningConfig(configId: String): CredentialSigningConfig {
-        val prefix = "$credentialsNamespace.[$configId]"
+        val prefix = credentialPrefix(configId)
 
         // Per-credential alias wins; otherwise fall back to the issuer-level signing key
         // (`<namespace>.signingKeyAlias`, written per-tenant by the issuer bootstrap).
@@ -666,9 +665,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     override val statusListBindings: Map<String, StatusListBinding>
         get() {
-            val configIds =
-                configService.getPropertyAsString("$namespace.credentialConfigurationIds")?.splitComma()
-                    ?: return emptyMap()
+            val configIds = credentialConfigIds() ?: return emptyMap()
             return configIds
                 .mapNotNull { configId ->
                     val result = statusListBindingFor(configId)
@@ -683,7 +680,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * no `statusListId`.
      */
     override fun statusListBindingFor(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> {
-        val prefix = "$credentialsNamespace.[$credentialConfigId]"
+        val prefix = credentialPrefix(credentialConfigId)
         val listId =
             configService.getPropertyAsString("$prefix.statusListId")?.takeIf { it.isNotBlank() }
                 ?: return Ok(null)
@@ -764,7 +761,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * to global X.509 anchors loaded by `lib/trust/x509`.
      */
     private fun buildKeyAttesterTrustConfigsForCredential(configId: String,): Map<String, KeyAttesterTrustConfig> {
-        val credentialPrefix = "$credentialsNamespace.[$configId]"
+        val credentialPrefix = credentialPrefix(configId)
         val proofTypeKeys = buildProofTypes(credentialPrefix).keys
         if (proofTypeKeys.isEmpty()) return emptyMap()
         return proofTypeKeys

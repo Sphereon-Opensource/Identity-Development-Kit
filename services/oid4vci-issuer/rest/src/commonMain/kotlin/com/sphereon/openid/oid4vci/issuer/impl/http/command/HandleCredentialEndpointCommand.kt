@@ -91,6 +91,11 @@ class HandleCredentialEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
 
+        // Keep the credential request path aligned with issuer metadata. Hybrid/config providers
+        // may build tenant design-backed credential configurations lazily, and the snapshot below
+        // must see the same prepared view that /.well-known/openid-credential-issuer advertises.
+        configProvider.prepare()
+
         val accessToken =
             extractAccessToken(request)
                 ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "Missing or invalid Authorization header"))

@@ -16,14 +16,14 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.api.decodeFromBase64
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.experimental.ExperimentalObjCName
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.native.ObjCName
 
 /**
@@ -191,9 +191,8 @@ data class ResolvedBlobInfo(
     override fun toBlobInfo(): BlobInfo = info
 
     /** Decoded blob content. */
-    @OptIn(ExperimentalEncodingApi::class)
     @Transient
-    val data: ByteArray = Base64.decode(dataBase64)
+    val data: ByteArray = dataBase64.decodeFromBase64()
 
     /** Size of the blob in bytes. */
     val sizeBytes: Long get() = descriptor.sizeBytes
@@ -219,14 +218,13 @@ data class ResolvedBlobInfo(
          * Construct from raw bytes (encodes to base64 internally).
          * Use this from resolvers and store operations.
          */
-        @OptIn(ExperimentalEncodingApi::class)
         fun fromContent(
             info: BlobInfo,
             data: ByteArray,
             descriptor: BlobDescriptor,
         ) = ResolvedBlobInfo(
             info = info,
-            dataBase64 = Base64.encode(data),
+            dataBase64 = data.encodeToBase64(),
             descriptor = descriptor,
         )
     }

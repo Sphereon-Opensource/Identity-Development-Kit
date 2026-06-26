@@ -64,6 +64,12 @@ value class PartyType(
         /** A software-backed service participant (endpoint, integration, automated actor) */
         val SERVICE = PartyType("service")
 
+        /** A software product or deployable component. */
+        val SOFTWARE = PartyType("software")
+
+        /** A physical, digital, or logical asset that can participate in relationships. */
+        val ASSET = PartyType("asset")
+
         /** A unit within an organization (department, division, sub-tenant scope) */
         val ORGANIZATION_UNIT = PartyType("organization_unit")
 

@@ -321,18 +321,19 @@ interface TestOidcConnectionResolverModule {
 interface TestReconciliationCryptoModule {
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideReconciliationCryptoService(): ReconciliationCryptoService =
-        object : ReconciliationCryptoService {
-            override suspend fun hashHolderKey(holderKey: String) = HashedIdentifier(hash = "holder:$holderKey", keyVersion = "v1")
+    fun provideReconciliationCryptoService(): ReconciliationCryptoService = TestReconciliationCryptoService()
+}
 
-            override suspend fun hashExternalIdentifier(identifier: String) = HashedIdentifier(hash = "ext:$identifier", keyVersion = "v1")
+private class TestReconciliationCryptoService : ReconciliationCryptoService {
+    override suspend fun hashHolderKey(holderKey: String): HashedIdentifier = HashedIdentifier(hash = "holder:$holderKey", keyVersion = "v1")
 
-            override suspend fun encrypt(plaintext: String) = EncryptedPayload(ciphertext = plaintext, keyVersion = "v1")
+    override suspend fun hashExternalIdentifier(identifier: String): HashedIdentifier = HashedIdentifier(hash = "ext:$identifier", keyVersion = "v1")
 
-            override suspend fun decrypt(payload: EncryptedPayload) = payload.ciphertext
+    override suspend fun encrypt(plaintext: String): EncryptedPayload = EncryptedPayload(ciphertext = plaintext, keyVersion = "v1")
 
-            override suspend fun hashHolderKeyWithPrevious(holderKey: String): HashedIdentifier? = null
+    override suspend fun decrypt(payload: EncryptedPayload): String = payload.ciphertext
 
-            override suspend fun hashExternalIdentifierWithPrevious(identifier: String): HashedIdentifier? = null
-        }
+    override suspend fun hashHolderKeyWithPrevious(holderKey: String): HashedIdentifier? = null
+
+    override suspend fun hashExternalIdentifierWithPrevious(identifier: String): HashedIdentifier? = null
 }

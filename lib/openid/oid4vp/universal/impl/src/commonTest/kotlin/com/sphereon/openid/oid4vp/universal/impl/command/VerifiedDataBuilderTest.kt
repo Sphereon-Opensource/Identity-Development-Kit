@@ -21,6 +21,9 @@ import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
@@ -81,6 +84,23 @@ class VerifiedDataBuilderTest {
                                     credentialQueryId = "passport",
                                     format = "dc+sd-jwt",
                                     presentation = "eyJhbGciOiJFUzI1NiJ9.payload.signature",
+                                    issuer =
+                                        CredentialIssuerRef(
+                                            issuer = "https://issuer.example.com",
+                                            method = "openid_federation",
+                                            oidfedEntityId = "https://issuer.example.com",
+                                        ),
+                                    trust =
+                                        CredentialTrustValidation(
+                                            enabled = true,
+                                            trusted = true,
+                                            mode = CredentialTrustValidationMode.DEFAULT_ENFORCE,
+                                            method = "openid_federation",
+                                            trustDomainIds = listOf("domain-1"),
+                                            matchedTrustDomainId = "domain-1",
+                                            matchedAnchorId = "anchor-1",
+                                            status = "TRUSTED",
+                                        ),
                                     disclosedClaims =
                                         mapOf(
                                             "given_name" to "Ada",
@@ -109,5 +129,8 @@ class VerifiedDataBuilderTest {
         assertEquals(true, dcqlResponseObject.contains("credential_set_matches"))
         assertEquals(true, dcqlResponseObject.contains("\"credential_set_id\":\"0\""))
         assertEquals(true, dcqlResponseObject.contains("\"credential_id\":\"passport\""))
+        assertEquals(true, dcqlResponseObject.contains("\"issuer\":\"https://issuer.example.com\""))
+        assertEquals(true, dcqlResponseObject.contains("\"trust_domain_ids\":[\"domain-1\"]"))
+        assertEquals(true, dcqlResponseObject.contains("\"matched_anchor_id\":\"anchor-1\""))
     }
 }

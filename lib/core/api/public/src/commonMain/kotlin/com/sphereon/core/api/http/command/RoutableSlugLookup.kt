@@ -18,7 +18,7 @@ package com.sphereon.core.api.http.command
  * Two implementations exist:
  *
  * - The IDK default ([ConfigBackedRoutableSlugLookup]) reads slugs from
- *   `ConfigService` — every `oauth2.as.instances.<slug>.issuer` config key
+ *   `ConfigService` — every `oauth2.servers.<slug>.issuer` config key
  *   declares a valid root slug. This keeps IDK's existing config-driven multi-AS
  *   routing first-class without requiring any tenant database.
  *

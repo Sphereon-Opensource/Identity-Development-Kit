@@ -25,6 +25,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -36,8 +37,10 @@ import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.crypto.resolution.tryManagedIdentifierToJwk
-import com.sphereon.di.context.IdentityConstants
+import com.sphereon.data.store.credential.design.PublicDesignAssetPaths
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vc.common.DisplayProperties
+import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
@@ -99,6 +102,7 @@ interface GetIssuerMetadataEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("oid4vci-issuer", "metadata"),
                 summary = "Get OID4VCI credential issuer metadata",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
 
         /**
@@ -141,6 +145,7 @@ interface GetIssuerMetadataEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("oid4vci-issuer", "metadata"),
                 summary = "Get OID4VCI credential issuer metadata",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
         }
 
@@ -186,18 +191,11 @@ class GetIssuerMetadataEndpointCommandImpl(
         endpoint = GetIssuerMetadataEndpointCommand.descriptorFor(configProvider.issuerIdentifier),
     ),
     GetIssuerMetadataEndpointCommand {
-    private val sessionExecution: SessionExecution = execution
-
     override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
-        if (request.path != GetIssuerMetadataEndpointCommand.BARE_PATH &&
-            (sessionExecution.tenantId.isBlank() || sessionExecution.tenantId == IdentityConstants.ANONYMOUS_TENANT_ID)
-        ) {
-            return Err(IdkError.NOT_FOUND_ERROR(message = "Not found: ${request.method} ${request.path}"))
-        }
 
         val publicUrls =
             publicUrlResolver
@@ -208,6 +206,12 @@ class GetIssuerMetadataEndpointCommandImpl(
         val wantsJwt =
             acceptHeader.contains(ACCEPT_JWT, ignoreCase = true) ||
                 acceptHeader.contains(ACCEPT_ISSUER_METADATA_JWT, ignoreCase = true)
+
+        // Ensure design-derived credential configurations are built before we read them below.
+        // For config-only providers this is a no-op (default interface method); for
+        // HybridOid4vciIssuerConfigProvider it triggers buildDesigns() exactly once per session
+        // without this module needing to depend on the impl class directly.
+        configProvider.prepare()
 
         // Resolve `credential_request_encryption.jwks` from the KMS at request time so we
         // never store private key material in YAML / git. Mirrors how the OAuth2 AS publishes
@@ -221,7 +225,7 @@ class GetIssuerMetadataEndpointCommandImpl(
                 BuildIssuerMetadataArgs(
                     issuerIdentifier = publicUrls.issuerIdentifier,
                     baseUrl = publicUrls.endpointBaseUrl,
-                    authorizationServers = configProvider.authorizationServers,
+                    authorizationServers = publicUrls.authorizationServerBaseUrl?.let { listOf(it) } ?: configProvider.authorizationServers,
                     credentialConfigurations = configProvider.credentialConfigurations,
                     display = configProvider.display,
                     credentialResponseEncryption = configProvider.credentialResponseEncryption,
@@ -231,9 +235,17 @@ class GetIssuerMetadataEndpointCommandImpl(
             )
 
         val metadata =
-            metadataResult.getOrElse { error ->
-                return Err(error)
-            }
+            metadataResult
+                .getOrElse { error ->
+                    return Err(error)
+                }
+                // Resolve design-asset (logo / background) URIs embedded in the issuer + credential
+                // `display` to ABSOLUTE per-tenant URLs, using the SAME base that produced
+                // `credential_issuer` / endpoint URLs (publicUrls.endpointBaseUrl). Asset URIs are
+                // stored RELATIVE so that in multi-tenant gateway mode each tenant's logo carries
+                // that tenant's host. Done BEFORE signing + JSON encode so both surfaces agree.
+                .withAbsoluteAssetUris(publicUrls.endpointBaseUrl)
+                .withHostedVctUrls(publicUrls.issuerIdentifier)
 
         val signingKey = configProvider.signingKey
 
@@ -330,4 +342,56 @@ class GetIssuerMetadataEndpointCommandImpl(
         val realJwks = JsonObject(mapOf("keys" to JsonArray(listOf(publicJwkElement))))
         return Ok(template.copy(jwks = realJwks))
     }
+}
+
+/**
+ * Returns a copy of this [CredentialIssuerMetadata] with every design-asset (logo / background)
+ * URI embedded in the issuer-level and credential-level `display` resolved to an ABSOLUTE
+ * per-tenant URL using [externalBaseUrl].
+ *
+ * Asset URIs are stored RELATIVE (content-addressed under
+ * [PublicDesignAssetPaths.BASE_PATH]); this applies the same per-tenant host the issuer
+ * advertises for `credential_issuer` / endpoint URLs, so a multi-tenant gateway emits each
+ * tenant's own host. URIs that are already absolute, not design-asset paths, or null are left
+ * untouched (see [PublicDesignAssetPaths.toAbsolute]).
+ *
+ * `internal` so it is directly unit-testable without wiring the full HTTP command.
+ */
+internal fun CredentialIssuerMetadata.withAbsoluteAssetUris(externalBaseUrl: String?): CredentialIssuerMetadata =
+    copy(
+        display = display?.map { it.withAbsoluteAssetUris(externalBaseUrl) },
+        credentialConfigurationsSupported =
+            credentialConfigurationsSupported.mapValues { (_, config) ->
+                config.copy(
+                    display = config.display?.map { it.withAbsoluteAssetUris(externalBaseUrl) },
+                    credentialMetadata =
+                        config.credentialMetadata?.let { meta ->
+                            meta.copy(display = meta.display?.map { it.withAbsoluteAssetUris(externalBaseUrl) })
+                        },
+                )
+            },
+    )
+
+private fun DisplayProperties.withAbsoluteAssetUris(externalBaseUrl: String?): DisplayProperties =
+    copy(
+        logo = logo?.let { it.copy(uri = PublicDesignAssetPaths.toAbsolute(it.uri, externalBaseUrl)) },
+        backgroundImage =
+            backgroundImage?.let { it.copy(uri = PublicDesignAssetPaths.toAbsolute(it.uri, externalBaseUrl)) },
+    )
+
+internal fun CredentialIssuerMetadata.withHostedVctUrls(externalBaseUrl: String?): CredentialIssuerMetadata =
+    copy(
+        credentialConfigurationsSupported =
+            credentialConfigurationsSupported.mapValues { (_, config) ->
+                config.copy(vct = config.vct?.toHostedVctUrl(externalBaseUrl))
+            },
+    )
+
+internal fun String.toHostedVctUrl(externalBaseUrl: String?): String {
+    val base = externalBaseUrl?.trimEnd('/')?.takeIf { it.isNotBlank() } ?: return this
+    val marker = "/public/schema/vct/"
+    val markerIndex = indexOf(marker)
+    if (markerIndex < 0) return this
+    val suffix = substring(markerIndex + marker.length).takeIf { it.isNotBlank() } ?: return this
+    return "$base$marker$suffix"
 }

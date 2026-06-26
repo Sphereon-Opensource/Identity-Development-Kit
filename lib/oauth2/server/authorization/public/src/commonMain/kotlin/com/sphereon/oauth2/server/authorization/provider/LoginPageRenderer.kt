@@ -89,6 +89,14 @@ data class LoginPageContext(
      * renderer treats the list as the final view and does no additional filtering.
      */
     val federationOptions: List<FederationLoginOption> = emptyList(),
+    /**
+     * Server-trusted base URL (scheme + host + optional issuer/tenant path, no trailing slash)
+     * the renderer MUST use to build first-party form `action` targets (login, cancel,
+     * federation). Populated by the HTTP layer from the issuer-preferring base resolver — never
+     * from a request-supplied `return_url`. Empty only for legacy callers/tests; renderers fall
+     * back to deriving the base from [returnUrl] when this is blank (transitional).
+     */
+    val formActionBase: String = "",
 )
 
 /**

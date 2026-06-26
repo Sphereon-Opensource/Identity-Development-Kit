@@ -30,7 +30,7 @@ import dev.zacsweers.metro.SingleIn
  *
  * Higher layers contribute real implementations via Metro `replaces`:
  * - The IDK `lib-oauth2-common-impl` module contributes a config-backed lookup
- *   that reads AS instance slugs from `oauth2.as.instances.<slug>.*` config keys.
+ *   that reads AS instance slugs from `oauth2.servers.<slug>.*` config keys.
  * - The EDK `lib-tenant-resolution-impl` module contributes a postgres-backed
  *   lookup against `tenant_routing` with parent/child hierarchy support.
  */

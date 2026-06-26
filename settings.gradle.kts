@@ -402,6 +402,10 @@ includeProject("lib-data-store-kv-impl-kottage", "lib/data/store/kv/impl-kottage
 includeProject("lib-data-store-blob-public", "lib/data/store/blob/public")
 includeProject("lib-data-store-blob-impl", "lib/data/store/blob/impl")
 
+// Data Integration (cross-cutting transport/resource/operation taxonomy for connectors,
+// inventory, workflows, forms, and policy).
+includeProject("lib-data-integration-public", "lib/data/integration/public")
+
 // Attribute Flow (flow-agnostic attribute wiring primitives: AttributeBag, AttributePath,
 // AttributeSource/Target/Binding. Consumed by IDV graphs, issuance pipelines, tabular sources, etc.)
 includeProject("lib-attribute-flow-public", "lib/attribute/flow/public")

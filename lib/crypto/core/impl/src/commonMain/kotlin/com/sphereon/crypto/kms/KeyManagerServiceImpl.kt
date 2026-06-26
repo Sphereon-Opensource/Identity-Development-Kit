@@ -99,6 +99,8 @@ import com.sphereon.crypto.core.kms.command.WrapKeyCommand
 import com.sphereon.crypto.core.kms.command.WrapKeyResult
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import com.sphereon.crypto.core.sign.SimpleSignatureService
+import com.sphereon.crypto.core.toKeyReferenceOrNull
+import com.sphereon.crypto.core.toSigningKeyReferenceOrNull
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -317,7 +319,12 @@ open class KeyManagerServiceImpl
             val command = createRawSignatureCommand
             val exec = execution
             if (command != null && exec != null) {
-                val args = CreateRawSignatureArgs(keyInfo = keyInfo, input = input, requireX5Chain = requireX5Chain)
+                val args =
+                    CreateRawSignatureArgs(
+                        keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                        input = input,
+                        requireX5Chain = requireX5Chain,
+                    )
                 val result = command.execute(args)
                 return result.getOrElse { throw PKIException(it.message.defaultMessage ?: "Signature creation failed") }.signature
             }
@@ -625,7 +632,12 @@ open class KeyManagerServiceImpl
                 execution
                     ?: return IdkError.UNKNOWN_ERROR(message = "SessionExecution not available").asErrorResult()
 
-            val args = CreateRawSignatureArgs(keyInfo = keyInfo, input = input, requireX5Chain = requireX5Chain)
+            val args =
+                CreateRawSignatureArgs(
+                    keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                    input = input,
+                    requireX5Chain = requireX5Chain,
+                )
             return command.execute(args)
         }
 

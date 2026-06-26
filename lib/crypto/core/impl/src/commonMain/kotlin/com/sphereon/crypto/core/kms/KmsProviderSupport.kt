@@ -166,6 +166,13 @@ private val KmsPropertyNameAliases =
         "maxretries" to "maxRetries",
         "basedelayinms" to "baseDelayInMS",
         "maxdelayinms" to "maxDelayInMS",
+        // AWS KMS nested credential fields
+        "accesskeycredentialopts" to "accessKeyCredentialOpts",
+        "profilecredentialopts" to "profileCredentialOpts",
+        "accesskeyid" to "accessKeyId",
+        "secretaccesskey" to "secretAccessKey",
+        "sessiontoken" to "sessionToken",
+        "profilename" to "profileName",
     )
 
 @Inject
@@ -203,6 +210,7 @@ class KmsProviderConfigBinderImpl(
                     "key.store" to "keyStore",
                 ),
             propertyNameAliases = KmsPropertyNameAliases,
+            ignoredPropertyNames = KmsOperationalMetadataKeys,
             redact = false,
         )
 
@@ -283,3 +291,9 @@ class KmsProviderConfigBinderImpl(
             .toTypedArray()
     }
 }
+
+private val KmsOperationalMetadataKeys =
+    setOf(
+        "system",
+        "role",
+    )

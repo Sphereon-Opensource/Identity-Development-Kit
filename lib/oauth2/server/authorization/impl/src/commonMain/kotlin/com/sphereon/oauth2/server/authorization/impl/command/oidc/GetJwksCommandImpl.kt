@@ -25,15 +25,14 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOpts
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
-import com.sphereon.crypto.resolution.managed.ManagedOptsKid
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.crypto.resolution.tryManagedIdentifierToJwk
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.JwksResult
-import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.Inject
@@ -42,17 +41,9 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Default tenant identifier the JWKS publication uses when no per-request tenant has been
- * threaded through the session. Mirrors the constant in `DefaultAsServerSigningIdentifierResolver`; lifted
- * here as a private const rather than a shared one because the two consumers are in different
- * source sets (commonMain vs jvmMain).
- */
-private const val DEFAULT_SIGNING_KEY_TENANT = "default"
-
-/**
  * Implementation of GetJwksCommand.
  *
- * Returns every publishable signing key for the default tenant — i.e. the highest-priority
+ * Returns every publishable signing key for the resolved tenant — i.e. the highest-priority
  * `ACTIVE` key plus any `LEGACY` keys that still verify in-flight tokens issued before the
  * most recent rotation. RPs cache the JWKS and look up by `kid`, so as long as the tenant's
  * key history is in the store, every issued token's verification key is reachable.
@@ -69,7 +60,6 @@ class GetJwksCommandImpl(
     execution: SessionExecution,
     private val signingKeyStore: SigningKeyStore,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
-    private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
 ) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult, IdkError>(
         commandId = GetJwksCommand.COMMAND_ID,
         execution = execution,
@@ -90,12 +80,23 @@ class GetJwksCommandImpl(
     }
 
     private suspend fun executeInternal(): IdkResult<JwksResult, IdkError> {
-        val tenantId = execution.tenantId.takeIf { it.isNotBlank() } ?: DEFAULT_SIGNING_KEY_TENANT
-        // Ensure the store is seeded for hosted-AS deployments before publishing. The resolver
-        // self-seeds the default signing key on first use (a no-op when this process does not host
-        // an AS, or once a key already exists), so a JWKS request that lands before any token has
-        // been signed still publishes the active key instead of an empty set.
-        signingIdentifierResolver.resolveSigningIdentifier()
+        val tenantId = execution.tenantId
+        if (tenantId.isBlank() || tenantId == IdentityConstants.ANONYMOUS_TENANT_ID) {
+            // Tenant resolution (domain/path first) must have established a real tenant before a JWKS
+            // request reaches here; there is NO "default" tenant fallback. A blank/anonymous tenant is
+            // a bug (a request bypassed Layer-1 resolution) — fail closed rather than publish another
+            // tenant's keys or an empty set under a synthetic "default".
+            return Err(
+                IdkError.INVALID_STATE(
+                    message =
+                        "JWKS publication requires a resolved tenant; session tenant is " +
+                            "'${tenantId.ifBlank { "<blank>" }}'.",
+                ),
+            )
+        }
+        // Publish whatever signing keys are PROVISIONED for this tenant in the durable SigningKeyStore.
+        // No self-seeding here: a durable AS signing key is provisioned explicitly at tenant
+        // registration. An empty set is the documented response shape when no key is registered yet.
         val publishableResult = signingKeyStore.listPublishable(tenantId)
         if (!publishableResult.isOk) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to list publishable signing keys: ${publishableResult.error}"))
@@ -129,11 +130,10 @@ class GetJwksCommandImpl(
      * in their RP logs and can investigate.
      */
     private suspend fun OAuth2SigningKey.resolveAsPublicJwk(): Jwk? {
-        // Prefer addressing by alias (matches the sign-path identifier construction in
-        // DefaultAsServerSigningIdentifierResolver); fall back to kid when no alias is configured.
-        val identifier: ManagedIdentifierOpts =
-            keyInfo.alias?.let { ManagedOptsAlias(identifier = it) }
-                ?: ManagedOptsKid(identifier = keyInfo.kid ?: kid)
+        // Preserve providerId/algorithm from the durable SigningKeyStore row. Fresh tenant AS
+        // keys are provisioned into the tenant-specific provider, so alias-only lookup would
+        // resolve against the wrong provider and publish an empty JWKS.
+        val identifier: ManagedIdentifierOpts = ManagedOptsKeyInfo(identifier = keyInfo)
         val resolveResult = multiManagedIdentifierService.resolve(identifier)
         if (!resolveResult.isOk) return null
         val jwkResult = tryManagedIdentifierToJwk(resolveResult.value).getOrNull() ?: return null

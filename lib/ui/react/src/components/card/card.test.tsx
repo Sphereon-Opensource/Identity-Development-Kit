@@ -18,6 +18,13 @@ describe('Card', () => {
     expect(screen.getByTestId('my-card')).toBeDefined()
   })
 
+  it('can opt into design-system card interaction styling without requiring a click handler', () => {
+    const {container} = render(<Card interactive>Content</Card>)
+
+    expect(container.firstElementChild?.getAttribute('class')).toContain('interactive')
+    expect(container.firstElementChild?.getAttribute('role')).toBeNull()
+  })
+
   it('renders as a div', () => {
     const { container } = render(<Card>Content</Card>)
     expect(container.firstElementChild?.tagName).toBe('DIV')

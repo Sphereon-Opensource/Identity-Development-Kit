@@ -72,7 +72,7 @@ class OAuth2FederationHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_FEDERATION"
+        const val ID: String = "oauth2.as.federation"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

@@ -55,7 +55,10 @@ import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.CertificateResult
-import io.ktor.util.sha1
+import com.sphereon.crypto.core.kms.X509CertificateExtensionSpec
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.DelicateCryptographyApi
+import dev.whyoleg.cryptography.algorithms.SHA1
 import kotlinx.serialization.encodeToByteArray
 import kotlin.experimental.ExperimentalObjCRefinement
 import kotlin.native.HiddenFromObjC
@@ -147,6 +150,7 @@ object CertificateCreationUtils {
         subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
         subject: X509DistinguishedNameElements,
         serialNumber: Int,
+        extensions: List<X509CertificateExtensionSpec> = emptyList(),
         notBefore: LocalDateTimeKMP,
         notAfter: LocalDateTimeKMP,
         signatureFunction: suspend (ByteArray) -> ByteArray,
@@ -168,6 +172,15 @@ object CertificateCreationUtils {
         val issuerDn = createDN(issuer)
         val subjectDn = createDN(subject)
 
+        val customExtensions =
+            extensions.map { extension ->
+                X509CertificateExtension(
+                    oid = ObjectIdentifier(extension.oid),
+                    critical = extension.critical,
+                    value = Asn1OctetString(extension.valueDer),
+                )
+            }
+
         val tbsCertificate =
             X509TbsCertificate(
                 version = X509TbsCertificate.Version.V3,
@@ -178,7 +191,7 @@ object CertificateCreationUtils {
                 validFrom = Asn1Time(notBefore.toInstant().let { kotlin.time.Instant.fromEpochSeconds(it.epochSeconds, it.nanosecondsOfSecond) }),
                 validUntil = Asn1Time(notAfter.toInstant().let { kotlin.time.Instant.fromEpochSeconds(it.epochSeconds, it.nanosecondsOfSecond) }),
                 subjectPublicKeyInfo = jwk.toSubjectPublicKeyInfo(),
-                extensions = listOf(skiExtension),
+                extensions = listOf(skiExtension) + customExtensions,
             )
 
         val der = DER.encodeToByteArray(tbsCertificate)
@@ -229,7 +242,7 @@ object CertificateCreationUtils {
         }
     }
 
-    private fun computeECSubjectKeyIdentifier(jwk: Jwk): ByteArray {
+    private suspend fun computeECSubjectKeyIdentifier(jwk: Jwk): ByteArray {
         val x = jwk.x?.decodeFrom(Encoding.BASE64URL)
         val y = jwk.y?.decodeFrom(Encoding.BASE64URL)
         requireNotNull(x) { "x coordinate must not be null" }
@@ -240,15 +253,15 @@ object CertificateCreationUtils {
                 x.copyInto(this, 1)
                 y.copyInto(this, 1 + x.size)
             }
-        return sha1(publicPoint)
+        return sha1Digest(publicPoint)
     }
 
-    private fun computeRSASubjectKeyIdentifier(jwk: Jwk): ByteArray {
+    private suspend fun computeRSASubjectKeyIdentifier(jwk: Jwk): ByteArray {
         val derEncoded = DER.encodeToByteArray(jwk.toSubjectPublicKeyInfo())
-        return sha1(derEncoded)
+        return sha1Digest(derEncoded)
     }
 
-    private fun computeSubjectKeyIdentifier(jwk: Jwk): ByteArray =
+    private suspend fun computeSubjectKeyIdentifier(jwk: Jwk): ByteArray =
         when (jwk.kty) {
             JwaKeyType.EC -> {
                 computeECSubjectKeyIdentifier(jwk)
@@ -266,4 +279,11 @@ object CertificateCreationUtils {
                 }
             }
         }
+
+    @OptIn(DelicateCryptographyApi::class)
+    private suspend fun sha1Digest(input: ByteArray): ByteArray =
+        CryptographyProvider.Default
+            .get(SHA1)
+            .hasher()
+            .hash(input)
 }

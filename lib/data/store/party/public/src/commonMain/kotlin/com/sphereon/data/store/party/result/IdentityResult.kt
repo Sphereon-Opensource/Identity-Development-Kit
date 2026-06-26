@@ -20,8 +20,9 @@
 package com.sphereon.data.store.party.result
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.data.store.party.model.CorrelationIdentifier
 import com.sphereon.data.store.party.model.Identity
+import com.sphereon.data.store.party.model.IdentityIdentifier
+import com.sphereon.data.store.party.model.IdentityPrivacyMode
 import com.sphereon.data.store.party.model.IdentityRole
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -44,7 +45,7 @@ import kotlin.uuid.Uuid
  * // Create with associations
  * val resultWithIds = IdentityResult.from(
  *     identity = identity,
- *     correlationIdentifiers = listOf(...)
+ *     identityIdentifiers = listOf(...)
  * )
  * ```
  */
@@ -71,6 +72,9 @@ data class IdentityResult
          */
         @SerialName("specializationSubtype")
         val specializationSubtype: String? = null,
+        /** Controls whether readable profile data may exist on bound Party records. */
+        @SerialName("privacyMode")
+        val privacyMode: IdentityPrivacyMode = IdentityPrivacyMode.PARTY_PROFILED,
         /** When the identity was created */
         @SerialName("createdAt")
         val createdAt: Instant,
@@ -90,50 +94,59 @@ data class IdentityResult
         @SerialName("deletedById")
         val deletedById: Uuid? = null,
         /**
-         * Correlation identifiers associated with this identity.
-         * Populated when [IdentityFetchOptions.includeCorrelationIdentifiers] is true.
+         * Identity identifiers associated with this identity.
+         * Populated when [IdentityFetchOptions.includeIdentityIdentifiers] is true.
          * Null means not fetched (vs empty list which means no identifiers exist).
          */
-        @SerialName("correlationIdentifiers")
-        val correlationIdentifiers: List<CorrelationIdentifierResult>? = null,
+        @SerialName("identityIdentifiers")
+        val identityIdentifiers: List<IdentityIdentifierResult>? = null,
+        /**
+         * Party bindings associated with this identity.
+         * Populated when IdentityFetchOptions.includePartyBindings is true.
+         */
+        @SerialName("partyBindings")
+        val partyBindings: List<IdentityPartyBindingResult>? = null,
     ) {
         companion object {
             /**
              * Create an IdentityResult from an Identity entity.
              *
              * @param identity The source identity entity
-             * @param correlationIdentifiers Optional list of correlation identifier results
+             * @param identityIdentifiers Optional list of identity identifier results
              */
             fun from(
                 identity: Identity,
-                correlationIdentifiers: List<CorrelationIdentifierResult>? = null,
+                identityIdentifiers: List<IdentityIdentifierResult>? = null,
+                partyBindings: List<IdentityPartyBindingResult>? = null,
             ) = IdentityResult(
                 partyId = identity.partyId,
                 tenantId = identity.tenantId,
                 identityRole = identity.identityRole,
                 isDefault = identity.isDefault,
                 specializationSubtype = identity.specializationSubtype,
+                privacyMode = identity.privacyMode,
                 createdAt = identity.createdAt,
                 createdById = identity.createdById,
                 updatedAt = identity.updatedAt,
                 updatedById = identity.updatedById,
                 deletedAt = identity.deletedAt,
                 deletedById = identity.deletedById,
-                correlationIdentifiers = correlationIdentifiers,
+                identityIdentifiers = identityIdentifiers,
+                partyBindings = partyBindings,
             )
 
             /**
-             * Create an IdentityResult from an Identity entity with raw correlation identifiers.
+             * Create an IdentityResult from an Identity entity with raw identity identifiers.
              *
              * @param identity The source identity entity
-             * @param correlationIdentifiers List of correlation identifier entities to convert
+             * @param identityIdentifiers List of identity identifier entities to convert
              */
             fun fromWithIdentifiers(
                 identity: Identity,
-                correlationIdentifiers: List<CorrelationIdentifier>,
+                identityIdentifiers: List<IdentityIdentifier>,
             ) = from(
                 identity = identity,
-                correlationIdentifiers = correlationIdentifiers.map { CorrelationIdentifierResult.from(it) },
+                identityIdentifiers = identityIdentifiers.map { IdentityIdentifierResult.from(it) },
             )
         }
 
@@ -145,6 +158,7 @@ data class IdentityResult
                 identityRole = identityRole,
                 isDefault = isDefault,
                 specializationSubtype = specializationSubtype,
+                privacyMode = privacyMode,
                 createdAt = createdAt,
                 createdById = createdById,
                 updatedAt = updatedAt,

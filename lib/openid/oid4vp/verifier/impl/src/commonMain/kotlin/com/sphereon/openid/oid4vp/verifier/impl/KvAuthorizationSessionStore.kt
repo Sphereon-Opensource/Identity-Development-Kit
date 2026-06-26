@@ -38,6 +38,8 @@ import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationRequest
 import com.sphereon.openid.oid4vp.common.store.StoreMetadata
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
@@ -49,6 +51,7 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCreateArgs
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionError
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
+import com.sphereon.statuslist.CredentialStatusPolicy
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -183,6 +186,8 @@ class KvAuthorizationSessionStore(
         val format: String,
         val presentation: String,
         val disclosedClaims: Map<String, JsonElement> = emptyMap(),
+        val issuer: CredentialIssuerRef? = null,
+        val trust: CredentialTrustValidation? = null,
     ) {
         fun toPublic(): MatchedCredential =
             MatchedCredential(
@@ -197,6 +202,8 @@ class KvAuthorizationSessionStore(
                             else -> element.toString()
                         }
                     },
+                issuer = issuer,
+                trust = trust,
             )
 
         companion object {
@@ -205,6 +212,8 @@ class KvAuthorizationSessionStore(
                     credentialQueryId = matched.credentialQueryId,
                     format = matched.format,
                     presentation = matched.presentation,
+                    issuer = matched.issuer,
+                    trust = matched.trust,
                     disclosedClaims =
                         matched.disclosedClaims.mapValues { (_, value) ->
                             when (value) {
@@ -240,6 +249,9 @@ class KvAuthorizationSessionStore(
         val correlationId: String,
         val queryId: String? = null,
         val dcqlQuery: DcqlQuery,
+        val dcqlQueryId: String? = null,
+        val dcqlQueryVersion: Int? = null,
+        val verifierId: String? = null,
         val authorizationRequestJson: JsonObject,
         val status: String,
         val error: AuthorizationSessionErrorEntry? = null,
@@ -248,6 +260,9 @@ class KvAuthorizationSessionStore(
         val callback: AuthorizationSessionCallbackEntry? = null,
         val jarmEncryptionKeyAlias: String? = null,
         val jarmEncryptionKeyProviderId: String? = null,
+        val boundInvitationToken: String? = null,
+        val postPresentationHookAllowList: List<String>? = null,
+        val credentialStatusPolicies: Map<String, CredentialStatusPolicy>? = null,
         val createdAt: Long,
         val updatedAt: Long,
         val expiresAt: Long,
@@ -269,6 +284,9 @@ class KvAuthorizationSessionStore(
                 correlationId = correlationId,
                 queryId = queryId,
                 dcqlQuery = dcqlQuery,
+                dcqlQueryId = dcqlQueryId,
+                dcqlQueryVersion = dcqlQueryVersion,
+                verifierId = verifierId,
                 authorizationRequest = authorizationRequest,
                 status = statusEnum,
                 error = error?.toPublic(),
@@ -277,6 +295,9 @@ class KvAuthorizationSessionStore(
                 callback = callback?.toPublic(),
                 jarmEncryptionKeyAlias = jarmEncryptionKeyAlias,
                 jarmEncryptionKeyProviderId = jarmEncryptionKeyProviderId,
+                boundInvitationToken = boundInvitationToken,
+                postPresentationHookAllowList = postPresentationHookAllowList,
+                credentialStatusPolicies = credentialStatusPolicies,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
                 expiresAt = expiresAt,
@@ -305,6 +326,7 @@ class KvAuthorizationSessionStore(
                 correlationId = effectiveCorrelationId,
                 queryId = args.queryId,
                 dcqlQuery = dcqlQuery,
+                verifierId = args.verifierId,
                 authorizationRequestJson = authorizationRequestJson,
                 status = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED.name,
                 error = null,
@@ -459,6 +481,9 @@ class KvAuthorizationSessionStore(
                 correlationId = value.correlationId,
                 queryId = value.queryId,
                 dcqlQuery = value.dcqlQuery,
+                dcqlQueryId = value.dcqlQueryId,
+                dcqlQueryVersion = value.dcqlQueryVersion,
+                verifierId = value.verifierId,
                 authorizationRequestJson = authorizationRequestJson,
                 status = value.status.name,
                 error = value.error?.let { AuthorizationSessionErrorEntry(code = it.code, message = it.message) },
@@ -471,10 +496,20 @@ class KvAuthorizationSessionStore(
                             jarmIssuer = it.jarmIssuer,
                         )
                     },
-                validationResult = value.validationResult?.let { ValidationResultEntry(valid = it.valid, errors = it.errors) },
+                validationResult =
+                    value.validationResult?.let {
+                        ValidationResultEntry(
+                            valid = it.valid,
+                            matchedCredentials = it.matchedCredentials.map(MatchedCredentialEntry::fromPublic),
+                            errors = it.errors,
+                        )
+                    },
                 callback = value.callback?.let { AuthorizationSessionCallbackEntry(url = it.url, statuses = it.statuses.map(AuthorizationSessionStatus::name)) },
                 jarmEncryptionKeyAlias = value.jarmEncryptionKeyAlias,
                 jarmEncryptionKeyProviderId = value.jarmEncryptionKeyProviderId,
+                boundInvitationToken = value.boundInvitationToken,
+                postPresentationHookAllowList = value.postPresentationHookAllowList,
+                credentialStatusPolicies = value.credentialStatusPolicies,
                 createdAt = value.createdAt,
                 updatedAt = now,
                 expiresAt = expiresAt,

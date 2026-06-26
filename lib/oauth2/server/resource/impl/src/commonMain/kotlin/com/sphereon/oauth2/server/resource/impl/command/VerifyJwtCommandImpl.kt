@@ -291,7 +291,9 @@ class VerifyJwtCommandImpl(
                 ?.jsonPrimitive
                 ?.content
 
-        // 9. Build and return TokenPayload.Jwt
+        // 9. Build and return TokenPayload.Jwt. Carry every non-registered claim with full fidelity
+        // (object/array claims like `roles`, custom claims like `tenant_id`) so downstream consumers
+        // never have to re-parse the raw token.
         return Ok(
             TokenPayload.Jwt(
                 sub = sub,
@@ -304,6 +306,7 @@ class VerifyJwtCommandImpl(
                 dpopJkt = dpopJkt,
                 certificateThumbprintS256 = certificateThumbprintS256,
                 jti = jti,
+                additionalClaims = payloadJson.filterKeys { it !in JWT_REGISTERED_CLAIMS },
             ),
         )
     }
@@ -327,5 +330,12 @@ class VerifyJwtCommandImpl(
 
         /** Legacy generic typ accepted leniently (Auth0 / Keycloak / older AS default). */
         const val JWT_TYPE_GENERIC = "JWT"
+
+        /**
+         * Registered/standard claims surfaced via the typed [TokenPayload.Jwt] fields; excluded from
+         * `additionalClaims` so it carries only the non-standard remainder.
+         */
+        val JWT_REGISTERED_CLAIMS =
+            setOf("sub", "iss", "aud", "exp", "iat", "nbf", "scope", "client_id", "jti", "cnf")
     }
 }

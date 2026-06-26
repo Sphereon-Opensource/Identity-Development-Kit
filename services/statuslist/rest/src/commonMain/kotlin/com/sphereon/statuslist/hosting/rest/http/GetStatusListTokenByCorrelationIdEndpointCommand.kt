@@ -11,6 +11,7 @@
 package com.sphereon.statuslist.hosting.rest.http
 
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -50,6 +51,7 @@ interface GetStatusListTokenByCorrelationIdEndpointCommand : HttpEndpointCommand
                 operationId = "getStatusListTokenByCorrelationId",
                 tags = HOSTING_TAGS,
                 summary = "Resolve the signed status-list token by correlation id",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }

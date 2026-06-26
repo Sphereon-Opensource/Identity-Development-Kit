@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.http.command
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.log.Log
 import com.sphereon.crypto.jose.jwe.DecryptJweArgs
 import com.sphereon.crypto.jose.jwe.DecryptJweCommand
 import com.sphereon.crypto.jose.jwe.JweCompact
@@ -39,6 +40,7 @@ internal const val ACCEPT_JWT = "application/jwt"
 internal const val ACCEPT_ISSUER_METADATA_JWT = "application/openidvci-issuer-metadata+jwt"
 
 private const val LOG_TAG = "OID4VCI_ISSUER"
+private val logger = Log.app().withTag(LOG_TAG)
 
 /**
  * Extract the access token from the `Authorization` header, accepting both `Bearer` (RFC 6750)
@@ -91,7 +93,7 @@ internal suspend fun decryptRequestIfNeeded(
 
     val trimmedBody = body.trim()
     if (!JweCompact.isValidCompactFormat(trimmedBody)) {
-        println("[$LOG_TAG] WARN: Request body with Content-Type application/jwt is not valid JWE compact format")
+        logger.warn("Request body with Content-Type application/jwt is not valid JWE compact format")
         return null
     }
 
@@ -99,12 +101,12 @@ internal suspend fun decryptRequestIfNeeded(
         try {
             JweCompact.parse(trimmedBody)
         } catch (expected: Exception) {
-            println("[$LOG_TAG] WARN: Failed to parse JWE compact request body: ${expected.message}")
+            logger.warn("Failed to parse JWE compact request body: ${expected.message}")
             return null
         }
 
     if (decryptor == null) {
-        println("[$LOG_TAG] WARN: JWE request body received but no credential_request_encryption decryption key is configured")
+        logger.warn("JWE request body received but no credential_request_encryption decryption key is configured")
         return null
     }
 
@@ -116,7 +118,7 @@ internal suspend fun decryptRequestIfNeeded(
     return if (decryptResult.isOk) {
         decryptResult.value?.plaintext?.decodeToString()
     } else {
-        println("[$LOG_TAG] WARN: JWE request decryption failed: ${decryptResult.error?.message}")
+        logger.warn("JWE request decryption failed: ${decryptResult.error?.message}")
         null
     }
 }

@@ -59,10 +59,32 @@ class DidHostingConfig(
             ?: DidHostingApiConstants.DEFAULT_CACHE_MAX_AGE_SECONDS
     }
 
+    /**
+     * Tenant used by public DID hosting when host/JWT tenant resolution did not stamp a concrete
+     * tenant. SQL-backed repositories require this for single-tenant/public-host deployments.
+     */
+    val publicFallbackTenantId: String? by lazy {
+        val appConfig = appConfigProvider?.invoke() ?: return@lazy null
+        PUBLIC_FALLBACK_TENANT_KEYS
+            .asSequence()
+            .mapNotNull { key -> appConfig.getPropertyAsString(key)?.trim()?.takeIf { it.isNotEmpty() } }
+            .firstOrNull()
+    }
+
     companion object {
         const val BASE_PATH_KEY: String = "did.hosting.basePath"
         const val CACHE_MAX_AGE_KEY: String = "did.hosting.cacheMaxAgeSeconds"
+        const val PUBLIC_FALLBACK_TENANT_ID_KEY: String = "did.hosting.publicFallbackTenantId"
+        const val PUBLIC_FALLBACK_TENANT_ID_KEBAB_KEY: String = "did.hosting.public-fallback-tenant-id"
+        const val TENANT_RESOLUTION_FALLBACK_TENANT_ID_KEY: String = "tenant.resolution.fallback.tenant-id"
         const val DEFAULT_BASE_PATH: String = ""
+
+        private val PUBLIC_FALLBACK_TENANT_KEYS =
+            listOf(
+                PUBLIC_FALLBACK_TENANT_ID_KEY,
+                PUBLIC_FALLBACK_TENANT_ID_KEBAB_KEY,
+                TENANT_RESOLUTION_FALLBACK_TENANT_ID_KEY,
+            )
 
         /** Empty stays empty (root mount); otherwise leading slash, no trailing slash. */
         internal fun normalizeBasePath(value: String): String {

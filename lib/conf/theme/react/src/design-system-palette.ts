@@ -104,6 +104,24 @@ function buildTokenMap(
   tokens['color.scrim'] = '#000000'
   tokens['color.shadow'] = '#000000'
 
+  if (variant === 'light') {
+    tokens['color.primary'] = getStop(palette.brand, 500)
+    tokens['color.onPrimary'] = '#FBFBFB'
+    tokens['color.primaryContainer'] = getStop(palette.brand, 50)
+    tokens['color.interactive.hover'] = palette.neutral ? getStop(palette.neutral, 100) : '#F2F2F2'
+    tokens['color.interactive.pressed'] = palette.neutral ? getStop(palette.neutral, 200) : '#E3E3E3'
+    tokens['color.interactive.disabled'] = palette.neutral ? getStop(palette.neutral, 200) : '#E3E3E3'
+  }
+
+  if (variant === 'dark') {
+    const brand500 = getStop(palette.brand, 500)
+    tokens['color.primary'] = brand500
+    tokens['color.onPrimary'] = '#FFFFFF'
+    tokens['color.primaryContainer'] = `color-mix(in srgb, ${brand500} 18%, transparent)`
+    tokens['color.interactive.hover'] = 'color-mix(in srgb, #FFFFFF 6%, transparent)'
+    tokens['color.interactive.pressed'] = 'color-mix(in srgb, #FFFFFF 10%, transparent)'
+  }
+
   return tokens
 }
 
@@ -230,6 +248,7 @@ export const DEFAULT_PALETTE_MAPPING: PaletteMapping = {
     'color.onPrimary': { scale: 'brand', stop: 50 },
     'color.primaryContainer': { scale: 'brand', stop: 100 },
     'color.onPrimaryContainer': { scale: 'brand', stop: 900 },
+    'color.accent': { scale: 'brand', stop: 500 },
     'color.secondary': { scale: 'secondary', stop: 500 },
     'color.onSecondary': { scale: 'secondary', stop: 50 },
     'color.secondaryContainer': { scale: 'secondary', stop: 100 },
@@ -278,17 +297,19 @@ export const DEFAULT_PALETTE_MAPPING: PaletteMapping = {
     'color.border.strong': { scale: 'neutral', stop: 500 },
     'color.border.subtle': { scale: 'neutral', stop: 200 },
     'color.border.disabled': { scale: 'neutral', stop: 200 },
-    'color.interactive.hover': { scale: 'brand', stop: 600 },
-    'color.interactive.pressed': { scale: 'brand', stop: 700 },
-    'color.interactive.disabled': { scale: 'neutral', stop: 300 },
+    'color.interactive.hover': { scale: 'neutral', stop: 100 },
+    'color.interactive.pressed': { scale: 'neutral', stop: 200 },
+    'color.interactive.disabled': { scale: 'neutral', stop: 200 },
     'color.interactive.focus': { scale: 'brand', stop: 500 },
   },
   dark: {
-    // Wallet dark mapping: lighter brand stops for AA on dark surfaces.
-    'color.primary': { scale: 'brand', stop: 300 },
-    'color.onPrimary': { scale: 'brand', stop: 900 },
+    // Wallet dark mapping: primary-filled actions use the same deep brand
+    // stop as light mode and a fixed light foreground.
+    'color.primary': { scale: 'brand', stop: 500 },
+    'color.onPrimary': { scale: 'brand', stop: 50 },
     'color.primaryContainer': { scale: 'brand', stop: 800 },
     'color.onPrimaryContainer': { scale: 'brand', stop: 100 },
+    'color.accent': { scale: 'brand', stop: 400 },
     'color.secondary': { scale: 'secondary', stop: 300 },
     'color.onSecondary': { scale: 'secondary', stop: 50 },
     'color.secondaryContainer': { scale: 'secondary', stop: 700 },
@@ -317,7 +338,7 @@ export const DEFAULT_PALETTE_MAPPING: PaletteMapping = {
     'color.inverseSurface': { scale: 'neutral', stop: 100 },
     'color.inverseOnSurface': { scale: 'neutral', stop: 800 },
     'color.inversePrimary': { scale: 'brand', stop: 600 },
-    'color.feedback.success': { scale: 'success', stop: 400 },
+    'color.feedback.success': { scale: 'success', stop: 600 },
     'color.feedback.successContainer': { scale: 'success', stop: 800 },
     'color.feedback.onSuccess': { scale: 'success', stop: 50 },
     'color.feedback.onSuccessContainer': { scale: 'success', stop: 100 },

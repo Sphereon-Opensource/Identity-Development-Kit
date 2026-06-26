@@ -23,7 +23,7 @@ import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 
 /**
- * An inert envelope describing a protected correlation identifier value.
+ * An inert envelope describing a protected identity identifier value.
  *
  * This is a pure data carrier: it holds the protection [mode] together with whatever
  * representation(s) of the value apply (plaintext, ciphertext, and/or HMAC) plus opaque

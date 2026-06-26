@@ -93,4 +93,20 @@ class TokenEndpointErrorShapeTest {
         val body = json.parseToJsonElement(response.body!!).jsonObject
         assertEquals("server_error", body["error"]?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun commandAuthorizationFailure_mapsToAccessDenied403() {
+        val err =
+            IdkError(
+                code = "COMMAND_NOT_AUTHORIZED",
+                message = IdkError.Message(i18nKey = "command.denied", defaultMessage = "command denied"),
+            )
+
+        val response = mapOAuth2ErrorToResponse(err, json)
+
+        assertEquals(403, response.statusCode)
+        val body = json.parseToJsonElement(response.body!!).jsonObject
+        assertEquals("access_denied", body["error"]?.jsonPrimitive?.content)
+        assertEquals("command denied", body["error_description"]?.jsonPrimitive?.content)
+    }
 }

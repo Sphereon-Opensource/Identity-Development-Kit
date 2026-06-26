@@ -53,34 +53,12 @@ val cryptoJsonSerializer: Json
 @JsExportCompat
 @JsName("CryptoJsonSupport")
 object CryptoJsonSupport {
+    init {
+        registerBaseSerializers()
+    }
+
     val module: SerializersModule
-        get() =
-            SerializersModule {
-                // Include all registrations from JsonSupport
-                include(JsonSupport.module)
-
-                // Crypto-specific polymorphic serializers
-                // Ensures we can do polymorphic serialization of both the Key and Private Key entries using the KeyEntry interface
-                // TODO: Cbor key json serialization
-                polymorphic(CoseKeyJsonDTOType::class) {
-                    subclass(CoseKeyJson::class)
-                }
-                polymorphic(CoseKeyJsonType::class) {
-                    subclass(CoseKeyJson::class)
-                }
-                polymorphic(JwkType::class) {
-                    subclass(Jwk::class)
-                }
-                polymorphic(KeyType::class) {
-                    subclass(Jwk::class)
-                    subclass(CoseKeyJson::class)
-                }
-
-                // TODO: Why do we have this one?
-                polymorphic(JsonView::class) {
-                    subclass(CoseKeyJson::class)
-                }
-            }
+        get() = JsonSupport.module
 
     val serializer: Json
         get() = Json { serializersModule = module }
@@ -98,7 +76,34 @@ object CryptoJsonSupport {
         registrationId: String? = null,
         block: SerializersModuleBuilder.() -> Unit,
     ) {
+        registerBaseSerializers()
         JsonSupport.register(registrationId, block)
+    }
+
+    private fun registerBaseSerializers() {
+        JsonSupport.register("crypto-core") {
+            // Crypto-specific polymorphic serializers.
+            // Ensures we can do polymorphic serialization of both JOSE and COSE keys.
+            // TODO: Cbor key json serialization
+            polymorphic(CoseKeyJsonDTOType::class) {
+                subclass(CoseKeyJson::class)
+            }
+            polymorphic(CoseKeyJsonType::class) {
+                subclass(CoseKeyJson::class)
+            }
+            polymorphic(JwkType::class) {
+                subclass(Jwk::class)
+            }
+            polymorphic(KeyType::class) {
+                subclass(Jwk::class)
+                subclass(CoseKeyJson::class)
+            }
+
+            // TODO: Why do we have this one?
+            polymorphic(JsonView::class) {
+                subclass(CoseKeyJson::class)
+            }
+        }
     }
 
     /**

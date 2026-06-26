@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.authorization.impl.http.describe
 
 import com.sphereon.core.api.http.command.TenantPathPolicy
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
@@ -74,6 +75,10 @@ class OAuth2DiscoveryHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvid
         HttpAdapterDescription(
             id = id,
             mount = WELL_KNOWN_SUFFIX_MOUNT,
+            // OAuth2/OIDC discovery + JWKS are RFC-mandated anonymous documents. They MUST be
+            // PUBLIC: the fail-closed EndpointAuthCatalog silent-404s any PROTECTED endpoint for an
+            // anonymous caller, and every token validator fetches <issuer>/.well-known/jwks.json
+            // anonymously to verify signatures.
             endpoints =
                 listOf(
                     HttpEndpointDescriptor(
@@ -81,30 +86,35 @@ class OAuth2DiscoveryHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvid
                         pathPattern = "/.well-known/oauth-authorization-server",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "serverMetadataDefault",
+                        authPolicy = EndpointAuthPolicy.PUBLIC,
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
                         pathPattern = "/.well-known/oauth-authorization-server/{tenant-path}",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "serverMetadata",
+                        authPolicy = EndpointAuthPolicy.PUBLIC,
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
                         pathPattern = "/.well-known/openid-configuration",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "openidConfigurationDefault",
+                        authPolicy = EndpointAuthPolicy.PUBLIC,
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
                         pathPattern = "/.well-known/openid-configuration/{tenant-path}",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "openidConfiguration",
+                        authPolicy = EndpointAuthPolicy.PUBLIC,
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
                         pathPattern = "/.well-known/jwks.json",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "jwks",
+                        authPolicy = EndpointAuthPolicy.PUBLIC,
                     ),
                 ),
         )
@@ -131,6 +141,8 @@ class OAuth2OpenidDiscoveryPathIssuerDescriptorProvider : HttpAdapterDescriptorP
                         pathPattern = "/.well-known/openid-configuration",
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "openidConfigurationLegacyPrefix",
+                        // Anonymous OIDC discovery (path-issuer form); must not fail-closed.
+                        authPolicy = EndpointAuthPolicy.PUBLIC,
                     ),
                 ),
         )
@@ -328,6 +340,13 @@ class OAuth2InternalHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvide
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "registerPreAuthCode",
+                    ),
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.POST,
+                        pathPattern = "/internal/provision/signing-key",
+                        consumes = setOf(MediaType.ApplicationJson),
+                        produces = setOf(MediaType.ApplicationJson),
+                        operationId = "provisionSigningKey",
                     ),
                 ),
         )

@@ -21,6 +21,7 @@ import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
 import com.sphereon.core.api.conf.PropertySourceBootstrap
+import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.di.app.App
@@ -404,12 +405,7 @@ class UserContextManagerImpl(
                 principalId = principal.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID,
             )
 
-            log.debug("##################################")
-            log.debug("##################################")
-            log.debug("##################################")
             log.debug("instance context: ${instance.context}")
-            log.debug("##################################")
-            log.debug("##################################")
 
             // Store the instance atomically
             instances.value = instances.value + (contextId to instance)
@@ -466,5 +462,6 @@ class UserContextManagerImpl(
 
         tenantConfigService?.let { propertySourceBootstrap.registerTenantSources(it, tenantId) }
         principalConfigService?.let { propertySourceBootstrap.registerPrincipalSources(it, tenantId, principalId) }
+        (contextGraph as? SecretProviderBootstrap.UserGraph)?.userSecretProviderBootstrap?.registerSecretProviders()
     }
 }

@@ -26,6 +26,7 @@ data class DesignBinding
     @JvmOverloads
     constructor(
         val vct: String? = null,
+        val vctHostingMode: VctHostingMode = VctHostingMode.NONE,
         val credentialConfigurationId: String? = null,
         val schemaId: String? = null,
         val docType: String? = null,
@@ -42,6 +43,7 @@ data class DesignBinding
 @Serializable
 enum class DesignBindingKey {
     VCT,
+    VCT_HOSTING_MODE,
     CREDENTIAL_CONFIGURATION_ID,
     SCHEMA_ID,
     DOC_TYPE,

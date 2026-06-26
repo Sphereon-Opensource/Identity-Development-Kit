@@ -25,6 +25,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.requirePathParam
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -52,6 +53,7 @@ interface GetRequestObjectEndpointCommand : HttpEndpointCommand {
                 operationId = "getRequestObjectByRequestUri",
                 tags = setOf("oid4vp", "request-uri"),
                 summary = "Fetch OID4VP request object by request_uri",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }

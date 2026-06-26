@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFromBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
@@ -47,8 +48,6 @@ import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.native.ObjCName
 
 // ================================================================================================
@@ -70,13 +69,12 @@ class BlobStorePutCommand(
     ) {
     override val actionType: ActionType get() = ActionType.CREATE
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun doExecute(
         args: BlobPutInput,
         applyDuring: (BlobPutInput) -> BlobPutInput,
     ): IdkResult<BlobDescriptor, IdkError> {
         val input = applyDuring(args)
-        val data = Base64.decode(input.dataBase64)
+        val data = input.dataBase64.decodeFromBase64()
         return blobService.storeBlob(
             target = input.target,
             data = data,
@@ -108,7 +106,6 @@ class BlobStoreGetCommand(
     ) {
     override val actionType: ActionType get() = ActionType.READ
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun doExecute(
         args: BlobGetInput,
         applyDuring: (BlobGetInput) -> BlobGetInput,
@@ -327,13 +324,12 @@ class CasStoreCommand(
     ) {
     override val actionType: ActionType get() = ActionType.CREATE
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun doExecute(
         args: CasStoreInput,
         applyDuring: (CasStoreInput) -> CasStoreInput,
     ): IdkResult<ContentAddressDescriptor, IdkError> {
         val input = applyDuring(args)
-        val data = Base64.decode(input.dataBase64)
+        val data = input.dataBase64.decodeFromBase64()
         return blobService.casStore(
             info = input.info,
             data = data,
@@ -365,7 +361,6 @@ class CasGetCommand(
     ) {
     override val actionType: ActionType get() = ActionType.READ
 
-    @OptIn(ExperimentalEncodingApi::class)
     override suspend fun doExecute(
         args: CasGetInput,
         applyDuring: (CasGetInput) -> CasGetInput,

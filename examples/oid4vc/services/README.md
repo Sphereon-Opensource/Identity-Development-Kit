@@ -4,7 +4,7 @@ Local development setup for testing OID4VCI credential issuance and OID4VP crede
 
 ## Services
 
-| Service | Internal Port | Description |
+| Service | Container Port | Description |
 |---------|---------------|-------------|
 | **Caddy** | 8080 (exposed) | Reverse proxy. Single entry point for all services |
 | **OAuth2 AS** | 8080 | Authorization Server with built-in test login |
@@ -106,7 +106,7 @@ docker login docker.io
 # Release build (refuses if tree is dirty or version is *-SNAPSHOT)
 ./publish-images.sh
 
-# Internal / preview push of a SNAPSHOT
+# Preview push of a SNAPSHOT build
 ./publish-images.sh --allow-snapshot
 
 # Override the registry (default: sphereon on docker.io)
@@ -158,8 +158,8 @@ The issuer ships three pre-configured credential types (see `config/oid4vci-issu
 
 | Configuration ID | Format | VCT / Doctype | Signing Key Alias | Purpose |
 |---|---|---|---|---|
-| `TestCredential` | `dc+sd-jwt` | `${EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential` | `TestCredential` | Simple demo SD-JWT with `given_name`, `family_name`, `email` |
-| `EuPid` | `dc+sd-jwt` | `${EXTERNAL_BASE_URL}/oid4vci/vct/EuPid` | `PID` | EU Personal ID (EUDI ARF) with ~14 claims |
+| `TestCredential` | `dc+sd-jwt` | `${EXTERNAL_BASE_URL}/public/schema/vct/TestCredential` | `TestCredential` | Simple demo SD-JWT with `given_name`, `family_name`, `email` |
+| `EuPid` | `dc+sd-jwt` | `${EXTERNAL_BASE_URL}/public/schema/vct/EuPid` | `PID` | EU Personal ID (EUDI ARF) with ~14 claims |
 | `AgeOver18` | `mso_mdoc` | doctype `eu.europa.ec.av.1` | `AgeOver18` | ISO 18013-5 mdoc age attestation |
 
 To modify: edit `config/oid4vci-issuer.yml`.
@@ -168,7 +168,7 @@ To modify: edit `config/oid4vci-issuer.yml`.
 
 Each SD-JWT credential type has a VCT (Verifiable Credential Type) URL that points to a type metadata document describing the credential's claims, display properties, and rendering. Per the SD-JWT VC spec (draft-ietf-oauth-sd-jwt-vc), wallets resolve this URL to get credential display information.
 
-In this demo the issuer serves VCT metadata dynamically at `GET /oid4vci/vct/{type}`, derived from the same `oid4vci.issuer` credential configuration that drives the OID4VCI credential-issuer metadata. A single config block (per-locale credential `display` and per-claim `display`) is the one authoring source for both surfaces, so there are no static VCT files to keep in sync. The issuer builds the type metadata through the shared, source-agnostic `buildSdJwtVcTypeMetadata(...)` function via the optional `VctTypeMetadataProvider` SPI; an EDK/VDX semantic catalog can contribute the same input later. mso_mdoc types have no `vct` and so return 404.
+In this demo the issuer serves VCT metadata dynamically at `GET /public/schema/vct/{type}`, derived from the same `oid4vci.issuer` credential configuration that drives the OID4VCI credential-issuer metadata. A single config block (per-locale credential `display` and per-claim `display`) is the one authoring source for both surfaces, so there are no static VCT files to keep in sync. The issuer builds the type metadata through the shared, source-agnostic `buildSdJwtVcTypeMetadata(...)` function via the optional `VctTypeMetadataProvider` SPI; an EDK/VDX semantic catalog can contribute the same input later. mso_mdoc types have no `vct` and so return 404.
 
 Included display locales per type (top-level `display` and per-claim `display`):
 
@@ -190,7 +190,7 @@ oid4vci:
     credentials:
       "[MyNewCredential]":
         format: "dc+sd-jwt"
-        vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/MyNewCredential"
+        vct: "${env:EXTERNAL_BASE_URL}/public/schema/vct/MyNewCredential"
         signing-key-alias: MyNewCredential
 ```
 
@@ -210,7 +210,7 @@ Configuration in `config/oauth2-as.yml`. Live values from the shipped config:
 | `oauth2.servers.default.authorization-code-lifetime-seconds` | `600` | Auth code TTL |
 | `oauth2.servers.default.grant-types-enabled` | `authorization_code`, `urn:ietf:params:oauth:grant-type:pre-authorized_code`, `client_credentials`, `refresh_token` | Enabled grant types |
 | `oauth2.servers.default.public-clients.allow-any` | `true` | Accept any public client (demo only) |
-| `oauth2.servers.default.internal-clients.issuer.client-id` | `issuer-service` | Internal client used by the issuer to call the AS |
+| `oauth2.servers.default.internal-clients.issuer.client-id` | `issuer-service` | Service client used by the issuer to call the AS |
 
 Additional grant type that can be enabled:
 - `urn:ietf:params:oauth:grant-type:token-exchange`. Token exchange (RFC 8693)
@@ -266,11 +266,23 @@ Import `postman/IDK-OID4VCI-OID4VP-E2E.postman_collection.json` into Postman.
 
 Set the `base_url` collection variable to your `EXTERNAL_BASE_URL`.
 
-The collection has three folders:
+The collection has four folders:
 - **Setup**. Health checks, metadata discovery
 - **Pre-Authorized Code Flow**. Full issuance flow (auto-extracts tokens between requests)
 - **Authorization Code Flow**. Issuance with user login (some manual steps)
 - **OID4VP Verification**. Create request, check result
+
+Automated smoke checks against a running compose environment:
+
+```bash
+npx newman run postman/IDK-OID4VCI-OID4VP-E2E.postman_collection.json --folder Setup
+npx newman run postman/IDK-OID4VCI-OID4VP-E2E.postman_collection.json --folder "Pre-Authorized Code Flow"
+```
+
+The pre-authorized flow creates an offer, fetches the `credential_offer_uri`, exchanges the
+pre-authorized code at `/auth/token`, and requests a nonce. The final credential request still uses
+`<INSERT_JWT_PROOF_HERE>` and returns 400 until a wallet-generated proof bound to the nonce is
+provided.
 
 ## Troubleshooting
 

@@ -22,7 +22,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * The protection mode applied to a correlation identifier value at rest.
+ * The protection mode applied to an identity identifier value at rest.
  *
  * This describes HOW an identifier value is stored, so a consumer knows whether the
  * value is directly readable, can be looked up via a blind index, or is both encrypted
@@ -35,6 +35,10 @@ enum class IdentifierProtectionMode {
     /** The identifier value is stored as readable plaintext. */
     @SerialName("plaintext")
     PLAINTEXT,
+
+    /** The identifier value is encrypted and kept searchable via a deterministic blind index. */
+    @SerialName("searchableEncrypted")
+    SEARCHABLE_ENCRYPTED,
 
     /** The identifier value is blinded but kept searchable via a deterministic blind index. */
     @SerialName("searchableBlindIndex")

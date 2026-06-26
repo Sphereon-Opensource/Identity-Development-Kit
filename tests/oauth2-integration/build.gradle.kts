@@ -26,6 +26,10 @@ kotlin {
                 implementation(projects.libOauth2CommonPublic)
                 implementation(projects.libOauth2CommonImpl)
 
+                // JWT validation registry used by OAuth2 AS REST signing-key provisioning.
+                implementation(projects.libOauth2JwtValidationApi)
+                implementation(projects.libOauth2JwtValidationImpl)
+
                 // OAuth2 AS (OP)
                 implementation(projects.libOauth2ServerAuthorizationPublic)
                 implementation(projects.libOauth2ServerAuthorizationImpl)

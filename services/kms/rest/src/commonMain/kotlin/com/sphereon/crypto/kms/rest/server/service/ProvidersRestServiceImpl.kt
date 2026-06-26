@@ -5,6 +5,7 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.ManagedKeyReferenceFilter
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.KeyOperations
@@ -33,9 +34,10 @@ import kotlin.native.ObjCName
 @ObjCName("ProvidersRestServiceImpl", exact = true)
 class ProvidersRestServiceImpl(
     private val kms: KeyManagerService,
+    private val exposure: KmsProviderExposure,
 ) : ProvidersRestService {
     override suspend fun listKeyProviders(): Array<KmsProvider> {
-        val providerIds = kms.getProviderIds()
+        val providerIds = exposure.visibleProviderIds(kms.getProviderIds())
 
         return providerIds
             .map { it -> kms.getProviderById(it) }
@@ -44,6 +46,12 @@ class ProvidersRestServiceImpl(
 
     override suspend fun getKeyProvider(providerId: String): KmsProvider =
         runCatching {
+            if (!exposure.isPublic(providerId)) {
+                throw NotFoundException(
+                    resource = providerId,
+                    message = "Provider with id '$providerId' not found.",
+                )
+            }
             kms.getProviderById(providerId)
         }.getOrElse { exception ->
             when (exception) {
@@ -57,9 +65,8 @@ class ProvidersRestServiceImpl(
         }
 
     override suspend fun providerListKeys(providerId: String): Array<ManagedKeyReference> {
-        val provider = getKeyProvider(providerId)
-
-        return provider.listKeys()
+        getKeyProvider(providerId)
+        return kms.listKeys(ManagedKeyReferenceFilter(providerId = providerId))
     }
 
     override suspend fun providerImportKey(
@@ -70,10 +77,10 @@ class ProvidersRestServiceImpl(
         val alias = keyInfo.alias ?: keyInfo.kid ?: (keyInfo.key as? Jwk)?.kid
         require(alias != null) { "Either an alias or kid needs to be provided." }
 
-        val provider = getKeyProvider(providerId)
+        getKeyProvider(providerId)
         val certChain: Array<Certificate>? = certChain?.let { certificateChainFromX5c(it) }
 
-        return provider.storeKey(
+        return kms.storeKey(
             keyInfo = keyInfo,
             providerId = providerId,
             alias = alias,
@@ -88,9 +95,9 @@ class ProvidersRestServiceImpl(
         keyOperations: Array<KeyOperations>?,
         alg: SignatureAlgorithm?,
     ): ManagedKeyPair {
-        val provider = getKeyProvider(providerId)
-
-        return provider.generateKeyAsync(
+        getKeyProvider(providerId)
+        return kms.generateKey(
+            providerId = providerId,
             alias = alias,
             use = use,
             keyOperations = keyOperations,
@@ -102,25 +109,30 @@ class ProvidersRestServiceImpl(
         providerId: String,
         aliasOrKid: String,
     ): ManagedKeyInfoType<*> {
-        val provider = getKeyProvider(providerId)
+        getKeyProvider(providerId)
 
         // Always search by alias first as that is a required value in the Managed/Stored key info. The kid is application-specific.
         return runCatching {
             val keyInfo: KeyInfoType<Jwk> =
                 KeyInfo(
                     alias = aliasOrKid,
+                    providerId = providerId,
                 )
-            provider.getKey(keyInfo)
+            kms.getKey(keyInfo)
         }.getOrElse { exception ->
             return runCatching {
                 val keyInfo: KeyInfoType<Jwk> =
                     KeyInfo(
                         kid = aliasOrKid,
+                        providerId = providerId,
                     )
-                provider.getKey(keyInfo)
+                kms.getKey(keyInfo)
             }.getOrElse { exception ->
                 when (exception) {
-                    is IllegalArgumentException -> throw NotFoundException(
+                    is IllegalArgumentException,
+                    is NotFoundException,
+                    is PKIException,
+                    -> throw NotFoundException(
                         resource = aliasOrKid,
                         message = "Key with alias or kid '$aliasOrKid' not found.",
                     )
@@ -136,7 +148,6 @@ class ProvidersRestServiceImpl(
         aliasOrKid: String,
     ): Boolean {
         val key = providerGetKey(providerId, aliasOrKid)
-        val provider = getKeyProvider(providerId)
         val keyInfo: KeyInfoType<Jwk> =
             KeyInfo(
                 kid = key.kid,
@@ -144,7 +155,7 @@ class ProvidersRestServiceImpl(
                 providerId = key.providerId,
             )
 
-        return provider.deleteKey(keyInfo)
+        return kms.deleteKey(keyInfo)
     }
 
     @ContributesTo(SessionScope::class)

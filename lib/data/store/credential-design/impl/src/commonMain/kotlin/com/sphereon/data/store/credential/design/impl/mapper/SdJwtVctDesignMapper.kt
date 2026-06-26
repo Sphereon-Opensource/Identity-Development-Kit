@@ -25,12 +25,17 @@ import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.DesignClaimPath
 import com.sphereon.data.store.credential.design.model.DesignHostingMode
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
+import com.sphereon.data.store.credential.design.model.RenderVariantRecord
+import com.sphereon.data.store.credential.design.model.ResolvedCredentialDesign
 import com.sphereon.data.store.credential.design.model.SdPolicy
 import com.sphereon.sdjwt.vc.ClaimDisplayMetadata
 import com.sphereon.sdjwt.vc.ClaimInformation
 import com.sphereon.sdjwt.vc.ClaimSdMetadata
 import com.sphereon.sdjwt.vc.DisplayInformation
+import com.sphereon.sdjwt.vc.LogoMetadata
+import com.sphereon.sdjwt.vc.RenderingMetadata
 import com.sphereon.sdjwt.vc.SdJwtVcTypeMetadata
+import com.sphereon.sdjwt.vc.SimpleRenderingMethod
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
@@ -88,15 +93,21 @@ class SdJwtVctDesignMapper : CredentialDesignMapper<SdJwtVcTypeMetadata> {
         )
     }
 
-    override fun fromCanonical(design: CredentialDesignRecord): SdJwtVcTypeMetadata {
+    override fun fromCanonical(design: CredentialDesignRecord): SdJwtVcTypeMetadata =
+        fromCanonical(ResolvedCredentialDesign(design = design, renderVariants = emptyList(), appliedLayers = emptyList(), lockedFields = emptyMap(), resolvedAt = Clock.System.now()))
+
+    fun fromCanonical(resolved: ResolvedCredentialDesign): SdJwtVcTypeMetadata {
+        val design = resolved.design
         val vct = design.bindings.firstNotNullOfOrNull { it.vct } ?: ""
 
         val displays =
             design.displays.map { display ->
+                val variant = selectRenderVariant(resolved.renderVariants, display.locale)
                 DisplayInformation(
                     locale = display.locale,
                     name = display.name,
                     description = display.description,
+                    rendering = buildRendering(variant),
                 )
             }
 
@@ -114,7 +125,6 @@ class SdJwtVctDesignMapper : CredentialDesignMapper<SdJwtVcTypeMetadata> {
                 ClaimInformation(
                     path = path,
                     display = displayList.ifEmpty { null },
-                    mandatory = claim.mandatory,
                     sd = mapSdPolicyReverse(claim.sdPolicy),
                     svgId = claim.svgId,
                 )
@@ -125,6 +135,23 @@ class SdJwtVctDesignMapper : CredentialDesignMapper<SdJwtVcTypeMetadata> {
             display = displays.ifEmpty { null },
             claims = claims.ifEmpty { null },
         )
+    }
+
+    private fun buildRendering(variant: RenderVariantRecord?): RenderingMetadata? {
+        variant ?: return null
+        val simple =
+            SimpleRenderingMethod(
+                logo =
+                    variant.logo?.let { l ->
+                        LogoMetadata(uri = l.uri, uriIntegrity = l.integrity, altText = l.altText)
+                    },
+                backgroundColor = variant.backgroundColor,
+                textColor = variant.textColor,
+            )
+        // Only attach rendering if at least one field is populated
+        val hasContent =
+            simple.logo != null || simple.backgroundColor != null || simple.textColor != null
+        return if (hasContent) RenderingMetadata(simple = simple) else null
     }
 
     companion object {

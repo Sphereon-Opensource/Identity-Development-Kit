@@ -3,12 +3,19 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  min-height: var(--comp-button-primary-height, 2.5rem);
   border: none;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 500;
-  transition: background-color 150ms, box-shadow 150ms;
+  font-size: 0.875rem;
+  font-weight: 580;
+  letter-spacing: 0;
+  transition: background-color 150ms ease, box-shadow 150ms ease, transform 60ms ease;
   position: relative;
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .button:disabled {
@@ -19,7 +26,7 @@
 
 .button:focus-visible {
   outline: none;
-  box-shadow: var(--shadow-state-focus, 0 0 0 3px rgba(66, 133, 244, 0.5));
+  box-shadow: var(--shadow-state-focus, 0 0 0 3px color-mix(in srgb, var(--color-primary) 30%, transparent));
 }
 
 /* Variants */
@@ -27,26 +34,27 @@
   background: var(--comp-button-primary-background);
   color: var(--comp-button-primary-foreground);
   border-radius: var(--comp-button-primary-radius);
-  padding: var(--comp-button-primary-paddingY) var(--comp-button-primary-paddingX);
+  padding: var(--comp-button-primary-padding-y) var(--comp-button-primary-padding-x);
   box-shadow: var(--comp-button-primary-shadow);
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--comp-button-primary-background);
-  background-image: linear-gradient(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.08));
+  /* Use the dedicated hover-gradient token. Layering a dark overlay via `background-image` here was
+     a bug: it OVERRODE the gradient (background-image) with just the transparent overlay, so the
+     fill vanished against the page on hover. */
+  background: var(--comp-button-primary-background-hover, var(--comp-button-primary-background));
 }
 
 .secondary {
   background: var(--comp-button-secondary-background);
   color: var(--comp-button-secondary-foreground);
-  border: var(--comp-button-secondary-borderWidth) solid var(--comp-button-secondary-border);
+  border: var(--comp-button-secondary-border-width) solid var(--comp-button-secondary-border);
   border-radius: var(--comp-button-secondary-radius);
-  padding: var(--comp-button-primary-paddingY) var(--comp-button-primary-paddingX);
+  padding: var(--comp-button-primary-padding-y) var(--comp-button-primary-padding-x);
 }
 
 .secondary:hover:not(:disabled) {
-  background: var(--comp-button-secondary-background);
-  background-image: linear-gradient(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.06));
+  background: var(--comp-button-secondary-background-hover, var(--color-interactive-hover));
 }
 
 .ghost {
@@ -54,7 +62,7 @@
   color: var(--comp-button-ghost-foreground);
   border: none;
   border-radius: var(--comp-button-primary-radius);
-  padding: var(--comp-button-primary-paddingY) var(--comp-button-primary-paddingX);
+  padding: var(--comp-button-primary-padding-y) var(--comp-button-primary-padding-x);
 }
 
 .ghost:hover:not(:disabled) {
@@ -64,9 +72,9 @@
 .outline {
   background: transparent;
   color: var(--comp-button-primary-background);
-  border: var(--borderWidth-thin, 1px) solid var(--comp-button-primary-background);
+  border: var(--border-width-thin, 1px) solid var(--comp-button-primary-background);
   border-radius: var(--comp-button-primary-radius);
-  padding: var(--comp-button-primary-paddingY) var(--comp-button-primary-paddingX);
+  padding: var(--comp-button-primary-padding-y) var(--comp-button-primary-padding-x);
 }
 
 .outline:hover:not(:disabled) {
@@ -74,9 +82,13 @@
 }
 
 /* Sizes */
-.sm { font-size: 0.875rem; padding: calc(var(--comp-button-primary-paddingY) * 0.65) calc(var(--comp-button-primary-paddingX) * 0.65); }
+.sm {
+  min-height: 34px;
+  font-size: 0.8125rem;
+  padding: var(--spacing-2, 8px) var(--comp-button-primary-padding-x);
+}
 .md { font-size: 1rem; }
-.lg { font-size: 1.125rem; padding: calc(var(--comp-button-primary-paddingY) * 1.35) calc(var(--comp-button-primary-paddingX) * 1.35); }
+.lg { font-size: 1.125rem; padding: calc(var(--comp-button-primary-padding-y) * 1.35) calc(var(--comp-button-primary-padding-x) * 1.35); }
 
 .spinner {
   width: 1em;

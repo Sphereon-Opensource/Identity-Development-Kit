@@ -40,6 +40,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -63,6 +64,26 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
                 "$PROPERTY_PREFIX.keyStore.id" to "test-memory-keystore",
                 "$PROPERTY_PREFIX.keyStore.keyVisibility" to "private",
                 "$PROPERTY_PREFIX.keyStore.overwriteAlias" to "true",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.type" to "software",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.id" to PROTECTED_SLUG_PROVIDER_ID,
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.system" to "true",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.role" to "TENANT_AUTHORIZATION_SERVER",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.persistKeysDuringGeneration" to "true",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration" to "false",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.type" to "memory",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.id" to "acme-memory-keystore",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.keyVisibility" to "private",
+                "$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.overwriteAlias" to "true",
+                "$INTERNAL_PROPERTY_PREFIX.type" to "software",
+                "$INTERNAL_PROPERTY_PREFIX.id" to INTERNAL_PROVIDER_ID,
+                "$INTERNAL_PROPERTY_PREFIX.system" to "true",
+                "$INTERNAL_PROPERTY_PREFIX.role" to "internal",
+                "$INTERNAL_PROPERTY_PREFIX.persistKeysDuringGeneration" to "false",
+                "$INTERNAL_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration" to "false",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.type" to "memory",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.id" to "internal-token-verifier-memory",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.keyVisibility" to "public",
+                "$INTERNAL_PROPERTY_PREFIX.keyStore.overwriteAlias" to "true",
             ),
         )
 
@@ -103,6 +124,26 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
         DefaultPrincipalMapPropertySource.deleteProperty("$PROPERTY_PREFIX.keyStore.id")
         DefaultPrincipalMapPropertySource.deleteProperty("$PROPERTY_PREFIX.keyStore.keyVisibility")
         DefaultPrincipalMapPropertySource.deleteProperty("$PROPERTY_PREFIX.keyStore.overwriteAlias")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.system")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.role")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.persistKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.keyVisibility")
+        DefaultPrincipalMapPropertySource.deleteProperty("$PROTECTED_SLUG_PROPERTY_PREFIX.keyStore.overwriteAlias")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.system")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.role")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.persistKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.exposePrivateKeysDuringGeneration")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.type")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.id")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.keyVisibility")
+        DefaultPrincipalMapPropertySource.deleteProperty("$INTERNAL_PROPERTY_PREFIX.keyStore.overwriteAlias")
     }
 
     @Test
@@ -115,7 +156,25 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
             val allCapabilitiesBody = allCapabilities.bodyAsText()
             assertEquals(HttpStatusCode.OK, allCapabilities.status, allCapabilitiesBody)
             val allBody = Json.parseToJsonElement(allCapabilitiesBody).jsonObject
-            assertTrue(allBody["providers"]!!.jsonArray.isNotEmpty())
+            val allProviderIds =
+                allBody["providers"]!!
+                    .jsonArray
+                    .map { it.jsonObject["providerId"]!!.jsonPrimitive.content }
+            assertTrue(allProviderIds.contains("testsoftware"))
+            assertTrue(allProviderIds.contains(PROTECTED_SLUG_PROVIDER_ID))
+            assertFalse(allProviderIds.contains(INTERNAL_PROVIDER_ID))
+
+            val hiddenProviderCapabilities =
+                client.get("http://localhost:$port/providers/$INTERNAL_PROVIDER_ID/capabilities") {
+                    commonHeaders()
+                }
+            assertEquals(HttpStatusCode.NotFound, hiddenProviderCapabilities.status)
+
+            val absentGenericProviderCapabilities =
+                client.get("http://localhost:$port/providers/software/capabilities") {
+                    commonHeaders()
+                }
+            assertEquals(HttpStatusCode.NotFound, absentGenericProviderCapabilities.status)
 
             val providerCapabilities =
                 client.get("http://localhost:$port/providers/testsoftware/capabilities") {
@@ -124,6 +183,14 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
             assertEquals(HttpStatusCode.OK, providerCapabilities.status)
             val providerBody = Json.parseToJsonElement(providerCapabilities.bodyAsText()).jsonObject
             assertEquals("testsoftware", providerBody["providerId"]!!.jsonPrimitive.content)
+
+            val protectedSlugProviderCapabilities =
+                client.get("http://localhost:$port/providers/$PROTECTED_SLUG_PROVIDER_ID/capabilities") {
+                    commonHeaders()
+                }
+            assertEquals(HttpStatusCode.OK, protectedSlugProviderCapabilities.status)
+            val protectedSlugProviderBody = Json.parseToJsonElement(protectedSlugProviderCapabilities.bodyAsText()).jsonObject
+            assertEquals(PROTECTED_SLUG_PROVIDER_ID, protectedSlugProviderBody["providerId"]!!.jsonPrimitive.content)
 
             val queryPayload =
                 """
@@ -141,7 +208,13 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
                 }
             assertEquals(HttpStatusCode.OK, queryResponse.status)
             val queryBody = Json.parseToJsonElement(queryResponse.bodyAsText()).jsonObject
-            assertTrue(queryBody["matchCount"]!!.jsonPrimitive.content.toInt() >= 1)
+            val queryProviderIds =
+                queryBody["matches"]!!
+                    .jsonArray
+                    .map { it.jsonObject["providerId"]!!.jsonPrimitive.content }
+            assertTrue(queryProviderIds.contains("testsoftware"))
+            assertFalse(queryProviderIds.contains(INTERNAL_PROVIDER_ID))
+            assertEquals(queryProviderIds.size, queryBody["matchCount"]!!.jsonPrimitive.content.toInt())
 
             val bestResponse =
                 client.post("http://localhost:$port/providers/query/best") {
@@ -151,7 +224,11 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
                 }
             assertEquals(HttpStatusCode.OK, bestResponse.status)
             val bestBody = Json.parseToJsonElement(bestResponse.bodyAsText()).jsonObject
-            assertNotNull(bestBody["match"]?.jsonObject)
+            val bestMatch = bestBody["match"]?.jsonObject
+            assertNotNull(bestMatch)
+            val bestProviderId = bestMatch["providerId"]!!.jsonPrimitive.content
+            assertTrue(bestProviderId in setOf("testsoftware", PROTECTED_SLUG_PROVIDER_ID))
+            assertFalse(bestProviderId == INTERNAL_PROVIDER_ID)
         }
 
     @Test
@@ -242,6 +319,8 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
     @Test
     fun certificateCsrEndpointShouldGenerateCsrThroughHttpAdapter() =
         runTest {
+            importEcSigningKey()
+
             val response =
                 client.post("http://localhost:$port/certificates/csr") {
                     commonHeaders()
@@ -295,6 +374,22 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
         assertEquals(HttpStatusCode.Created, response.status)
     }
 
+    private suspend fun importEcSigningKey() {
+        val response =
+            client.post("http://localhost:$port/keys/import") {
+                commonHeaders()
+                contentType(ContentType.Application.Json)
+                setBody(
+                    """
+                    {
+                        "keyInfo": $EC_RESOLVED_KEY_INFO
+                    }
+                    """.trimIndent(),
+                )
+            }
+        assertEquals(HttpStatusCode.Created, response.status, response.bodyAsText())
+    }
+
     private fun io.ktor.client.request.HttpRequestBuilder.commonHeaders() {
         header("X-Tenant-ID", TEST_TENANT_ID)
         header("X-User-ID", TEST_USER_ID)
@@ -305,6 +400,10 @@ class AdditionalKmsHttpAdaptersIntegrationTest {
         private const val TEST_TENANT_ID = "test-tenant-123"
         private const val TEST_USER_ID = "test-user-456"
         private const val PROPERTY_PREFIX = "kms.providers.testsoftware"
+        private const val INTERNAL_PROVIDER_ID = "internal-token-verifier"
+        private const val PROTECTED_SLUG_PROVIDER_ID = "acme"
+        private const val PROTECTED_SLUG_PROPERTY_PREFIX = "kms.providers.$PROTECTED_SLUG_PROVIDER_ID"
+        private const val INTERNAL_PROPERTY_PREFIX = "kms.providers.$INTERNAL_PROVIDER_ID"
         private const val PLAINTEXT_BASE64 = "aGVsbG8ta21z"
         private val EC_RESOLVED_KEY_INFO =
             """

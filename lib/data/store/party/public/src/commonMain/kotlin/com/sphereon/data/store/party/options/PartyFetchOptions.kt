@@ -68,7 +68,7 @@ data class PartyFetchOptions
             /** Load party with identities (minimal) */
             val WITH_IDENTITIES = PartyFetchOptions(includeIdentities = true)
 
-            /** Load party with identities and their correlation identifiers */
+            /** Load party with identities and their identity identifiers */
             val WITH_FULL_IDENTITIES =
                 PartyFetchOptions(
                     includeIdentities = true,
@@ -90,7 +90,7 @@ data class PartyFetchOptions
         /** Builder method to include identities */
         fun withIdentities(options: IdentityFetchOptions = IdentityFetchOptions.MINIMAL) = copy(includeIdentities = true, identityOptions = options)
 
-        /** Builder method to include identities with correlation identifiers */
+        /** Builder method to include identities with identity identifiers */
         fun withFullIdentities() =
             copy(
                 includeIdentities = true,

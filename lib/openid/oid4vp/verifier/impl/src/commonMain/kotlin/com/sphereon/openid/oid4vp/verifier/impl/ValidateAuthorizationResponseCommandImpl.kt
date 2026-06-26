@@ -16,11 +16,13 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl
 
+import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeTo
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventCategories
 import com.sphereon.core.api.events.EventSubsystems
@@ -38,7 +40,12 @@ import com.sphereon.jsonld.command.ValidateJsonLdSchemaInput
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.common.responseUri
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
+import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidationArgs
+import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidator
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommandService
@@ -98,6 +105,7 @@ class ValidateAuthorizationResponseCommandImpl(
      * in lib-statuslist-public, so the graph resolves even with zero implementations.
      */
     private val credentialStatusVerifiers: Set<CredentialStatusVerifier>,
+    private val credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
@@ -191,6 +199,13 @@ class ValidateAuthorizationResponseCommandImpl(
         // reported as "not found" — the specific discard reason is already in `errors`.
         val submittedQueryIds = mutableSetOf<String>()
 
+        val authorizationSession =
+            originalRequest.state
+                ?.takeIf { it.isNotBlank() }
+                ?.let { authorizationSessionStore.getByCorrelationId(it).getOrNull() }
+        val effectiveVerifierId = processedArgs.verifierId ?: authorizationSession?.verifierId
+        val effectiveDcqlQueryId = processedArgs.dcqlQueryId ?: authorizationSession?.dcqlQueryId
+
         // Per-DCQL-query credential status policies, pinned on the session at create time. Loaded only
         // to drive status acceptance; absence (no session / no map) falls back to the strict default
         // per query, and matters only when status verifiers are actually wired (see the loop below).
@@ -198,10 +213,7 @@ class ValidateAuthorizationResponseCommandImpl(
             if (credentialStatusVerifiers.isEmpty()) {
                 emptyMap()
             } else {
-                originalRequest.state
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { authorizationSessionStore.getByCorrelationId(it).getOrNull()?.credentialStatusPolicies }
-                    ?: emptyMap()
+                authorizationSession?.credentialStatusPolicies ?: emptyMap()
             }
 
         // Validate state parameter
@@ -371,6 +383,25 @@ class ValidateAuthorizationResponseCommandImpl(
                     }
                 }
 
+                val issuer = extractCredentialIssuer(presentation, detectedFormat)
+                val trust =
+                    validateCredentialTrust(
+                        verifierId = effectiveVerifierId,
+                        dcqlQueryId = effectiveDcqlQueryId,
+                        credentialQueryId = queryId,
+                        presentation = presentation,
+                        detectedFormat = detectedFormat,
+                        issuer = issuer,
+                    )
+                if (trust.enabled && trust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && trust.trusted != true) {
+                    errors.add(
+                        "Credential trust validation failed for query '$queryId' at index $presentationIndex: " +
+                            (trust.details ?: trust.status ?: "issuer is not trusted by the resolved trust domains"),
+                    )
+                    log.warn("Credential '$queryId' rejected by trust-domain validation: ${trust.details ?: trust.status}")
+                    continue
+                }
+
                 // Credential status (revocation/suspension) check. Runs only when status verifiers are
                 // wired; otherwise skipped entirely. `extractDisclosedClaims` strips the `status` claim,
                 // so we read the full credential payload separately. A REJECT discards the presentation
@@ -400,6 +431,8 @@ class ValidateAuthorizationResponseCommandImpl(
                         format = detectedFormat.value,
                         presentation = presentation,
                         disclosedClaims = disclosedClaims,
+                        issuer = issuer,
+                        trust = trust.takeIf { it.enabled || it.trustDomainIds.isNotEmpty() },
                     ),
                 )
             }
@@ -617,6 +650,173 @@ class ValidateAuthorizationResponseCommandImpl(
                 null
             }
         }
+
+    private suspend fun validateCredentialTrust(
+        verifierId: String?,
+        dcqlQueryId: String?,
+        credentialQueryId: String,
+        presentation: String,
+        detectedFormat: CredentialFormat,
+        issuer: CredentialIssuerRef?,
+    ): CredentialTrustValidation {
+        val validationArgs =
+            Oid4vpCredentialTrustValidationArgs(
+                verifierId = verifierId,
+                dcqlQueryId = dcqlQueryId,
+                credentialQueryId = credentialQueryId,
+                format = detectedFormat.value,
+                presentation = presentation,
+                issuer = issuer,
+            )
+        val validator =
+            credentialTrustValidators.firstOrNull { it.supports(validationArgs) }
+                ?: return CredentialTrustValidation(
+                    enabled = false,
+                    mode = CredentialTrustValidationMode.DISABLED,
+                    details = "No OID4VP credential trust validator configured",
+                )
+
+        return validator.validate(validationArgs).getOrElse { error ->
+            CredentialTrustValidation(
+                enabled = true,
+                trusted = false,
+                mode = CredentialTrustValidationMode.DEFAULT_ENFORCE,
+                status = "VALIDATION_ERROR",
+                details = error.message.defaultMessage,
+            )
+        }
+    }
+
+    private fun extractCredentialIssuer(
+        presentation: String,
+        format: CredentialFormat,
+    ): CredentialIssuerRef? =
+        when (format) {
+            CredentialFormat.SD_JWT_DC, CredentialFormat.SD_JWT_VC -> {
+                val issuerJwt = presentation.substringBefore("~").takeIf { it.contains(".") }
+                issuerJwt?.let(::extractJwtIssuer)
+            }
+
+            CredentialFormat.JWT_VC_JSON, CredentialFormat.VC_LD_JSON_JWT -> {
+                extractJwtIssuer(presentation)
+            }
+
+            CredentialFormat.MSO_MDOC -> {
+                extractMdocIssuer(presentation)
+            }
+
+            else -> {
+                null
+            }
+        }
+
+    private fun extractJwtIssuer(compactJwt: String): CredentialIssuerRef? {
+        val header = decodeJwtHeaderOrNull(compactJwt)
+        val payload = decodeJwtPayloadOrNull(compactJwt)
+        if (header == null && payload == null) return null
+
+        val issuer = payload?.stringClaim("iss") ?: payload?.vcIssuer()
+        val kid = header?.stringClaim("kid")
+        val x5c = header?.stringArrayClaim("x5c").orEmpty()
+        val did = issuer?.extractDid() ?: kid?.extractDid()
+        val oidfedEntityId = issuer?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+        val method =
+            when {
+                x5c.isNotEmpty() -> "x509"
+                did != null -> "did"
+                oidfedEntityId != null -> "openid_federation"
+                else -> null
+            }
+        return CredentialIssuerRef(
+            issuer = issuer,
+            method = method,
+            did = did,
+            oidfedEntityId = oidfedEntityId,
+            kid = kid,
+            x5c = x5c,
+        )
+    }
+
+    private fun extractMdocIssuer(presentation: String): CredentialIssuerRef? {
+        val deviceResponseBytes =
+            try {
+                presentation.decodeFromBase64Url()
+            } catch (_: IllegalArgumentException) {
+                return null
+            }
+        val deviceResponse =
+            deviceResponseCborCodec.decode(deviceResponseBytes).getOrNull()?.value ?: return null
+        val document = deviceResponse.documents?.firstOrNull() ?: return null
+        val issuerAuth = document.issuerSigned.issuerAuth
+        val x5chain = issuerAuth.protectedHeader.x5chain ?: issuerAuth.unprotectedHeader?.x5chain
+        val x5c = x5chain?.value?.map { it.value.encodeTo(Encoding.BASE64) }.orEmpty()
+        return CredentialIssuerRef(
+            issuer = document.docType.toString(),
+            method = if (x5c.isNotEmpty()) "x509" else null,
+            x5c = x5c,
+        )
+    }
+
+    private fun decodeJwtHeaderOrNull(presentation: String): JsonObject? {
+        val parts = presentation.split(".")
+        if (parts.size != 3) return null
+        val bytes =
+            try {
+                parts[0].decodeFromBase64Url()
+            } catch (_: IllegalArgumentException) {
+                return null
+            }
+        val parsed =
+            try {
+                JSON_LENIENT.parseToJsonElement(bytes.decodeToString())
+            } catch (_: kotlinx.serialization.SerializationException) {
+                return null
+            }
+        return parsed as? JsonObject
+    }
+
+    private fun JsonObject.stringClaim(name: String): String? =
+        (this[name] as? JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+
+    private fun JsonObject.stringArrayClaim(name: String): List<String>? =
+        (this[name] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.contentOrNull }
+            ?.filter { it.isNotBlank() }
+
+    private fun JsonObject.vcIssuer(): String? {
+        val issuerElement = this["issuer"]
+        if (issuerElement is JsonPrimitive && issuerElement.isString) {
+            return issuerElement.contentOrNull?.takeIf { it.isNotBlank() }
+        }
+        if (issuerElement is JsonObject) {
+            issuerElement.stringClaim("id")?.let { return it }
+        }
+        val vc = this["vc"] as? JsonObject ?: return null
+        val vcIssuer = vc["issuer"]
+        if (vcIssuer is JsonPrimitive && vcIssuer.isString) {
+            return vcIssuer.contentOrNull?.takeIf { it.isNotBlank() }
+        }
+        if (vcIssuer is JsonObject) {
+            return vcIssuer.stringClaim("id")
+        }
+        return null
+    }
+
+    private fun String.extractDid(): String? {
+        val value = substringAfter("decentralized_identifier:", this)
+        if (!value.startsWith("did:")) return null
+        val fragmentIndex = value.indexOf('#')
+        val queryIndex = value.indexOf('?')
+        val end =
+            listOf(fragmentIndex, queryIndex)
+                .filter { it >= 0 }
+                .minOrNull()
+                ?: value.length
+        return value.substring(0, end)
+    }
 
     /**
      * Extract the disclosed issuer-signed data elements from an mso_mdoc presentation.

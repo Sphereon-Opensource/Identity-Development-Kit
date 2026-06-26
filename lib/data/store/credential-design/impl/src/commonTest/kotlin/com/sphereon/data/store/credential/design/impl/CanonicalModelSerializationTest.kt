@@ -35,8 +35,11 @@ import com.sphereon.data.store.credential.design.model.RenderVariantKind
 import com.sphereon.data.store.credential.design.model.RenderVariantRecord
 import com.sphereon.data.store.credential.design.model.ResolvedCredentialDesign
 import com.sphereon.data.store.credential.design.model.SdPolicy
+import com.sphereon.data.store.credential.design.model.VctHostingMode
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Clock
@@ -78,6 +81,24 @@ class CanonicalModelSerializationTest {
     fun designBindingRoundTrip() {
         val binding = DesignBinding(vct = "urn:example:pid", issuerUri = "https://issuer.example.com")
         val encoded = json.encodeToString(binding)
+        val decoded = json.decodeFromString<DesignBinding>(encoded)
+        assertEquals(binding, decoded)
+    }
+
+    @Test
+    fun designBindingHostedVctRestShapeRoundTrip() {
+        val binding =
+            DesignBinding(
+                credentialConfigurationId = "EmployeeBadge",
+                vct = "EmployeeBadge",
+                vctHostingMode = VctHostingMode.HOSTED,
+            )
+
+        val encoded = json.encodeToString(binding)
+        val encodedObject = json.parseToJsonElement(encoded).jsonObject
+        assertEquals("EmployeeBadge", encodedObject["vct"]?.jsonPrimitive?.content)
+        assertEquals("HOSTED", encodedObject["vctHostingMode"]?.jsonPrimitive?.content)
+
         val decoded = json.decodeFromString<DesignBinding>(encoded)
         assertEquals(binding, decoded)
     }

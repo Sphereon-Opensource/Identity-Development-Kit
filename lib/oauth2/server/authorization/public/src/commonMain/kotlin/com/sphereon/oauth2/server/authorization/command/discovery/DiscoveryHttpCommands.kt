@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.authorization.command.discovery
 
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -48,6 +49,8 @@ interface OAuth2ServerMetadataHttpEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("discovery"),
                 summary = "RFC 8414 OAuth 2.0 Authorization Server Metadata",
+                // RFC 8414 server metadata is an anonymous, well-known discovery document.
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
 
         const val TENANT_PATH_PATTERN = "/.well-known/oauth-authorization-server/{tenant-path}"
@@ -68,6 +71,8 @@ interface OpenidDiscoveryHttpEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("discovery", "oidc"),
                 summary = "OpenID Connect Discovery 1.0",
+                // OIDC discovery is an anonymous, well-known document.
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
 
         const val TENANT_PATH_PATTERN = "/.well-known/openid-configuration/{tenant-path}"
@@ -88,6 +93,9 @@ interface JwksHttpEndpointCommand : HttpEndpointCommand {
                 commandId = COMMAND_ID,
                 tags = setOf("discovery", "jwks"),
                 summary = "JSON Web Key Set used to verify access tokens and id_tokens",
+                // JWKS must be anonymously fetchable: every token validator (operator bearer auth,
+                // satellite RestAuth) resolves it as <issuer>/.well-known/jwks.json.
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }

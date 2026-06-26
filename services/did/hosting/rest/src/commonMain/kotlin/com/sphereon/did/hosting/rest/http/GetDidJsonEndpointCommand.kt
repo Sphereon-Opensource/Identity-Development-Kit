@@ -18,6 +18,7 @@
 package com.sphereon.did.hosting.rest.http
 
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -44,6 +45,7 @@ interface GetDidJsonEndpointCommand : HttpEndpointCommand {
                 operationId = "getDidDocument",
                 tags = setOf(Tags.DID_HOSTING),
                 summary = "Resolve the hosted DID document (did.json) for this host and path",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }

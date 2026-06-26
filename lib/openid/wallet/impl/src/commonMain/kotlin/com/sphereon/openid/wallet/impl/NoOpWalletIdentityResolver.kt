@@ -30,7 +30,7 @@ import dev.zacsweers.metro.binding
 
 /**
  * IDK default: no identity book is wired; returns [ref] unchanged with no
- * [IdentifierRef.correlationId]. The EDK [com.sphereon.wallet.identity.EdkWalletIdentityResolver]
+ * [IdentifierRef.identityIdentifierId]. The EDK [com.sphereon.wallet.identity.EdkWalletIdentityResolver]
  * replaces this via Metro [dev.zacsweers.metro.ContributesBinding.replaces].
  */
 @Inject

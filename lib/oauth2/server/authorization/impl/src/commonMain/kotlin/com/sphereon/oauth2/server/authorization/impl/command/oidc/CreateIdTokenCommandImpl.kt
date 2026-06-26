@@ -25,6 +25,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
@@ -104,8 +105,8 @@ class CreateIdTokenCommandImpl(
         }
 
         val issuerUrl =
-            configProvider.serverConfig.issuer
-                ?: args.baseUrlOverride
+            args.baseUrlOverride?.takeIf { it.isNotBlank() }
+                ?: configProvider.serverConfig.issuer
                 ?: return Err(
                     AuthorizationServerError.ServerError(
                         details =
@@ -200,6 +201,7 @@ class CreateIdTokenCommandImpl(
                 CreateJwsArgs(
                     issuer = serverIdentifier,
                     payload = payload.toString(),
+                    mode = JwsIdentifierMode.KID,
                     opts =
                         CreateJwsOpts(
                             protectedHeader = header,

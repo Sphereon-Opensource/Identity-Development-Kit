@@ -118,7 +118,7 @@ class StandardAuthorizeRequestCommandImpl(
                 val isParUrn = rawUri != null && rawUri.startsWith("urn:ietf:params:oauth:request_uri:")
                 val serverConfig = serversConfigProvider.serverConfig
                 if (serverConfig.jar.isEnabled && (raw != null || (rawUri != null && !isParUrn))) {
-                    val issuer = serverConfig.issuer ?: applied.baseUrlOverride
+                    val issuer = applied.baseUrlOverride?.takeIf { it.isNotBlank() } ?: serverConfig.issuer
                     if (issuer == null) {
                         return Ok(
                             AuthorizationRequestOutcome.PreRedirectError(

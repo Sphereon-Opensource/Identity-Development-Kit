@@ -183,6 +183,14 @@ class InstanceNamespaceOid4vpVerifierConfigProviderTest {
         )
     }
 
+    @Test
+    fun didWebDomainAcceptsPlatformStoredBareHostAndUrlFallbackValues() {
+        assertEquals("acme.saas.localtest.me", verifierHostOf("acme.saas.localtest.me"))
+        assertEquals("acme.saas.localtest.me", verifierHostOf("https://acme.saas.localtest.me:3443/oid4vp"))
+        assertEquals("acme.saas.localtest.me", verifierHostOf("  acme.saas.localtest.me:3443  "))
+        assertNull(verifierHostOf("   "))
+    }
+
     private fun newRegistryProvider(properties: Map<String, Any>,): Pair<RegistryBackedOid4vpVerifierConfigProvider, MutableOid4vpVerifierInstanceIdProvider> {
         val collaborators = realCollaborators()
         val execution = TestSessionExecution(TestPrincipalConfigService(properties))

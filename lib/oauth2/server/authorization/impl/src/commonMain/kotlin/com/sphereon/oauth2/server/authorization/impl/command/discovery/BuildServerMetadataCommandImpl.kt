@@ -144,8 +144,8 @@ class BuildServerMetadataCommandImpl(
 
         val baseUrl =
             (
-                config.issuer
-                    ?: baseUrlOverride
+                baseUrlOverride?.takeIf { it.isNotBlank() }
+                    ?: config.issuer
                     ?: return Err(
                         AuthorizationServerError.InvalidRequest(
                             details =

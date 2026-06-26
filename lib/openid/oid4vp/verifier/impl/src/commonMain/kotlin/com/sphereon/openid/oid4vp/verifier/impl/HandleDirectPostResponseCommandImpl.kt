@@ -262,6 +262,8 @@ class HandleDirectPostResponseCommandImpl(
                 dcqlQuery = processedArgs.dcqlQuery,
                 expectedNonce = processedArgs.originalRequest.nonce ?: "",
                 verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
+                verifierId = processedArgs.verifierId,
+                dcqlQueryId = processedArgs.dcqlQueryId,
             )
 
         val validationResult =

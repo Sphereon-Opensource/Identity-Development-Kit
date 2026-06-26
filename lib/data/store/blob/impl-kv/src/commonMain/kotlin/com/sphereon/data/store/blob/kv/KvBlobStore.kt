@@ -19,6 +19,8 @@ package com.sphereon.data.store.blob.kv
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobInfo
@@ -63,7 +65,7 @@ internal data class KvBlobEntry(
  * Best for small blobs (configs, certificates, small documents) where a separate storage backend
  * is overkill. The backing KvStore can be in-memory (testing) or Kottage (persistent via SQLite).
  */
-@OptIn(ExperimentalObjCName::class, kotlin.io.encoding.ExperimentalEncodingApi::class)
+@OptIn(ExperimentalObjCName::class)
 @ObjCName("KvBlobStore", exact = true)
 class KvBlobStore(
     private val kvStore: KvStore,
@@ -119,9 +121,7 @@ class KvBlobStore(
         val existing = existingResult.value
         val entry =
             KvBlobEntry(
-                data =
-                    kotlin.io.encoding.Base64
-                        .encode(data),
+                data = data.encodeToBase64(),
                 metadata = target.toBlobMetadata(),
                 sizeBytes = data.size.toLong(),
                 createdAtMillis = existing?.createdAtMillis ?: now,
@@ -136,7 +136,6 @@ class KvBlobStore(
         return Ok(toDescriptor(path, entry))
     }
 
-    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
     override suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError> {
         val path = info.path!!
         val getResult = kvStore.get(namespace, path)
@@ -149,8 +148,7 @@ class KvBlobStore(
 
         val data =
             try {
-                kotlin.io.encoding.Base64
-                    .decode(entry.data)
+                entry.data.decodeFromBase64()
             } catch (expected: Exception) {
                 return Err(
                     IdkError.fromString(
@@ -242,7 +240,6 @@ class KvBlobStore(
         return Ok(count)
     }
 
-    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
     override suspend fun copy(
         source: BlobInfo,
         destination: BlobInfo,
@@ -271,7 +268,6 @@ class KvBlobStore(
         return Ok(toDescriptor(destPath, newEntry))
     }
 
-    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
     override suspend fun move(
         source: BlobInfo,
         destination: BlobInfo,

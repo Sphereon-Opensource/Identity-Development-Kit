@@ -347,6 +347,22 @@ class DidManagerHttpAdapterE2ETest {
                 createdDid["did"]?.jsonPrimitive?.contentOrNull,
                 "options.domain + options.path must reach the did:web provider via the typed fields",
             )
+            val createdDidString =
+                createdDid["did"]?.jsonPrimitive?.contentOrNull
+                    ?: error("created did:web response missing DID string")
+
+            val resolveResponse = get("/api/did/v1/identifiers/$createdDidString/resolve")
+            assertEquals(
+                200,
+                resolveResponse.statusCode,
+                "managed did:web resolve must use the persisted DID document, not an outbound HTTPS fetch; body=${resolveResponse.body}",
+            )
+            val resolvedDocument =
+                json.parseToJsonElement(resolveResponse.body ?: error("resolve response body must not be empty"))
+                    .jsonObject["didDocument"]
+                    ?.jsonObject
+            assertNotNull(resolvedDocument, "resolve response must include didDocument for a managed DID")
+            assertEquals(createdDidString, resolvedDocument["id"]?.jsonPrimitive?.contentOrNull)
 
             // Without options.domain the provider must still reject with a clear 400.
             val missingDomainBody =

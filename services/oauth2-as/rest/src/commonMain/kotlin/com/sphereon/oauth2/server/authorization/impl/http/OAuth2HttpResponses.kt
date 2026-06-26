@@ -281,6 +281,30 @@ fun GenericHttpRequest.resolveBaseUrl(
 }
 
 /**
+ * True when [candidate] is an absolute URL on the same origin as [trustedBase] (scheme + host +
+ * optional issuer path) AND its path contains `/authorize/callback`. Used to reject a reflected,
+ * off-origin `return_url` before it reaches a form action or post-login resume.
+ *
+ * The `startsWith("$base/")` check (with the explicit trailing slash on a trailing-slash-trimmed
+ * base) is robust against host-suffix (`as.example.org.evil.com`), userinfo (`as.example.org@evil`),
+ * and query-param prefix-spoof (`evil/?x=<base>`) attacks: none of those continue with `/` directly
+ * after the trusted origin string.
+ */
+internal fun isSameOriginCallback(
+    candidate: String,
+    trustedBase: String,
+): Boolean {
+    // Scheme and host are case-insensitive (RFC 3986 §3.1/§3.2.2). Normalize both sides before the
+    // origin prefix check so a mixed-case but same-origin callback is not spuriously rejected.
+    val normalizedCandidate = candidate.lowercase()
+    val base = trustedBase.trimEnd('/').lowercase()
+    if (base.isEmpty()) return false
+    if (!normalizedCandidate.startsWith("$base/")) return false
+    val path = normalizedCandidate.substringBefore('?').substringBefore('#')
+    return path.contains("/authorize/callback")
+}
+
+/**
  * Build the full request URL used for DPoP `htu` binding (RFC 9449 §4.2).
  *
  * The wallet computes `htu` from the URL it actually targeted; the AS must reconstruct the same
@@ -732,6 +756,7 @@ private val OAUTH2_ERROR_MAPPING: Map<String, Pair<Int, String>> =
         "storage_error" to (500 to "server_error"),
         "session_not_found" to (400 to "invalid_request"),
         "client_not_found" to (401 to "invalid_client"),
+        "COMMAND_NOT_AUTHORIZED" to (403 to "access_denied"),
     )
 
 /**

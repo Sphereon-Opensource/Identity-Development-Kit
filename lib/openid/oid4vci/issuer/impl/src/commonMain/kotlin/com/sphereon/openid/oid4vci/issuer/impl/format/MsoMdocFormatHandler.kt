@@ -25,6 +25,7 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.DateTimeUtils
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -99,6 +100,25 @@ class MsoMdocFormatHandler(
         val issuerKeyInfo =
             keyResult.value.key
                 ?: return Err(IdkError.fromString(message = "Signing key '$keyAlias' not found in KMS"))
+        val signingKeyInfo =
+            ManagedKeyInfo(
+                alias = issuerKeyInfo.alias,
+                providerId = issuerKeyInfo.providerId,
+                resolvedKeyInfo =
+                    ResolvedKeyInfo(
+                        key = issuerKeyInfo.key,
+                        kid = null,
+                        opts = issuerKeyInfo.opts,
+                        keyVisibility = issuerKeyInfo.keyVisibility,
+                        signatureAlgorithm = issuerKeyInfo.signatureAlgorithm,
+                        alias = issuerKeyInfo.alias,
+                        x5c = issuerKeyInfo.x5c,
+                        providerId = issuerKeyInfo.providerId,
+                        keyType = issuerKeyInfo.keyType,
+                        keyEncoding = issuerKeyInfo.keyEncoding,
+                        noCache = issuerKeyInfo.noCache,
+                    ),
+            )
 
         // For mdoc, ensure at least the mandatory claims have values.
         // If the caller didn't provide age_over_18 for the EU AV doctype, default it to true.
@@ -131,7 +151,7 @@ class MsoMdocFormatHandler(
             IssuerSigned
                 .MsoBuilder(issuerSignedItemCborCodec = issuerSignedItemCborCodec)
                 .withDocType(DocType(doctype))
-                .withSigningKeyInfo(issuerKeyInfo)
+                .withSigningKeyInfo(signingKeyInfo)
                 .withSigned(signed)
                 .withValidFrom(validFrom)
                 .withValidUntil(validUntil)

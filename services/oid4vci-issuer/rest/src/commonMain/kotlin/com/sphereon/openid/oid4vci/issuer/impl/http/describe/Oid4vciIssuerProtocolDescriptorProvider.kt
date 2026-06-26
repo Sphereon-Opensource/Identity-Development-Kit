@@ -16,13 +16,13 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.http.describe
 
+import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.openid.oid4vci.issuer.impl.http.Oid4vciIssuerProtocolHttpAdapter
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetVctTypeMetadataEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEndpointCommand
@@ -45,15 +45,21 @@ import dev.zacsweers.metro.binding
  * - POST /oid4vci/credential
  * - POST /oid4vci/deferredCredential
  * - POST /oid4vci/notification
- * - GET /oid4vci/vct/{vctId}  (public SD-JWT VC type metadata, optional VctTypeMetadataProvider)
+ *
+ * (SD-JWT VC type metadata moved to the public `/public/schema/vct/{vctId}` hosting adapter — see
+ * [com.sphereon.openid.oid4vci.issuer.impl.http.VctHostingHttpAdapter].)
  */
 @Inject
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<HttpAdapterDescriptorProvider>())
-class Oid4vciIssuerProtocolDescriptorProvider : HttpAdapterDescriptorProvider {
+class Oid4vciIssuerProtocolDescriptorProvider(
+    appConfig: AppConfigService,
+) : HttpAdapterDescriptorProvider {
     override val id: String = Oid4vciIssuerProtocolHttpAdapter.ID
 
-    private val basePath = "/oid4vci"
+    // Must match the adapter's runtime mount: empty (root) by default; the same config
+    // key drives both so catalog routing and execution stay aligned.
+    private val basePath = Oid4vciIssuerProtocolHttpAdapter.resolveBasePath(appConfig)
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
@@ -71,7 +77,6 @@ class Oid4vciIssuerProtocolDescriptorProvider : HttpAdapterDescriptorProvider {
                     HandleCredentialEndpointCommand.ENDPOINT,
                     HandleDeferredCredentialEndpointCommand.ENDPOINT,
                     HandleNotificationEndpointCommand.ENDPOINT,
-                    GetVctTypeMetadataEndpointCommand.ENDPOINT,
                 ).map { endpoint ->
                     endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },

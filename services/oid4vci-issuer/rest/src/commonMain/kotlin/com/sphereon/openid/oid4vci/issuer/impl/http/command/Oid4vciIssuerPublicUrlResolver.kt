@@ -41,6 +41,7 @@ import dev.zacsweers.metro.SingleIn
 data class Oid4vciIssuerPublicUrls(
     val issuerIdentifier: String,
     val endpointBaseUrl: String,
+    val authorizationServerBaseUrl: String? = null,
 )
 
 /**

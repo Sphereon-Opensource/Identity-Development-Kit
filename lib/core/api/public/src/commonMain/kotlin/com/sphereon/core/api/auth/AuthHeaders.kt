@@ -368,8 +368,8 @@ fun com.sphereon.di.session.SessionContext.toAuthContext(
 ): AuthContext =
     AuthContext(
         token = context.secureDetails?.jwt,
-        tenantId = context.tenant.tenantId.takeIf { it != IdentityConstants.ANONYMOUS_TENANT_ID },
-        principalId = context.principal?.toString()?.takeIf { it != IdentityConstants.ANONYMOUS_PRINCIPAL_ID },
+        tenantId = context.tenant.tenantId.takeIf { !it.isAnonymousIdentityValue() },
+        principalId = context.principal?.toString()?.takeIf { !it.isAnonymousIdentityValue() },
         userId = null, // User ID not directly available in SessionContext
         serviceId = serviceId,
         traceparent = traceparent,
@@ -377,3 +377,5 @@ fun com.sphereon.di.session.SessionContext.toAuthContext(
         correlationId = correlationId,
         policyContext = policyContext,
     )
+
+private fun String.isAnonymousIdentityValue(): Boolean = this == IdentityConstants.ANONYMOUS_ID || this.equals("anonymous", ignoreCase = true)

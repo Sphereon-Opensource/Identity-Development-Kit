@@ -29,6 +29,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.requireBody
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -70,6 +71,7 @@ interface DirectPostResponseEndpointCommand : HttpEndpointCommand {
                 operationId = "handleDirectPostResponse",
                 tags = setOf("oid4vp", "direct-post"),
                 summary = "Handle OID4VP direct_post authorization response from wallet",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }
@@ -196,6 +198,8 @@ class DirectPostResponseEndpointCommandImpl(
                 redirectUri = sessionRedirectUri,
                 jarmDecryptionKey = jarmDecryptionKey,
                 verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                verifierId = session.verifierId,
+                dcqlQueryId = session.dcqlQueryId,
             )
 
         // Delegate to the service command

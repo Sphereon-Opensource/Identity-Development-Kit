@@ -39,10 +39,16 @@ import dev.zacsweers.metro.binding
  * - Uses delegation when actor_token is present, impersonation otherwise
  * - Defaults issued token type to access_token
  * - Enforces may_act claim on subject token when present
- * - Passes through scope/audience/resource
+ * - Downscopes `scope` to what the subject token already carries (RFC 8693 §2.1:
+ *   the issued token must be no broader than the subject's authorization); never
+ *   grants a scope the subject did not hold
+ * - Passes audience/resource through. The generic default cannot decide which
+ *   audiences a client may target, so audience restriction is delegated to a
+ *   deployment-specific policy (e.g. the platform admin-console exchange policy).
  *
  * Custom policy implementations can override this to accept unverified external tokens
- * (e.g. from trusted IdPs where signing keys aren't locally available).
+ * (e.g. from trusted IdPs where signing keys aren't locally available) or to enforce a
+ * per-client allow-list of grantable audiences.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -94,11 +100,37 @@ class DefaultTokenExchangePolicy : TokenExchangePolicy {
                 allowed = true,
                 isDelegation = isDelegation,
                 issuedTokenType = issuedTokenType,
-                grantedScope = request.requestedScope,
+                grantedScope = downscope(request),
                 grantedAudience = request.requestedAudiences,
                 additionalClaims = emptyMap(),
             ),
         )
+    }
+
+    /**
+     * Bounds the issued scope by the subject token's own `scope` claim so the
+     * exchanged token can never carry a scope the caller did not already hold.
+     * When no scope is requested the subject's scope is inherited verbatim; when
+     * a scope is requested only the subset the subject already holds is granted
+     * (requested order preserved). A requested scope outside the subject's grant
+     * is silently dropped rather than minted.
+     */
+    private fun downscope(request: TokenExchangePolicyRequest): String? {
+        val subjectScopes =
+            (request.subjectTokenClaims["scope"] as? String)
+                ?.split(" ")
+                ?.filter { it.isNotBlank() }
+                ?.toSet()
+                .orEmpty()
+        val requestedScopes =
+            request.requestedScope
+                ?.split(" ")
+                ?.filter { it.isNotBlank() }
+                ?: return (request.subjectTokenClaims["scope"] as? String)?.takeIf { it.isNotBlank() }
+        return requestedScopes
+            .filter { it in subjectScopes }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(" ")
     }
 
     @Suppress("UNCHECKED_CAST")

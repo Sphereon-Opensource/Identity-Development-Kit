@@ -47,6 +47,7 @@ data class VctDisplayInput(
     val description: String? = null,
     val logoUri: String? = null,
     val logoAltText: String? = null,
+    /** OID4VCI issuer metadata can carry background images; SD-JWT VC draft-11 VCT simple rendering cannot. */
     val backgroundImageUri: String? = null,
     val backgroundColor: String? = null,
     val textColor: String? = null,
@@ -63,6 +64,7 @@ data class VctDisplayInput(
 @JsExportCompat
 data class VctClaimInput(
     val path: List<String?>,
+    /** OID4VCI issuer metadata can carry mandatory; SD-JWT VC draft-11 VCT claims cannot. */
     val mandatory: Boolean = false,
     val sd: ClaimSdMetadata = ClaimSdMetadata.ALWAYS,
     val displays: List<VctClaimDisplayInput> = emptyList(),
@@ -81,7 +83,7 @@ data class VctClaimDisplayInput(
  *
  * No I/O, no platform dependencies: the same function backs the IDK config-driven issuer today and
  * any future EDK/VDX semantic-catalog-driven source. A display entry only carries a `rendering.simple`
- * block when at least one of its logo / background / colour fields is set, so empty branding does not
+ * block when at least one of its logo / colour fields is set, so empty branding does not
  * emit a hollow `rendering` object. Empty `display` / `claims` collapse to `null` rather than `[]`,
  * matching how hand-authored type metadata is written.
  */
@@ -89,10 +91,9 @@ fun buildSdJwtVcTypeMetadata(input: VctTypeMetadataInput): SdJwtVcTypeMetadata {
     val displays =
         input.displays.map { d ->
             val simple =
-                if (d.logoUri != null || d.backgroundImageUri != null || d.backgroundColor != null || d.textColor != null) {
+                if (d.logoUri != null || d.backgroundColor != null || d.textColor != null) {
                     SimpleRenderingMethod(
                         logo = d.logoUri?.let { LogoMetadata(uri = it, altText = d.logoAltText) },
-                        backgroundImage = d.backgroundImageUri?.let { BackgroundImageMetadata(uri = it) },
                         backgroundColor = d.backgroundColor,
                         textColor = d.textColor,
                     )
@@ -110,7 +111,6 @@ fun buildSdJwtVcTypeMetadata(input: VctTypeMetadataInput): SdJwtVcTypeMetadata {
         input.claims.map { c ->
             ClaimInformation(
                 path = c.path,
-                mandatory = c.mandatory,
                 sd = c.sd,
                 display =
                     c.displays

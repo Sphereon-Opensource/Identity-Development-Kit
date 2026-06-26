@@ -3,6 +3,7 @@ import com.codingfeline.buildkonfig.compiler.FieldSpec
 plugins {
     `maven-publish`
     alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.dev.zacsweers.metro)
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.io.kotest.io.kotest.gradle.plugin)
     alias(sphereonplug.plugins.com.google.devtools.ksp.com.google.devtools.ksp.gradle.plugin)
@@ -10,6 +11,8 @@ plugins {
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.integration.tests)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
     id("maven-publish")
+}
+metro {
 }
 
 kotlin {
@@ -29,6 +32,9 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // default deps are already injected by conventions plugin!
+                implementation(libs.bundles.app.platform.di)
+                implementation(sphereonlib.software.amazon.app.platform.metro.impl)
+                implementation(projects.libCoreApiPublic)
                 implementation(projects.libCborPublic)
                 implementation(projects.libCryptoCore)
                 implementation(projects.libCryptoCorePublic)

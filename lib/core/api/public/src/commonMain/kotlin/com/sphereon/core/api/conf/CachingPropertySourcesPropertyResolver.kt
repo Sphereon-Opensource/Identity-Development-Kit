@@ -52,6 +52,9 @@ class CachingPropertySourcesPropertyResolver(
     private val delegate: PropertyResolver = PropertyResolverFactory.create(propertySources, interpolator, redactionPolicy)
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
 
+    @Volatile
+    private var lastRefreshableContentRevision: Long = Long.MIN_VALUE
+
     override fun containsProperty(key: String) = delegate.containsProperty(key)
 
     override fun <T : Any> getProperty(
@@ -108,12 +111,20 @@ class CachingPropertySourcesPropertyResolver(
         stripPrefix: Boolean,
     ): Map<String, Any> {
         val normalizedPrefixes = prefixes.map { keyNormalizer.normalize(it) }.toSet()
+        val cachePrefix = normalizedPrefixes.sorted().joinToString("|")
+        val refreshableRevision = propertySources.refreshableContentRevision(refresh = true)
+        if (refreshableRevision != 0L && refreshableRevision != lastRefreshableContentRevision) {
+            snapshotCache.invalidateByPrefix(cachePrefix)
+            normalizedPrefixes.forEach { snapshotCache.invalidateByPrefix(it) }
+        }
+        lastRefreshableContentRevision = refreshableRevision
+
         val cacheKey =
             SnapshotKey(
                 scope = level,
                 tenantId = tenantId,
                 principalId = principalId,
-                prefix = normalizedPrefixes.sorted().joinToString("|"),
+                prefix = cachePrefix,
             )
 
         // Check cache using synchronous access (works on all platforms including JS)

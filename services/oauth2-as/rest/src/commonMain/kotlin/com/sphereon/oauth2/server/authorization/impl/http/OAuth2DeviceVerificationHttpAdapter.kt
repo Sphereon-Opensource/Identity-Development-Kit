@@ -78,7 +78,7 @@ class OAuth2DeviceVerificationHttpAdapter(
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
-        const val ID: String = "OAUTH2_AS_DEVICE_VERIFICATION"
+        const val ID: String = "oauth2.as.device-verification"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

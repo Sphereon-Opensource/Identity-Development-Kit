@@ -73,3 +73,25 @@ fun KeyInfoType<*>.toKeyReferenceOrNull(origin: Origin = Origin.MANAGED): Manage
         keyEncoding = keyEncoding,
     )
 }
+
+/**
+ * Convert any [KeyInfoType] to a signing reference when it has a managed alias.
+ *
+ * Signing must address the private key by its managed provider alias. A public key id
+ * derived for JOSE/COSE headers is not necessarily the provider lookup id, so do not
+ * send it as an additional lookup constraint to remote KMS services.
+ */
+fun KeyInfoType<*>.toSigningKeyReferenceOrNull(origin: Origin = Origin.MANAGED): ManagedKeyReference? {
+    val a = alias ?: return null
+    val p = providerId ?: return null
+    return ManagedKeyReference(
+        alias = a,
+        kid = null,
+        providerId = p,
+        origin = origin,
+        signatureAlgorithm = signatureAlgorithm,
+        keyType = keyType,
+        keyVisibility = keyVisibility,
+        keyEncoding = keyEncoding,
+    )
+}

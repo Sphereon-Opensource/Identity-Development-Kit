@@ -1,5 +1,6 @@
 package com.sphereon.openid.oid4vp.verifier.ktor
 
+import com.sphereon.core.api.log.Log
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.AppGraph
@@ -26,7 +27,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 
 fun main() {
-    println("Starting OID4VP Verifier Server...")
+    Log.app().withTag("Oid4vpVerifierKtorServer").info("Starting OID4VP Verifier Server")
 
     val appGraph =
         createOid4vpVerifierAppGraph(

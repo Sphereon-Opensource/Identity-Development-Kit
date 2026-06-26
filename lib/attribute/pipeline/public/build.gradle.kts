@@ -26,6 +26,7 @@ kotlin {
                 api(projects.libCoreApiPublic)
                 api(projects.libAttributeFlowPublic)
                 api(projects.libAttributeMappingPublic)
+                api(projects.libDataIntegrationPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
             }
@@ -33,6 +34,7 @@ kotlin {
         val commonTest by getting {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test)
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }
         }
     }

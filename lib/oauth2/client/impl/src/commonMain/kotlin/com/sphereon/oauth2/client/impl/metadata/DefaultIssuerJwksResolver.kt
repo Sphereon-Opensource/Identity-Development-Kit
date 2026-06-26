@@ -24,11 +24,12 @@ import com.sphereon.core.api.cache.CacheRequirements
 import com.sphereon.core.api.cache.CacheSerializers
 import com.sphereon.core.api.cache.ScopedCache
 import com.sphereon.core.api.validation.ValidationErrorDetail
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.JwksUrlExternalIdentifierResolutionService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
-import com.sphereon.oauth2.client.command.FetchJwksArgs
-import com.sphereon.oauth2.client.command.FetchJwksCommand
 import com.sphereon.oauth2.client.command.FetchServerMetadataArgs
 import com.sphereon.oauth2.client.metadata.IssuerJwksResolver
 import com.sphereon.oauth2.client.util.isSecureUrl
@@ -43,17 +44,18 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Default [IssuerJwksResolver] — wraps [FetchAuthorizationServerMetadataCommand] and
- * [FetchJwksCommand]. Caches JWKS per issuer through the IDK [CacheManager] abstraction so the
- * cache participates in app-wide eviction, statistics, and distributed-backend policy if the
- * deployment configures one. `jwks_uri` must be HTTPS.
+ * Default [IssuerJwksResolver] — wraps [FetchAuthorizationServerMetadataCommand] for discovery
+ * and delegates JWKS URL key resolution to the IDK identifier-resolution system
+ * ([JwksUrlExternalIdentifierResolutionService]). Caches JWKS per issuer through the IDK
+ * [CacheManager] abstraction so the cache participates in app-wide eviction, statistics, and
+ * distributed-backend policy if the deployment configures one. `jwks_uri` must be HTTPS.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<IssuerJwksResolver>())
 public class DefaultIssuerJwksResolver(
     private val fetchMetadataCommand: FetchAuthorizationServerMetadataCommand,
-    private val fetchJwksCommand: FetchJwksCommand,
+    private val jwksUrlResolver: JwksUrlExternalIdentifierResolutionService,
     private val cacheManager: CacheManager,
 ) : IssuerJwksResolver {
     private val cache: ScopedCache<String, JwkSet> by lazy {
@@ -106,7 +108,7 @@ public class DefaultIssuerJwksResolver(
             )
         }
 
-        val jwksResult = fetchJwksCommand.execute(FetchJwksArgs(jwksUri))
+        val jwksResult = jwksUrlResolver.resolve(ExternalIdentifierJwksUrlOpts(identifier = jwksUri))
         if (jwksResult.isErr) {
             return Err(
                 MetadataError.FetchFailed(
@@ -116,7 +118,15 @@ public class DefaultIssuerJwksResolver(
             )
         }
 
-        val jwks = jwksResult.value
+        // Bridge the resolved keys back to a raw JwkSet (lossless via Jwk.from). The per-issuer
+        // cache + return type are unchanged; only the fetch now flows through the identifier-
+        // resolution system, which adds its own jwks_uri cache + transient retry.
+        val jwks =
+            JwkSet(
+                jwksResult.value.jwks
+                    .map { Jwk.from(it.key) }
+                    .toTypedArray()
+            )
         cache.putApp(metadata.issuer, jwks, JWKS_CACHE_TTL)
         return Ok(jwks)
     }

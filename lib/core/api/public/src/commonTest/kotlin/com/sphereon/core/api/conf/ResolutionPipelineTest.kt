@@ -345,7 +345,7 @@ class ConfigResolutionPipelineWithInterpolationTest {
     fun interpolatesMapSecretReference() =
         runTest {
             val source = MutableMapPropertySource("test-source")
-            source.addProperty("db.password", "\${secret:map:credentials:db-password}")
+            source.addProperty("db.password", "\${secret:@map:credentials:db-password}")
 
             val secretMaps =
                 mapOf(
@@ -366,7 +366,7 @@ class ConfigResolutionPipelineWithInterpolationTest {
     fun detectsSecretReferences() =
         runTest {
             val source = MutableMapPropertySource("test-source")
-            source.addProperty("api.key", "\${secret:env:API_KEY}")
+            source.addProperty("api.key", "\${secret:@env:API_KEY}")
 
             val propertySources = DefaultPropertySources()
             propertySources.add(source)

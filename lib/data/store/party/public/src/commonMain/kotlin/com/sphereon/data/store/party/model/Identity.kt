@@ -28,12 +28,12 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
- * An identity represents how a party presents itself in the credential ecosystem.
- * A party can have multiple identities for different purposes (e.g., separate issuer
- * and holder identities).
+ * An identity represents a credential-ecosystem principal and lookup boundary.
  *
- * In the "everything is a party" pattern, Identity extends Party. The [partyId] serves
- * as both the primary key and the foreign key to the party table when persistence is used.
+ * Plaintext profile data belongs in Party records and Party extensions when policy permits it.
+ * This type intentionally carries no natural-person, organization, address, or endpoint profile
+ * fields. The [partyId] property is the storage identifier for the identity row; new code should
+ * treat it as the identity id and use explicit identity-party bindings for Party profile links.
  */
 @JsExportCompat
 @Serializable
@@ -59,6 +59,9 @@ data class Identity
          */
         @SerialName("specializationSubtype")
         val specializationSubtype: String? = null,
+        /** Controls whether readable profile data may exist on bound Party records. */
+        @SerialName("privacyMode")
+        val privacyMode: IdentityPrivacyMode = IdentityPrivacyMode.PARTY_PROFILED,
         /** Opaque per-identity salt handle (reference only; no crypto in this layer) */
         @SerialName("saltRef")
         val saltRef: String? = null,
@@ -80,4 +83,6 @@ data class Identity
         /** Who deleted the identity (party ID) */
         @SerialName("deletedById")
         val deletedById: Uuid? = null,
-    )
+    ) {
+        val identityId: Uuid get() = partyId
+    }

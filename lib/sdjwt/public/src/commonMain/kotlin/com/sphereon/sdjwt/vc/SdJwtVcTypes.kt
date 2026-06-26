@@ -21,12 +21,13 @@ import com.sphereon.sdjwt.KeyBindingJwt
 import com.sphereon.sdjwt.SdJwtCompact
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /*
  * SD-JWT-VC (Verifiable Credential) types and metadata
- * Based on draft-ietf-oauth-sd-jwt-vc-13
+ * Based on draft-ietf-oauth-sd-jwt-vc-11, as referenced by OID4VCI 1.0 Final.
  *
  * SD-JWT-VC extends SD-JWT with:
  * - Verifiable Credential type metadata (vct)
@@ -98,7 +99,7 @@ data class SdJwtVcIssuerMetadata(
 }
 
 /**
- * Type metadata for SD-JWT-VC (draft-13 format)
+ * Type metadata for SD-JWT-VC (draft-ietf-oauth-sd-jwt-vc-11 format)
  * Describes the structure and properties of a credential type
  *
  * @property vct Verifiable Credential Type identifier (REQUIRED)
@@ -108,7 +109,8 @@ data class SdJwtVcIssuerMetadata(
  * @property extendsIntegrity Integrity protection for extends URL (OPTIONAL)
  * @property display Display information for different locales (OPTIONAL)
  * @property claims Information about credential claims (OPTIONAL)
- * @property schema JSON schema URL (OPTIONAL)
+ * @property schema Embedded JSON schema document (OPTIONAL)
+ * @property schemaUri JSON schema URL (OPTIONAL)
  * @property schemaIntegrity Integrity protection for schema URL (OPTIONAL)
  */
 @Serializable
@@ -129,8 +131,10 @@ data class SdJwtVcTypeMetadata(
     @SerialName("claims")
     val claims: List<ClaimInformation>? = null,
     @SerialName("schema")
-    val schema: String? = null,
-    @SerialName("schema#integrity")
+    val schema: JsonObject? = null,
+    @SerialName("schema_uri")
+    val schemaUri: String? = null,
+    @SerialName("schema_uri#integrity")
     val schemaIntegrity: String? = null,
 )
 
@@ -145,7 +149,7 @@ data class SdJwtVcTypeMetadata(
 @Serializable
 @JsExportCompat
 data class DisplayInformation(
-    @SerialName("locale")
+    @SerialName("lang")
     val locale: String,
     @SerialName("name")
     val name: String,
@@ -183,7 +187,7 @@ data class RenderingMetadata(
 data class SimpleRenderingMethod(
     @SerialName("logo")
     val logo: LogoMetadata? = null,
-    @SerialName("background_image")
+    @Transient
     val backgroundImage: BackgroundImageMetadata? = null,
     @SerialName("background_color")
     val backgroundColor: String? = null,
@@ -306,7 +310,7 @@ data class ClaimInformation(
     val path: List<String?>, // May contain null per spec for array indices
     @SerialName("display")
     val display: List<ClaimDisplayMetadata>? = null,
-    @SerialName("mandatory")
+    @Transient
     val mandatory: Boolean = false,
     @SerialName("sd")
     val sd: ClaimSdMetadata = ClaimSdMetadata.ALLOWED,
@@ -324,7 +328,7 @@ data class ClaimInformation(
 @Serializable
 @JsExportCompat
 data class ClaimDisplayMetadata(
-    @SerialName("locale")
+    @SerialName("lang")
     val locale: String,
     @SerialName("label")
     val label: String,

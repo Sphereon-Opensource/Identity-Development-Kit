@@ -100,6 +100,9 @@ interface PolymorphicConfigBinder<T : Any> {
  * @param propertyNameAliases Optional aliases for property keys to JSON field names.
  *                           Alias lookup is relaxed: both normalized and canonicalized keys are matched.
  *                           Canonicalized means delimiters removed (e.g., "key.visibility" -> "keyvisibility").
+ * @param ignoredPropertyNames Optional top-level property names to omit before deserialization.
+ *                             This is useful when an entry prefix contains operational metadata
+ *                             next to the concrete polymorphic config.
  * @param redact Whether to redact sensitive values when converting to JSON (default: false for config binding)
  */
 @JsExportCompat
@@ -115,6 +118,7 @@ class DefaultPolymorphicConfigBinder<T : Any>(
     private val keyDenormalizer: PropertyKeyDenormalizer = CamelCaseKeyDenormalizerImpl(),
     private val nestedPrefixAliases: Map<String, String> = emptyMap(),
     private val propertyNameAliases: Map<String, String> = emptyMap(),
+    private val ignoredPropertyNames: Set<String> = emptySet(),
     private val redact: Boolean = false,
 ) : PolymorphicConfigBinder<T> {
     private data class PolymorphicBindFailure(
@@ -143,6 +147,10 @@ class DefaultPolymorphicConfigBinder<T : Any>(
         propertyNameAliases.entries.associate { (key, value) -> keyNormalizer.normalize(key) to value }
     private val canonicalPropertyNameAliases: Map<String, String> =
         normalizedPropertyNameAliases.entries.associate { (key, value) -> canonicalizeKey(key) to value }
+    private val normalizedIgnoredPropertyNames: Set<String> =
+        ignoredPropertyNames.mapTo(mutableSetOf()) { keyNormalizer.normalize(it) }
+    private val canonicalIgnoredPropertyNames: Set<String> =
+        normalizedIgnoredPropertyNames.mapTo(mutableSetOf()) { canonicalizeKey(it) }
     private val expectedTypeName: String =
         baseClass.simpleName ?: "unknown"
 
@@ -299,6 +307,9 @@ class DefaultPolymorphicConfigBinder<T : Any>(
         val jsonReadyProperties = linkedMapOf<String, Any>()
         for ((key, value) in properties) {
             val normalizedKey = keyNormalizer.normalize(key.removePrefix("."))
+            if (normalizedKey in normalizedIgnoredPropertyNames || canonicalizeKey(normalizedKey) in canonicalIgnoredPropertyNames) {
+                continue
+            }
             val nestedAlias =
                 normalizedNestedPrefixAliases.entries.firstOrNull { (prefix, _) ->
                     normalizedKey == prefix || normalizedKey.startsWith("$prefix.")

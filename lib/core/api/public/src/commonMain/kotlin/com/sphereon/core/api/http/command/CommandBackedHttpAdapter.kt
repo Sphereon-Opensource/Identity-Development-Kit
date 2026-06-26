@@ -19,6 +19,7 @@ package com.sphereon.core.api.http.command
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.ConfigUnavailableException
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.CompiledPathPattern
@@ -416,6 +417,18 @@ abstract class CommandBackedHttpAdapter(
 
         return try {
             winner.endpoint.execute(requestWithParams)
+        } catch (unavailable: ConfigUnavailableException) {
+            // A config read raced a lazy/remote config fetch that is not ready
+            // yet (or the platform serving it is briefly unreachable). This is a
+            // transient condition: surface it as 503 (UNAVAILABLE) so the caller
+            // retries, instead of the generic 500 below.
+            log.warn("[$id] Config unavailable while executing endpoint: ${unavailable.message}")
+            Err(
+                IdkError.SERVICE_UNAVAILABLE_ERROR(
+                    message = unavailable.message ?: "Configuration temporarily unavailable",
+                    throwable = unavailable,
+                ),
+            )
         } catch (expected: Exception) {
             log.error("[$id] Error executing endpoint: ${expected.message}", expected)
             Err(IdkError.UNKNOWN_ERROR(message = expected.message ?: "Internal error", exception = expected))

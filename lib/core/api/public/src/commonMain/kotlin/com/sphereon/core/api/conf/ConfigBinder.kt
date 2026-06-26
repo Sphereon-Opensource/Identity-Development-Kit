@@ -353,10 +353,10 @@ class DefaultConfigBinder(
         val keyedGroups = mutableMapOf<String, MutableMap<String, Any>>()
 
         for ((key, value) in properties) {
-            val dotIndex = key.indexOf('.')
-            if (dotIndex > 0) {
-                val topKey = key.substring(0, dotIndex)
-                val remainingKey = key.substring(dotIndex + 1)
+            val path = splitConfigPath(key)
+            if (path.size > 1) {
+                val topKey = path.first()
+                val remainingKey = joinConfigPath(path.drop(1))
                 keyedGroups.getOrPut(topKey) { mutableMapOf() }[remainingKey] = value
             } else {
                 // Simple key with primitive value
@@ -406,7 +406,7 @@ class DefaultConfigBinder(
         val root = mutableMapOf<String, Any?>()
 
         for ((key, value) in properties) {
-            setNestedValue(root, key.split('.'), value)
+            setNestedValue(root, splitConfigPath(key), value)
         }
 
         return mapToJsonObject(root)
@@ -447,10 +447,12 @@ class DefaultConfigBinder(
             val normalizedName = keyNormalizer.normalize(originalName)
             val elementDescriptor = descriptor.getElementDescriptor(i)
             val childDescriptor =
-                if (elementDescriptor.kind == StructureKind.CLASS) {
-                    elementDescriptor
-                } else {
-                    null
+                when (elementDescriptor.kind) {
+                    StructureKind.CLASS,
+                    StructureKind.MAP,
+                    -> elementDescriptor
+
+                    else -> null
                 }
             map[normalizedName] = FieldInfo(originalName, childDescriptor)
         }
@@ -461,11 +463,76 @@ class DefaultConfigBinder(
         normalizedKey: String,
         descriptor: SerialDescriptor,
     ): List<String> {
-        val segments = normalizedKey.split('.')
+        val segments = splitConfigPath(normalizedKey)
         val result = mutableListOf<String>()
         reconstructPathRecursive(segments, 0, descriptor, result)
         return result
     }
+
+    private fun splitConfigPath(key: String): List<String> {
+        if (key.isEmpty()) {
+            return emptyList()
+        }
+        val segments = mutableListOf<String>()
+        val current = StringBuilder()
+        var bracketDepth = 0
+
+        fun flush() {
+            if (current.isEmpty()) {
+                return
+            }
+            val segment = current.toString()
+            segments += unquoteLiteralSegment(segment)
+            current.clear()
+        }
+
+        for (char in key) {
+            when (char) {
+                '[' -> {
+                    bracketDepth++
+                    current.append(char)
+                }
+
+                ']' -> {
+                    if (bracketDepth > 0) {
+                        bracketDepth--
+                    }
+                    current.append(char)
+                }
+
+                '.' -> {
+                    if (bracketDepth == 0) {
+                        flush()
+                    } else {
+                        current.append(char)
+                    }
+                }
+
+                else -> {
+                    current.append(char)
+                }
+            }
+        }
+        flush()
+        return segments
+    }
+
+    private fun unquoteLiteralSegment(segment: String): String {
+        if (!segment.startsWith("[") || !segment.endsWith("]")) {
+            return segment
+        }
+        val content = segment.substring(1, segment.length - 1)
+        return if (content.toIntOrNull() != null) segment else content
+    }
+
+    private fun joinConfigPath(segments: List<String>): String =
+        segments.joinToString(".") { segment ->
+            if (segment.contains(".") && segment.toIntOrNull() == null) {
+                "[$segment]"
+            } else {
+                segment
+            }
+        }
 
     private fun reconstructPathRecursive(
         segments: List<String>,
@@ -476,6 +543,20 @@ class DefaultConfigBinder(
         if (startIdx >= segments.size) {
             return
         }
+
+        if (descriptor.kind == StructureKind.MAP) {
+            result.add(segments[startIdx])
+            val valueDescriptor = descriptor.getElementDescriptor(1)
+            if (startIdx + 1 < segments.size &&
+                (valueDescriptor.kind == StructureKind.CLASS || valueDescriptor.kind == StructureKind.MAP)
+            ) {
+                reconstructPathRecursive(segments, startIdx + 1, valueDescriptor, result)
+            } else {
+                for (i in startIdx + 1 until segments.size) result.add(segments[i])
+            }
+            return
+        }
+
         val fieldMap = buildFieldMap(descriptor)
 
         // Greedy: try longest segment prefix first
@@ -509,35 +590,90 @@ class DefaultConfigBinder(
             return
         }
 
-        var current: MutableMap<String, Any?> = root
+        setNestedValueInMap(root, path, value)
+    }
 
-        for (i in 0 until path.size - 1) {
-            val segment = path[i]
-            @Suppress("UNCHECKED_CAST")
-            current = current.getOrPut(segment) { mutableMapOf<String, Any?>() } as MutableMap<String, Any?>
+    private fun setNestedValueInMap(
+        current: MutableMap<String, Any?>,
+        path: List<String>,
+        value: Any,
+    ) {
+        val key = path.first()
+        if (path.size == 1) {
+            setMapValue(current, key, value)
+            return
         }
 
-        val lastKey = path.last()
-        val existing = current[lastKey]
+        val next = path[1]
+        val child =
+            current.getOrPut(key) {
+                if (indexSegment(next) != null) mutableListOf<Any?>() else mutableMapOf<String, Any?>()
+            }
+
+        if (child is MutableList<*>) {
+            @Suppress("UNCHECKED_CAST")
+            setNestedValueInList(child as MutableList<Any?>, path.drop(1), value)
+        } else {
+            @Suppress("UNCHECKED_CAST")
+            setNestedValueInMap(child as MutableMap<String, Any?>, path.drop(1), value)
+        }
+    }
+
+    private fun setNestedValueInList(
+        current: MutableList<Any?>,
+        path: List<String>,
+        value: Any,
+    ) {
+        val index = indexSegment(path.first()) ?: return
+        while (current.size <= index) {
+            current.add(null)
+        }
+
+        if (path.size == 1) {
+            current[index] = value
+            return
+        }
+
+        val next = path[1]
+        val child =
+            current[index] ?: if (indexSegment(next) != null) mutableListOf<Any?>() else mutableMapOf<String, Any?>()
+        current[index] = child
+
+        if (child is MutableList<*>) {
+            @Suppress("UNCHECKED_CAST")
+            setNestedValueInList(child as MutableList<Any?>, path.drop(1), value)
+        } else {
+            @Suppress("UNCHECKED_CAST")
+            setNestedValueInMap(child as MutableMap<String, Any?>, path.drop(1), value)
+        }
+    }
+
+    private fun setMapValue(
+        current: MutableMap<String, Any?>,
+        key: String,
+        value: Any,
+    ) {
+        val existing = current[key]
 
         if (existing is MutableMap<*, *> && value is Map<*, *>) {
-            // Merge maps based on strategy
             @Suppress("UNCHECKED_CAST")
             when (mergeStrategy) {
-                JsonMergeStrategy.REPLACE -> {
-                    current[lastKey] = value
-                }
+                JsonMergeStrategy.REPLACE -> current[key] = value
 
                 JsonMergeStrategy.DEEP_MERGE_REPLACE_ARRAYS,
                 JsonMergeStrategy.DEEP_MERGE_CONCAT_ARRAYS,
-                -> {
-                    mergeMaps(existing as MutableMap<String, Any?>, value as Map<String, Any?>)
-                }
+                -> mergeMaps(existing as MutableMap<String, Any?>, value as Map<String, Any?>)
             }
         } else {
-            current[lastKey] = value
+            current[key] = value
         }
     }
+
+    private fun indexSegment(segment: String): Int? =
+        segment
+            .takeIf { it.startsWith("[") && it.endsWith("]") }
+            ?.substring(1, segment.length - 1)
+            ?.toIntOrNull()
 
     /**
      * Merge source map into target map.

@@ -107,7 +107,7 @@
 
 .urlInput {
   width: 100%;
-  padding: var(--comp-input-paddingY, 10px) var(--comp-input-paddingX, 12px);
+  padding: var(--comp-input-padding-y, 10px) var(--comp-input-padding-x, 12px);
   background: var(--comp-input-background, var(--color-surface, #FFFFFF));
   color: var(--comp-input-foreground, var(--color-text-primary, #0A0D12));
   border: 1px solid var(--comp-input-border, var(--color-border-strong, #D1D5DB));
@@ -179,7 +179,7 @@
   color: var(--comp-button-primary-foreground, #FFFFFF);
   border: none;
   border-radius: var(--comp-button-primary-radius, var(--shape-radius-md, 8px));
-  padding: var(--comp-button-primary-paddingY, 10px) var(--comp-button-primary-paddingX, 16px);
+  padding: var(--comp-button-primary-padding-y, 10px) var(--comp-button-primary-padding-x, 16px);
   font-family: inherit;
   font-size: 0.9375rem;
   font-weight: 500;

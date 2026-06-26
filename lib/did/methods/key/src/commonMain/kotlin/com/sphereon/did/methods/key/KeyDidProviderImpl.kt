@@ -20,6 +20,7 @@ package com.sphereon.did.methods.key
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.jose.JwaKeyType
@@ -47,8 +48,6 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Provider for creating did:key DIDs.
@@ -219,7 +218,6 @@ class KeyDidProviderImpl(
     /**
      * Converts a JWK to multicodec-prefixed bytes.
      */
-    @OptIn(ExperimentalEncodingApi::class)
     private fun jwkToMulticodecBytes(jwk: Jwk): IdkResult<ByteArray, IdkError> {
         return when (jwk.kty) {
             JwaKeyType.OKP -> {
@@ -235,7 +233,7 @@ class KeyDidProviderImpl(
                 // Decode x coordinate (add padding if needed)
                 val xBytes =
                     try {
-                        Base64.UrlSafe.decode(addBase64Padding(xBase64))
+                        xBase64.decodeFromBase64Url()
                     } catch (expected: Exception) {
                         return Err(
                             IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -280,7 +278,7 @@ class KeyDidProviderImpl(
                 // Decode coordinates
                 val xBytes =
                     try {
-                        Base64.UrlSafe.decode(addBase64Padding(xBase64))
+                        xBase64.decodeFromBase64Url()
                     } catch (expected: Exception) {
                         return Err(
                             IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -291,7 +289,7 @@ class KeyDidProviderImpl(
 
                 val yBytes =
                     try {
-                        Base64.UrlSafe.decode(addBase64Padding(yBase64))
+                        yBase64.decodeFromBase64Url()
                     } catch (expected: Exception) {
                         return Err(
                             IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -349,20 +347,7 @@ class KeyDidProviderImpl(
         return byteArrayOf(prefix) + x
     }
 
-    /**
-     * Adds padding to a base64url string if needed.
-     */
-    private fun addBase64Padding(base64: String): String =
-        when (base64.length % BASE64_GROUP_SIZE) {
-            BASE64_PAD_TWO -> "$base64=="
-            BASE64_PAD_ONE -> "$base64="
-            else -> base64
-        }
-
     companion object {
-        private const val BASE64_GROUP_SIZE = 4
-        private const val BASE64_PAD_TWO = 2
-        private const val BASE64_PAD_ONE = 3
         private const val ED25519_KEY_SIZE = 32
         private const val X25519_KEY_SIZE = 32
         private const val SECP256K1_COMPRESSED_KEY_SIZE = 33

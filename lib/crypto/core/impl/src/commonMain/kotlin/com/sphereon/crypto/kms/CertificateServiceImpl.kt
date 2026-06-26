@@ -20,6 +20,7 @@ package com.sphereon.crypto.kms
 import at.asitplus.awesn1.crypto.X509AlgorithmIdentifier
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequest
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequestInfo
+import at.asitplus.awesn1.crypto.pki.Pkcs10CsrAttribute
 import at.asitplus.awesn1.crypto.pki.X500RelativeDistinguishedName
 import at.asitplus.awesn1.serialization.DER
 import com.sphereon.core.compat.LocalDateTimeKMP
@@ -39,6 +40,7 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.CertificateResult
 import com.sphereon.crypto.core.kms.CertificateService
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.X509CertificateExtensionSpec
 import com.sphereon.crypto.core.x509.CertificateCreationUtils
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
@@ -79,6 +81,7 @@ class CertificateServiceImpl(
         subjectKeyInfo: ResolvedKeyInfoType<*>,
         distinguishedNameElements: X509DistinguishedNameElements,
         serialNumber: Int,
+        attributes: List<Pkcs10CsrAttribute>,
     ): CertificateSigningRequest {
         require(serialNumber > 0) { "Serial number must be greater than zero. Got $serialNumber" }
 
@@ -100,7 +103,7 @@ class CertificateServiceImpl(
             Pkcs10CertificationRequestInfo(
                 subjectName = dn,
                 publicKey = jwk.toSubjectPublicKeyInfo(),
-                attributes = listOf(),
+                attributes = attributes,
             )
 
         // Get the TBS bytes for signing
@@ -140,11 +143,9 @@ class CertificateServiceImpl(
 
         // Sign the TBS bytes
         val signature: ByteArray =
-            keyManagerService.createRawSignature(
-                keyInfo = subjectKeyInfo,
-                input = tbsBytesToSign,
-                requireX5Chain = true,
-            )
+            keyManagerService
+                .getProvider(subjectKeyInfo.providerId, subjectKeyInfo.signatureAlgorithm)
+                .createRawSignature(subjectKeyInfo, tbsBytesToSign, requireX5Chain = true)
 
         // Build the final CSR with the real signature
         val csr =
@@ -182,9 +183,20 @@ class CertificateServiceImpl(
         subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
         csr: CertificateSigningRequest,
         serialNumber: Int,
+        extensions: List<X509CertificateExtensionSpec>,
         notBefore: LocalDateTimeKMP,
         notAfter: LocalDateTimeKMP,
-    ): CertificateResult = createCertificate(issuerKeyInfo, issuer, subjectKeyInfo, csr.toX509DistinguishedNameElements(), serialNumber, notBefore, notAfter)
+    ): CertificateResult =
+        createCertificate(
+            issuerKeyInfo = issuerKeyInfo,
+            issuer = issuer,
+            subjectKeyInfo = subjectKeyInfo,
+            subject = csr.toX509DistinguishedNameElements(),
+            serialNumber = serialNumber,
+            extensions = extensions,
+            notBefore = notBefore,
+            notAfter = notAfter,
+        )
 
     @OptIn(ExperimentalObjCRefinement::class)
     @HiddenFromObjC
@@ -194,6 +206,7 @@ class CertificateServiceImpl(
         subjectKeyInfo: ResolvedKeyInfoType<KeyType>,
         subject: X509DistinguishedNameElements,
         serialNumber: Int,
+        extensions: List<X509CertificateExtensionSpec>,
         notBefore: LocalDateTimeKMP,
         notAfter: LocalDateTimeKMP,
     ): CertificateResult =
@@ -203,9 +216,14 @@ class CertificateServiceImpl(
             subjectKeyInfo = subjectKeyInfo,
             subject = subject,
             serialNumber = serialNumber,
+            extensions = extensions,
             notBefore = notBefore,
             notAfter = notAfter,
-            signatureFunction = { data -> keyManagerService.createRawSignature(issuerKeyInfo, data, requireX5Chain = true) },
+            signatureFunction = { data ->
+                keyManagerService
+                    .getProvider(issuerKeyInfo.providerId, issuerKeyInfo.signatureAlgorithm)
+                    .createRawSignature(issuerKeyInfo, data, requireX5Chain = true)
+            },
         )
 
     /**

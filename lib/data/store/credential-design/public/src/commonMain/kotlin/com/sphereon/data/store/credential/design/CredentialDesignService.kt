@@ -259,6 +259,18 @@ interface CredentialDesignService {
         tenantId: String,
         input: GetDesignAssetInput,
     ): IdkResult<ResolvedDesignAsset, IdkError>
+
+    /**
+     * Reads a CONTENT-ADDRESSED design asset by the lowercase-hex SHA-256 [hash] of its bytes.
+     *
+     * Backs the PUBLIC, unauthenticated hosting surface (`GET /public/assets/design/{hash}`).
+     * Tenant-scoped: the same hash in different tenants resolves to that tenant's blob only.
+     * Returns NOT_FOUND_ERROR when no asset with that hash exists for the tenant.
+     */
+    suspend fun getDesignAssetByHash(
+        tenantId: String,
+        hash: String,
+    ): IdkResult<ResolvedDesignAsset, IdkError>
 }
 
 /**

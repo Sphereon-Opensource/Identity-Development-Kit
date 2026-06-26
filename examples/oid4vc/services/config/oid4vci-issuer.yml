@@ -59,6 +59,13 @@ oid4vci:
   issuer:
     identifier: "${env:EXTERNAL_BASE_URL}/oid4vci"
     authorization-servers: "${env:EXTERNAL_BASE_URL}/auth"
+    # Protocol endpoints (credential, nonce, vct/{vctId}, ...) mount under this base path.
+    # This deployment uses a PATH-based issuer identifier (.../oid4vci) behind a Caddy
+    # reverse proxy that forwards /oid4vci/* WITHOUT stripping the prefix, so the protocol
+    # surface must mount under /oid4vci to match. Since IDK 45b931259 the default is "" (root),
+    # which only fits a dedicated per-subdomain issuer — hence it must be set explicitly here.
+    protocol:
+      base-path: /oid4vci
     # The SINGLE did:web document served at /.well-known/did.json carries every key this deployment
     # publishes, each at a descriptive per-alias fragment (e.g. did:web:<host>#PID): the issuer's
     # credential-signing keys under assertionMethod, and the verifier's request-object signing key
@@ -117,7 +124,7 @@ oid4vci:
     credentials:
       "[TestCredential]":
         format: "dc+sd-jwt"
-        vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential"
+        vct: "${env:EXTERNAL_BASE_URL}/public/schema/vct/TestCredential"
         scope: test_credential
         # Embed a Token Status List reference (status.status_list) into each issued credential,
         # allocating an entry in the `revocation` list defined above.
@@ -282,7 +289,7 @@ oid4vci:
             text-color: "#ffffff"
       "[EuPid]":
         format: "dc+sd-jwt"
-        vct: "${env:EXTERNAL_BASE_URL}/oid4vci/vct/EuPid"
+        vct: "${env:EXTERNAL_BASE_URL}/public/schema/vct/EuPid"
         scope: eu_pid
         status-list-id: revocation
         signing-key-alias: PID

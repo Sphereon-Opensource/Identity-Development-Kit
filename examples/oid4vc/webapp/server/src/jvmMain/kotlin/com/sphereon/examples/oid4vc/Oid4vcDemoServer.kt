@@ -100,7 +100,7 @@ fun Application.configureOid4vcDemo(
             // VCT type metadata
             get("/issuer/vct/{type}") {
                 val type = call.parameters["type"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-                val response = httpClient.get("$externalBaseUrl/oid4vci/vct/$type")
+                val response = httpClient.get("$externalBaseUrl/public/schema/vct/$type")
                 call.respondBytes(response.readRawBytes(), ContentType.Application.Json, HttpStatusCode(response.status.value, ""))
             }
 

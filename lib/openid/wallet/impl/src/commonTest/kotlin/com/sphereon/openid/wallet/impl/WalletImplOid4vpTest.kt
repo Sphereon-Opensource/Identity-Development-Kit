@@ -858,8 +858,8 @@ class WalletImplOid4vpTest {
             assertNotNull(boundInstance, "instance should still be in the document")
             assertNotNull(boundInstance.boundTo, "boundTo should be set after presentation")
             assertEquals("verifier", boundInstance.boundTo!!.value, "boundTo.value should be the verifier client_id")
-            // NoOp resolver returns ref unchanged — no correlationId enrichment.
-            assertEquals(null, boundInstance.boundTo!!.correlationId, "no-op resolver leaves correlationId null")
+            // NoOp resolver returns ref unchanged — no identityIdentifierId enrichment.
+            assertEquals(null, boundInstance.boundTo!!.identityIdentifierId, "no-op resolver leaves identityIdentifierId null")
 
             val now = kotlin.time.Instant.fromEpochSeconds(1_800_000_000)
             val metadata = updatedDoc.metadata(now)

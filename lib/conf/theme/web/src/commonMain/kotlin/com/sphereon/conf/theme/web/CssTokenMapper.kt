@@ -25,10 +25,20 @@ import com.sphereon.core.compat.JsExportCompat
 @JsExportCompat
 object CssTokenMapper {
     /**
-     * Convert an IDK token key to a CSS custom property name.
-     * Example: "color.primary" → "--color-primary"
+     * Convert an IDK token key to a CSS custom property name. camelCase segments
+     * are split to kebab-case and dots become hyphens, so the emitted variables
+     * are idiomatic kebab CSS that hand-written stylesheets reference directly.
+     * Example: "color.primary" → "--color-primary",
+     *          "color.onSurface" → "--color-on-surface".
      */
-    fun tokenKeyToCssVar(key: String): String = "--${key.replace('.', '-')}"
+    fun tokenKeyToCssVar(key: String): String {
+        val kebab =
+            key
+                .replace(CAMEL_BOUNDARY, "$1-$2")
+                .lowercase()
+                .replace('.', '-')
+        return "--$kebab"
+    }
 
     /**
      * Convert IDK dimension units (sp/dp) to CSS-compatible px values.
@@ -69,4 +79,8 @@ object CssTokenMapper {
     }
 
     private val UNIT_PATTERN = Regex("""(\d+(?:\.\d+)?)\s*(?:sp|dp)""")
+
+    // Boundary between a lowercase/digit and an uppercase letter, e.g. the "nS"
+    // in "onSurface" — used to split camelCase token segments to kebab-case.
+    private val CAMEL_BOUNDARY = Regex("""([a-z0-9])([A-Z])""")
 }

@@ -16,9 +16,14 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.discovery
 
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
+import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
@@ -261,4 +266,72 @@ class BuildServerMetadataGoldenTest {
                 assertTrue(it.startsWith("https://"), "endpoint must be HTTPS when issuer is HTTPS: $it")
             }
         }
+
+    @Test
+    fun tenantProviderSigningKeyDrivesOidcMetadataAlgValuesSupported() =
+        runTest {
+            // Fresh tenant provisioning stores the AS signing key in a tenant-specific KMS
+            // provider. Discovery must resolve that exact KeyInfo, including providerId, while
+            // deriving id_token_signing_alg_values_supported for openid-configuration.
+            val providerId = "tenant-specific-discovery-provider"
+            val kid = "oauth2-as-phase-discovery"
+            registerSoftwareProvider(providerId)
+
+            val genResult =
+                ctx.keyManagerService.generateKeyResult(
+                    providerId = providerId,
+                    alias = kid,
+                    use = JwkUse.sig,
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            assertTrue(
+                genResult.isOk,
+                "ECDSA tenant-provider key must be provisioned: ${if (genResult.isErr) genResult.error.message.defaultMessage else ""}",
+            )
+            assertEquals(providerId, genResult.value.keyPair?.providerId, "precondition: key must live in the tenant provider")
+
+            val config =
+                oidfBasicConfig().copy(
+                    idTokenSigningAlgValuesSupported = null,
+                )
+            val provider = TestOAuth2ServersConfigProvider(OAuth2ServersConfig(servers = mapOf("default" to config)))
+            val command =
+                BuildServerMetadataCommandImpl(
+                    execution = ctx.execution,
+                    configProvider = provider,
+                    signingIdentifierResolver =
+                        fixedSigningIdentifierResolver(
+                            ManagedOptsKeyInfo(
+                                identifier =
+                                    KeyInfo<KeyType>(
+                                        kid = kid,
+                                        alias = kid,
+                                        providerId = providerId,
+                                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                                    ),
+                            ),
+                        ),
+                    identifierService = ctx.identifierService,
+                    grantHandlers = emptySet(),
+                    kmsProviderRegistry = ctx.kmsProviderRegistry,
+                    buildSignedMetadata =
+                        com.sphereon.oauth2.server.authorization.impl.testutil
+                            .StubBuildSignedAuthorizationServerMetadataCommand(ctx.execution),
+                )
+
+            val result = command.execute(BuildServerMetadataArgs())
+
+            assertTrue(
+                result.isOk,
+                "metadata build must resolve the tenant-provider signing key: " +
+                    if (result.isErr) result.error.message.defaultMessage ?: "" else "",
+            )
+            assertEquals(listOf("ES256"), result.value.idTokenSigningAlgValuesSupported)
+        }
+
+    private fun registerSoftwareProvider(providerId: String) {
+        val factory = (ctx.app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
+        val provider = factory.create(SoftwareKmsProviderConfig(id = providerId), ctx.execution)
+        ctx.keyManagerService.registerProvider(provider, makeDefaultKms = false)
+    }
 }

@@ -135,10 +135,3 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-
-      - name: Print failure context
-        if: failure()
-        run: |
-          find . -name "index.html" -path "*/build/reports/tests/*" \
-            -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
-

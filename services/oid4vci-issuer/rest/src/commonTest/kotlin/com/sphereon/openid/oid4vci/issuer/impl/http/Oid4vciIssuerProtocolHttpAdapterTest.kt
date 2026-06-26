@@ -13,7 +13,6 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
-import com.sphereon.openid.oid4vci.issuer.config.NoOpVctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.ApprovePipelineSessionEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeAttributesEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeViaCallbackEndpointCommandImpl
@@ -24,7 +23,6 @@ import com.sphereon.openid.oid4vci.issuer.impl.http.command.FakeContributeAttrib
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetIssuerMetadataEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetSessionAttributesEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetVctTypeMetadataEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEndpointCommandImpl
@@ -152,6 +150,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             execution,
             NoOpRoutableSlugLookup(),
             testTenantIdProvider(),
+            NoOpAppConfigService,
             credentialOfferCommand,
             nonceCommand,
             credentialCommand,
@@ -164,7 +163,6 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             contributeViaCallbackCommand,
             failPipelineSourceCommand,
             approvePipelineSessionCommand,
-            GetVctTypeMetadataEndpointCommandImpl(execution, NoOpVctTypeMetadataProvider),
         )
 
     // ========================================================================
@@ -201,6 +199,57 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
                 "https://issuer.example.com",
                 body.jsonObject["credential_issuer"]?.jsonPrimitive?.content,
             )
+        }
+
+    @Test
+    fun pathBearingMetadataEndpointReturns200WithoutTenantResolution() =
+        runTest {
+            val pathConfigProvider =
+                FakeOid4vciIssuerConfigProvider(
+                    issuerIdentifier = "http://localhost:18084/oid4vci",
+                )
+            val buildMetadata = FakeBuildIssuerMetadataCommand()
+            val buildSignedMetadata = FakeBuildSignedIssuerMetadataCommand()
+            buildMetadata.result =
+                Ok(
+                    CredentialIssuerMetadata(
+                        credentialIssuer = "http://localhost:18084/oid4vci",
+                        credentialEndpoint = "http://localhost:18084/oid4vci/credential",
+                        credentialConfigurationsSupported =
+                            mapOf(
+                                "TestCred" to CredentialConfigurationSupported(format = "jwt_vc_json"),
+                            ),
+                    ),
+                )
+            val command =
+                GetIssuerMetadataEndpointCommandImpl(
+                    execution,
+                    buildMetadata,
+                    buildSignedMetadata,
+                    pathConfigProvider,
+                    fakeRestConfigProvider,
+                    FakeMultiManagedIdentifierService,
+                    DefaultOid4vciIssuerPublicUrlResolver(),
+                )
+            val adapter =
+                Oid4vciIssuerMetadataHttpAdapter(
+                    execution,
+                    NoOpRoutableSlugLookup(),
+                    testTenantIdProvider(),
+                    command,
+                )
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/.well-known/openid-credential-issuer/oid4vci",
+                    headers = mapOf("host" to "localhost:18084"),
+                )
+
+            val response = adapter.handleRequest(request)
+
+            assertEquals(200, response.statusCode)
+            assertEquals("http://localhost:18084/oid4vci", buildMetadata.lastArgs?.issuerIdentifier)
+            assertEquals("http://localhost:18084/oid4vci", buildMetadata.lastArgs?.baseUrl)
         }
 
     // ========================================================================
@@ -473,6 +522,60 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
 
             assertNotNull(fakeHandleCredential.lastArgs)
             assertEquals("test-token", fakeHandleCredential.lastArgs!!.accessToken)
+        }
+
+    @Test
+    fun credentialEndpointPreparesConfigProviderBeforeReadingCredentialConfigurations() =
+        runTest {
+            val preparedConfigId = "PreparedCred"
+            val preparingConfigProvider =
+                FakeOid4vciIssuerConfigProvider(
+                    initialCredentialConfigurations = emptyMap(),
+                    preparedCredentialConfigurations =
+                        mapOf(
+                            preparedConfigId to CredentialConfigurationSupported(format = "jwt_vc_json"),
+                        ),
+                )
+            val handleCredential = FakeHandleCredentialRequestCommand()
+            handleCredential.result =
+                Ok(
+                    CredentialResponse(
+                        credentials = listOf(CredentialResponseItem(credential = JsonPrimitive("eyJ.prepared.credential"))),
+                    ),
+                )
+            val encryptor =
+                com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor(
+                    jweService = ThrowingJweService,
+                    configProvider = preparingConfigProvider,
+                )
+            val command =
+                HandleCredentialEndpointCommandImpl(
+                    execution,
+                    handleCredential,
+                    fakeDecryptJweCommand,
+                    preparingConfigProvider,
+                    encryptor,
+                )
+
+            val result =
+                command.execute(
+                    GenericHttpRequest(
+                        method = "POST",
+                        path = "/credential",
+                        headers = mapOf("Authorization" to "Bearer test-token"),
+                        bodySupplier = {
+                            """{"credential_configuration_id": "$preparedConfigId", "proofs": {"jwt": ["eyJ..."]}}"""
+                        },
+                    ),
+                )
+
+            assertTrue(result.isOk, "credential endpoint should succeed with prepared provider: ${result.errorOrNull()}")
+            assertEquals(200, result.value.statusCode)
+            assertEquals(1, preparingConfigProvider.prepareCount)
+            assertTrue(
+                handleCredential.lastArgs?.credentialConfigurations?.containsKey(preparedConfigId) == true,
+                "credential endpoint must pass the prepared configuration snapshot",
+            )
         }
 
     // ========================================================================

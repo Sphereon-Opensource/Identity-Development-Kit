@@ -21,6 +21,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.ConfigUnavailableException
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.context.ContextConfig
@@ -189,6 +190,35 @@ class CommandBackedHttpAdapterTest {
             assertFalse(endpoint.supports(mapOf("key" to "value")))
         }
 
+    @Test
+    fun configUnavailableExceptionFromEndpointRendersAs503() =
+        runTest {
+            // §4.2: a config read that races a lazy/remote config fetch raises
+            // ConfigUnavailableException from inside endpoint execution. The
+            // command-backed adapter must surface this as 503 (UNAVAILABLE) so the
+            // caller retries, not the 500 a generic exception produces.
+            val adapter = TestUnavailableAdapter(TestSessionExecution())
+
+            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+
+            assertEquals(503, response.statusCode)
+            assertTrue(
+                response.body?.contains("SERVICE_UNAVAILABLE") == true,
+                "503 body should carry the SERVICE_UNAVAILABLE code, was: ${response.body}",
+            )
+        }
+
+    @Test
+    fun genericExceptionFromEndpointStillRendersAs500() =
+        runTest {
+            // Guard the discrimination: a non-config exception must remain a 500.
+            val adapter = TestGenericFailureAdapter(TestSessionExecution())
+
+            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+
+            assertEquals(500, response.statusCode)
+        }
+
     // ========== Test fixtures ==========
 
     /**
@@ -255,6 +285,59 @@ class CommandBackedHttpAdapterTest {
                     responseProvider = {
                         GenericHttpResponse(statusCode = 204)
                     },
+                ),
+            )
+    }
+
+    /**
+     * Real [CommandBackedHttpAdapter] whose single endpoint raises
+     * [ConfigUnavailableException] — exercises the adapter's transient-config
+     * catch branch (→ 503).
+     */
+    private class TestUnavailableAdapter(
+        execution: SessionExecution,
+    ) : CommandBackedHttpAdapter(
+            id = "test-unavailable-adapter",
+            execution = execution,
+            mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+        ) {
+        override val endpointCommands: List<HttpEndpointCommand> =
+            listOf(
+                TestEndpointCommand(
+                    id = "test.items.get",
+                    endpoint =
+                        HttpEndpointDescriptor(
+                            method = HttpMethod.GET,
+                            pathPattern = "/{id}",
+                            operationId = "getItem",
+                        ),
+                    responseProvider = { throw ConfigUnavailableException("remote platform config not ready") },
+                ),
+            )
+    }
+
+    /**
+     * Real [CommandBackedHttpAdapter] whose single endpoint throws a generic
+     * exception — guards that only config-unavailability maps to 503 (→ 500).
+     */
+    private class TestGenericFailureAdapter(
+        execution: SessionExecution,
+    ) : CommandBackedHttpAdapter(
+            id = "test-generic-failure-adapter",
+            execution = execution,
+            mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+        ) {
+        override val endpointCommands: List<HttpEndpointCommand> =
+            listOf(
+                TestEndpointCommand(
+                    id = "test.items.get",
+                    endpoint =
+                        HttpEndpointDescriptor(
+                            method = HttpMethod.GET,
+                            pathPattern = "/{id}",
+                            operationId = "getItem",
+                        ),
+                    responseProvider = { throw IllegalStateException("boom") },
                 ),
             )
     }

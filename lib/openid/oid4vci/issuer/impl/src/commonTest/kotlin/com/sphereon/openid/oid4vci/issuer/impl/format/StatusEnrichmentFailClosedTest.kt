@@ -18,7 +18,10 @@ package com.sphereon.openid.oid4vci.issuer.impl.format
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.context.ContextConfig
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.crypto.jose.jws.JwsJsonFlattened
 import com.sphereon.crypto.jose.jws.JwsJsonGeneral
 import com.sphereon.crypto.jose.jws.JwsValidationResult
@@ -28,6 +31,9 @@ import com.sphereon.crypto.jose.jws.PreparedJwsObject
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
+import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionContextManager
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
@@ -93,7 +99,7 @@ class StatusEnrichmentFailClosedTest {
 
     private fun realEnricherWithEmptyStore(): CredentialStatusEnricher =
         CredentialStatusEnricherImpl(
-            driver = InMemoryStatusListDriver(InMemoryStatusListStore(), UnreachableStatusListSigner),
+            driver = InMemoryStatusListDriver(InMemoryStatusListStore(), UnreachableStatusListSigner, TestSessionExecution()),
         )
 
     private val config =
@@ -119,6 +125,18 @@ class StatusEnrichmentFailClosedTest {
             statusListCorrelationId = "eupid-revocation",
             spec = StatusListSpec.BITSTRING_STATUS_LIST,
         )
+
+    private class TestSessionExecution(
+        override val tenantId: String = "test-tenant",
+        override val sessionContext: SessionContext = NoOpSessionContext,
+    ) : SessionExecution {
+        override val sessionContextManager: SessionContextManager
+            get() = throw NotImplementedError("Not needed for test")
+        override val log: SessionLogService
+            get() = throw NotImplementedError("Not needed for test")
+        override val conf: ContextConfig
+            get() = throw NotImplementedError("Not needed for test")
+    }
 
     @Test
     fun statusListConfiguredWithoutEnricherFailsIssuance() =

@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  * Tests for secret resolution through the ConfigResolutionPipeline.
  *
  * These tests verify that:
- * 1. ${secret:env:VAR} references resolve environment variables as secrets
+ * 1. ${secret:@env:VAR} references resolve environment variables as secrets
  * 2. Secret references work in combination with regular interpolation
  * 3. Missing secrets are handled appropriately
  */
@@ -87,7 +87,7 @@ class SecretResolutionTest {
     fun testSecretEnvResolution() {
         // Set a value referencing an env var as a secret
         // Using PATH which should exist on all systems
-        appSettingsSource.setProperty("secret.ref", "\${secret:env:PATH}")
+        appSettingsSource.setProperty("secret.ref", "\${secret:@env:PATH}")
 
         // Verify secret is resolved (just check it's not the placeholder)
         val resolved = appConfigService.getProperty<String>("secret.ref")
@@ -118,7 +118,7 @@ class SecretResolutionTest {
                 "HOME"
             }
 
-        appSettingsSource.setProperty("user.home.secret", "\${secret:env:$envVar}")
+        appSettingsSource.setProperty("user.home.secret", "\${secret:@env:$envVar}")
 
         val resolved = appConfigService.getProperty<String>("user.home.secret")
         assertNotNull(resolved, "Secret referencing $envVar should resolve")
@@ -131,7 +131,7 @@ class SecretResolutionTest {
     @Test
     fun testRawSecretReferenceStored() {
         // Verify that the raw reference is stored in settings (not resolved at storage time)
-        val secretRef = "\${secret:env:PATH}"
+        val secretRef = "\${secret:@env:PATH}"
         appSettingsSource.setProperty("raw.secret", secretRef)
 
         // Get the raw value from settings (bypassing interpolation)

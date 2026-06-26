@@ -63,6 +63,8 @@ object DefaultPaletteMapping {
             "color.onPrimary" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_50),
             "color.primaryContainer" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_100),
             "color.onPrimaryContainer" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_900),
+            // Accent — interactive brand accent (mirrors primary)
+            "color.accent" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_500),
             // Secondary
             "color.secondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_500),
             "color.onSecondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_50),
@@ -119,19 +121,21 @@ object DefaultPaletteMapping {
             "color.border.subtle" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_200),
             "color.border.disabled" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_200),
             // Interactive
-            "color.interactive.hover" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_600),
-            "color.interactive.pressed" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_700),
-            "color.interactive.disabled" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_300),
+            "color.interactive.hover" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_100),
+            "color.interactive.pressed" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_200),
+            "color.interactive.disabled" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_200),
             "color.interactive.focus" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_500),
         )
 
     val DARK: Map<String, PaletteRef> =
         mapOf(
             // Primary
-            "color.primary" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_400),
+            "color.primary" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_500),
             "color.onPrimary" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_50),
             "color.primaryContainer" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_700),
             "color.onPrimaryContainer" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_100),
+            // Accent — interactive brand accent (mirrors primary)
+            "color.accent" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_400),
             // Secondary
             "color.secondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_300),
             "color.onSecondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_50),
@@ -165,7 +169,7 @@ object DefaultPaletteMapping {
             "color.inverseOnSurface" to PaletteRef(ROLE_NEUTRAL, stop = PaletteScale.STOP_800),
             "color.inversePrimary" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_600),
             // Feedback
-            "color.feedback.success" to PaletteRef(ROLE_SUCCESS, stop = PaletteScale.STOP_400),
+            "color.feedback.success" to PaletteRef(ROLE_SUCCESS, stop = PaletteScale.STOP_600),
             "color.feedback.successContainer" to PaletteRef(ROLE_SUCCESS, stop = PaletteScale.STOP_800),
             "color.feedback.onSuccess" to PaletteRef(ROLE_SUCCESS, stop = PaletteScale.STOP_50),
             "color.feedback.onSuccessContainer" to PaletteRef(ROLE_SUCCESS, stop = PaletteScale.STOP_100),

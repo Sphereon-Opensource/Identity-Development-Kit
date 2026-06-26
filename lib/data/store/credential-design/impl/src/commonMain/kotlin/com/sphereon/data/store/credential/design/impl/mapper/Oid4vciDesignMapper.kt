@@ -20,6 +20,7 @@ import com.sphereon.data.store.credential.design.impl.resolution.Oid4vciCredenti
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
 import com.sphereon.data.store.credential.design.model.DesignBinding
+import com.sphereon.data.store.credential.design.model.EntityLocaleDesign
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
 import com.sphereon.data.store.credential.design.model.RenderVariantRecord
 import com.sphereon.data.store.credential.design.model.ResolvedCredentialDesign
@@ -53,8 +54,9 @@ object Oid4vciDesignMapper {
      * given OID4VCI [format].
      *
      * - Display entries are built from [ResolvedCredentialDesign.design.displays], enriched
-     *   with colors / logo / backgroundImage from the first [RenderVariantRecord] in
-     *   [ResolvedCredentialDesign.renderVariants].
+     *   with colors / logo / backgroundImage from the [RenderVariantRecord] whose
+     *   `localeApplicability` contains that display's locale, falling back to the first
+     *   variant when none match.
      * - Claims are converted via [Oid4vciClaimPathMapper.toOid4vciPath].
      * - Format-specific fields (`vct`, `doctype`, `credentialDefinition`) are derived from
      *   the first [DesignBinding] that carries the relevant value.
@@ -65,14 +67,13 @@ object Oid4vciDesignMapper {
     ): CredentialConfigurationSupported {
         val record = design.design
 
-        // Pick the first render variant to source styling colours / logo / backgroundImage
-        val firstVariant: RenderVariantRecord? = design.renderVariants.firstOrNull()
-
-        // Map displays
+        // Map displays — each picks the render variant whose localeApplicability contains
+        // that display's locale, falling back to the first variant when none match.
         val displays =
             record.displays
                 .map { localDisplay ->
-                    buildDisplayProperties(localDisplay, firstVariant)
+                    val selectedVariant = selectRenderVariant(design.renderVariants, localDisplay.locale)
+                    buildDisplayProperties(localDisplay, selectedVariant)
                 }.takeIf { it.isNotEmpty() }
 
         // Map claims → OID4VCI 1.1 credential_metadata.claims (path-based)
@@ -159,6 +160,43 @@ object Oid4vciDesignMapper {
     // -------------------------------------------------------------------------
     // Helpers — outbound
     // -------------------------------------------------------------------------
+
+    /**
+     * Builds the OID4VCI **top-level issuer** `display` list from an issuer/entity design's
+     * per-locale [EntityLocaleDesign] entries enriched with the matching [RenderVariantRecord]
+     * (logo / background / colors), mirroring the credential-level [buildDisplayProperties] +
+     * [selectRenderVariant] policy.
+     *
+     * Entries whose [EntityLocaleDesign.displayName] is null are skipped, because the OID4VCI
+     * [DisplayProperties.name] is required.
+     *
+     * Logo / background URIs are passed through verbatim (they are stored RELATIVE and made
+     * absolute per-tenant at serve time — see
+     * [com.sphereon.data.store.credential.design.PublicDesignAssetPaths.toAbsolute]).
+     */
+    fun buildIssuerDisplayProperties(
+        displays: List<EntityLocaleDesign>,
+        renderVariants: List<RenderVariantRecord>,
+    ): List<DisplayProperties> =
+        displays.mapNotNull { entity ->
+            val name = entity.displayName ?: return@mapNotNull null
+            val variant = selectRenderVariant(renderVariants, entity.locale)
+            DisplayProperties(
+                name = name,
+                locale = entity.locale.takeIf { it.isNotEmpty() },
+                description = entity.description,
+                backgroundColor = variant?.backgroundColor,
+                textColor = variant?.textColor,
+                logo =
+                    variant?.logo?.let { ref ->
+                        LogoProperties(uri = ref.uri, altText = ref.altText)
+                    },
+                backgroundImage =
+                    variant?.backgroundImage?.let { ref ->
+                        ImageProperties(uri = ref.uri)
+                    },
+            )
+        }
 
     private fun buildDisplayProperties(
         localDisplay: LocalizedCredentialDisplay,

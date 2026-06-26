@@ -21,12 +21,14 @@ import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.response.ResponseBuilder
+import com.sphereon.core.api.http.util.RequestUtils
 import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants.CommandIds
+import com.sphereon.statuslist.hosting.rest.StatusListHostingConfig
 import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByCorrelationIdEndpointCommand
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -41,6 +43,10 @@ private const val PARAM_CORRELATION_ID = "correlationId"
  * token's own media type and a `Cache-Control: public, max-age=<ttl>` header. The token string is
  * emitted verbatim as UTF-8 bytes so the body is the exact URI a verifier resolves, never a JSON
  * envelope.
+ *
+ * Status lists are globally unique by their full hosting URL. The public GET resolves a list by the
+ * full reconstructed request URL (proxy-aware scheme + host + request path) matched tenant-agnostic
+ * against the stored `status_list_uri`, which is the exact URL recorded at creation time.
  */
 abstract class AbstractGetStatusListTokenEndpointCommand(
     id: String,
@@ -82,6 +88,7 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
 class GetStatusListTokenByCorrelationIdEndpointCommandImpl(
     execution: SessionExecution,
     service: GetStatusListTokenCommand,
+    private val hostingConfig: StatusListHostingConfig,
 ) : AbstractGetStatusListTokenEndpointCommand(
         id = CommandIds.HTTP_GET_TOKEN_BY_CORRELATION_ID,
         execution = execution,
@@ -91,6 +98,21 @@ class GetStatusListTokenByCorrelationIdEndpointCommandImpl(
     GetStatusListTokenByCorrelationIdEndpointCommand {
     override fun resolveRef(request: GenericHttpRequest): IdkResult<StatusListRef, IdkError> {
         val correlationId = request.requirePathParam(PARAM_CORRELATION_ID).getOrElse { return Err(it) }
-        return Ok(StatusListRef(correlationId = correlationId))
+        // Resolve by the list's full hosting URL, matched tenant-agnostic against the stored
+        // status_list_uri (the exact URL recorded at creation). In a multi-tenant deployment each
+        // tenant hosts its lists on its own public host, so the URL is reconstructed from the
+        // (gateway-preserved) request host + the adapter base-path — `request.path` is already
+        // base-path-stripped (e.g. "/{id}"), so the base-path is re-prefixed to match the stored
+        // "<base-path>/{id}". A single configured external-base-url cannot represent every tenant's
+        // host, so it is not used here; the correlationId is the tenant-scoped business-key fallback
+        // (the GET resolves the tenant from that same host) for lists whose stored `uri` is an
+        // explicit value the request URL can't reproduce.
+        val fullUrl =
+            RequestUtils.buildFullUrl(
+                headers = request.headers,
+                path = request.path,
+                basePath = hostingConfig.basePath,
+            )
+        return Ok(StatusListRef(statusListUri = fullUrl, correlationId = correlationId))
     }
 }

@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
@@ -66,8 +67,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
@@ -90,6 +89,7 @@ class HttpAsBridge(
     private val httpClientFactory: HttpClientFactory,
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
     private val dpopProofJtiCache: com.sphereon.oauth2.server.authorization.dpop.DpopProofJtiCache,
+    private val asBaseUrlResolver: Oid4vciAsBridgeBaseUrlResolver,
 ) : Oid4vciAuthorizationServerBridge {
     private val httpClient: HttpClient by lazy {
         httpClientFactory.createClient(HttpClientOptions())
@@ -104,10 +104,38 @@ class HttpAsBridge(
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
-    private val asInternalUrl: String
-        get() =
-            configService.getPropertyAsString("$CONFIG_PREFIX.internal-url")
-                ?: "http://localhost:8080"
+    /** Connection target + optional Host override for one east-west AS call at [path]. */
+    private data class AsTarget(
+        val url: String,
+        val hostHeader: String?
+    )
+
+    /**
+     * Resolve where to send an east-west AS call. When a per-tenant PUBLIC host resolves AND an
+     * internal AS address is configured (`$CONFIG_PREFIX.internal-url`), CONNECT to the internal
+     * address and carry the public host in the `Host` header — the AS resolves the tenant from that
+     * header. This avoids resolving the per-tenant public `{tenant}.{base}` FQDN from inside the
+     * network (loopback under localtest.me; a fragile hairpin in a real cluster). Falls back to the
+     * public host directly (real-DNS deployments where the AS is only reachable that way), or to the
+     * static internal URL when no per-tenant host applies (single-tenant / non-gateway).
+     */
+    private suspend fun asTarget(path: String): AsTarget {
+        val publicBase = asBaseUrlResolver.resolveAsBaseUrl()?.trimEnd('/')
+        val internalUrl = configService.getPropertyAsString("$CONFIG_PREFIX.internal-url")?.trimEnd('/')
+        return when {
+            publicBase != null && internalUrl != null -> {
+                AsTarget("$internalUrl$path", publicBase.substringAfter("://"))
+            }
+
+            publicBase != null -> {
+                AsTarget("$publicBase$path", null)
+            }
+
+            else -> {
+                AsTarget("${internalUrl ?: "http://localhost:8080"}$path", null)
+            }
+        }
+    }
 
     private val clientId: String
         get() =
@@ -119,10 +147,9 @@ class HttpAsBridge(
             configService.getPropertyAsString("$CONFIG_PREFIX.client-secret")
                 ?: ""
 
-    @OptIn(ExperimentalEncodingApi::class)
     private fun basicAuthHeader(): String {
         val credentials = "$clientId:$clientSecret"
-        return "Basic ${Base64.encode(credentials.encodeToByteArray())}"
+        return "Basic ${credentials.encodeToByteArray().encodeToBase64()}"
     }
 
     override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
@@ -145,10 +172,14 @@ class HttpAsBridge(
             )
 
         try {
+            val target = asTarget("/internal/preauth/register")
             val response =
-                httpClient.post("$asInternalUrl/internal/preauth/register") {
+                httpClient.post(target.url) {
                     contentType(ContentType.Application.Json)
-                    headers { append(HttpHeaders.Authorization, basicAuthHeader()) }
+                    headers {
+                        append(HttpHeaders.Authorization, basicAuthHeader())
+                        target.hostHeader?.let { append(HttpHeaders.Host, it) }
+                    }
                     setBody(json.encodeToString(request))
                 }
             if (response.status.value !in 200..299) {
@@ -170,10 +201,14 @@ class HttpAsBridge(
 
     override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult<ValidatedTokenContext, IdkError> {
         try {
+            val target = asTarget("/introspect")
             val response =
-                httpClient.post("$asInternalUrl/introspect") {
+                httpClient.post(target.url) {
                     contentType(ContentType.Application.FormUrlEncoded)
-                    headers { append(HttpHeaders.Authorization, basicAuthHeader()) }
+                    headers {
+                        append(HttpHeaders.Authorization, basicAuthHeader())
+                        target.hostHeader?.let { append(HttpHeaders.Host, it) }
+                    }
                     setBody("token=${args.accessToken}&token_type_hint=access_token&client_id=$clientId")
                 }
             val body = response.bodyAsText()
@@ -302,9 +337,13 @@ class HttpAsBridge(
             configService.getPropertyAsString(SURFACE_LOCAL_USERINFO_KEY)?.toBoolean() ?: false
         if (!enabled) return null
         return try {
+            val target = asTarget("/userinfo")
             val response =
-                httpClient.get("$asInternalUrl/userinfo") {
-                    headers { append(HttpHeaders.Authorization, "Bearer $accessToken") }
+                httpClient.get(target.url) {
+                    headers {
+                        append(HttpHeaders.Authorization, "Bearer $accessToken")
+                        target.hostHeader?.let { append(HttpHeaders.Host, it) }
+                    }
                 }
             if (response.status.value !in 200..299) return null
             json

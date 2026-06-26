@@ -20,6 +20,7 @@
 package com.sphereon.data.store.party.input
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.data.store.party.model.IdentityPrivacyMode
 import com.sphereon.data.store.party.model.IdentityRole
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -49,6 +50,9 @@ data class IdentityCreateInput
         /** The owning person/org party (null = unowned) */
         @SerialName("ownerId")
         val ownerId: Uuid? = null,
+        /** Controls whether readable profile data may exist on bound Party records. */
+        @SerialName("privacyMode")
+        val privacyMode: IdentityPrivacyMode = IdentityPrivacyMode.PARTY_PROFILED,
         /**
          * The specialization this identity serves when it is intrinsically role-scoped
          * (null = party-global, fan-out-then-filter applies at login).
@@ -77,4 +81,7 @@ data class IdentityUpdateInput
         /** New default flag (null = keep current) */
         @SerialName("isDefault")
         val isDefault: Boolean? = null,
+        /** New privacy mode (null = keep current) */
+        @SerialName("privacyMode")
+        val privacyMode: IdentityPrivacyMode? = null,
     )

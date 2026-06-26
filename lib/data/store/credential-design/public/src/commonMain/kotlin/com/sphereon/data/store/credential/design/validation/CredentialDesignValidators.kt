@@ -31,10 +31,12 @@ import com.sphereon.data.store.credential.design.model.CredentialDesignModuleCon
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.CredentialDesignRefreshConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignValidationConfig
+import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.ImportExternalDesignInput
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
 import com.sphereon.data.store.credential.design.model.RenderVariantKind
 import com.sphereon.data.store.credential.design.model.RenderVariantRecord
+import com.sphereon.data.store.credential.design.model.VctHostingMode
 import io.konform.validation.Validation
 import io.konform.validation.constraints.maxItems
 import io.konform.validation.constraints.minItems
@@ -47,6 +49,14 @@ fun createCredentialDesignValidator(config: CredentialDesignValidationConfig) =
             CreateCredentialDesignInput::bindings {
                 minItems(1) hint "at least one binding is required"
                 maxItems(config.maxBindingsPerDesign)
+            }
+            run {
+                constrain("HOSTED VCT bindings require vct or credentialConfigurationId") { input ->
+                    input.bindings.all(::hasHostedVctSeed)
+                }
+                constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
+                    input.bindings.all(::hasValidExternalVct)
+                }
             }
             CreateCredentialDesignInput::displays {
                 minItems(1) hint "at least one locale display is required"
@@ -71,6 +81,14 @@ fun createIssuerDesignValidator(config: CredentialDesignValidationConfig) =
         CreateIssuerDesignArgs::tenantId { minLength(1) }
         CreateIssuerDesignArgs::input {
             CreateIssuerDesignInput::bindings { minItems(1) hint "at least one binding is required" }
+            run {
+                constrain("HOSTED VCT bindings require vct or credentialConfigurationId") { input ->
+                    input.bindings.all(::hasHostedVctSeed)
+                }
+                constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
+                    input.bindings.all(::hasValidExternalVct)
+                }
+            }
             CreateIssuerDesignInput::displays { minItems(1) hint "at least one locale display is required" }
         }
     }
@@ -80,6 +98,14 @@ fun createVerifierDesignValidator(config: CredentialDesignValidationConfig) =
         CreateVerifierDesignArgs::tenantId { minLength(1) }
         CreateVerifierDesignArgs::input {
             CreateVerifierDesignInput::bindings { minItems(1) hint "at least one binding is required" }
+            run {
+                constrain("HOSTED VCT bindings require vct or credentialConfigurationId") { input ->
+                    input.bindings.all(::hasHostedVctSeed)
+                }
+                constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
+                    input.bindings.all(::hasValidExternalVct)
+                }
+            }
             CreateVerifierDesignInput::displays { minItems(1) hint "at least one locale display is required" }
         }
     }
@@ -108,6 +134,14 @@ val importExternalDesignValidator =
         ImportExternalDesignArgs::tenantId { minLength(1) }
         ImportExternalDesignArgs::input {
             ImportExternalDesignInput::bindings { minItems(1) hint "at least one binding is required" }
+            run {
+                constrain("HOSTED VCT bindings require vct or credentialConfigurationId") { input ->
+                    input.bindings.all(::hasHostedVctSeed)
+                }
+                constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
+                    input.bindings.all(::hasValidExternalVct)
+                }
+            }
             ImportExternalDesignInput::sourceUrl { minLength(1) hint "sourceUrl is required" }
         }
     }
@@ -161,3 +195,12 @@ val moduleConfigValidator =
             CredentialDesignRefreshConfig::maxAssetSizeBytes { constrain("must be > 0") { it > 0 } }
         }
     }
+
+private fun hasHostedVctSeed(binding: DesignBinding): Boolean =
+    binding.vctHostingMode != VctHostingMode.HOSTED ||
+        !binding.vct.isNullOrBlank() ||
+        !binding.credentialConfigurationId.isNullOrBlank()
+
+private fun hasValidExternalVct(binding: DesignBinding): Boolean =
+    binding.vctHostingMode != VctHostingMode.EXTERNAL ||
+        binding.vct?.contains("://") == true

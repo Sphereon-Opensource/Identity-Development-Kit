@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.authorization.impl.config
 
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.isEnabled
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -80,6 +81,22 @@ class OAuth2ServersConfigBinderDiscoveryTest {
     }
 
     @Test
+    fun normalizedReservedDefaultServerKeyIsNotDiscoveredAsDefaultServerId() {
+        val properties =
+            mapOf<String, Any>(
+                "$prefix.default.server" to "production",
+                "$prefix.production.mode" to "HOSTED",
+                "$prefix.production.issuer" to "https://auth.example.com",
+            )
+        val binder = newBinder(properties)
+
+        val config = binder.getConfig()
+        assertEquals(setOf("production"), config.servers.keys)
+        assertNull(config.servers["default"], "normalized default.server selector must not create a default server id")
+        assertEquals("production", config.defaultServer)
+    }
+
+    @Test
     fun deduplicatesMultiplePropertiesUnderTheSameServerId() {
         val properties =
             mapOf<String, Any>(
@@ -105,8 +122,50 @@ class OAuth2ServersConfigBinderDiscoveryTest {
         assertEquals("default", config.defaultServer)
     }
 
-    private fun newBinder(properties: Map<String, Any>): OAuth2ServersConfigBinder {
-        val configService = TypeAwarePrincipalConfigService(properties)
+    @Test
+    fun defaultServerSelectorRecoversWhenPrefixSnapshotIsStaleEmpty() {
+        val properties =
+            mapOf<String, Any>(
+                "$prefix.default-server" to "phase168830",
+                "$prefix.phase168830.mode" to "HOSTED",
+                "$prefix.phase168830.issuer" to "https://phase168830.saas.localtest.me",
+                "$prefix.phase168830.oidc" to "SUPPORTED",
+            )
+        val binder = newBinder(
+            properties,
+            subPropertiesOverride = { _, _, _ -> emptyMap() },
+        )
+
+        val config = binder.getConfig()
+        assertEquals(setOf("phase168830"), config.servers.keys)
+        assertEquals("phase168830", config.defaultServer)
+        assertEquals("https://phase168830.saas.localtest.me", config.getDefaultServer().issuer)
+        assertTrue(config.getDefaultServer().oidc.isEnabled)
+    }
+
+    @Test
+    fun defaultServerSelectorRemainsAuthoritativeForNormalizedSlugSegments() {
+        val serverId = "tenant-alpha"
+        val properties =
+            mapOf<String, Any>(
+                "$prefix.default-server" to serverId,
+                "$prefix.$serverId.mode" to "HOSTED",
+                "$prefix.$serverId.issuer" to "https://tenant-alpha.saas.localtest.me",
+            )
+        val binder = newBinder(properties, normalizeKeys = true)
+
+        val config = binder.getConfig()
+        assertEquals(setOf(serverId), config.servers.keys)
+        assertEquals(serverId, config.defaultServer)
+        assertEquals("https://tenant-alpha.saas.localtest.me", config.getDefaultServer().issuer)
+    }
+
+    private fun newBinder(
+        properties: Map<String, Any>,
+        subPropertiesOverride: ((Set<String>, Boolean, Map<String, Any>) -> Map<String, Any>)? = null,
+        normalizeKeys: Boolean = false,
+    ): OAuth2ServersConfigBinder {
+        val configService = TypeAwarePrincipalConfigService(properties, subPropertiesOverride, normalizeKeys)
         val execution = TestSessionExecution(configService)
         return OAuth2ServersConfigBinder(execution)
     }

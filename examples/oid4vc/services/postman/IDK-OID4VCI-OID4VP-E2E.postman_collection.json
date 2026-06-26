@@ -5,15 +5,51 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8080", "type": "string" },
-    { "key": "pre_auth_code", "value": "", "type": "string" },
-    { "key": "tx_code", "value": "", "type": "string" },
-    { "key": "access_token", "value": "", "type": "string" },
-    { "key": "c_nonce", "value": "", "type": "string" },
-    { "key": "offer_uri", "value": "", "type": "string" },
-    { "key": "correlation_id", "value": "", "type": "string" },
-    { "key": "auth_request_correlation_id", "value": "", "type": "string" },
-    { "key": "request_uri", "value": "", "type": "string" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "pre_auth_code",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tx_code",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "c_nonce",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "offer_uri",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "correlation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auth_request_correlation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "request_uri",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -21,23 +57,55 @@
       "item": [
         {
           "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/health" }
+            "url": "{{base_url}}/auth/health"
           }
         },
         {
           "name": "Issuer Metadata",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Issuer identifier is present', () => pm.expect(pm.response.json().credential_issuer).to.eql(pm.collectionVariables.get('base_url') + '/oid4vci'));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/.well-known/openid-credential-issuer" }
+            "url": "{{base_url}}/.well-known/openid-credential-issuer/oid4vci"
           }
         },
         {
           "name": "AS Discovery",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Token endpoint uses auth prefix', () => pm.expect(pm.response.json().token_endpoint).to.eql(pm.collectionVariables.get('base_url') + '/auth/token'));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/.well-known/oauth-authorization-server" }
+            "url": "{{base_url}}/.well-known/oauth-authorization-server/auth"
           }
         }
       ]
@@ -56,15 +124,26 @@
                   "pm.collectionVariables.set('offer_uri', json.offer_uri);",
                   "pm.collectionVariables.set('correlation_id', json.correlation_id);",
                   "",
-                  "// Extract pre-auth code from offer URI",
+                  "function storePreAuthCode(offer) {",
+                  "  if (offer.grants && offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']) {",
+                  "    pm.collectionVariables.set('pre_auth_code', offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']['pre-authorized_code']);",
+                  "  }",
+                  "}",
+                  "",
+                  "// Extract pre-auth code from inline credential_offer or fetched credential_offer_uri",
                   "if (json.offer_uri) {",
                   "  try {",
                   "    var uri = decodeURIComponent(json.offer_uri);",
-                  "    var offerParam = uri.split('credential_offer=')[1] || uri.split('credential_offer_uri=')[1];",
+                  "    var offerParam = uri.split('credential_offer=')[1];",
                   "    if (offerParam) {",
                   "      var offer = JSON.parse(decodeURIComponent(offerParam));",
-                  "      if (offer.grants && offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']) {",
-                  "        pm.collectionVariables.set('pre_auth_code', offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']['pre-authorized_code']);",
+                  "      storePreAuthCode(offer);",
+                  "    } else {",
+                  "      var offerUriParam = uri.split('credential_offer_uri=')[1];",
+                  "      if (offerUriParam) {",
+                  "        pm.sendRequest(decodeURIComponent(offerUriParam), function (err, res) {",
+                  "          if (!err && res.code === 200) storePreAuthCode(res.json());",
+                  "        });",
                   "      }",
                   "    }",
                   "  } catch(e) { console.log('Could not parse offer URI: ' + e); }",
@@ -78,19 +157,24 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"credential_configuration_ids\": [\"TestCredential\"],\n  \"grants\": {\n    \"urn:ietf:params:oauth:grant-type:pre-authorized_code\": {\n      \"tx_code\": {\n        \"input_mode\": \"numeric\",\n        \"length\": 6\n      }\n    }\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}"
+              "raw": "{\n  \"credential_configuration_ids\": [\"TestCredential\"],\n  \"grants\": {\n    \"pre_authorized_code\": {\n      \"tx_code\": {\n        \"input_mode\": \"numeric\",\n        \"length\": 6\n      }\n    }\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/api/oid4vci/v1/backend/credential/offers" }
+            "url": "{{base_url}}/api/oid4vci/v1/backend/credential/offers"
           }
         },
         {
           "name": "2. Get Offer Status",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/oid4vci/v1/backend/credential/offers/{{correlation_id}}" }
+            "url": "{{base_url}}/api/oid4vci/v1/backend/credential/offers/{{correlation_id}}"
           }
         },
         {
@@ -110,16 +194,30 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                { "key": "grant_type", "value": "urn:ietf:params:oauth:grant-type:pre-authorized_code" },
-                { "key": "pre-authorized_code", "value": "{{pre_auth_code}}" },
-                { "key": "tx_code", "value": "{{tx_code}}" }
+                {
+                  "key": "grant_type",
+                  "value": "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+                },
+                {
+                  "key": "pre-authorized_code",
+                  "value": "{{pre_auth_code}}"
+                },
+                {
+                  "key": "tx_code",
+                  "value": "{{tx_code}}"
+                }
               ]
             },
-            "url": { "raw": "{{base_url}}/token" }
+            "url": "{{base_url}}/auth/token"
           }
         },
         {
@@ -138,7 +236,7 @@
           ],
           "request": {
             "method": "POST",
-            "url": { "raw": "{{base_url}}/oid4vci/nonce" }
+            "url": "{{base_url}}/oid4vci/nonce"
           }
         },
         {
@@ -146,14 +244,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"credential_configuration_id\": \"TestCredential\",\n  \"proofs\": {\n    \"jwt\": [\"<INSERT_JWT_PROOF_HERE>\"]\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/oid4vci/credential" },
+            "url": "{{base_url}}/oid4vci/credential",
             "description": "Replace <INSERT_JWT_PROOF_HERE> with a valid JWT proof containing the c_nonce. In a real flow, the wallet generates this."
           }
         }
@@ -179,19 +283,24 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"credential_configuration_ids\": [\"TestCredential\"],\n  \"grants\": {\n    \"authorization_code\": {\n      \"issuer_state\": \"test-state-123\"\n    }\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/api/oid4vci/v1/backend/credential/offers" }
+            "url": "{{base_url}}/api/oid4vci/v1/backend/credential/offers"
           }
         },
         {
           "name": "2. Open Authorization URL (Manual)",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/authorize?response_type=code&client_id=wallet&redirect_uri=http://localhost:3000/callback&scope=openid%20TestCredential&state=random123&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256" },
+            "url": "{{base_url}}/auth/authorize?response_type=code&client_id=wallet&redirect_uri=http://localhost:3000/callback&scope=openid%20TestCredential&state=random123&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
             "description": "Open this URL in a browser. Login with testuser/testpass. After redirect, extract the 'code' query parameter for the next step."
           }
         },
@@ -212,18 +321,38 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                { "key": "grant_type", "value": "authorization_code" },
-                { "key": "code", "value": "<PASTE_AUTH_CODE_HERE>" },
-                { "key": "redirect_uri", "value": "http://localhost:3000/callback" },
-                { "key": "client_id", "value": "wallet" },
-                { "key": "code_verifier", "value": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" }
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code"
+                },
+                {
+                  "key": "code",
+                  "value": "<PASTE_AUTH_CODE_HERE>"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "http://localhost:3000/callback"
+                },
+                {
+                  "key": "client_id",
+                  "value": "wallet"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+                }
               ]
             },
-            "url": { "raw": "{{base_url}}/token" }
+            "url": "{{base_url}}/auth/token"
           }
         },
         {
@@ -231,14 +360,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"credential_configuration_id\": \"TestCredential\",\n  \"proofs\": {\n    \"jwt\": [\"<INSERT_JWT_PROOF_HERE>\"]\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/oid4vci/credential" }
+            "url": "{{base_url}}/oid4vci/credential"
           }
         }
       ]
@@ -263,27 +398,32 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"dcql_query\": {\n    \"credentials\": [\n      {\n        \"id\": \"test_credential\",\n        \"format\": \"vc+sd-jwt\",\n        \"meta\": {\n          \"vct_values\": [\"${EXTERNAL_BASE_URL}/oid4vci/vct/TestCredential\"]\n        },\n        \"claims\": [\n          { \"path\": [\"given_name\"] },\n          { \"path\": [\"family_name\"] },\n          { \"path\": [\"email\"] }\n        ]\n      }\n    ]\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}",
-              "description": "Replace ${EXTERNAL_BASE_URL} with your actual base URL in the vct_values if variable substitution doesn't work."
+              "raw": "{\n  \"dcql_query\": {\n    \"credentials\": [\n      {\n        \"id\": \"test_credential\",\n        \"format\": \"vc+sd-jwt\",\n        \"meta\": {\n          \"vct_values\": [\"{{base_url}}/public/schema/vct/TestCredential\"]\n        },\n        \"claims\": [\n          { \"path\": [\"given_name\"] },\n          { \"path\": [\"family_name\"] },\n          { \"path\": [\"email\"] }\n        ]\n      }\n    ]\n  },\n  \"qr_code\": {\n    \"size\": 300\n  }\n}",
+              "description": "Uses the collection base_url variable for the VCT value."
             },
-            "url": { "raw": "{{base_url}}/oid4vp/backend/auth/requests" }
+            "url": "{{base_url}}/oid4vp/backend/auth/requests"
           }
         },
         {
           "name": "2. Get Auth Request Status",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/oid4vp/backend/auth/requests/{{auth_request_correlation_id}}" }
+            "url": "{{base_url}}/oid4vp/backend/auth/requests/{{auth_request_correlation_id}}"
           }
         },
         {
           "name": "3. Fetch Request Object",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/oid4vp/request-uri/{{auth_request_correlation_id}}" },
+            "url": "{{base_url}}/oid4vp/request-uri/{{auth_request_correlation_id}}",
             "description": "Returns the signed authorization request (JAR) that wallets fetch when scanning the QR code."
           }
         },
@@ -291,7 +431,7 @@
           "name": "4. Check Verification Result",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/oid4vp/backend/auth/requests/{{auth_request_correlation_id}}" },
+            "url": "{{base_url}}/oid4vp/backend/auth/requests/{{auth_request_correlation_id}}",
             "description": "After the wallet submits the VP via direct_post, this endpoint shows the verification result."
           }
         }

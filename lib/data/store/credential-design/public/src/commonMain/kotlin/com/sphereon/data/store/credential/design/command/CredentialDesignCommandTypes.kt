@@ -235,3 +235,10 @@ data class GetDesignAssetArgs(
     val tenantId: String,
     val input: GetDesignAssetInput,
 )
+
+@JsExportCompat
+@Serializable
+data class GetDesignAssetByHashArgs(
+    val tenantId: String,
+    val hash: String,
+)

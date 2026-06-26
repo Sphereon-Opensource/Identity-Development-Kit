@@ -37,11 +37,11 @@ import dev.zacsweers.metro.binding
  *   `oid4vci.issuers.<instanceId>` when an id is set, else the singular
  *   [ConfigDrivenOid4vciIssuerConfigProvider.NAMESPACE] (`oid4vci.issuer`).
  *
- * This is the runtime half of the per-issuer story: VDX's `CreateOid4vciIssuerCommandImpl` already
- * writes the plural prefix `oid4vci.issuers.<partyId>.*` into tenant config; this provider makes it
- * READABLE once an upstream resolver populates the instance-id holder for the request. With the
- * holder empty (no resolver, or resolver returned null) it transparently reads the singular
- * namespace, so a pure-IDK config-only deploy keeps working unchanged.
+ * This is the runtime half of the per-issuer story: tenant setup writes the plural prefix
+ * `oid4vci.issuers.<instanceId>.*` into platform-persisted tenant config, and this provider reads
+ * only that selected instance namespace once an upstream resolver supplies the instance id. It does
+ * not inherit from the singular namespace: enterprise deployments are greenfield and every satellite
+ * business value must be persisted explicitly for the selected issuer instance.
  *
  * Replaces the [ConfigDrivenOid4vciIssuerConfigProvider] binding when on the classpath, mirroring
  * how the OAuth2 AS instance pattern (`oauth2.servers.<id>.*`) supersedes its singular default.

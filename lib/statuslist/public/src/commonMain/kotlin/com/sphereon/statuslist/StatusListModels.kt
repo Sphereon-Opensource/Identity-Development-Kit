@@ -24,14 +24,24 @@ import kotlinx.serialization.Serializable
 /** The two supported credential status-list specifications. */
 @Serializable
 @JsExportCompat
-enum class StatusListSpec {
+enum class StatusListSpec(
+    val value: String,
+) {
     /** IETF Token Status List (`draft-ietf-oauth-status-list`). */
     @SerialName("token_status_list")
-    TOKEN_STATUS_LIST,
+    TOKEN_STATUS_LIST("token_status_list"),
 
     /** W3C Bitstring Status List v1.0. */
     @SerialName("bitstring_status_list")
-    BITSTRING_STATUS_LIST,
+    BITSTRING_STATUS_LIST("bitstring_status_list"),
+    ;
+
+    companion object {
+        fun fromValue(value: String): StatusListSpec? =
+            entries.firstOrNull { spec ->
+                spec.value.equals(value, ignoreCase = true) || spec.name.equals(value, ignoreCase = true)
+            }
+    }
 }
 
 /** Media types for the hosted, signed status-list token, keyed by proof envelope. */
@@ -153,12 +163,17 @@ data class BitstringStatusListEntry(
 
 // region references
 
-/** Resolves a status list by its technical id or its business [correlationId]. Exactly one is set. */
+/**
+ * Resolves a status list. Provide [statusListUri] to resolve a globally-unique, tenant-agnostic
+ * status list by its full hosting URL (status lists are unique by URL, even across tenants and
+ * external hosting), or the tenant-scoped [id]/[correlationId] for management resolution.
+ */
 @Serializable
 @JsExportCompat
 data class StatusListRef(
     val id: String? = null,
     val correlationId: String? = null,
+    val statusListUri: String? = null,
 )
 
 /**

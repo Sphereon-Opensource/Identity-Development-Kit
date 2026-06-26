@@ -48,9 +48,8 @@ data class
 ResolvePublicKeyArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
-        @kotlinx.serialization.Transient
         val identifierMethod: IdentifierMethod? = null,
         val trustedCerts: Array<String>? = null,
         val verifyX509CertificateChain: Boolean? = null,
@@ -105,11 +104,12 @@ ResolvePublicKeyArgs
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ResolvePublicKeyResult", exact = true)
 @JsExportCompat
+@Serializable
 data class
 ResolvePublicKeyResult
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.ResolvedKeyInfoSerializer::class)
         val resolvedKeyInfo: ResolvedKeyInfoType<*>? = null,
     )
 

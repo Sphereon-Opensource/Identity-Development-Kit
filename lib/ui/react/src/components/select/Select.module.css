@@ -1,29 +1,37 @@
 .wrapper {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
 }
 
 .trigger {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-width: 0;
+  min-height: var(--comp-select-min-height, var(--comp-input-min-height, 2.5rem));
   background: var(--comp-select-background);
   color: var(--comp-select-foreground);
-  border: var(--borderWidth-thin, 1px) solid var(--comp-select-border);
+  border: var(--border-width-thin, 1px) solid var(--comp-select-border);
   border-radius: var(--comp-select-radius);
-  padding: var(--comp-select-paddingY) var(--comp-select-paddingX);
+  padding: var(--comp-select-padding-y) var(--comp-select-padding-x);
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.875rem;
   cursor: pointer;
   outline: none;
-  min-width: 200px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.trigger:hover:not([aria-disabled='true']) {
+  border-color: color-mix(in srgb, var(--comp-select-border) 45%, var(--color-text-primary, #000));
 }
 
 .trigger:focus-visible {
-  border-color: var(--comp-select-border-focus);
-  box-shadow: var(--shadow-state-focus, 0 0 0 3px rgba(66, 133, 244, 0.5));
+  border-color: var(--comp-select-border-focus, var(--color-primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, #7c40e8) 24%, transparent);
 }
 
 .trigger[aria-disabled='true'] {
@@ -60,7 +68,7 @@
 }
 
 .option {
-  padding: var(--comp-select-paddingY) var(--comp-select-paddingX);
+  padding: var(--comp-select-padding-y) var(--comp-select-padding-x);
   cursor: pointer;
   transition: background-color 100ms;
 }

@@ -17,20 +17,14 @@
 package com.sphereon.oauth2.server.authorization.impl.config
 
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.crypto.core.KeyInfo
-import com.sphereon.crypto.core.KeyType
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.jose.JwkUse
-import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
-import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
-import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -38,16 +32,15 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.time.Clock
 
 /**
  * Default [AsServerSigningIdentifierResolver].
  *
- * Reads the highest-priority `ACTIVE` key for the resolved tenant from the [SigningKeyStore],
- * self-seeding a default ES256 key when the store is empty (the standalone config-driven AS has
- * no tenant-registration bootstrap; EDK supplies one via `KmsBackedAsBootstrapDelegate`). The
- * store is an AppScope singleton, so the first session that resolves seeds it app-wide and every
- * later session just reads.
+ * Reads the highest-priority `ACTIVE` key for the resolved tenant from the durable [SigningKeyStore].
+ * It does NOT generate or self-seed a key: a durable AS signing key is PROVISIONED explicitly at
+ * tenant registration (`KmsBackedAsBootstrapDelegate`, gated by the explicit `signing-key.auto-generate`
+ * flag) into the durable store. If no `ACTIVE` key exists for the resolved tenant this fails closed
+ * (the deployment is unprovisioned/misconfigured) rather than minting an opaque token or auto-generating.
  *
  * Bound `@SingleIn(SessionScope::class)` and memoized: the lookup happens once per AS session, so
  * a rotation that lands mid-session does not affect tokens minted within that session — new
@@ -61,7 +54,6 @@ class DefaultAsServerSigningIdentifierResolver(
     private val execution: SessionExecution,
     private val configProvider: OAuth2ServersConfigProvider,
     private val signingKeyStore: SigningKeyStore,
-    private val keyManagerService: KeyManagerService,
 ) : AsServerSigningIdentifierResolver {
     private val mutex = Mutex()
     private var resolved = false
@@ -98,76 +90,36 @@ class DefaultAsServerSigningIdentifierResolver(
         }
 
         val tenantId = resolveSigningKeyTenant(execution)
+        // No lazy/at-sign-time KMS key generation. A durable AS signing key is PROVISIONED
+        // explicitly at tenant registration (KmsBackedAsBootstrapDelegate, gated by the explicit
+        // `signing-key.auto-generate` flag) into the durable, DB-backed SigningKeyStore. If no
+        // ACTIVE key is present the deployment is unprovisioned/misconfigured (or — before the
+        // resolution fix — the session resolved the wrong tenant): fail closed instead of
+        // self-seeding a key or letting the mint silently fall back to an opaque token.
         val active =
             signingKeyStore.getActive(tenantId).let { if (it.isOk) it.value else null }
-                ?: seedDefaultSigningKey(tenantId, signingKeyStore, keyManagerService)
-                ?: return null
+                ?: throw IllegalStateException(
+                    "No ACTIVE OAuth2 signing key provisioned for tenant '$tenantId'. Provision it at tenant " +
+                        "registration ('signing-key.auto-generate') or via SigningKeyStore.register; the AS does " +
+                        "NOT self-seed signing keys.",
+                )
 
-        val identifier = active.keyInfo.alias ?: active.keyInfo.kid ?: active.kid
-        return ManagedOptsAlias(identifier = identifier)
+        return ManagedOptsKeyInfo(identifier = active.keyInfo)
     }
 }
 
 /**
- * Tenant identifier the AS uses when no per-request tenant has been threaded into the session.
- * Single-tenant deployments stay on this default; multi-tenant deployments override the
- * resolver binding with a tenant-aware variant that resolves via the session's tenant context.
+ * Resolve the tenant whose signing key this session mints with. There is NO `"default"`/anonymous
+ * fallback: tenant resolution (domain/path first, JWT override) must have established a real tenant
+ * before any sign path runs. A blank/anonymous tenant here is a bug — a request reached a signing
+ * path without a resolved tenant — so fail closed and surface it.
  */
-private const val DEFAULT_SIGNING_KEY_TENANT = "default"
-
-/**
- * Resolve the tenant for this session's signing key; fall back to [DEFAULT_SIGNING_KEY_TENANT] for
- * single-tenant deployments where the session carries a blank or anonymous tenantId.
- */
-private fun resolveSigningKeyTenant(execution: SessionExecution): String =
-    runCatching { execution.tenantId }
-        .getOrNull()
-        ?.takeIf { it.isNotBlank() }
-        ?: DEFAULT_SIGNING_KEY_TENANT
-
-/**
- * Self-seed a default AS signing key when the [SigningKeyStore] is empty.
- *
- * Generates an ES256 key pair in the configured KMS under a deterministic alias and registers it as
- * the ACTIVE key, returning the now-active key (or null if generation/registration could not
- * complete). Idempotent: a concurrent session that already seeded short-circuits the re-check, and
- * a register race on the same kid resolves to whichever ACTIVE key won.
- *
- * Note: the software KMS persists keys into a certificate-based PKCS12 keystore, so the provider
- * must be configured with `autoCreateCertificate: true` for a bare signing key to be storable —
- * otherwise generation fails with "Either certChain or keyInfo.x5c must be present".
- */
-private suspend fun seedDefaultSigningKey(
-    tenantId: String,
-    signingKeyStore: SigningKeyStore,
-    keyManagerService: KeyManagerService,
-): OAuth2SigningKey? {
-    // A concurrent session may have seeded the AppScope store between our getActive and here.
-    signingKeyStore.getActive(tenantId).let { if (it.isOk) it.value else null }?.let { return it }
-
-    val kid = "oauth2-as-$tenantId"
-    val algorithm = SignatureAlgorithm.ECDSA_SHA256 // JWA ES256
-    val generateResult = keyManagerService.generateKeyResult(alias = kid, use = JwkUse.sig, alg = algorithm)
-    if (!generateResult.isOk) return null
-    val keyPair = generateResult.value.keyPair ?: return null
-
-    val now = Clock.System.now()
-    signingKeyStore.register(
-        OAuth2SigningKey(
-            tenantId = tenantId,
-            keyInfo =
-                KeyInfo<KeyType>(
-                    kid = kid,
-                    alias = keyPair.alias,
-                    providerId = keyPair.providerId,
-                    signatureAlgorithm = algorithm,
-                ),
-            state = OAuth2SigningKeyState.ACTIVE,
-            priority = 1,
-            createdAt = now,
-            notBefore = now,
-        ),
-    )
-    // Re-read so a register race (DuplicateKid) resolves to whichever key won.
-    return signingKeyStore.getActive(tenantId).let { if (it.isOk) it.value else null }
+private fun resolveSigningKeyTenant(execution: SessionExecution): String {
+    val tenantId = runCatching { execution.tenantId }.getOrNull()
+    require(!tenantId.isNullOrBlank() && tenantId != IdentityConstants.ANONYMOUS_TENANT_ID) {
+        "AS signing-key resolution requires a real (domain/path-resolved) tenant; the session carries " +
+            "'${tenantId ?: "<none>"}'. Public/anonymous requests must resolve their tenant from the host/path " +
+            "before reaching a signing path; the AS never falls back to a 'default' tenant."
+    }
+    return tenantId
 }

@@ -115,7 +115,7 @@ class DefaultJwtValidationServiceTest {
             clientId = clientId,
             dpopJkt = null,
             jti = jti,
-            additionalClaims = additional,
+            additionalClaims = additional.mapValues { JsonPrimitive(it.value) },
         )
 
     private fun service(

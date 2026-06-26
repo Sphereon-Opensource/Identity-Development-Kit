@@ -619,6 +619,169 @@ class ProviderBasedSecretResolverTest {
             assertTrue(result.isErr)
             assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
         }
+
+    @Test
+    fun cascadeFallsToEnvWhenNoSelection() =
+        runTest {
+            val registry = SecretProviderRegistry()
+            // No selection resolver -> env-only floor. Missing var fails through env.
+            val resolver = ProviderBasedSecretResolver(registry)
+
+            val result = resolver.resolve(provider = null, path = "DEFINITELY_NONEXISTENT_VAR_98765", key = null)
+
+            assertTrue(result.isErr)
+        }
+
+    @Test
+    fun cascadePrefersTenantThenAppThenEnv() =
+        runTest {
+            // Three map providers, each holding the same path but a different value.
+            val registry = SecretProviderRegistry()
+            registry.register(
+                NamedMapSecretProvider("tenant-provider", mapOf("svc.key" to mapOf("value" to "tenant-value"))),
+            )
+            registry.register(
+                NamedMapSecretProvider("app-provider", mapOf("svc.key" to mapOf("value" to "app-value"))),
+            )
+
+            // Selection: tenant scope -> tenant-provider, app scope -> app-provider.
+            val selection =
+                FakeSelectionResolver(
+                    tenantProvider = "tenant-provider",
+                    appProvider = "app-provider",
+                )
+            // Identity address resolver isolates this test to cascade ORDERING (sharding is covered
+            // by SecretAddressResolverTest).
+            val resolver = ProviderBasedSecretResolver(registry, selection, IdentityAddressResolver)
+
+            // Tenant scope + identifier present -> tenant-provider wins.
+            val tenantResult =
+                resolver.resolve(
+                    provider = null,
+                    path = "svc.key",
+                    key = null,
+                    scope = ConfigLevel.TENANT,
+                    scopeIdentifier = "tenant-123",
+                )
+            assertTrue(tenantResult.isOk)
+            assertEquals("tenant-value", tenantResult.value)
+        }
+
+    @Test
+    fun cascadeFallsToAppWhenTenantProviderMisses() =
+        runTest {
+            val registry = SecretProviderRegistry()
+            // tenant-provider has NO matching secret; app-provider does.
+            registry.register(NamedMapSecretProvider("tenant-provider", emptyMap()))
+            registry.register(
+                NamedMapSecretProvider("app-provider", mapOf("svc.key" to mapOf("value" to "app-value"))),
+            )
+
+            val selection =
+                FakeSelectionResolver(
+                    tenantProvider = "tenant-provider",
+                    appProvider = "app-provider",
+                )
+            val resolver = ProviderBasedSecretResolver(registry, selection, IdentityAddressResolver)
+
+            val result =
+                resolver.resolve(
+                    provider = null,
+                    path = "svc.key",
+                    key = null,
+                    scope = ConfigLevel.TENANT,
+                    scopeIdentifier = "tenant-123",
+                )
+            assertTrue(result.isOk)
+            assertEquals("app-value", result.value)
+        }
+
+    @Test
+    fun pinnedProviderIgnoresSelection() =
+        runTest {
+            val registry = SecretProviderRegistry()
+            registry.register(
+                NamedMapSecretProvider("tenant-provider", mapOf("svc.key" to mapOf("value" to "tenant-value"))),
+            )
+            registry.register(
+                NamedMapSecretProvider("app-provider", mapOf("svc.key" to mapOf("value" to "app-value"))),
+            )
+            val selection = FakeSelectionResolver(tenantProvider = "tenant-provider", appProvider = "app-provider")
+            val resolver = ProviderBasedSecretResolver(registry, selection, IdentityAddressResolver)
+
+            // Pinned to app-provider even though tenant scope is requested.
+            val result =
+                resolver.resolve(
+                    provider = "app-provider",
+                    path = "svc.key",
+                    key = null,
+                    scope = ConfigLevel.TENANT,
+                    scopeIdentifier = "tenant-123",
+                )
+            assertTrue(result.isOk)
+            assertEquals("app-value", result.value)
+        }
+}
+
+/**
+ * Identity [SecretAddressResolver] used by cascade-ordering tests: returns the logical key as-is so
+ * those tests exercise provider selection order without coupling to the physical sharding format
+ * (which is covered by SecretAddressResolverTest).
+ */
+private object IdentityAddressResolver : SecretAddressResolver {
+    override fun physicalAddress(
+        logicalKey: String,
+        providerType: String,
+        scope: ConfigLevel,
+        scopeIdentifier: String?,
+        instanceId: String?,
+        strategy: PartitionStrategy,
+    ): String = logicalKey
+}
+
+/**
+ * Fake selection resolver returning a configured provider per scope.
+ */
+private class FakeSelectionResolver(
+    private val tenantProvider: String?,
+    private val appProvider: String?,
+) : SecretProviderSelectionResolver {
+    override suspend fun selectedProvider(
+        scope: ConfigLevel,
+        scopeIdentifier: String?,
+    ): String? =
+        when (scope) {
+            ConfigLevel.TENANT -> tenantProvider
+            ConfigLevel.APP -> appProvider
+            ConfigLevel.PRINCIPAL -> null
+        }
+}
+
+/**
+ * Map provider with a configurable provider id (the built-in [MapSecretProvider] is fixed to "map").
+ */
+private class NamedMapSecretProvider(
+    override val providerId: String,
+    private val secrets: Map<String, Map<String, String>>,
+) : SecretProvider {
+    override val isAvailable: Boolean = true
+
+    override suspend fun getSecret(
+        path: String,
+        key: String?,
+        scope: ConfigLevel,
+        scopeIdentifier: String?,
+        options: SecretOptions,
+    ): IdkResult<SecretValue, SecretError> {
+        val secretMap = secrets[path] ?: return Err(SecretError.notFound(providerId, path, key))
+        val secretKey = key ?: "value"
+        val value = secretMap[secretKey] ?: return Err(SecretError.notFound(providerId, path, key))
+        return Ok(SecretValue.of(value = value, providerId = providerId, path = path, key = key))
+    }
+
+    override suspend fun invalidateCache(path: String?) {}
+
+    override suspend fun healthCheck(): IdkResult<ProviderHealth, SecretError> = Ok(ProviderHealth(providerId, true, "ok"))
 }
 
 class DefaultSecretRedactionPolicyTest {
@@ -714,9 +877,11 @@ class CreateDefaultSecretResolverTest {
     @Test
     fun createsResolverWithMapProvider() =
         runTest {
+            // The address resolver normalizes the lookup key (hyphen -> underscore for a flat-name
+            // backend), so the map is keyed by the resulting physical address.
             val secrets =
                 mapOf(
-                    "test-secret" to mapOf("value" to "secret123"),
+                    "test_secret" to mapOf("value" to "secret123"),
                 )
             val resolver = createDefaultSecretResolver(secrets)
 

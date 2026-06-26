@@ -44,6 +44,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
@@ -111,6 +112,9 @@ class DefaultJwtValidationService(
 
         return verifyResult.fold(
             success = { jwtPayload ->
+                // Full-fidelity claim view (object/array + custom claims like tenant_id/roles preserved).
+                val claims = buildClaims(jwtPayload)
+
                 // Check required scopes
                 if (options.requiredScopes.isNotEmpty()) {
                     val tokenScopes = jwtPayload.scope?.split(" ")?.toSet() ?: emptySet()
@@ -120,9 +124,9 @@ class DefaultJwtValidationService(
                     }
                 }
 
-                // Check required claims
+                // Check required claims against the full payload (so non-stringly/custom claims count).
                 for (claim in options.requiredClaims) {
-                    if (!jwtPayload.additionalClaims.containsKey(claim)) {
+                    if (!claims.containsKey(claim)) {
                         return Err(JwtValidationError.missingClaim(claim))
                     }
                 }
@@ -141,7 +145,7 @@ class DefaultJwtValidationService(
                         clientId = jwtPayload.clientId,
                         jwtId = jwtPayload.jti,
                         rawToken = token,
-                        claims = buildClaims(jwtPayload),
+                        claims = claims,
                         idpId = idpConfig.id,
                     ),
                 )
@@ -191,7 +195,7 @@ class DefaultJwtValidationService(
             success = { jwtPayload ->
                 // Validate nonce if required
                 if (options.expectedNonce != null) {
-                    val tokenNonce = jwtPayload.additionalClaims["nonce"]
+                    val tokenNonce = jwtPayload.additionalClaims["nonce"].asString()
                     if (tokenNonce != options.expectedNonce) {
                         return Err(
                             JwtValidationError.validationError(
@@ -210,14 +214,18 @@ class DefaultJwtValidationService(
                         audiences = jwtPayload.aud ?: emptyList(),
                         expiresAt = jwtPayload.exp.epochSeconds,
                         issuedAt = jwtPayload.iat.epochSeconds,
-                        authTime = jwtPayload.additionalClaims["auth_time"]?.toDoubleOrNull()?.toLong(),
-                        nonce = jwtPayload.additionalClaims["nonce"],
-                        name = jwtPayload.additionalClaims["name"],
-                        email = jwtPayload.additionalClaims["email"],
-                        emailVerified = jwtPayload.additionalClaims["email_verified"]?.toBooleanStrictOrNull(),
-                        preferredUsername = jwtPayload.additionalClaims["preferred_username"],
-                        givenName = jwtPayload.additionalClaims["given_name"],
-                        familyName = jwtPayload.additionalClaims["family_name"],
+                        authTime =
+                            jwtPayload.additionalClaims["auth_time"]
+                                .asString()
+                                ?.toDoubleOrNull()
+                                ?.toLong(),
+                        nonce = jwtPayload.additionalClaims["nonce"].asString(),
+                        name = jwtPayload.additionalClaims["name"].asString(),
+                        email = jwtPayload.additionalClaims["email"].asString(),
+                        emailVerified = jwtPayload.additionalClaims["email_verified"].asString()?.toBooleanStrictOrNull(),
+                        preferredUsername = jwtPayload.additionalClaims["preferred_username"].asString(),
+                        givenName = jwtPayload.additionalClaims["given_name"].asString(),
+                        familyName = jwtPayload.additionalClaims["family_name"].asString(),
                         rawToken = token,
                         claims = buildClaims(jwtPayload),
                         idpId = idpConfig.id,
@@ -310,18 +318,28 @@ class DefaultJwtValidationService(
         return idpRegistry.getDefaultIdp()
     }
 
+    /**
+     * The verified token's full claim view: the registered claims surfaced via the typed
+     * [TokenPayload.Jwt] fields plus EVERY non-registered claim from [TokenPayload.Jwt.additionalClaims]
+     * with full fidelity — object/array claims like `roles` and custom claims like `tenant_id` are
+     * `JsonElement`, not flattened. This is the authoritative claim view consumers read off
+     * [ValidatedAccessToken.claims] / [ValidatedIdToken.claims], so they never re-parse the raw token.
+     */
     private fun buildClaims(jwtPayload: TokenPayload.Jwt): Map<String, JsonElement> =
         buildMap {
             put("sub", JsonPrimitive(jwtPayload.sub))
             put("iss", JsonPrimitive(jwtPayload.iss))
-            jwtPayload.aud?.let { put("aud", JsonPrimitive(it.joinToString(" "))) }
+            jwtPayload.aud?.let { auds -> put("aud", JsonArray(auds.map { JsonPrimitive(it) })) }
             put("exp", JsonPrimitive(jwtPayload.exp.epochSeconds))
             put("iat", JsonPrimitive(jwtPayload.iat.epochSeconds))
             jwtPayload.scope?.let { put("scope", JsonPrimitive(it)) }
             jwtPayload.clientId?.let { put("client_id", JsonPrimitive(it)) }
             jwtPayload.jti?.let { put("jti", JsonPrimitive(it)) }
-            jwtPayload.additionalClaims.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+            putAll(jwtPayload.additionalClaims)
         }
+
+    /** Read a claim as a plain string (or null when absent / not a JSON primitive). */
+    private fun JsonElement?.asString(): String? = (this as? JsonPrimitive)?.contentOrNull
 
     private fun decodeBase64Url(input: String): String =
         try {

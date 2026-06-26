@@ -107,6 +107,7 @@ data class AuthorizationSessionCreateArgs(
     val redirectUri: String? = null,
     val nonce: String,
     val state: String? = null,
+    val verifierId: String? = null,
     val callback: AuthorizationSessionCallbackConfig? = null,
 )
 
@@ -133,6 +134,10 @@ data class AuthorizationSession(
      */
     val dcqlQueryId: String? = null,
     val dcqlQueryVersion: Int? = null,
+    /**
+     * Optional business identifier of the verifier instance this session was created for.
+     */
+    val verifierId: String? = null,
     val authorizationRequest: AuthorizationRequest,
     val status: AuthorizationSessionStatus,
     val error: AuthorizationSessionError? = null,

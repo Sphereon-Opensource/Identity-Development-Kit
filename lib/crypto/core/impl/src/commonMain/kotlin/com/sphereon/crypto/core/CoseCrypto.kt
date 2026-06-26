@@ -99,7 +99,7 @@ abstract class AbstractCoseCryptoService(
 
     override fun hasPlatform(): Boolean = this.platformCallback !== null || DefaultCallbacks.hasCoseCryptoDefault()
 
-    override fun platform(): CoseCryptoCallbackCoroutines = this.platformCallback ?: DefaultCallbacks.coseCrypto().also { this.platformCallback = it }
+    override fun platform(): CoseCryptoCallbackCoroutines = this.platformCallback ?: DefaultCallbacks.coseCrypto()
 
     override fun setPlatform(platform: CoseCryptoCallbackCoroutines): HasPlatformCallback<CoseCryptoCallbackCoroutines> =
         apply {
@@ -448,16 +448,28 @@ abstract class AbstractCoseCryptoService(
     override suspend fun <KeyType : com.sphereon.crypto.core.KeyType> resolvePublicKey(keyInfo: KeyInfoType<KeyType>) = platform().resolvePublicKey(keyInfo)
 }
 
-@Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CoseCryptoService>())
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CoseCryptoServiceImpl", exact = true)
-class CoseCryptoServiceImpl(
-    coseHeaderCborCodec: CoseHeaderCborCodec =
-        com.sphereon.crypto.core.cose
-            .CoseHeaderCborCodecImpl(),
-) : AbstractCoseCryptoService(coseHeaderCborCodec = coseHeaderCborCodec)
+class CoseCryptoServiceImpl private constructor(
+    coseHeaderCborCodec: CoseHeaderCborCodec,
+    platformCallback: CoseCryptoCallbackCoroutines?,
+) : AbstractCoseCryptoService(platformCallback = platformCallback, coseHeaderCborCodec = coseHeaderCborCodec) {
+    @Inject
+    constructor(
+        platformCallback: CoseCryptoCallbackCoroutines,
+        coseHeaderCborCodec: CoseHeaderCborCodec =
+            com.sphereon.crypto.core.cose
+                .CoseHeaderCborCodecImpl(),
+    ) : this(coseHeaderCborCodec, platformCallback)
+
+    constructor(
+        coseHeaderCborCodec: CoseHeaderCborCodec =
+            com.sphereon.crypto.core.cose
+                .CoseHeaderCborCodecImpl(),
+    ) : this(coseHeaderCborCodec, null)
+}
 
 suspend fun defaultCreateMac0(
     input: CoseMac0InputCbor,

@@ -5,30 +5,37 @@
 }
 
 .label {
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 560;
+  letter-spacing: -0.003em;
   color: var(--color-text-primary);
 }
 
 .input {
+  box-sizing: border-box;
+  min-height: var(--comp-input-min-height, 2.5rem);
   background: var(--comp-input-background);
   color: var(--comp-input-foreground);
-  border: var(--borderWidth-thin, 1px) solid var(--comp-input-border);
+  border: var(--border-width-thin, 1px) solid var(--comp-input-border);
   border-radius: var(--comp-input-radius);
-  padding: var(--comp-input-paddingY) var(--comp-input-paddingX);
+  padding: var(--comp-input-padding-y) var(--comp-input-padding-x);
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.875rem;
   outline: none;
-  transition: border-color 150ms, box-shadow 150ms;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
 .input::placeholder {
   color: var(--comp-input-placeholder);
 }
 
+.input:hover:not(:disabled):not(:focus) {
+  border-color: color-mix(in srgb, var(--comp-input-border) 45%, var(--color-text-primary, #000));
+}
+
 .input:focus {
-  border-color: var(--comp-input-border-focus);
-  box-shadow: var(--shadow-state-focus, 0 0 0 3px rgba(66, 133, 244, 0.5));
+  border-color: var(--comp-input-border-focus, var(--color-primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, #7c40e8) 24%, transparent);
 }
 
 .input:disabled {

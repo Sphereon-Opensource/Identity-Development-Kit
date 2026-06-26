@@ -17,11 +17,13 @@
 
 package com.sphereon.crypto.kms.keystore.software
 
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KeyStoreFactory
 import com.sphereon.crypto.core.kms.model.PredefinedKeyStoreTypes
 import com.sphereon.di.app.App
 import com.sphereon.di.app.PlatformInfo
+import com.sphereon.di.context.IdentityConstants
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
@@ -52,4 +54,39 @@ class SoftwareKeyStoreFactoryImpl(
         }
 
     override fun create(config: KeyStoreConfig): SoftwareKeyStoreService = realSoftwareKeyStoreFactory.create(config)
+
+    /**
+     * Tenant-aware creation: always derive a per-tenant keystore FILE from the active execution's
+     * tenant id. An explicit `path` is treated as the configured file or subpath, but it is still
+     * placed under a tenant directory by [TenantKeyStorePathResolver]. The resulting per-tenant file
+     * is created/loaded/persisted by the underlying [SoftwareKeyStoreService] file IO.
+     */
+    override fun create(
+        config: KeyStoreConfig,
+        execution: SessionExecution?,
+    ): SoftwareKeyStoreService {
+        val effectiveConfig =
+            if (config is SoftwareKeyStoreConfig) {
+                TenantKeyStorePathResolver.withResolvedPath(config, tenantIdForKeystoreResolution(execution))
+            } else {
+                config
+            }
+        return realSoftwareKeyStoreFactory.create(effectiveConfig)
+    }
+}
+
+internal fun tenantIdForKeystoreResolution(execution: SessionExecution?): String? {
+    if (execution == null) {
+        return null
+    }
+    val resolvedTenant =
+        execution.tenantId
+            .trim()
+            .takeUnless { it.isBlank() || it == IdentityConstants.ANONYMOUS_TENANT_ID }
+    if (resolvedTenant != null) {
+        return resolvedTenant
+    }
+    return execution.sessionContext.context.tenant.tenantId
+        .trim()
+        .takeUnless { it.isBlank() }
 }

@@ -16,6 +16,11 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.pipeline
 
+import com.sphereon.attribute.flow.AttributeData
+import com.sphereon.attribute.flow.AttributePath
+import com.sphereon.attribute.flow.AttributeProvenanceRef
+import com.sphereon.attribute.flow.AttributeRecord
+import com.sphereon.attribute.pipeline.Oid4vciPipelinePhase
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -33,6 +38,7 @@ import com.sphereon.openid.oid4vci.issuer.config.DeferralWalletAuthValidator
 import com.sphereon.openid.oid4vci.issuer.pipeline.PipelineConfigurationResolver
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlin.time.Clock
 
 /**
  * Pre-flight checks and pipeline-session bootstrap for credential offer creation.
@@ -118,7 +124,7 @@ class OfferPipelineInitializer(
                 InitPipelineSessionArgs(
                     pipelineConfiguration = pipelineConfig,
                     correlationId = null,
-                    initialAttributes = emptyList(),
+                    initialAttributes = args.preSeededAttributes.toInitialAttributes(),
                     initialLookupKeys = args.initialLookupKeys,
                 ),
             )?.getOrNull()
@@ -129,6 +135,20 @@ class OfferPipelineInitializer(
         pipelineConfigurationResolver
             ?.resolve(args.issuerId, args.credentialConfigurationIds)
             ?.getOrNull()
+
+    private fun Map<String, kotlinx.serialization.json.JsonElement>?.toInitialAttributes(): List<AttributeRecord> {
+        if (isNullOrEmpty()) return emptyList()
+        val now = Clock.System.now()
+        return map { (path, value) ->
+            AttributeRecord(
+                path = AttributePath(path),
+                value = AttributeData(value),
+                sourceId = AttributeProvenanceRef(PRE_SEEDED_ATTRIBUTE_SOURCE_ID),
+                phase = Oid4vciPipelinePhase.PRE_AUTHORIZED,
+                timestamp = now,
+            )
+        }
+    }
 
     /**
      * §6.5 wallet-auth invariant fail-fast. Skipped entirely when [oauth2ConfigProvider]
@@ -165,5 +185,9 @@ class OfferPipelineInitializer(
             // (raise the TTL, enable refresh tokens, or wire the fallback).
             error(verdict.error.message.defaultMessage)
         }
+    }
+
+    private companion object {
+        const val PRE_SEEDED_ATTRIBUTE_SOURCE_ID = "oid4vci-offer"
     }
 }

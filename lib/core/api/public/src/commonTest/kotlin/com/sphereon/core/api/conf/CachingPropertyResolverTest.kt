@@ -81,6 +81,30 @@ class CachingPropertyResolverTest {
     }
 
     @Test
+    fun refreshablePropertySourceRevisionInvalidatesCachedSubProperties() {
+        val cache = InMemorySyncSnapshotCache()
+        val source = RefreshableTestPropertySource()
+        val sources = DefaultPropertySources(mutableListOf(source))
+        val resolver =
+            CachingPropertySourcesPropertyResolver(
+                propertySources = sources,
+                snapshotCache = cache,
+                level = ConfigLevel.APP,
+            )
+
+        val first = resolver.getSubProperties(setOf("kms.providers"), stripPrefix = true)
+        assertEquals("SOFTWARE", first["initial.type"])
+        assertFalse(first.containsKey("late.type"))
+        assertNotNull(cache.getSnapshot(SnapshotKey(ConfigLevel.APP, null, null, "kms.providers")))
+
+        source.publishLateProviderOnNextRefresh()
+
+        val second = resolver.getSubProperties(setOf("kms.providers"), stripPrefix = true)
+        assertEquals("SOFTWARE", second["initial.type"])
+        assertEquals("SOFTWARE", second["late.type"])
+    }
+
+    @Test
     fun getSubPropertiesWithStripPrefixFalseWorks() {
         val cache = InMemorySyncSnapshotCache()
         val properties =
@@ -491,7 +515,7 @@ class CachingPropertyResolverTest {
         val cache = InMemorySyncSnapshotCache()
         val properties =
             mapOf(
-                "secret.ref" to "\${secret:env:PATH}",
+                "secret.ref" to "\${secret:@env:PATH}",
             )
         val source = createTestPropertySource("test", properties)
         val sources = DefaultPropertySources(mutableListOf(source))
@@ -610,6 +634,32 @@ class CachingPropertyResolverTest {
 
         val stringValue: String = resolver.getRequiredProperty("string.key", String::class)
         assertEquals("hello", stringValue)
+    }
+}
+
+private class RefreshableTestPropertySource :
+    MutableMapPropertySource("refreshable"),
+    RefreshablePropertySource {
+    override var contentRevision: Long = 0L
+        private set
+
+    private var addLateProviderOnNextRefresh: Boolean = false
+
+    init {
+        addProperty("kms.providers.initial.type", "SOFTWARE")
+    }
+
+    fun publishLateProviderOnNextRefresh() {
+        addLateProviderOnNextRefresh = true
+    }
+
+    override fun refreshIfNeeded() {
+        if (!addLateProviderOnNextRefresh) {
+            return
+        }
+        addLateProviderOnNextRefresh = false
+        addProperty("kms.providers.late.type", "SOFTWARE")
+        contentRevision += 1L
     }
 }
 

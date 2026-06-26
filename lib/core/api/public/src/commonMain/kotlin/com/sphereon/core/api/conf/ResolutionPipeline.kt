@@ -131,6 +131,19 @@ data class ResolutionContext(
     val activeProfiles: List<String> = listOf("default"),
     val options: ResolutionOptions = ResolutionOptions(),
 ) {
+    /**
+     * The scope identifier to thread into secret resolution, chosen by [level]:
+     * - [ConfigLevel.TENANT] -> [tenantId]
+     * - [ConfigLevel.PRINCIPAL] -> [principalId]
+     * - [ConfigLevel.APP] -> null (no scope identity)
+     */
+    fun scopeIdentifier(): String? =
+        when (level) {
+            ConfigLevel.TENANT -> tenantId
+            ConfigLevel.PRINCIPAL -> principalId
+            ConfigLevel.APP -> null
+        }
+
     companion object {
         @JvmStatic
         fun app(profiles: List<String> = listOf("default")) =
@@ -303,7 +316,9 @@ class DefaultConfigResolutionPipeline(
             if (rawValue != null) {
                 val finalValue =
                     if (context.options.interpolate && interpolator != null && rawValue is String) {
-                        // Use scope-aware interpolation with full options support
+                        // Use scope-aware interpolation with full options support.
+                        // Thread the scope identifier so cascade secret references can select
+                        // the tenant/principal-scoped provider (TENANT -> tenantId, PRINCIPAL -> principalId).
                         val interpolated =
                             interpolator.interpolate(
                                 value = rawValue,
@@ -311,6 +326,7 @@ class DefaultConfigResolutionPipeline(
                                 requestingScope = context.level,
                                 maxDepth = context.options.maxInterpolationDepth,
                                 resolveSecrets = context.options.resolveSecrets,
+                                scopeIdentifier = context.scopeIdentifier(),
                             )
                         if (interpolated.isErr) {
                             return Err(interpolated.error)
@@ -381,7 +397,9 @@ class DefaultConfigResolutionPipeline(
 
                 val finalValue =
                     if (context.options.interpolate && interpolator != null && value is String) {
-                        // Use scope-aware interpolation with full options support
+                        // Use scope-aware interpolation with full options support.
+                        // Thread the scope identifier so cascade secret references can select
+                        // the tenant/principal-scoped provider (TENANT -> tenantId, PRINCIPAL -> principalId).
                         val interpolated =
                             interpolator.interpolate(
                                 value = value,
@@ -389,6 +407,7 @@ class DefaultConfigResolutionPipeline(
                                 requestingScope = context.level,
                                 maxDepth = context.options.maxInterpolationDepth,
                                 resolveSecrets = context.options.resolveSecrets,
+                                scopeIdentifier = context.scopeIdentifier(),
                             )
                         if (interpolated.isErr) {
                             continue

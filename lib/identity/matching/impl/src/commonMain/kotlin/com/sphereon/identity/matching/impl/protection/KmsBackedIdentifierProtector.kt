@@ -19,6 +19,9 @@ package com.sphereon.identity.matching.impl.protection
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeToBase64
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.json.jcs.Jcs
 import com.sphereon.crypto.core.KeyInfo
@@ -37,8 +40,6 @@ import com.sphereon.identity.matching.protection.IdentifierProtector
 import com.sphereon.identity.matching.protection.normalizeIdentifier
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * KMS-backed [IdentifierProtector].
@@ -59,7 +60,6 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * @param providerId KMS provider id (e.g. "software").
  * @param keyVersion Current key-version label recorded in the protected envelope.
  */
-@OptIn(ExperimentalEncodingApi::class)
 class KmsBackedIdentifierProtector(
     private val generateMacCommand: GenerateMacCommand,
     private val keyManagerService: KeyManagerService,
@@ -96,13 +96,14 @@ class KmsBackedIdentifierProtector(
                 )
             }
 
+            IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
             IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX -> {
                 protectBlinded(
                     tenantId = tenantId,
                     identityId = identityId,
                     type = type,
                     normalized = normalized,
-                    mode = IdentifierProtectionMode.SEARCHABLE_BLIND_INDEX,
+                    mode = policy.mode,
                     scope = SCOPE_TENANT,
                 )
             }
@@ -121,7 +122,7 @@ class KmsBackedIdentifierProtector(
                     type = type,
                     normalized = normalized,
                     mode = IdentifierProtectionMode.SALTED_BLINDED,
-                    scope = Base64.encode(saltBytes),
+                    scope = saltBytes.encodeToBase64(),
                 )
             }
         }
@@ -174,7 +175,7 @@ class KmsBackedIdentifierProtector(
                                     message = "SALTED_BLINDED blind index requires a non-null salt",
                                 ),
                             )
-                    Base64.encode(saltBytes)
+                    saltBytes.encodeToBase64()
                 }
 
                 else -> {
@@ -299,7 +300,7 @@ class KmsBackedIdentifierProtector(
         val encryptResult = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("encryption failed"))
 
         val combined = encryptResult.iv + encryptResult.authTag + encryptResult.ciphertext
-        return Ok(Base64.UrlSafe.encode(combined))
+        return Ok(combined.encodeToBase64Url())
     }
 
     override suspend fun reveal(
@@ -316,7 +317,7 @@ class KmsBackedIdentifierProtector(
                     ),
                 )
 
-        val combined = Base64.UrlSafe.decode(blob)
+        val combined = blob.decodeFromBase64Url()
         if (combined.size < IV_LENGTH + TAG_LENGTH) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Invalid ciphertext blob: too short"))
         }

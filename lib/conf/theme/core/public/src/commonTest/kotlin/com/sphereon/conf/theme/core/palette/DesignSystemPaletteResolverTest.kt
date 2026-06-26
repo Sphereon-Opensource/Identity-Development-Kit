@@ -20,6 +20,7 @@ import com.sphereon.conf.theme.core.model.ThemeVariant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DesignSystemPaletteResolverTest {
@@ -183,9 +184,18 @@ class DesignSystemPaletteResolverTest {
         val lightTokens = DesignSystemPaletteResolver.resolve(config, ThemeVariant.LIGHT)
         val darkTokens = DesignSystemPaletteResolver.resolve(config, ThemeVariant.DARK)
 
-        // Light: color.primary should be brand.500, Dark: brand.400
+        // Primary-filled actions use the deep brand stop in both modes with a light label.
         assertEquals("#7C40E8", lightTokens["color.primary"])
-        assertEquals("#9564EC", darkTokens["color.primary"])
+        assertEquals("#FBFBFB", lightTokens["color.onPrimary"])
+        assertEquals("#ECE4FC", lightTokens["color.primaryContainer"])
+        assertNull(lightTokens["color.navigation.activeForeground"])
+        assertEquals("#F2F2F2", lightTokens["color.interactive.hover"])
+        assertEquals("#E3E3E3", lightTokens["color.interactive.pressed"])
+        assertEquals("#7C40E8", darkTokens["color.primary"])
+        assertEquals("#FFFFFF", darkTokens["color.onPrimary"])
+        assertEquals("color-mix(in srgb, #7C40E8 18%, transparent)", darkTokens["color.primaryContainer"])
+        assertNull(darkTokens["color.navigation.activeForeground"])
+        assertEquals("color-mix(in srgb, #FFFFFF 6%, transparent)", darkTokens["color.interactive.hover"])
     }
 
     @Test

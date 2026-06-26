@@ -231,6 +231,24 @@ object DesignSystemPaletteResolver {
         tokens["color.scrim"] = "#000000"
         tokens["color.shadow"] = "#000000"
 
+        if (variant == ThemeVariant.LIGHT) {
+            tokens["color.primary"] = palette.brand[PaletteScale.STOP_500]
+            tokens["color.onPrimary"] = "#FBFBFB"
+            tokens["color.primaryContainer"] = palette.brand[PaletteScale.STOP_50]
+            tokens["color.interactive.hover"] = palette.neutral?.get(PaletteScale.STOP_100) ?: "#F2F2F2"
+            tokens["color.interactive.pressed"] = palette.neutral?.get(PaletteScale.STOP_200) ?: "#E3E3E3"
+            tokens["color.interactive.disabled"] = palette.neutral?.get(PaletteScale.STOP_200) ?: "#E3E3E3"
+        }
+
+        if (variant == ThemeVariant.DARK) {
+            val brand500 = palette.brand[PaletteScale.STOP_500]
+            tokens["color.primary"] = brand500
+            tokens["color.onPrimary"] = "#FFFFFF"
+            tokens["color.primaryContainer"] = "color-mix(in srgb, $brand500 18%, transparent)"
+            tokens["color.interactive.hover"] = "color-mix(in srgb, #FFFFFF 6%, transparent)"
+            tokens["color.interactive.pressed"] = "color-mix(in srgb, #FFFFFF 10%, transparent)"
+        }
+
         return tokens
     }
 

@@ -23,6 +23,7 @@ import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.NotFoundException
+import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.CoseJoseKeyMappingService.toJoseJwk
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
@@ -34,10 +35,14 @@ import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfoType
+import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
 import com.sphereon.crypto.core.interop.derPrivateKeyToJwk
 import com.sphereon.crypto.core.interop.derPublicKeyToJwk
+import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
+import com.sphereon.crypto.core.interop.toEcdsaPrivateKey
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
@@ -48,11 +53,15 @@ import com.sphereon.crypto.core.kms.model.KeyStoreAccessMode
 import com.sphereon.crypto.core.kms.model.PredefinedKeyStoreTypes
 import com.sphereon.crypto.core.toKeyReference
 import com.sphereon.crypto.core.x509.Certificate
+import com.sphereon.crypto.core.x509.CertificateCreationUtils
 import com.sphereon.crypto.core.x509.certificateFromDer
 import com.sphereon.crypto.core.x509.certificateJwkDecode
 import com.sphereon.crypto.core.x509.certificateJwkEncode
 import com.sphereon.crypto.core.x509.convertToJavaPrivateKey
 import com.sphereon.crypto.core.x509.javaX509CertificateFromDer
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.algorithms.ECDSA
+import dev.whyoleg.cryptography.algorithms.SHA256
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.Inject
@@ -141,6 +150,26 @@ actual class SoftwareKeyStoreService actual constructor(
     @Volatile
     private var currentPersistenceJob: Deferred<Unit>? = null
 
+    // Cross-instance durability: a file-backed keystore is loaded into memory once. When a DIFFERENT
+    // instance (e.g. another session/scope) durably overwrites the same file, this instance would
+    // otherwise keep serving its stale in-memory copy — and, critically, keep resolving the OLD entry
+    // for an alias that was overwritten on disk (so it never registers as a "miss"). To make the
+    // file-backed store behave as one shared durable store, reads reload the in-memory KeyStore from
+    // disk whenever the file's last-modified time has advanced past what this instance last loaded.
+    //
+    // The reloaded KeyStore overlays the lazily-loaded one; reads go through `currentKeyStore()`.
+    @Volatile
+    private var reloadedKeyStore: KeyStore? = null
+
+    // Last-modified time (epoch millis) of the source file as last observed by this instance — either
+    // the value present when first loaded, or the value after our own durable write / a disk reload.
+    // 0 means "not yet established"; reload decisions compare the live file mtime against this.
+    @Volatile
+    private var loadedFileModifiedMillis: Long = 0L
+
+    // Guards reload-from-disk so concurrent reads do not load the file multiple times in parallel.
+    private val reloadMutex = Mutex()
+
     init {
         with(this.config) {
             require(
@@ -192,6 +221,14 @@ actual class SoftwareKeyStoreService actual constructor(
                         src
                     }
                 }
+            // Record the file mtime present at load so later reads can detect a durable write made by
+            // another instance to the same file (see [maybeReloadFromDisk]).
+            (resolvedSource as? KeyStoreLoaderOpts.Source.File)?.let {
+                loadedFileModifiedMillis = java.io
+                    .File(it.path)
+                    .takeIf(java.io.File::exists)
+                    ?.lastModified() ?: 0L
+            }
             LoadedKeyStoreData(loadedKeyStore, resolvedSource)
         }
     }
@@ -200,6 +237,49 @@ actual class SoftwareKeyStoreService actual constructor(
     val platformKeyManagerFactory by lazy {
         KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply {
             init(platformKeyStore, password)
+        }
+    }
+
+    /**
+     * Returns the keystore to read from: the disk-reloaded overlay when present, otherwise the
+     * lazily-loaded one. Callers that may serve stale data should call [maybeReloadFromDisk] first.
+     */
+    private suspend fun currentKeyStore(): KeyStore = reloadedKeyStore ?: keyStoreData.await().keyStore
+
+    /**
+     * Reloads the in-memory [KeyStore] from disk when the source file has been durably updated by
+     * another instance since this instance last loaded it. This is what makes a file-backed keystore
+     * (e.g. the platform `license` PKCS12) behave as one shared durable store: after an import
+     * session durably overwrites the recipient key on disk, a separate decrypt session that reused an
+     * older keystore instance picks up the new key here instead of resolving the stale entry.
+     *
+     * No-op for non-file (in-memory) keystores and when the file mtime has not advanced.
+     */
+    private suspend fun maybeReloadFromDisk() {
+        val resolvedSource = keyStoreData.await().resolvedSource as? KeyStoreLoaderOpts.Source.File ?: return
+        val file = java.io.File(resolvedSource.path)
+        if (!file.exists()) return
+        val diskModified = file.lastModified()
+        // Fast path: file not newer than what we loaded — nothing to do.
+        if (diskModified <= loadedFileModifiedMillis) return
+        reloadMutex.withLock {
+            // Re-check under the lock in case another coroutine just reloaded.
+            val current = file.lastModified()
+            if (current <= loadedFileModifiedMillis) return
+            val reloaded =
+                withContext(Dispatchers.IO) {
+                    KeyStoreLoaderFactory.load(
+                        KeyStoreLoaderOpts(
+                            type = config.keyStoreType,
+                            source = resolvedSource,
+                            keyStorePassword = String(password),
+                        ),
+                    )
+                }
+            reloadedKeyStore = reloaded
+            loadedFileModifiedMillis = current
+            // Resolved-key conversions cached against the previous in-memory state are now stale.
+            invalidateCache()
         }
     }
 
@@ -226,8 +306,10 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Wait for any pending persistence to ensure consistency
         awaitPendingPersistence()
+        // Pick up durable writes made by another instance to the same file.
+        maybeReloadFromDisk()
 
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
 
         return withContext(Dispatchers.Default) {
             // Performance: First filter to only key entries before expensive operations
@@ -307,14 +389,22 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Wait for any pending persistence to ensure consistency
         awaitPendingPersistence()
+        // Pick up durable writes made by another instance to the same file, including an alias whose
+        // entry was overwritten on disk (e.g. the license recipient key after a bundle import).
+        maybeReloadFromDisk()
 
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
 
         val managedKeyInfo = matchKey(keyInfo)
         val alias = managedKeyInfo.alias
         require(alias != null) { "Need to provide a alias" }
 
-        val visibility = managedKeyInfo.keyVisibility ?: config.keyVisibility
+        // Honour the CALLER's requested visibility first. matchKey() may fabricate a fresh KeyInfo to
+        // carry the matched alias/kid, and KeyInfo.keyVisibility defaults to PUBLIC — so reading it off
+        // matchKey's result would silently downgrade a caller that explicitly asked for PRIVATE (e.g.
+        // the KMS decrypt/sign path resolving the recipient/signing key) and strip the private `d`/`k`
+        // component below. Resolve against the original request, then matchKey's, then the config.
+        val visibility = keyInfo.keyVisibility ?: managedKeyInfo.keyVisibility ?: config.keyVisibility
         if (config.keyVisibility === KeyVisibility.PUBLIC.keyVisibility && visibility === KeyVisibility.PRIVATE) {
             throw PKIException("Cannot get private key info for a public key store")
         }
@@ -387,7 +477,10 @@ actual class SoftwareKeyStoreService actual constructor(
         certChain: Array<Certificate>?,
     ): ManagedKeyInfoType<*> {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot store keys in READ mode" }
-        val ks = keyStoreData.await().keyStore
+        // Apply the write against the active keystore (the disk-reloaded overlay when present) so it
+        // sits on top of any durable write another instance already made to the same file.
+        maybeReloadFromDisk()
+        val ks = currentKeyStore()
 
         val visibility = keyInfo.keyVisibility ?: config.keyVisibility
         if (config.keyVisibility === KeyVisibility.PUBLIC.keyVisibility && visibility === KeyVisibility.PRIVATE) {
@@ -425,43 +518,33 @@ actual class SoftwareKeyStoreService actual constructor(
             // Performance: Invalidate cache on write
             invalidateCache()
 
-            if (config.persist) {
-                scheduleAsyncPersistence()
-            }
+            // Flush durably before returning so a later keystore instance loading the same
+            // file (cross-session/scope read) sees this key. See [persistDurably].
+            persistDurably()
 
             return managedKeyInfo
         }
+
+        // PKCS12/JKS private-key entries require a non-empty certificate chain. When the caller
+        // supplies neither a `certChain` nor a `keyInfo.x5c`, mint a minimal self-signed wrapper
+        // certificate so the keystore accepts the entry. This is a keystore-storage constraint
+        // only; the certificate is never used for trust. The license recipient enc key (a bare EC
+        // JWK with no x5c) takes this path — it only needs to round-trip through the keystore so a
+        // later session can read it back to unwrap the license JWE.
+        val resolvedCertChain: Array<Certificate> =
+            certChain?.takeIf { it.isNotEmpty() }
+                ?: keyInfo.x5c
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.map { certificateFromDer(certificateJwkDecode(it)) }
+                    ?.toTypedArray()
+                ?: arrayOf(selfSignedWrapperCertificate(keyInfo, alias))
 
         // Perform key conversion and validation on Default dispatcher to avoid blocking I/O
         val (privateKey, certificates) =
             withContext(Dispatchers.Default) {
                 val privateKey = convertToJavaPrivateKey(keyInfo)
-
-                val certChain: MutableList<X509Certificate> =
-                    when {
-                        !certChain.isNullOrEmpty() -> {
-                            certChain.map { it -> javaX509CertificateFromDer(it.der) }.toMutableList()
-                        }
-
-                        !keyInfo.x5c.isNullOrEmpty() -> {
-                            val x5c = keyInfo.x5c!!
-                            x5c
-                                .map { it ->
-                                    val derBytes = certificateJwkDecode(it)
-                                    javaX509CertificateFromDer(derBytes)
-                                }.toMutableList()
-                        }
-
-                        else -> {
-                            mutableListOf()
-                        }
-                    }
-
-                if (certChain.isEmpty()) {
-                    throw IllegalArgumentException("Either certChain or keyInfo.x5c must be present and contain at least one certificate")
-                }
-
-                Pair(privateKey, certChain)
+                val certificates = resolvedCertChain.map { javaX509CertificateFromDer(it.der) }.toMutableList()
+                Pair(privateKey, certificates)
             }
 
         // Store in keystore (this is typically fast as it's in-memory)
@@ -470,9 +553,9 @@ actual class SoftwareKeyStoreService actual constructor(
         // Performance: Invalidate cache on write
         invalidateCache()
 
-        if (config.persist) {
-            scheduleAsyncPersistence()
-        }
+        // Flush durably before returning so a later keystore instance loading the same
+        // file (cross-session/scope read) sees this key. See [persistDurably].
+        persistDurably()
 
         return managedKeyInfo
     }
@@ -501,16 +584,16 @@ actual class SoftwareKeyStoreService actual constructor(
      * @return `true` if the entry was successfully deleted, `false` otherwise.
      */
     private suspend fun deleteEntry(alias: String): Boolean {
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
         try {
             ks.deleteEntry(alias)
 
             // Performance: Invalidate cache on write
             invalidateCache()
 
-            if (config.persist) {
-                scheduleAsyncPersistence()
-            }
+            // Flush durably before returning so a later keystore instance loading the same
+            // file (cross-session/scope read) observes the deletion. See [persistDurably].
+            persistDurably()
             return true
         } catch (_: Exception) {
             // Ignored: keystore entry deletion failed for alias
@@ -562,9 +645,9 @@ actual class SoftwareKeyStoreService actual constructor(
             alias = alias,
         )
 
-        if (config.persist) {
-            scheduleAsyncPersistence()
-        }
+        // storeKey already flushed durably; this extra flush is a no-op when no further
+        // change is pending, kept for symmetry with the other write paths.
+        persistDurably()
     }
 
     /**
@@ -581,7 +664,8 @@ actual class SoftwareKeyStoreService actual constructor(
         certificate: Certificate,
     ) {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot store certificates in READ mode" }
-        val ks = keyStoreData.await().keyStore
+        maybeReloadFromDisk()
+        val ks = currentKeyStore()
         val exists = ks.containsAlias(alias)
 
         if (!config.overwriteAlias) {
@@ -599,9 +683,9 @@ actual class SoftwareKeyStoreService actual constructor(
             }
 
         ks.setCertificateEntry(alias, javaCert)
-        if (config.persist) {
-            scheduleAsyncPersistence()
-        }
+        // Flush durably before returning so a later keystore instance loading the same
+        // file (cross-session/scope read) sees this certificate. See [persistDurably].
+        persistDurably()
     }
 
     /**
@@ -621,8 +705,9 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Wait for any pending persistence to ensure consistency
         awaitPendingPersistence()
+        maybeReloadFromDisk()
 
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
 
         return ks
             .aliases()
@@ -652,8 +737,9 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Wait for any pending persistence to ensure consistency
         awaitPendingPersistence()
+        maybeReloadFromDisk()
 
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
 
         val certChain = ks.getCertificateChain(alias)
         if (certChain === null) {
@@ -688,8 +774,9 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Wait for any pending persistence to ensure consistency
         awaitPendingPersistence()
+        maybeReloadFromDisk()
 
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
 
         return ks
             .aliases()
@@ -713,8 +800,9 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Wait for any pending persistence to ensure consistency
         awaitPendingPersistence()
+        maybeReloadFromDisk()
 
-        val ks = keyStoreData.await().keyStore
+        val ks = currentKeyStore()
 
         val cert = ks.getCertificate(alias)
         if (cert === null) {
@@ -735,7 +823,8 @@ actual class SoftwareKeyStoreService actual constructor(
      */
     actual override suspend fun deleteCertificate(alias: String): Boolean {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot delete certificates in READ mode" }
-        val ks = keyStoreData.await().keyStore
+        maybeReloadFromDisk()
+        val ks = currentKeyStore()
 
         require(ks.containsAlias(alias)) { "Could not find certificate for alias $alias" }
         return deleteEntry(alias)
@@ -747,7 +836,12 @@ actual class SoftwareKeyStoreService actual constructor(
 
     private suspend fun matchKey(keyInfo: KeyInfoType<*>): KeyInfoType<*> {
         if (keyInfo.alias != null) {
-            return keyInfo
+            // Read the active keystore (callers reload before matching), so an alias whose entry was
+            // durably overwritten on disk by another instance resolves to the reloaded entry.
+            val ks = currentKeyStore()
+            if (ks.containsAlias(keyInfo.alias) && ks.isKeyEntry(keyInfo.alias)) {
+                return keyInfo
+            }
         }
 
         // Step 1: metadata matching via listKeys() (no key material needed)
@@ -770,7 +864,7 @@ actual class SoftwareKeyStoreService actual constructor(
         // (PKCS12 alias lookups themselves are case-insensitive).
         val kid = keyInfo.kid
         if (kid != null) {
-            val ks = keyStoreData.await().keyStore
+            val ks = currentKeyStore()
             if (ks.containsAlias(kid) && ks.isKeyEntry(kid)) {
                 return KeyInfo<KeyType>(alias = kid, kid = kid, providerId = config.id)
             }
@@ -871,6 +965,40 @@ actual class SoftwareKeyStoreService actual constructor(
     }
 
     /**
+     * Durably persists a pending write before returning.
+     *
+     * A write (store/delete) updates the in-memory [KeyStore] synchronously, but the on-disk
+     * `.p12`/`.jks` file is only refreshed by the background persistence loop. That is fine for a
+     * single keystore instance — read operations call [awaitPendingPersistence] for consistency —
+     * but it is NOT durable across instances: a second [SoftwareKeyStoreService] built later (e.g. a
+     * different session/scope) loads the file from disk and would miss an entry whose flush had not
+     * yet completed. The platform `license` keystore is exactly this case: the import session
+     * stores the recipient key, then a separate decrypt session reads the shared on-disk keystore.
+     *
+     * Scheduling the flush and awaiting it here makes a persisted write durable on disk by the time
+     * the write call returns, so any later instance that loads the same file sees the entry. No-ops
+     * when persistence is disabled (in-memory-only keystores).
+     */
+    private suspend fun persistDurably() {
+        if (!config.persist) {
+            return
+        }
+        // Record the version this write must reach disk at. scheduleAsyncPersistence() bumps
+        // pendingChanges, so our change is at least the current pendingChanges value.
+        scheduleAsyncPersistence()
+        val target = pendingChanges.get()
+        // Await the in-flight flush, then re-schedule until the persisted version covers our
+        // change. The extra loop closes the race where the running loop completed (reading an
+        // older pendingChanges) just before our increment landed, leaving currentPersistenceJob
+        // cleared with our change unflushed.
+        awaitPendingPersistence()
+        while (lastPersistedVersion.get() < target) {
+            scheduleAsyncPersistence()
+            awaitPendingPersistence()
+        }
+    }
+
+    /**
      * Persistence loop that continues until all pending changes are persisted.
      * This ensures that no updates are lost even if they occur during persistence.
      */
@@ -917,7 +1045,10 @@ actual class SoftwareKeyStoreService actual constructor(
      */
     private suspend fun persistKeyStoreAsync() {
         withContext(Dispatchers.IO) {
-            val ks = keyStoreData.await().keyStore
+            // Flush the ACTIVE keystore: when a disk reload has overlaid a newer on-disk state
+            // (another instance's durable write), subsequent writes by this instance landed on that
+            // overlay via currentKeyStore(). Persisting keyStoreData's base would drop those writes.
+            val ks = currentKeyStore()
             val resolvedSource = keyStoreData.await().resolvedSource
             if (resolvedSource is KeyStoreLoaderOpts.Source.File) {
                 val targetFile = java.io.File(resolvedSource.path)
@@ -1074,7 +1205,14 @@ actual class SoftwareKeyStoreService actual constructor(
             alias = alias,
             providerId = config.id,
             keyVisibility = KeyVisibility.fromValue(config.keyVisibility),
-            keyType = KeyTypeMapping.fromValue(entry.privateKey.algorithm),
+            // Derive the key type from the canonical JOSE `kty` of the JWK we just decoded
+            // (e.g. EC/RSA/OKP) rather than the JCA `PrivateKey.algorithm` string. The JCA
+            // string is provider-specific ("ECDSA", "EdDSA", ...) and does NOT match the
+            // KeyTypeMapping class names that `fromValue` compares against, so it silently
+            // resolves to null — which makes signing fail with "Key type null not supported"
+            // whenever a key is reloaded from disk (cold keystore cache). `jwk.kty` is the
+            // same value already used above to repair EC public coordinates, so it is reliable.
+            keyType = KeyTypeMapping.tryFromJose(jwk.kty).let { if (it.isOk) it.value else KeyTypeMapping.fromValue(entry.privateKey.algorithm) },
             x5c = certChain,
             signatureAlgorithm = jwaAlgorithm?.let { SignatureAlgorithm.fromJose(it) },
         )
@@ -1115,6 +1253,75 @@ actual class SoftwareKeyStoreService actual constructor(
         resolvedKeyCache.clear()
         // Reset cache validity for future operations
         isCacheValid = true
+    }
+
+    /**
+     * Mints a minimal self-signed certificate that wraps [keyInfo]'s key so a PKCS12/JKS private-key
+     * entry can be stored. Software keystores require every private-key entry to carry a certificate
+     * chain; some keys (e.g. a bare EC encryption JWK used purely to unwrap a JWE) legitimately have
+     * no certificate of their own. Rather than reject those, we attach a self-signed wrapper so the
+     * keystore accepts the entry. The certificate plays no role in trust — it exists solely to satisfy
+     * the keystore-storage constraint, and the original key material is preserved byte-for-byte.
+     *
+     * Only EC keys are wrapped here (the license recipient enc key is EC); other key types without a
+     * certificate still surface the original storage error, which is the safe, explicit behaviour for
+     * key shapes this path was not designed for.
+     */
+    private suspend fun selfSignedWrapperCertificate(
+        keyInfo: ResolvedKeyInfoType<*>,
+        alias: String,
+    ): Certificate {
+        val jwk =
+            (keyInfo.key as? Jwk)?.takeIf { it.kty == JwaKeyType.EC }
+                ?: throw IllegalArgumentException(
+                    "Either certChain or keyInfo.x5c must be present and contain at least one certificate (no self-signed wrapper available for key type ${keyInfo.keyType})",
+                )
+        val curve =
+            jwk.crv?.let { Curve.fromJose(it) }
+                ?: throw IllegalArgumentException("EC key for alias $alias is missing 'crv'; cannot mint a self-signed wrapper certificate")
+
+        // Sign the TBS with the EC private key over the P-curve in raw (r||s) form. The key's own
+        // declared `alg`/`use` (e.g. ECDH-ES enc) is irrelevant for this wrapper — we only need a
+        // valid ECDSA self-signature so PKCS12 stores the entry, so we pin ES256/SHA-256.
+        val signingKeyInfo =
+            ResolvedKeyInfo(
+                key = jwk,
+                keyVisibility = KeyVisibility.PRIVATE,
+                keyType = KeyTypeMapping.EC,
+                alias = alias,
+                providerId = config.id,
+                kid = keyInfo.kid ?: alias,
+                signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+            )
+
+        val ecdsaCurve = resolveEcdsaKmpCurve(curve)
+        val provider = CryptographyProvider.Default
+        val privateKey = jwk.toEcdsaPrivateKey(provider = provider, curve = ecdsaCurve)
+        val signer = privateKey.signatureGenerator(digest = SHA256, format = ECDSA.SignatureFormat.RAW)
+
+        val subject = X509DistinguishedNameElements(commonName = alias)
+        val notBefore = LocalDateTimeKMP.now()
+        val notAfter =
+            LocalDateTimeKMP(
+                year = notBefore.year + 10,
+                month = notBefore.month,
+                day = notBefore.day,
+                hour = notBefore.hour,
+                minute = notBefore.minute,
+                second = notBefore.second,
+            )
+        val result =
+            CertificateCreationUtils.createCertificate(
+                issuerKeyInfo = signingKeyInfo,
+                issuer = subject,
+                subjectKeyInfo = signingKeyInfo,
+                subject = subject,
+                serialNumber = 1,
+                notBefore = notBefore,
+                notAfter = notAfter,
+                signatureFunction = { tbs -> signer.generateSignature(tbs) },
+            )
+        return result.certificate
     }
 
     /**

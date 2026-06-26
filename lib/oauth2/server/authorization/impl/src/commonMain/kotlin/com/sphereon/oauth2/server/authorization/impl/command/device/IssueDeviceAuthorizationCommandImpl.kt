@@ -113,7 +113,7 @@ class IssueDeviceAuthorizationCommandImpl(
         val intervalSeconds = serverConfig.devicePollIntervalSeconds
 
         val baseUrl =
-            (serverConfig.issuer ?: args.baseUrlOverride)
+            (args.baseUrlOverride?.takeIf { it.isNotBlank() } ?: serverConfig.issuer)
                 ?: return Err(
                     AuthorizationServerError.ServerError(
                         details = "Cannot resolve base URL for verification_uri: neither serverConfig.issuer nor baseUrlOverride is set",

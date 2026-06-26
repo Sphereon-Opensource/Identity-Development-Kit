@@ -83,40 +83,13 @@ kotlin {
                 api(sphereonlib.software.amazon.app.platform.metro.public)
             }
         }
-        val jvmMain by getting {
-            dependencies {
-                // Ktor server
-                implementation(projects.ktorServerKotlinInject)
-                implementation(sphereonlib.io.ktor.server.core)
-                implementation(sphereonlib.io.ktor.server.cio)
-                implementation(sphereonlib.io.ktor.server.content.negotiation)
-                implementation(sphereonlib.io.ktor.server.status.pages)
-                implementation(sphereonlib.io.ktor.serialization.kotlinx.json)
-
-                // Concrete implementations that satisfy the Metro DI graph at runtime. The
-                // module can still be consumed without these (e.g., host apps that wire their
-                // own impls) — they are attached here so the bundled Ktor entrypoint has a
-                // working dev-friendly graph out of the box.
-                implementation(projects.libCoreApiDefault)
-                implementation(projects.libCryptoCoreImpl)
-                implementation(projects.libCryptoKmsProviderSoftware)
-                // SQLite-backed KeyReferenceStore. SqliteKeyReferenceStoreImpl carries
-                // @ContributesBinding(SessionScope, replaces=[NoOpKeyReferenceStore]), so as long
-                // as this dependency is present at the graph-composition compile-time (jvmMain),
-                // KSP picks it up over the NoOp default. Required for did:key / did:jwk
-                // creation to find a working keyref store; without it findKeyReferenceId aborts
-                // MANAGED VM creation with "key-reference store is unavailable". Resolves the
-                // VDX-infra-otp E2E test skips and the corresponding production-server gap.
-                implementation(projects.libCryptoKeyPersistenceSqlite)
-                implementation(projects.libDataLinkHttpClientImpl)
-                implementation(projects.libDidManagerImpl)
-                implementation(projects.libDidResolverImpl)
-                implementation(projects.libDidPersistenceMemory)
-                implementation(projects.libDidMethodsKey)
-                implementation(projects.libDidMethodsJwk)
-                implementation(projects.libDidMethodsWeb)
-            }
-        }
+        // NOTE: jvmMain intentionally has NO sources and NO dependencies. This library's published
+        // surface is the framework-agnostic DidManagerHttpAdapter (commonMain), which depends only
+        // on the persistence .api/.public contracts. The standalone dev Ktor server
+        // (DidManagerKtorServer) — which composes a full Metro @DependencyGraph and therefore must
+        // pin a concrete persistence dialect at compile time — lives in jvmTest. Final applications
+        // bring the host + the concrete dialect (postgres/sqlite/mysql/memory); this library never
+        // forces one on its consumers.
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
@@ -126,13 +99,28 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test.junit5)
-                // Compile-time access to the impl-only Session graphs (DidManagerServiceImpl.Graph,
-                // DidCreationDslProcessor.Graph) so REST E2E tests can mint fixture DIDs through
-                // the DSL instead of the OpenAPI surface they're meant to exercise.
+                // Standalone dev/test Ktor server (DidManagerKtorServer, moved here from jvmMain) +
+                // its full Metro graph. The graph composes at compile time, so it needs a concrete
+                // persistence dialect on the TEST classpath; this never reaches consumers.
+                implementation(projects.ktorServerKotlinInject)
+                implementation(sphereonlib.io.ktor.server.core)
+                implementation(sphereonlib.io.ktor.server.cio)
+                implementation(sphereonlib.io.ktor.server.content.negotiation)
+                implementation(sphereonlib.io.ktor.server.status.pages)
+                implementation(sphereonlib.io.ktor.serialization.kotlinx.json)
+                implementation(projects.libCoreApiDefault)
+                implementation(projects.libCryptoCoreImpl)
+                implementation(projects.libCryptoKmsProviderSoftware)
+                implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libDidManagerImpl)
-                // Ktor test host for VDX-infra-ubb — boots an in-process server with the real
-                // KotlinInjectPlugin so we can verify X-Tenant-ID / X-User-ID header forwarding
-                // through the full chain into endpoint command execution context.
+                implementation(projects.libDidResolverImpl)
+                implementation(projects.libDidMethodsKey)
+                implementation(projects.libDidMethodsJwk)
+                implementation(projects.libDidMethodsWeb)
+                // Concrete persistence dialects (key + DID stores) for the test server's graph.
+                implementation(projects.libCryptoKeyPersistenceSqlite)
+                implementation(projects.libDidPersistenceMemory)
+                // Ktor test host + client for the adapter E2E tests.
                 implementation(sphereonlib.io.ktor.server.test.host)
                 implementation(sphereonlib.io.ktor.client.content.negotiation)
             }

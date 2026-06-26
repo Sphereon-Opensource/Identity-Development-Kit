@@ -419,6 +419,35 @@ sealed interface KeyInfoType<out KT : KeyType> : IdentifierLookupType {
 }
 
 /**
+ * Serializer for [KeyInfoType] that delegates to concrete [KeyInfo].
+ *
+ * This avoids relying on the generated serializer for the generic sealed
+ * [KeyInfoType] interface, which is fragile for star-projected command args on
+ * JS/Wasm.
+ */
+object KeyInfoTypeSerializer : KSerializer<KeyInfoType<*>> {
+    private val delegate: KSerializer<KeyInfo<KeyType>> =
+        KeyInfo.serializer(PolymorphicSerializer(KeyType::class))
+
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun serialize(
+        encoder: Encoder,
+        value: KeyInfoType<*>,
+    ) {
+        val concreteValue =
+            when (value) {
+                is KeyInfo<*> -> value
+                else -> KeyInfo.fromDTO(value)
+            }
+        @Suppress("UNCHECKED_CAST")
+        encoder.encodeSerializableValue(delegate, concreteValue as KeyInfo<KeyType>)
+    }
+
+    override fun deserialize(decoder: Decoder): KeyInfoType<*> = decoder.decodeSerializableValue(delegate)
+}
+
+/**
  * Represents a resolved cryptographic key information interface.
  *
  * This interface guarantees that the key is present and resolved, providing concrete access to the key.

@@ -150,6 +150,19 @@ class SoftwareKeyStoreServiceKidResolutionTest {
             assertNotNull((byKid.key as? JwkType)?.k, "Kid lookup must resolve when a direct alias get with the same value succeeds")
         }
 
+    @Test
+    fun hmacKeyLookupFallsBackToKidWhenAliasIsMissing() =
+        runTest {
+            val service = newPkcs12Service()
+            val fallbackKid = "qa-license-recipient"
+            service.storeKey(hmacResolvedKeyInfo(fallbackKid), "test-pkcs12", fallbackKid)
+
+            val resolved = service.getKey(KeyInfo<Jwk>(alias = "license-recipient", kid = fallbackKid))
+
+            assertEquals(fallbackKid, resolved.alias)
+            assertNotNull((resolved.key as? JwkType)?.k, "Lookup with missing alias must fall back to kid")
+        }
+
     /**
      * Same as above but across a persistence round trip: the key is written to disk by one
      * service instance and resolved by kid through a fresh instance over the same file,

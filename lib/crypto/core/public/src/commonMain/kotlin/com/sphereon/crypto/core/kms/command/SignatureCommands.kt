@@ -45,7 +45,7 @@ data class
 CreateRawSignatureArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
         val input: ByteArray = byteArrayOf(),
         val requireX5Chain: Boolean = false,
@@ -157,7 +157,7 @@ data class
 VerifyRawSignatureArgs
     @JvmOverloads
     constructor(
-        @kotlinx.serialization.Transient
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
         val keyInfo: KeyInfoType<*>? = null,
         val input: ByteArray = byteArrayOf(),
         val signature: ByteArray = byteArrayOf(),

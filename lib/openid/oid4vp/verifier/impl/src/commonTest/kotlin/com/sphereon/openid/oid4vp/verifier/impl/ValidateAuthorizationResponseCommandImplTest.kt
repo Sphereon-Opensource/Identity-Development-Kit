@@ -30,17 +30,23 @@ import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
+import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidationArgs
+import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidator
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
+import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -106,6 +112,46 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertEquals("identity_credential", validation.matchedCredentials[0].credentialQueryId)
             assertEquals("dc+sd-jwt", validation.matchedCredentials[0].format)
             assertTrue(validation.errors.isEmpty())
+        }
+
+    @Test
+    fun `credential trust validation receives stored dcql query id separately from credential query id`() =
+        runTest {
+            val trustValidator = CapturingTrustValidator()
+            val command = createTestCommand(credentialTrustValidators = setOf(trustValidator))
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt")),
+                )
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val result =
+                command.validateAuthorizationResponse(
+                    ValidateAuthorizationResponseArgs(
+                        parsedResponse =
+                            ParsedAuthorizationResponse(
+                                vpToken = vpTokenOf("identity_credential", sdJwt),
+                                state = "state123",
+                                rawVpToken = """{"identity_credential":"$sdJwt"}""",
+                            ),
+                        originalRequest =
+                            AuthorizationRequest(
+                                clientId = "https://verifier.example.com",
+                                redirectUri = "https://verifier.example.com/callback",
+                                state = "state123",
+                            ),
+                        dcqlQuery = dcqlQuery,
+                        expectedNonce = "nonce123",
+                        verifierId = "verifier-a",
+                        dcqlQueryId = "employee-vp",
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid)
+            val validationArgs = assertNotNull(trustValidator.lastArgs)
+            assertEquals("verifier-a", validationArgs.verifierId)
+            assertEquals("employee-vp", validationArgs.dcqlQueryId)
+            assertEquals("identity_credential", validationArgs.credentialQueryId)
         }
 
     @Test
@@ -613,7 +659,11 @@ class ValidateAuthorizationResponseCommandImplTest {
         return "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
     }
 
-    private fun createTestCommand(credentialStatusVerifiers: Set<com.sphereon.statuslist.spi.CredentialStatusVerifier> = emptySet(),): ValidateAuthorizationResponseCommandImpl {
+    private fun createTestCommand(
+        credentialStatusVerifiers: Set<com.sphereon.statuslist.spi.CredentialStatusVerifier> = emptySet(),
+        credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
+        authorizationSessionStore: AuthorizationSessionStore = TestAuthorizationSessionStore(),
+    ): ValidateAuthorizationResponseCommandImpl {
         // Validators wired through the built-in W3C/UNTP @context bundle so
         // VCDM 2.0 references resolve from the JAR (no network). For
         // non-VCDM-2.0 presentations the validator path is skipped entirely
@@ -625,7 +675,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             )
         return ValidateAuthorizationResponseCommandImpl(
             execution = testContext.execution,
-            authorizationSessionStore = TestAuthorizationSessionStore(),
+            authorizationSessionStore = authorizationSessionStore,
             verifyHolderBindingCommand = AlwaysValidHolderBindingCommand,
             jsonLdContextValidator =
                 com.sphereon.jsonld.command
@@ -639,6 +689,23 @@ class ValidateAuthorizationResponseCommandImplTest {
                 com.sphereon.mdoc.data.device
                     .DeviceResponseCborCodecImpl(),
             credentialStatusVerifiers = credentialStatusVerifiers,
+            credentialTrustValidators = credentialTrustValidators,
+        )
+    }
+}
+
+private class CapturingTrustValidator : Oid4vpCredentialTrustValidator {
+    var lastArgs: Oid4vpCredentialTrustValidationArgs? = null
+        private set
+
+    override suspend fun validate(args: Oid4vpCredentialTrustValidationArgs): IdkResult<CredentialTrustValidation, IdkError> {
+        lastArgs = args
+        return Ok(
+            CredentialTrustValidation(
+                enabled = false,
+                mode = CredentialTrustValidationMode.DISABLED,
+                details = "captured",
+            ),
         )
     }
 }

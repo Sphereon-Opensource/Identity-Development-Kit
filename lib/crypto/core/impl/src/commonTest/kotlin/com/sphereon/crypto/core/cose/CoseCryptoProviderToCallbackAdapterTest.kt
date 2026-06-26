@@ -39,6 +39,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -215,6 +216,41 @@ class CoseCryptoProviderToCallbackAdapterTest {
             assertNotNull(signature)
             assertTrue(signature.isNotEmpty())
         }
+
+    @Test
+    fun sessionGraphCoseServiceShouldUseScopedAdapterWhenGlobalDefaultChanges() {
+        val coseCryptoService = (session.graph as CryptoServices.Graph).cryptoServices.cose
+        val unrelatedGlobalFallback =
+            object : CoseCryptoCallbackCoroutines {
+                override suspend fun sign(
+                    input: ToBeSignedCbor,
+                    requireX5Chain: Boolean?,
+                ): ByteArray = byteArrayOf(9)
+
+                override suspend fun verify1(
+                    input: CoseSign1<*>,
+                    keyInfo: com.sphereon.crypto.core.KeyInfoType<*>?,
+                    requireX5Chain: Boolean?,
+                ): com.sphereon.crypto.core.generic.VerifySignatureResultType<CoseKeyType> = throw NotImplementedError()
+
+                override suspend fun mac0(
+                    input: CoseMac0InputCbor,
+                    sharedSecret: ByteArray,
+                    alg: SignatureAlgorithm,
+                ): com.sphereon.crypto.core.CoseMac0Result = throw NotImplementedError()
+
+                override suspend fun <KeyType : com.sphereon.crypto.core.KeyType> resolvePublicKey(
+                    keyInfo: com.sphereon.crypto.core.KeyInfoType<KeyType>,
+                ): com.sphereon.crypto.core.ResolvedKeyInfoType<KeyType> = throw NotImplementedError()
+            }
+        DefaultCallbacks.setCoseCryptoDefault(unrelatedGlobalFallback)
+
+        @Suppress("UNCHECKED_CAST")
+        val platform = (coseCryptoService as HasPlatformCallback<CoseCryptoCallbackCoroutines>).platform()
+
+        assertFalse(platform === unrelatedGlobalFallback, "Session-scoped COSE service must not resolve through the global fallback")
+        assertTrue(platform is CoseCryptoProviderToCallbackAdapter, "Session-scoped COSE service should use the session adapter")
+    }
 
     @Test
     fun signShouldUseInputAlgWhenKeyInfoAlgIsNull() =

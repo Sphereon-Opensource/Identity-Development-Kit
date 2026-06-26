@@ -31,6 +31,7 @@ class X509TrustAnchorLoaderImpl(
     private val httpClientFactory: HttpClientFactory,
     private val cacheService: CacheService,
     private val execution: SessionExecution,
+    private val additionalSources: Set<X509TrustAnchorSource> = emptySet(),
 ) : X509TrustAnchorLoader {
     private val logger = execution.log.logManager.withTag("X509TrustAnchorLoader")
 
@@ -46,7 +47,26 @@ class X509TrustAnchorLoaderImpl(
     }
 
     override suspend fun loadTrustedCerts(): List<String> {
-        val cached = trustedCertsCache.getApp("trusted-certs")
+        val configuredCerts = loadConfiguredTrustedCerts()
+        if (additionalSources.isEmpty()) {
+            return configuredCerts
+        }
+
+        val additionalCerts = mutableListOf<String>()
+        for (source in additionalSources) {
+            try {
+                val loaded = source.loadTrustedCerts()
+                additionalCerts.addAll(loaded)
+                logger.debug("Loaded ${loaded.size} certificates from X.509 trust anchor source '${source.sourceId}'")
+            } catch (expected: Exception) {
+                logger.error("Failed to load certificates from X.509 trust anchor source '${source.sourceId}'", exception = expected)
+            }
+        }
+        return (configuredCerts + additionalCerts).distinct()
+    }
+
+    private suspend fun loadConfiguredTrustedCerts(): List<String> {
+        val cached = trustedCertsCache.getApp("configured-trusted-certs")
         if (cached != null) {
             return kotlinx.serialization.json.Json
                 .decodeFromString<List<String>>(cached)
@@ -103,7 +123,7 @@ class X509TrustAnchorLoaderImpl(
 
         if (certs.isNotEmpty()) {
             trustedCertsCache.putApp(
-                "trusted-certs",
+                "configured-trusted-certs",
                 kotlinx.serialization.json.Json
                     .encodeToString(certs),
             )

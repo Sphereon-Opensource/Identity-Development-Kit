@@ -327,7 +327,7 @@ class WalletImpl(
                 if (resolvedIssuerResult.isErr) return Err(resolvedIssuerResult.error)
 
                 // Extract credential subject(s) from the first instance and resolve each
-                // through the identity book (no-op in IDK; EDK enriches with correlationId).
+                // through the identity book (no-op in IDK; EDK enriches with identityIdentifierId).
                 val firstInstance = newInstances.first()
                 val credentialFormat = CredentialFormat.fromValueLenient(firstInstance.format)
                 val rawSubjectRefs =

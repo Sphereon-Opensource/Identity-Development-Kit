@@ -20,11 +20,12 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
+import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TenantOverrideSessionExecution
-import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
@@ -55,7 +56,7 @@ class GetJwksCommandImplTest {
             // RPs interpret that as "no public verification key available" rather than treating
             // the endpoint as broken.
             val store: SigningKeyStore = InMemorySigningKeyStore()
-            val command = GetJwksCommandImpl(ctx.execution, store, ctx.identifierService, fixedSigningIdentifierResolver())
+            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService)
 
             val result = command.execute(GetJwksArgs())
 
@@ -76,7 +77,7 @@ class GetJwksCommandImplTest {
             val legacyKey = generateAndRegister(store, kid = "kid-legacy", state = OAuth2SigningKeyState.LEGACY, priority = 5)
             val activeKey = generateAndRegister(store, kid = "kid-active", state = OAuth2SigningKeyState.ACTIVE, priority = 10)
 
-            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService, fixedSigningIdentifierResolver())
+            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService)
             val result = command.execute(GetJwksArgs())
 
             assertTrue(result.isOk, "GetJwks must succeed when two real keys are registered")
@@ -105,12 +106,65 @@ class GetJwksCommandImplTest {
             generateAndRegister(store, kid = "kid-active", state = OAuth2SigningKeyState.ACTIVE, priority = 10)
             generateAndRegister(store, kid = "kid-disabled", state = OAuth2SigningKeyState.DISABLED, priority = 1)
 
-            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService, fixedSigningIdentifierResolver())
+            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService)
             val result = command.execute(GetJwksArgs())
 
             assertTrue(result.isOk)
             val publishedKids = result.value.keys.map { it.kid }
             assertEquals(listOf("kid-active"), publishedKids, "DISABLED keys must NOT appear in JWKS")
+        }
+
+    @Test
+    fun preservesProviderBindingFromSigningKeyStoreWhenPublishingJwks() =
+        runTest {
+            // Fresh tenant AS registration provisions the signing key into a tenant-specific
+            // provider. JWKS must resolve the exact KeyInfo stored for that tenant; falling
+            // back to alias-only lookup checks the default provider and returns an empty JWKS.
+            val providerId = "tenant-specific-jwks-provider"
+            registerSoftwareProvider(providerId)
+
+            val store: SigningKeyStore = InMemorySigningKeyStore()
+            val kid = "oauth2-as-phase170583"
+            val genResult =
+                ctx.keyManagerService.generateKeyResult(
+                    providerId = providerId,
+                    alias = kid,
+                    use = JwkUse.sig,
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            assertTrue(
+                genResult.isOk,
+                "KMS must generate tenant-provider key: ${if (genResult.isErr) genResult.error.message.defaultMessage else ""}",
+            )
+            val keyPair = genResult.value.keyPair ?: error("KMS returned no keyPair for $kid")
+            assertEquals(providerId, keyPair.providerId, "precondition: key must be stored in the tenant-specific provider")
+
+            val now = Clock.System.now()
+            val registerResult =
+                store.register(
+                    OAuth2SigningKey(
+                        tenantId = tenant,
+                        keyInfo =
+                            KeyInfo<KeyType>(
+                                kid = kid,
+                                alias = kid,
+                                providerId = providerId,
+                                signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                            ),
+                        state = OAuth2SigningKeyState.ACTIVE,
+                        priority = 1,
+                        createdAt = now,
+                        notBefore = now,
+                    ),
+                )
+            assertTrue(registerResult.isOk, "store.register($kid) must succeed: ${if (registerResult.isErr) registerResult.error else ""}")
+
+            val command = GetJwksCommandImpl(TenantOverrideSessionExecution(ctx.execution, tenant), store, ctx.identifierService)
+            val result = command.execute(GetJwksArgs())
+
+            assertTrue(result.isOk, "GetJwks must resolve keys by the stored provider binding")
+            assertEquals(listOf(kid), result.value.keys.map { it.kid })
+            assertEquals("ES256", result.value.keys.single().alg?.toString())
         }
 
     /**
@@ -158,5 +212,11 @@ class GetJwksCommandImplTest {
         val registerResult = store.register(key)
         assertTrue(registerResult.isOk, "store.register($kid) must succeed: ${if (registerResult.isErr) registerResult.error else ""}")
         return key
+    }
+
+    private fun registerSoftwareProvider(providerId: String) {
+        val factory = (ctx.app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
+        val provider = factory.create(SoftwareKmsProviderConfig(id = providerId), ctx.execution)
+        ctx.keyManagerService.registerProvider(provider, makeDefaultKms = false)
     }
 }

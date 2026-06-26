@@ -221,7 +221,8 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
             if (method in WEB_RESOLVED_METHODS) {
                 resolveDidWebDomain()
                     ?: error(
-                        "did:$method signing requires a host: set '${didWebDomainKey()}' or a valid absolute verifier external base URL.",
+                        "did:$method signing requires a host: set '${didWebDomainKey()}' to a host or absolute URL, " +
+                            "or set a valid absolute verifier external base URL.",
                     )
             } else {
                 null
@@ -359,9 +360,9 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
      * is also accepted as a global fallback (it is not per-instance).
      */
     private fun resolveDidWebDomain(): String? {
-        configService.getPropertyAsString(didWebDomainKey())?.takeIf { it.isNotBlank() }?.let { return hostOf(it) }
+        configService.getPropertyAsString(didWebDomainKey())?.takeIf { it.isNotBlank() }?.let { return verifierHostOf(it) }
         for (key in externalBaseUrlKeys()) {
-            configService.getPropertyAsString(key)?.takeIf { it.isNotBlank() }?.let { return hostOf(it) }
+            configService.getPropertyAsString(key)?.takeIf { it.isNotBlank() }?.let { return verifierHostOf(it) }
         }
         return null
     }
@@ -384,20 +385,21 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
         // is a single deployment-wide value, NOT per-verifier-instance, so it stays a fixed key.
         private const val UNIVERSAL_EXTERNAL_BASE_URL_KEY = "oid4vp.universal.external-base-url"
 
-        /** Host (authority without scheme/port/path) of an absolute http(s) URL, or null. */
-        private fun hostOf(url: String): String? {
-            val authority =
-                url
-                    .substringAfter("://", "")
-                    .substringBefore('/')
-                    .substringBefore('?')
-                    .substringBefore('#')
-            val host = authority.substringBefore('@').substringBefore(':')
-            return host.takeIf { it.isNotBlank() }
-        }
-
         private const val DEFAULT_EXPIRATION_SECONDS = 300L
         private const val DEFAULT_MODE = "did:jwk"
         private const val DEFAULT_PROVIDER_ID = "default"
     }
+}
+
+/** Host portion of a verifier domain setting, accepting either a bare host or an absolute URL. */
+internal fun verifierHostOf(value: String): String? {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return null
+    val authority =
+        (if (trimmed.contains("://")) trimmed.substringAfter("://") else trimmed)
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+    val host = authority.substringBefore('@').substringBefore(':')
+    return host.takeIf { it.isNotBlank() }
 }

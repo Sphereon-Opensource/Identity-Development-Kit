@@ -16,6 +16,8 @@
 
 package com.sphereon.data.store.credential.design.impl.mapper
 
+import com.sphereon.data.store.credential.design.model.AppliedDesignLayer
+import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.ClaimLabel
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
@@ -25,7 +27,11 @@ import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.DesignClaimPath
 import com.sphereon.data.store.credential.design.model.DesignHostingMode
+import com.sphereon.data.store.credential.design.model.DesignSourceType
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
+import com.sphereon.data.store.credential.design.model.RenderVariantKind
+import com.sphereon.data.store.credential.design.model.RenderVariantRecord
+import com.sphereon.data.store.credential.design.model.ResolvedCredentialDesign
 import com.sphereon.data.store.credential.design.model.SdPolicy
 import com.sphereon.sdjwt.vc.ClaimDisplayMetadata
 import com.sphereon.sdjwt.vc.ClaimInformation
@@ -38,6 +44,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
@@ -230,7 +237,7 @@ class SdJwtVctDesignMapperTest {
         assertEquals(1, claim.display!!.size)
         assertEquals("Email", claim.display!![0].label)
         assertEquals("Email address", claim.display!![0].description)
-        assertTrue(claim.mandatory)
+        assertFalse(claim.mandatory)
         assertEquals(ClaimSdMetadata.ALWAYS, claim.sd)
         assertEquals("email_svg", claim.svgId)
     }
@@ -533,7 +540,7 @@ class SdJwtVctDesignMapperTest {
         assertEquals(listOf("given_name"), first.path)
         assertEquals("Given Name", first.display!![0].label)
         assertEquals("First name", first.display!![0].description)
-        assertTrue(first.mandatory)
+        assertFalse(first.mandatory)
         assertEquals(ClaimSdMetadata.ALWAYS, first.sd)
         assertEquals("given_name_svg", first.svgId)
 
@@ -546,7 +553,7 @@ class SdJwtVctDesignMapperTest {
         val third = roundTripped.claims!![2]
         assertEquals(listOf("iss"), third.path)
         assertEquals(null, third.display)
-        assertTrue(third.mandatory)
+        assertFalse(third.mandatory)
         assertEquals(ClaimSdMetadata.NEVER, third.sd)
     }
 
@@ -875,7 +882,7 @@ class SdJwtVctDesignMapperTest {
             val original = metadata.claims!![i]
             val result = roundTripped.claims!![i]
             assertEquals(original.path, result.path)
-            assertEquals(original.mandatory, result.mandatory)
+            assertFalse(result.mandatory)
             assertEquals(original.sd, result.sd)
             assertEquals(original.svgId, result.svgId)
 
@@ -942,5 +949,143 @@ class SdJwtVctDesignMapperTest {
         assertNotNull(metadata.display)
         assertEquals("My Credential", metadata.display!![0].name)
         assertEquals("desc", metadata.display!![0].description)
+    }
+
+    // ---- fromCanonical(ResolvedCredentialDesign) rendering tests ----
+
+    @Test
+    fun fromCanonicalResolvedEmitsRenderingSimpleFromVariant() {
+        val now = Instant.parse("2025-01-01T00:00:00Z")
+        val design =
+            CredentialDesignRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000016"),
+                tenantId = "tenant-1",
+                hostingMode = DesignHostingMode.LOCAL,
+                bindings = listOf(DesignBinding(vct = "https://example.com/eupid")),
+                displays =
+                    listOf(
+                        LocalizedCredentialDisplay(locale = "en", name = "EU PID", description = "European Personal ID"),
+                    ),
+                claims = emptyList(),
+                createdAt = now,
+                updatedAt = now,
+            )
+        val variant =
+            RenderVariantRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000099"),
+                tenantId = "tenant-1",
+                kind = RenderVariantKind.SIMPLE_CARD,
+                localeApplicability = listOf("en"),
+                logo =
+                    AssetReference(
+                        uri = "https://example.com/logo.png",
+                        integrity = "sha256-abc123",
+                        altText = "EU PID Logo",
+                    ),
+                backgroundImage =
+                    AssetReference(
+                        uri = "https://example.com/bg.png",
+                        integrity = "sha256-def456",
+                    ),
+                backgroundColor = "#0B5FFF",
+                textColor = "#FFFFFF",
+            )
+        val resolved =
+            ResolvedCredentialDesign(
+                design = design,
+                renderVariants = listOf(variant),
+                appliedLayers = listOf(AppliedDesignLayer(sourceType = DesignSourceType.LOCAL_OVERRIDE, priority = 0)),
+                lockedFields = emptyMap(),
+                resolvedAt = now,
+            )
+
+        val metadata = mapper.fromCanonical(resolved)
+
+        assertNotNull(metadata.display)
+        val displayEn = metadata.display!!.single { it.locale == "en" }
+        assertNotNull(displayEn.rendering)
+        val simple = displayEn.rendering!!.simple
+        assertNotNull(simple)
+        assertEquals("https://example.com/logo.png", simple.logo!!.uri)
+        assertEquals("sha256-abc123", simple.logo!!.uriIntegrity)
+        assertEquals("EU PID Logo", simple.logo!!.altText)
+        assertNull(simple.backgroundImage)
+        assertEquals("#0B5FFF", simple.backgroundColor)
+        assertEquals("#FFFFFF", simple.textColor)
+    }
+
+    @Test
+    fun fromCanonicalResolvedFallsBackToFirstVariantWhenLocaleNotMatched() {
+        val now = Instant.parse("2025-01-01T00:00:00Z")
+        val design =
+            CredentialDesignRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000017"),
+                tenantId = "tenant-1",
+                hostingMode = DesignHostingMode.LOCAL,
+                bindings = listOf(DesignBinding(vct = "https://example.com/vc")),
+                displays =
+                    listOf(
+                        LocalizedCredentialDisplay(locale = "fr", name = "Identité", description = null),
+                    ),
+                claims = emptyList(),
+                createdAt = now,
+                updatedAt = now,
+            )
+        val variant =
+            RenderVariantRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000098"),
+                tenantId = "tenant-1",
+                kind = RenderVariantKind.SIMPLE_CARD,
+                localeApplicability = listOf("en"),
+                backgroundColor = "#123456",
+                textColor = "#FFFFFF",
+            )
+        val resolved =
+            ResolvedCredentialDesign(
+                design = design,
+                renderVariants = listOf(variant),
+                appliedLayers = listOf(AppliedDesignLayer(sourceType = DesignSourceType.LOCAL_OVERRIDE, priority = 0)),
+                lockedFields = emptyMap(),
+                resolvedAt = now,
+            )
+
+        val metadata = mapper.fromCanonical(resolved)
+
+        val displayFr = metadata.display!!.single { it.locale == "fr" }
+        // "fr" not in localeApplicability=["en"], so falls back to first variant
+        assertNotNull(displayFr.rendering)
+        assertEquals("#123456", displayFr.rendering!!.simple!!.backgroundColor)
+    }
+
+    @Test
+    fun fromCanonicalResolvedNoVariantsProducesNullRendering() {
+        val now = Instant.parse("2025-01-01T00:00:00Z")
+        val design =
+            CredentialDesignRecord(
+                id = Uuid.parse("00000000-0000-0000-0000-000000000018"),
+                tenantId = "tenant-1",
+                hostingMode = DesignHostingMode.LOCAL,
+                bindings = listOf(DesignBinding(vct = "https://example.com/vc")),
+                displays =
+                    listOf(
+                        LocalizedCredentialDisplay(locale = "en", name = "Test", description = null),
+                    ),
+                claims = emptyList(),
+                createdAt = now,
+                updatedAt = now,
+            )
+        val resolved =
+            ResolvedCredentialDesign(
+                design = design,
+                renderVariants = emptyList(),
+                appliedLayers = emptyList(),
+                lockedFields = emptyMap(),
+                resolvedAt = now,
+            )
+
+        val metadata = mapper.fromCanonical(resolved)
+
+        val displayEn = metadata.display!!.single { it.locale == "en" }
+        assertNull(displayEn.rendering)
     }
 }

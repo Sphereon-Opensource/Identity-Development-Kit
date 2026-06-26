@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.decodeFromBase64
+import com.sphereon.core.api.log.Log
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
@@ -219,9 +220,7 @@ class ConfigBackedUserAuthenticationProvider(
 
     private fun warnOnceAboutDevTestUsage() {
         if (devTestWarningEmitted.compareAndSet(expect = false, update = true)) {
-            // LogService isn't injected here to keep the lazy initializer free of suspend setup;
-            // the warning needs to fire once per JVM regardless of session lifecycle.
-            println(
+            Log.app().withTag("ConfigBackedUserAuthenticationProvider").warn(
                 "WARN ConfigBackedUserAuthenticationProvider is active. IDK config-backed user storage " +
                     "is intended for development, conformance testing, and demos only, not for production. " +
                     "For production deployments, contribute a database-backed UserAuthenticationProvider through EDK or VDX.",
