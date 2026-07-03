@@ -274,6 +274,7 @@ actual class SoftwareKeyStoreService actual constructor(
                             source = resolvedSource,
                             keyStorePassword = String(password),
                         ),
+                        forceReload = true,
                     )
                 }
             reloadedKeyStore = reloaded

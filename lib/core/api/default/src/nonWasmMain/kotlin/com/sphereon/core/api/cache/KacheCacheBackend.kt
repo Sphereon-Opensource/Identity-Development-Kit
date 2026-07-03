@@ -132,16 +132,12 @@ class KacheCacheBackend(
     }
 
     override suspend fun deleteByPattern(pattern: String): Int {
-        val regex = patternToRegex(pattern)
-        val keysToDelete = cache.getKeys().filter { regex.matches(it) }
+        val keysToDelete = keysMatchingPattern(pattern, cacheKeys())
         keysToDelete.forEach { cache.remove(it) }
         return keysToDelete.size
     }
 
-    override suspend fun keys(pattern: String): List<String> {
-        val regex = patternToRegex(pattern)
-        return cache.getKeys().filter { regex.matches(it) }
-    }
+    override suspend fun keys(pattern: String): List<String> = keysMatchingPattern(pattern, cacheKeys())
 
     override suspend fun clear() {
         cache.clear()
@@ -152,38 +148,6 @@ class KacheCacheBackend(
     override suspend fun isHealthy(): Boolean = true
 
     /**
-     * Convert a glob-style pattern to a regex.
-     * Supports * as wildcard.
-     */
-    private fun patternToRegex(pattern: String): Regex {
-        val regexPattern =
-            buildString {
-                append("^")
-                for (char in pattern) {
-                    when (char) {
-                        '*' -> append(".*")
-                        '.' -> append("\\.")
-                        '[' -> append("\\[")
-                        ']' -> append("\\]")
-                        '(' -> append("\\(")
-                        ')' -> append("\\)")
-                        '{' -> append("\\{")
-                        '}' -> append("\\}")
-                        '\\' -> append("\\\\")
-                        '^' -> append("\\^")
-                        '$' -> append("\\$")
-                        '|' -> append("\\|")
-                        '?' -> append("\\?")
-                        '+' -> append("\\+")
-                        else -> append(char)
-                    }
-                }
-                append("$")
-            }
-        return Regex(regexPattern)
-    }
-
-    /**
      * Cleanup expired entries.
      * Can be called periodically if needed.
      */
@@ -191,7 +155,7 @@ class KacheCacheBackend(
         val now = Clock.System.now()
         var cleaned = 0
 
-        for (key in cache.getKeys()) {
+        for (key in cacheKeys()) {
             val entry = cache.getIfAvailable(key)
             if (entry != null && entry.expiresAt != null && now >= entry.expiresAt) {
                 cache.remove(key)
@@ -201,4 +165,50 @@ class KacheCacheBackend(
 
         return cleaned
     }
+
+    private suspend fun cacheKeys(): List<String> {
+        @Suppress("UNCHECKED_CAST")
+        val keys = cache.getKeys() as Iterable<String?>
+        return keys.filterNotNull()
+    }
+}
+
+internal fun keysMatchingPattern(
+    pattern: String,
+    keys: Iterable<String?>,
+): List<String> {
+    val regex = patternToRegex(pattern)
+    return keys.filterNotNull().filter { regex.matches(it) }
+}
+
+/**
+ * Convert a glob-style pattern to a regex.
+ * Supports * as wildcard.
+ */
+private fun patternToRegex(pattern: String): Regex {
+    val regexPattern =
+        buildString {
+            append("^")
+            for (char in pattern) {
+                when (char) {
+                    '*' -> append(".*")
+                    '.' -> append("\\.")
+                    '[' -> append("\\[")
+                    ']' -> append("\\]")
+                    '(' -> append("\\(")
+                    ')' -> append("\\)")
+                    '{' -> append("\\{")
+                    '}' -> append("\\}")
+                    '\\' -> append("\\\\")
+                    '^' -> append("\\^")
+                    '$' -> append("\\$")
+                    '|' -> append("\\|")
+                    '?' -> append("\\?")
+                    '+' -> append("\\+")
+                    else -> append(char)
+                }
+            }
+            append("$")
+        }
+    return Regex(regexPattern)
 }

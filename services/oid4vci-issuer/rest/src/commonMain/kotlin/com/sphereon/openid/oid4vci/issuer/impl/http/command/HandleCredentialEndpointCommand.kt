@@ -39,6 +39,7 @@ import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
 import com.sphereon.openid.oid4vci.issuer.impl.encryption.MaybeEncryptedCredentialResponse
+import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -78,6 +79,8 @@ class HandleCredentialEndpointCommandImpl(
     private val handleCredentialRequestCommand: HandleCredentialRequestCommand,
     private val decryptJweCommand: DecryptJweCommand,
     private val configProvider: Oid4vciIssuerConfigProvider,
+    private val restConfigProvider: Oid4vciRestConfigProvider,
+    private val publicUrlResolver: Oid4vciIssuerPublicUrlResolver,
     private val credentialResponseEncryptor: CredentialResponseEncryptor,
 ) : HttpEndpointCommandAdapter(
         id = HandleCredentialEndpointCommand.COMMAND_ID,
@@ -95,6 +98,10 @@ class HandleCredentialEndpointCommandImpl(
         // may build tenant design-backed credential configurations lazily, and the snapshot below
         // must see the same prepared view that /.well-known/openid-credential-issuer advertises.
         configProvider.prepare()
+        val publicUrls =
+            publicUrlResolver
+                .resolve(request, configProvider, restConfigProvider)
+                .getOrElse { return Err(it) }
 
         val accessToken =
             extractAccessToken(request)
@@ -164,7 +171,7 @@ class HandleCredentialEndpointCommandImpl(
                         // (`/oid4vci/credential`) — `request.path` arrives at this command
                         // already stripped of the adapter's `adapterBasePath`, so a host-only
                         // reconstruction would miss the `/oid4vci` prefix the wallet signed.
-                        httpUrl = "${configProvider.issuerIdentifier}/credential",
+                        httpUrl = "${publicUrls.endpointBaseUrl}/credential",
                         httpMethod = request.method,
                     ),
                 ).getOrElse { error ->

@@ -43,6 +43,7 @@ data class CredentialIssuerMetadata(
     @SerialName("credential_response_encryption") val credentialResponseEncryption: MetadataCredentialResponseEncryption? = null,
     @SerialName("credential_request_encryption") val credentialRequestEncryption: MetadataCredentialRequestEncryption? = null,
     @SerialName("batch_credential_issuance") val batchCredentialIssuance: BatchCredentialIssuance? = null,
+    @SerialName("preferred_key_storage_status_period") val preferredKeyStorageStatusPeriod: Int? = null,
     val additionalMetadata: Map<String, JsonElement> = emptyMap(),
 )
 

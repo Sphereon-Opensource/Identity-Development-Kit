@@ -12,6 +12,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.authorization
 
+import com.sphereon.core.api.service.AuthAssuranceLevel
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
@@ -86,6 +87,28 @@ class AcrStepUpEnforcementTest {
                     ),
                 )
             assertTrue(result.isOk, "AAL2 demand + AAL2 achieved → code must mint")
+        }
+
+    @Test
+    fun mintsCodeWhenRequestedNistAcrIsSatisfied() =
+        runTest {
+            val command = newCommand()
+            val session =
+                newSession(
+                    acrValues = listOf(AuthAssuranceLevel.AAL2.acr),
+                )
+
+            val result =
+                command.execute(
+                    CreateAuthorizationCodeArgs(
+                        session = session,
+                        userId = "user-1",
+                        consent = consent(),
+                        acr = AuthAssuranceLevel.AAL2.acr,
+                        amr = listOf("mfa"),
+                    ),
+                )
+            assertTrue(result.isOk, "canonical NIST AAL2 demand + NIST AAL2 achieved → code must mint")
         }
 
     @Test

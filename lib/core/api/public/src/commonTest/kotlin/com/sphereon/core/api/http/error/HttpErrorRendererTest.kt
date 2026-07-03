@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class HttpErrorRendererTest {
     private val renderer = DefaultRestErrorRenderer()
@@ -93,6 +94,20 @@ class HttpErrorRendererTest {
         val error = IdkError.COMMAND_DISABLED_ERROR(commandId = "kms.keys.generate")
         val response = renderer.render(error)
         assertEquals(503, response.statusCode)
+    }
+
+    @Test
+    fun renderServiceUnavailableRetryAfterHeader() {
+        val error = IdkError.SERVICE_UNAVAILABLE_ERROR(
+            message = "Service is temporarily overloaded; slow down and retry later",
+            retryAfter = 3.seconds,
+        )
+        val response = renderer.render(error)
+        assertEquals(503, response.statusCode)
+        assertEquals("3", response.headers["Retry-After"])
+        val body = json.decodeFromString<RestErrorBody>(response.body!!)
+        assertEquals("SERVICE_UNAVAILABLE", body.error.code)
+        assertEquals("3", body.error.details["retry_after"])
     }
 
     @Test

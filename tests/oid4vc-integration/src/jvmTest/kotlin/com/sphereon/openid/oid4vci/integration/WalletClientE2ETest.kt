@@ -210,7 +210,7 @@ class InProcessHttpClientFactory(
  * to intercept their HTTP calls, while all other dependencies come from the real DI graph.
  */
 class WalletClientE2ETest {
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, protocolBasePath = "/oid4vci")
 
     private val json =
         Json {

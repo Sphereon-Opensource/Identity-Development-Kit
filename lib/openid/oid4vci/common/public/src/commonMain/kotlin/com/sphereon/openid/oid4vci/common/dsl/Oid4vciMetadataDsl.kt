@@ -111,6 +111,9 @@ class IssuerMetadataBuilder(
     /** Optional batch credential issuance (OID4VCI 1.1). */
     var batchCredentialIssuance: BatchCredentialIssuance? = null
 
+    /** Optional key-storage-status refresh period in seconds. */
+    var preferredKeyStorageStatusPeriod: Int? = null
+
     private val authorizationServers = mutableListOf<String>()
     private val credentialConfigurations = mutableMapOf<String, CredentialConfigurationSupported>()
     private val displayEntries = mutableListOf<DisplayProperties>()
@@ -173,6 +176,7 @@ class IssuerMetadataBuilder(
             display = displayEntries.takeIf { it.isNotEmpty() },
             credentialResponseEncryption = responseEncryption,
             batchCredentialIssuance = batchCredentialIssuance,
+            preferredKeyStorageStatusPeriod = preferredKeyStorageStatusPeriod,
         )
 }
 

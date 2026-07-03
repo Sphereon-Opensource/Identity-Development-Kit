@@ -1,4 +1,5 @@
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
 /*
  * Theme Compose SDK module (IDK layer).
  *
@@ -39,6 +40,10 @@ kotlin {
             }
         }
     }
+    configureWasmJsTargetIfEnabled {
+        browser()
+        nodejs()
+    }
     configureIosTargetsIfEnabled()
 
     sourceSets {
@@ -73,6 +78,7 @@ kotlin {
         val jvmMain by getting {
             dependsOn(composeUiMain)
         }
+        findByName("wasmJsMain")?.dependsOn(composeUiMain)
         val jvmTest by getting {
             dependencies {
                 implementation(compose.foundation)

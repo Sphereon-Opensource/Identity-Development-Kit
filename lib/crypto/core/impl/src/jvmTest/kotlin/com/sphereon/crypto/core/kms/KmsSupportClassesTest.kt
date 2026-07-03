@@ -18,8 +18,12 @@
 package com.sphereon.crypto.core.kms
 
 import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.DefaultAppMapPropertySource
 import com.sphereon.core.api.conf.DefaultSyncConfigSnapshotCache
+import com.sphereon.core.api.conf.NoOpSyncSnapshotCache
+import com.sphereon.core.api.conf.PropertySource
+import com.sphereon.core.api.conf.RefreshablePropertySource
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.JvmCryptoTestAppGraph
 import com.sphereon.crypto.core.createJvmCryptoTestAppGraph
@@ -28,6 +32,9 @@ import com.sphereon.crypto.core.kms.KmsProviderFactory
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -36,6 +43,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.reflect.KClass
 
 /**
  * Tests for KMS support classes: NoOpKeyStoreFactory, NoOpKmsProviderFactoryImpl,
@@ -53,6 +61,46 @@ class KmsSupportClassesTest {
      */
     private fun clearConfigCache() {
         (app as DefaultSyncConfigSnapshotCache.Graph).syncConfigSnapshotCache.clear()
+    }
+
+    private class DeferredRefreshPropertySource(
+        private val name: String,
+    ) : PropertySource<Unit>,
+        RefreshablePropertySource {
+        var loaded: Boolean = false
+            private set
+
+        override val contentRevision: Long
+            get() = if (loaded) 1L else 0L
+        override val isPlatformSupported: Boolean = true
+
+        override fun refreshIfNeeded() {
+            if (!ConfigBootstrapGuard.isContextRegistrationInProgress()) {
+                loaded = true
+            }
+        }
+
+        override fun hasProperty(name: String): Boolean = false
+
+        override fun <T : Any> getProperty(
+            name: String,
+            targetType: KClass<T>,
+        ): T? = null
+
+        override fun getPropertyAsString(name: String): String? = null
+
+        override fun removeProperty(name: String) {
+        }
+
+        override fun getName(): String = name
+
+        override fun getSource(): Unit = Unit
+
+        override fun getAllPropertyNames(): Set<String> = emptySet()
+
+        override fun getOrder(): Int = 0
+
+        override fun compareTo(other: PropertySource<*>): Int = getOrder().compareTo(other.getOrder())
     }
 
     // =========== NoOpKeyStoreFactory Tests ===========
@@ -224,6 +272,8 @@ class KmsSupportClassesTest {
             KmsProviderManagerImpl(
                 factories = setOf(NoOpKmsProviderFactoryImpl()),
                 binder = mockBinder,
+                snapshotCache = NoOpSyncSnapshotCache,
+                appLogManager = app.appLogManager,
             )
 
         val config =
@@ -273,6 +323,8 @@ class KmsSupportClassesTest {
             KmsProviderManagerImpl(
                 factories = setOf(mockFactory1, mockFactory2),
                 binder = mockBinder,
+                snapshotCache = NoOpSyncSnapshotCache,
+                appLogManager = app.appLogManager,
             )
 
         // Config for type-b - should find mockFactory2 after skipping mockFactory1
@@ -285,6 +337,159 @@ class KmsSupportClassesTest {
         // This exercises both branches: factory1.kmsProviderType != config (false), factory2.kmsProviderType == config (true)
         val provider = manager.createFromProviderConfig(config, session.asCoreApiServiceGraph().serviceExecution)
         assertNotNull(provider, "Should create provider from matching factory")
+    }
+
+    @Test
+    fun kmsProviderManagerCachesBoundProviderConfigsByScopeAndRevision() {
+        app as JvmCryptoTestAppGraph
+        val configService = (app as AppConfigService.Graph).appConfigService
+        val snapshotCache = (app as DefaultSyncConfigSnapshotCache.Graph).syncConfigSnapshotCache
+        val execution = session.asCoreApiServiceGraph().serviceExecution
+        val mockBinder = mockk<KmsProviderConfigBinder>()
+        val mockFactory = mockk<KmsProviderFactory>()
+        val mockProvider = mockk<KmsProvider>()
+        val config =
+            KmsProviderConfig(
+                id = "cached-provider",
+                kmsProviderType = "cached-type",
+            )
+
+        snapshotCache.clear()
+        every { mockBinder.getKmsProviderConfigs(configService) } returns arrayOf(config)
+        every { mockFactory.kmsProviderType } returns "cached-type"
+        every { mockFactory.create(config, execution) } returns mockProvider
+
+        try {
+            val manager =
+                KmsProviderManagerImpl(
+                    factories = setOf(mockFactory),
+                    binder = mockBinder,
+                    snapshotCache = snapshotCache,
+                    appLogManager = app.appLogManager,
+                )
+
+            manager.createFromProperties(configService, execution)
+            manager.createFromProperties(configService, execution)
+            snapshotCache.invalidateByPrefix("kms.providers")
+            manager.createFromProperties(configService, execution)
+
+            verify(exactly = 1) { mockBinder.getKmsProviderConfigs(configService) }
+            verify(exactly = 3) { mockFactory.create(config, execution) }
+        } finally {
+            snapshotCache.clear()
+        }
+    }
+
+    @Test
+    fun kmsProviderManagerDoesNotCacheBootstrapSnapshotBeforeRefreshableConfigLoads() {
+        app as JvmCryptoTestAppGraph
+        val configService = (app as AppConfigService.Graph).appConfigService
+        val snapshotCache = (app as DefaultSyncConfigSnapshotCache.Graph).syncConfigSnapshotCache
+        val execution = session.asCoreApiServiceGraph().serviceExecution
+        val refreshableSource = DeferredRefreshPropertySource("deferred-kms-provider-config")
+        val mockBinder = mockk<KmsProviderConfigBinder>()
+        val mockFactory = mockk<KmsProviderFactory>()
+        val mockProvider = mockk<KmsProvider>()
+        val config =
+            KmsProviderConfig(
+                id = "remote-provider",
+                kmsProviderType = "refresh-type",
+            )
+
+        snapshotCache.clear()
+        configService.addPropertySource(refreshableSource)
+        every { mockBinder.getKmsProviderConfigs(configService) } answers {
+            if (refreshableSource.loaded) arrayOf(config) else emptyArray<KmsProviderConfigBase>()
+        }
+        every { mockFactory.kmsProviderType } returns "refresh-type"
+        every { mockFactory.create(config, execution) } returns mockProvider
+
+        try {
+            val manager =
+                KmsProviderManagerImpl(
+                    factories = setOf(mockFactory),
+                    binder = mockBinder,
+                    snapshotCache = snapshotCache,
+                    appLogManager = app.appLogManager,
+                )
+
+            val bootstrapProviders =
+                ConfigBootstrapGuard.withContextRegistration {
+                    manager.createFromProperties(configService, execution)
+                }
+            assertTrue(bootstrapProviders.isEmpty())
+            assertTrue(!refreshableSource.loaded)
+
+            val refreshedProviders = manager.createFromProperties(configService, execution)
+
+            assertEquals(1, refreshedProviders.size)
+            verify(exactly = 2) { mockBinder.getKmsProviderConfigs(configService) }
+            verify(exactly = 1) { mockFactory.create(config, execution) }
+        } finally {
+            configService.removePropertySource(refreshableSource)
+            snapshotCache.clear()
+        }
+    }
+
+    @Test
+    fun kmsProviderManagerRefreshIsNotBlockedByUnrelatedContextRegistration() {
+        app as JvmCryptoTestAppGraph
+        val configService = (app as AppConfigService.Graph).appConfigService
+        val snapshotCache = (app as DefaultSyncConfigSnapshotCache.Graph).syncConfigSnapshotCache
+        val execution = session.asCoreApiServiceGraph().serviceExecution
+        val refreshableSource = DeferredRefreshPropertySource("deferred-kms-provider-config-cross-thread")
+        val mockBinder = mockk<KmsProviderConfigBinder>()
+        val mockFactory = mockk<KmsProviderFactory>()
+        val mockProvider = mockk<KmsProvider>()
+        val config =
+            KmsProviderConfig(
+                id = "remote-provider-cross-thread",
+                kmsProviderType = "refresh-type",
+            )
+        val registrationStarted = CountDownLatch(1)
+        val releaseRegistration = CountDownLatch(1)
+
+        snapshotCache.clear()
+        configService.addPropertySource(refreshableSource)
+        every { mockBinder.getKmsProviderConfigs(configService) } answers {
+            if (refreshableSource.loaded) arrayOf(config) else emptyArray<KmsProviderConfigBase>()
+        }
+        every { mockFactory.kmsProviderType } returns "refresh-type"
+        every { mockFactory.create(config, execution) } returns mockProvider
+
+        val registrationThread =
+            Thread {
+                ConfigBootstrapGuard.withContextRegistration {
+                    registrationStarted.countDown()
+                    releaseRegistration.await(5, TimeUnit.SECONDS)
+                }
+            }.apply {
+                name = "kms-provider-unrelated-registration-test"
+                start()
+            }
+
+        try {
+            assertTrue(registrationStarted.await(5, TimeUnit.SECONDS))
+            val manager =
+                KmsProviderManagerImpl(
+                    factories = setOf(mockFactory),
+                    binder = mockBinder,
+                    snapshotCache = snapshotCache,
+                    appLogManager = app.appLogManager,
+                )
+
+            val providers = manager.createFromProperties(configService, execution)
+
+            assertEquals(1, providers.size)
+            assertTrue(refreshableSource.loaded)
+            verify(exactly = 1) { mockBinder.getKmsProviderConfigs(configService) }
+            verify(exactly = 1) { mockFactory.create(config, execution) }
+        } finally {
+            releaseRegistration.countDown()
+            registrationThread.join(5_000)
+            configService.removePropertySource(refreshableSource)
+            snapshotCache.clear()
+        }
     }
 
     // =========== KmsProviderConfigBinderImpl Tests ===========

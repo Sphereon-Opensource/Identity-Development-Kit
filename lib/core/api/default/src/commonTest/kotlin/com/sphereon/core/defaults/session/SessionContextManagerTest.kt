@@ -19,12 +19,17 @@ package com.sphereon.core.defaults.session
 import com.sphereon.core.api.testutil.createCoreApiTestAppGraph
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.DefaultTenantInputString
+import com.sphereon.di.context.IdentityMetadata
+import com.sphereon.di.context.IdentityResolutionResult
+import com.sphereon.di.context.PrincipalType
+import com.sphereon.di.context.ResolutionSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class SessionContextManagerTest {
@@ -71,6 +76,49 @@ class SessionContextManagerTest {
             val session1 = sessionManager.createOrGetFromId("test-session")
             val session2 = sessionManager.createOrGetFromId("test-session")
             assertEquals(session1.sessionId, session2.sessionId)
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun createOrGetFromCallbacksReusesSameSessionIdAndDestroyRemovesIt() {
+        val appGraph = createAppGraph()
+        try {
+            val userContextInstance =
+                appGraph.userContextManager.createOrGetFromInputs(
+                    DefaultTenantInputString("test-tenant"),
+                    DefaultPrincipalInputString("test-user"),
+                )
+            val sessionManager = userContextInstance.sessionContextManager
+            val factory = DefaultSessionContextFactory()
+            val resolution = IdentityResolutionResult(
+                tenantId = "test-tenant",
+                principalId = "transient-service",
+                principalType = PrincipalType.SERVICE,
+                metadata = IdentityMetadata(resolvedFrom = ResolutionSource.DEFAULT),
+            )
+
+            val first = sessionManager.createOrGetFromCallbacks {
+                factory.create(
+                    sessionId = "transient-fetch",
+                    correlationId = "transient-fetch:first",
+                    resolution = resolution,
+                )
+            }
+            val second = sessionManager.createOrGetFromCallbacks {
+                factory.create(
+                    sessionId = "transient-fetch",
+                    correlationId = "transient-fetch:second",
+                    resolution = resolution,
+                )
+            }
+
+            assertSame(first, second)
+
+            first.destroy()
+
+            assertFalse(sessionManager.hasById("transient-fetch"))
         } finally {
             appGraph.destroy()
         }

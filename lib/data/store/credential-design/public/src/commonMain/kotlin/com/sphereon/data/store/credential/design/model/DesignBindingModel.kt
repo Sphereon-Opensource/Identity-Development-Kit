@@ -17,8 +17,33 @@
 package com.sphereon.data.store.credential.design.model
 
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
+import kotlin.time.Instant
+import kotlin.uuid.Uuid
+
+@JsExportCompat
+@Serializable
+enum class CredentialTypeFormat {
+    SD_JWT_VC,
+    MSO_MDOC,
+    W3C_VC,
+}
+
+@JsExportCompat
+@Serializable
+data class CredentialTypeDescriptor
+    @JvmOverloads
+    constructor(
+        val format: CredentialTypeFormat,
+        val vct: String? = null,
+        val docType: String? = null,
+        @SerialName("type")
+        val type: String? = null,
+        @SerialName("@context")
+        val context: String? = null,
+    )
 
 @JsExportCompat
 @Serializable
@@ -30,13 +55,20 @@ data class DesignBinding
         val credentialConfigurationId: String? = null,
         val schemaId: String? = null,
         val docType: String? = null,
-        val vcType: String? = null,
-        val vcContext: String? = null,
+        @SerialName("type")
+        val type: String? = null,
+        @SerialName("@context")
+        val context: String? = null,
         val issuerId: String? = null,
         val issuerDid: String? = null,
         val issuerUri: String? = null,
         val verifierClientId: String? = null,
         val ocaSaid: String? = null,
+        val credentialType: CredentialTypeDescriptor? = null,
+        val credentialDesignId: Uuid? = null,
+        val credentialDesignVersion: Int? = null,
+        val activeFrom: Instant? = null,
+        val activeUntil: Instant? = null,
     )
 
 @JsExportCompat
@@ -47,11 +79,14 @@ enum class DesignBindingKey {
     CREDENTIAL_CONFIGURATION_ID,
     SCHEMA_ID,
     DOC_TYPE,
-    VC_TYPE,
-    VC_CONTEXT,
+    TYPE,
+    CONTEXT,
     ISSUER_ID,
     ISSUER_DID,
     ISSUER_URI,
     VERIFIER_CLIENT_ID,
     OCA_SAID,
+    CREDENTIAL_TYPE_FORMAT,
+    CREDENTIAL_DESIGN_ID,
+    CREDENTIAL_DESIGN_VERSION,
 }

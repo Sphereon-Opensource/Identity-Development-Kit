@@ -35,6 +35,7 @@ import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.LoggerConfig
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
@@ -90,6 +91,110 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val configs = provider.credentialConfigurations
         assertEquals(setOf("AcmeDegree"), configs.keys)
         assertEquals("acme-degree", configs["AcmeDegree"]?.scope)
+    }
+
+    @Test
+    fun registryProviderReadsInstanceSignedMetadataSettings() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuer.signed-metadata.enabled" to "false",
+                "oid4vci.issuer.signingKeyAlias" to "singular-signing",
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.signed-metadata.enabled" to "true",
+                "oid4vci.issuers.acme.signingKeyAlias" to "acme-metadata-signing",
+                "oid4vci.issuers.acme.signingKmsProviderId" to "software",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        assertNotNull(provider.signingKey, "signed metadata should be enabled from the active issuer instance")
+    }
+
+    @Test
+    fun responseEncryptionDisabledModeSuppressesMetadataEvenWithAlgorithms() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.encryption.response.mode" to "disabled",
+                "oid4vci.issuers.acme.encryption.response.encryptionRequired" to "true",
+                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES",
+                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.acme.encryption.response.zipValuesSupported" to "DEF",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        assertNull(provider.credentialResponseEncryption)
+    }
+
+    @Test
+    fun responseEncryptionSupportedModePublishesMetadataAsNotRequired() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.encryption.response.mode" to "supported",
+                "oid4vci.issuers.acme.encryption.response.encryptionRequired" to "true",
+                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES",
+                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        val encryption = assertNotNull(provider.credentialResponseEncryption)
+        assertEquals(false, encryption.encryptionRequired)
+        assertEquals(listOf("ECDH-ES"), encryption.algValuesSupported)
+        assertEquals(listOf("A256GCM"), encryption.encValuesSupported)
+    }
+
+    @Test
+    fun responseEncryptionLegacyRequiredBooleanStillPublishesRequiredMetadata() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.encryption.response.encryptionRequired" to "true",
+                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES",
+                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        val encryption = assertNotNull(provider.credentialResponseEncryption)
+        assertEquals(true, encryption.encryptionRequired)
+    }
+
+    @Test
+    fun requestEncryptionDisabledModeSuppressesMetadataEvenWithKeyAndAlgorithms() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.encryption.request.mode" to "disabled",
+                "oid4vci.issuers.acme.encryption.request.encryptionRequired" to "true",
+                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to "acme-request-decryption",
+                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.acme.encryption.request.zipValuesSupported" to "DEF",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        assertNull(provider.credentialRequestEncryption)
+    }
+
+    @Test
+    fun requestEncryptionSupportedModePublishesMetadataAsNotRequired() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.encryption.request.mode" to "supported",
+                "oid4vci.issuers.acme.encryption.request.encryptionRequired" to "true",
+                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to "acme-request-decryption",
+                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        val encryption = assertNotNull(provider.credentialRequestEncryption)
+        assertEquals(false, encryption.encryptionRequired)
+        assertEquals(listOf("A256GCM"), encryption.encValuesSupported)
     }
 
     @Test
@@ -196,6 +301,49 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
             "issuer-signing-tenant-default",
             provider.credentialSigningConfigs["EuPid"]?.signingKeyAlias,
         )
+    }
+
+    @Test
+    fun registryProviderPublishesEncryptionMetadataFromInstanceDefaults() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.encryption.response.mode" to "supported",
+                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES,ECDH-ES+A128KW,ECDH-ES+A256KW",
+                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM,A128GCM",
+                "oid4vci.issuers.acme.encryption.response.zipValuesSupported" to "DEF",
+                "oid4vci.issuers.acme.encryption.request.mode" to "supported",
+                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to "issuer-request-decryption-acme",
+                "oid4vci.issuers.acme.encryption.request.decryptionKmsProviderId" to "software",
+                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM,A128GCM",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        val response = assertNotNull(provider.credentialResponseEncryption)
+        assertEquals(listOf("ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"), response.algValuesSupported)
+        assertEquals(listOf("A256GCM", "A128GCM"), response.encValuesSupported)
+        assertEquals(listOf("DEF"), response.zipValuesSupported)
+        assertEquals(false, response.encryptionRequired)
+
+        val request = assertNotNull(provider.credentialRequestEncryption)
+        assertEquals(listOf("A256GCM", "A128GCM"), request.encValuesSupported)
+        assertEquals(false, request.encryptionRequired)
+        val decryptor = assertNotNull(provider.credentialRequestDecryptionKey) as ManagedOptsKeyInfo
+        assertEquals("issuer-request-decryption-acme", decryptor.identifier.alias)
+        assertEquals("software", decryptor.identifier.providerId)
+    }
+
+    @Test
+    fun registryProviderPublishesPreferredKeyStorageStatusPeriodFromInstanceDefaults() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuer.preferredKeyStorageStatusPeriodSeconds" to "120",
+                "oid4vci.issuers.acme.preferredKeyStorageStatusPeriodSeconds" to "900",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        assertEquals(900, provider.preferredKeyStorageStatusPeriodSeconds)
     }
 
     @Test

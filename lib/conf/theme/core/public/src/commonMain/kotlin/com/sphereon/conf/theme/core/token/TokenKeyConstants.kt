@@ -300,6 +300,14 @@ object TokenKeyConstants {
     const val SHADOW_STATE_ACTIVE = "shadow.state.active"
     const val SHADOW_STATE_SELECTED = "shadow.state.selected"
 
+    // Shadow — focus/error rings (synced from tokens.json)
+    const val SHADOW_FOCUS_RING = "shadow.focusRing"
+    const val SHADOW_ERROR_RING = "shadow.errorRing"
+
+    // Comp — focus/error ring aliases
+    const val COMP_FOCUS_RING = "comp.focus.ring"
+    const val COMP_ERROR_RING = "comp.error.ring"
+
     // ── Shape / Border Radius (9-stop, platform-agnostic naming) ──────
     const val SHAPE_RADIUS_NONE = "shape.radius.none"
     const val SHAPE_RADIUS_XS = "shape.radius.xs"
@@ -380,6 +388,13 @@ object TokenKeyConstants {
     const val COLOR_BORDER_STRONG = "color.border.strong"
     const val COLOR_BORDER_SUBTLE = "color.border.subtle"
     const val COLOR_BORDER_DISABLED = "color.border.disabled"
+
+    // Gradient tokens (synced from tokens.json)
+    const val COLOR_GRADIENT_BRAND = "color.gradient.brand"
+    const val COLOR_GRADIENT_BRAND_SUBTLE = "color.gradient.brandSubtle"
+    const val COLOR_GRADIENT_BRAND_HOVER = "color.gradient.brandHover"
+    const val COLOR_GRADIENT_SURFACE = "color.gradient.surface"
+    const val COLOR_GRADIENT_OVERLAY = "color.gradient.overlay"
 
     // ── Legacy alias keys (old → new mappings) ────────────────────────
     // These constants document the legacy key names for backward compatibility.

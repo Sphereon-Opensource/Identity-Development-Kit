@@ -415,3 +415,64 @@ if (isDokkaRequested) {
         }
     }
 }
+
+abstract class VerifyWalletBoundaryTask : org.gradle.api.DefaultTask() {
+    @get:org.gradle.api.tasks.Input
+    abstract val violations: org.gradle.api.provider.ListProperty<String>
+
+    @org.gradle.api.tasks.TaskAction
+    fun verify() {
+        val found = violations.get()
+        if (found.isNotEmpty()) {
+            throw GradleException(
+                "AGPL boundary violation: non-wallet modules depend on wallet modules:\n" +
+                    found.joinToString("\n"),
+            )
+        }
+    }
+}
+
+val verifyWalletBoundaryTask = tasks.register<VerifyWalletBoundaryTask>("verifyWalletBoundary") {
+    group = "verification"
+    description = "Fails if a project outside wallet depends on a project under wallet"
+    violations.set(emptyList())
+}
+
+gradle.projectsEvaluated {
+    val walletRoot = rootDir.toPath().resolve("wallet").toAbsolutePath().normalize()
+    verifyWalletBoundaryTask.configure {
+        violations.set(
+            rootProject.subprojects.flatMap { project ->
+                val projectPath = project.projectDir.toPath().toAbsolutePath().normalize()
+                if (projectPath.startsWith(walletRoot)) {
+                    emptyList()
+                } else {
+                    project.configurations.flatMap { configuration ->
+                        configuration.dependencies
+                            .filterIsInstance<org.gradle.api.artifacts.ProjectDependency>()
+                            .mapNotNull { dependency ->
+                                val dependencyProject = rootProject.findProject(dependency.path)
+                                val dependencyPath = dependencyProject?.projectDir?.toPath()?.toAbsolutePath()?.normalize()
+                                if (dependencyPath != null && dependencyPath.startsWith(walletRoot)) {
+                                    "${project.path} (${configuration.name}) -> ${dependencyProject.path}"
+                                } else {
+                                    null
+                                }
+                            }
+                    }
+                }
+            },
+        )
+    }
+}
+
+val rootCheckTask =
+    tasks.findByName("check")?.let { tasks.named("check") }
+        ?: tasks.register("check") {
+            group = "verification"
+            description = "Runs verification tasks for the root project"
+        }
+
+rootCheckTask.configure {
+    dependsOn(verifyWalletBoundaryTask)
+}

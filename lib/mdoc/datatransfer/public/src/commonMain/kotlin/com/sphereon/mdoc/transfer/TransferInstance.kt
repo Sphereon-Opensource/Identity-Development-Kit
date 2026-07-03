@@ -20,6 +20,7 @@ package com.sphereon.mdoc.transfer
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.engagement.EngagementInstance
@@ -116,6 +117,7 @@ interface TransferInstance : MdocRetrievalEvent.Handlers {
      */
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Try", exact = true)
+    @JsExportIgnoreCompat
     interface Try {
         suspend fun start(): IdkResult<TransferInstance, IdkErrorType>
     }

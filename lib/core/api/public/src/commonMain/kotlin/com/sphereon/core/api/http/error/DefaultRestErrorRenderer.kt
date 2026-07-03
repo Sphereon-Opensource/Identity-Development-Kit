@@ -95,9 +95,16 @@ class DefaultRestErrorRenderer : HttpErrorRenderer {
                         details = details,
                     ),
             )
+        val headers =
+            buildMap {
+                put("Content-Type", "application/json")
+                error.retryAfter?.let { retryAfter ->
+                    put("Retry-After", retryAfter.inWholeSeconds.coerceAtLeast(1).toString())
+                }
+            }
         return GenericHttpResponse(
             statusCode = status,
-            headers = mapOf("Content-Type" to "application/json"),
+            headers = headers,
             body = json.encodeToString(body),
         )
     }

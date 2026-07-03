@@ -97,15 +97,16 @@ class JwksUrlExternalIdentifierMockedTest {
                     )
                 }
 
-            val httpClient =
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } answers {
+                val options = firstArg<HttpClientOptions>()
                 HttpClient(mockEngine) {
                     install(ContentNegotiation) {
                         json(Json { ignoreUnknownKeys = true })
                     }
+                    options.additionalConfig?.invoke(this)
                 }
-
-            val mockHttpClientFactory = mockk<HttpClientFactory>()
-            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+            }
 
             val service =
                 JwksUrlExternalIdentifierResolutionServiceImpl(
@@ -139,15 +140,16 @@ class JwksUrlExternalIdentifierMockedTest {
                     )
                 }
 
-            val httpClient =
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } answers {
+                val options = firstArg<HttpClientOptions>()
                 HttpClient(mockEngine) {
                     install(ContentNegotiation) {
                         json(Json { ignoreUnknownKeys = true })
                     }
+                    options.additionalConfig?.invoke(this)
                 }
-
-            val mockHttpClientFactory = mockk<HttpClientFactory>()
-            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+            }
 
             val service =
                 JwksUrlExternalIdentifierResolutionServiceImpl(
@@ -185,15 +187,16 @@ class JwksUrlExternalIdentifierMockedTest {
                     )
                 }
 
-            val httpClient =
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } answers {
+                val options = firstArg<HttpClientOptions>()
                 HttpClient(mockEngine) {
                     install(ContentNegotiation) {
                         json(Json { ignoreUnknownKeys = true })
                     }
+                    options.additionalConfig?.invoke(this)
                 }
-
-            val mockHttpClientFactory = mockk<HttpClientFactory>()
-            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+            }
 
             val service =
                 JwksUrlExternalIdentifierResolutionServiceImpl(
@@ -233,15 +236,16 @@ class JwksUrlExternalIdentifierMockedTest {
                     )
                 }
 
-            val httpClient =
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } answers {
+                val options = firstArg<HttpClientOptions>()
                 HttpClient(mockEngine) {
                     install(ContentNegotiation) {
                         json(Json { ignoreUnknownKeys = true })
                     }
+                    options.additionalConfig?.invoke(this)
                 }
-
-            val mockHttpClientFactory = mockk<HttpClientFactory>()
-            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+            }
 
             val service =
                 JwksUrlExternalIdentifierResolutionServiceImpl(
@@ -481,15 +485,16 @@ class JwksUrlExternalIdentifierMockedTest {
                     }
                 }
 
-            val httpClient =
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } answers {
+                val options = firstArg<HttpClientOptions>()
                 HttpClient(mockEngine) {
                     install(ContentNegotiation) {
                         json(Json { ignoreUnknownKeys = true })
                     }
+                    options.additionalConfig?.invoke(this)
                 }
-
-            val mockHttpClientFactory = mockk<HttpClientFactory>()
-            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+            }
 
             val service =
                 JwksUrlExternalIdentifierResolutionServiceImpl(
@@ -526,15 +531,16 @@ class JwksUrlExternalIdentifierMockedTest {
                     }
                 }
 
-            val httpClient =
+            val mockHttpClientFactory = mockk<HttpClientFactory>()
+            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } answers {
+                val options = firstArg<HttpClientOptions>()
                 HttpClient(mockEngine) {
                     install(ContentNegotiation) {
                         json(Json { ignoreUnknownKeys = true })
                     }
+                    options.additionalConfig?.invoke(this)
                 }
-
-            val mockHttpClientFactory = mockk<HttpClientFactory>()
-            every { mockHttpClientFactory.createClient(any<HttpClientOptions>()) } returns httpClient
+            }
 
             val service =
                 JwksUrlExternalIdentifierResolutionServiceImpl(

@@ -21,9 +21,9 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
-import kotlin.jvm.JvmField
 import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
 // ============================================================================
@@ -235,5 +235,183 @@ interface VerifyRawSignatureCommand : ServiceCommand<VerifyRawSignatureArgs, Ver
 
     companion object {
         const val COMMAND_ID = "kms.signature.verify"
+    }
+}
+
+// ============================================================================
+// Digest Signature Commands
+// ============================================================================
+
+@JsExportCompat
+@Serializable
+enum class SignatureEncoding {
+    RAW,
+    DER,
+}
+
+/**
+ * Arguments for signing a precomputed digest or scalar.
+ *
+ * The provider must sign [digest] directly and must not hash it again.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SignDigestArgs", exact = true)
+@JsExportCompat
+@Serializable
+data class
+SignDigestArgs
+    @JvmOverloads
+    constructor(
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
+        val keyInfo: KeyInfoType<*>? = null,
+        val digest: ByteArray = byteArrayOf(),
+        val signatureAlgorithm: SignatureAlgorithm? = null,
+        val signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+        val requireX5Chain: Boolean = false,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as SignDigestArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (!digest.contentEquals(other.digest)) {
+                return false
+            }
+            if (signatureAlgorithm != other.signatureAlgorithm) {
+                return false
+            }
+            if (signatureEncoding != other.signatureEncoding) {
+                return false
+            }
+            if (requireX5Chain != other.requireX5Chain) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + digest.contentHashCode()
+            result = 31 * result + (signatureAlgorithm?.hashCode() ?: 0)
+            result = 31 * result + signatureEncoding.hashCode()
+            result = 31 * result + requireX5Chain.hashCode()
+            return result
+        }
+    }
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("SignDigestResult", exact = true)
+@JsExportCompat
+@Serializable
+data class SignDigestResult(
+    val signature: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) {
+            return true
+        }
+        if (other == null || this::class != other::class) {
+            return false
+        }
+
+        other as SignDigestResult
+
+        return signature.contentEquals(other.signature)
+    }
+
+    override fun hashCode(): Int = signature.contentHashCode()
+}
+
+@JsExportCompat
+interface SignDigestCommand : ServiceCommand<SignDigestArgs, SignDigestResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "kms.signature.sign-digest"
+    }
+}
+
+/**
+ * Arguments for verifying a signature over a precomputed digest or scalar.
+ *
+ * The provider must verify [digest] directly and must not hash it again.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifyDigestArgs", exact = true)
+@JsExportCompat
+@Serializable
+data class
+VerifyDigestArgs
+    @JvmOverloads
+    constructor(
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
+        val keyInfo: KeyInfoType<*>? = null,
+        val digest: ByteArray = byteArrayOf(),
+        val signature: ByteArray = byteArrayOf(),
+        val signatureAlgorithm: SignatureAlgorithm? = null,
+        val signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as VerifyDigestArgs
+
+            if (keyInfo != other.keyInfo) {
+                return false
+            }
+            if (!digest.contentEquals(other.digest)) {
+                return false
+            }
+            if (!signature.contentEquals(other.signature)) {
+                return false
+            }
+            if (signatureAlgorithm != other.signatureAlgorithm) {
+                return false
+            }
+            if (signatureEncoding != other.signatureEncoding) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = keyInfo?.hashCode() ?: 0
+            result = 31 * result + digest.contentHashCode()
+            result = 31 * result + signature.contentHashCode()
+            result = 31 * result + (signatureAlgorithm?.hashCode() ?: 0)
+            result = 31 * result + signatureEncoding.hashCode()
+            return result
+        }
+    }
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifyDigestResult", exact = true)
+@JsExportCompat
+@Serializable
+data class VerifyDigestResult(
+    val isValid: Boolean,
+)
+
+@JsExportCompat
+interface VerifyDigestCommand : ServiceCommand<VerifyDigestArgs, VerifyDigestResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "kms.signature.verify-digest"
     }
 }

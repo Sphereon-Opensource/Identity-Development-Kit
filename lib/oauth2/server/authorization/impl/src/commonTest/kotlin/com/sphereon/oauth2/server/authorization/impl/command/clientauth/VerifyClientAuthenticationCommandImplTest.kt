@@ -42,6 +42,7 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.ClientCredentials
 import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -702,6 +703,109 @@ class VerifyClientAuthenticationCommandImplTest {
             clientId = "client1",
             tokenEndpointUrl = "https://auth.example.com/token",
         )
+
+    @Test
+    fun walletInstanceAttestationRequired_rejectsBasicAuthAtTokenEndpoint() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry =
+                        StubClientRegistry(
+                            client =
+                                ClientRegistration(
+                                    clientId = "client1",
+                                    tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                                    grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                                ),
+                        ),
+                    config =
+                        OAuth2ServerInstanceConfig(
+                            issuer = "https://auth.example.com",
+                            attestation = FeaturePolicy.SUPPORTED,
+                            walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                        ),
+                )
+
+            val result =
+                command.execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication =
+                            ClientAuthenticationConfig.Basic(
+                                ClientCredentials("client1", "secret1"),
+                            ),
+                        clientId = "client1",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                        endpoint = ClientAuthenticationEndpoint.TOKEN,
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun walletInstanceAttestationRequired_rejectsPrivateKeyJwtAtParEndpoint() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims()),
+                    config =
+                        OAuth2ServerInstanceConfig(
+                            issuer = "https://auth.example.com",
+                            attestation = FeaturePolicy.SUPPORTED,
+                            walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                        ),
+                )
+
+            val result = command.execute(task25Args().copy(endpoint = ClientAuthenticationEndpoint.PAR))
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun walletInstanceAttestationRequired_doesNotBlockOtherClientAuthEndpoint() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry =
+                        StubClientRegistry(
+                            client =
+                                ClientRegistration(
+                                    clientId = "client1",
+                                    tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                                    grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                                ),
+                        ),
+                    config =
+                        OAuth2ServerInstanceConfig(
+                            issuer = "https://auth.example.com",
+                            attestation = FeaturePolicy.SUPPORTED,
+                            walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                        ),
+                )
+
+            val result =
+                command.execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication =
+                            ClientAuthenticationConfig.Basic(
+                                ClientCredentials("client1", "secret1"),
+                            ),
+                        clientId = "client1",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                        endpoint = ClientAuthenticationEndpoint.OTHER,
+                    ),
+                )
+
+            assertTrue(
+                result.isOk,
+                "expected non-PAR/token client-auth endpoint to proceed; got: ${if (result.isErr) result.error.message.defaultMessage else ""}",
+            )
+            assertEquals(ClientAuthenticationMethod.CLIENT_SECRET_BASIC, result.value.method)
+        }
 
     @Test
     fun assertion_issNotEqualSub_rejects() =

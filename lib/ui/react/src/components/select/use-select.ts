@@ -11,6 +11,13 @@ export interface UseSelectProps<T> {
   onOpenChange?: (open: boolean) => void
   getItemLabel?: (item: T) => string
   isDisabled?: boolean
+  /**
+   * Optional overrides for the trigger button.
+   * Safe to pass: `id`, `aria-invalid`, `aria-describedby`, `aria-required`, `aria-label`.
+   * Do NOT override interactive props (`onClick`, `onKeyDown`, `aria-haspopup`,
+   * `aria-expanded`, `role`, `type`) — those are always controlled internally.
+   */
+  triggerProps?: HTMLAttributes<HTMLButtonElement> & { id?: string }
 }
 
 export interface UseSelectReturn<T> {
@@ -37,9 +44,14 @@ export function useSelect<T>(props: UseSelectProps<T>): UseSelectReturn<T> {
     onOpenChange,
     getItemLabel = (item: T) => String(item),
     isDisabled = false,
+    triggerProps: consumerTriggerProps,
   } = props
 
+  // Effective trigger id: consumer-provided id wins over the auto-generated one.
+  // Listbox ids (menu, options) are still derived from baseId for stability.
+
   const baseId = useStableId('select')
+  const triggerId = consumerTriggerProps?.id ?? `${baseId}-trigger`
   const [isOpen, setIsOpen] = useState(controlledOpen ?? false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const menuRef = useRef<HTMLUListElement>(null)
@@ -75,7 +87,7 @@ export function useSelect<T>(props: UseSelectProps<T>): UseSelectReturn<T> {
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      const trigger = document.getElementById(`${baseId}-trigger`)
+      const trigger = document.getElementById(triggerId)
       if (
         menuRef.current && !menuRef.current.contains(e.target as Node) &&
         trigger && !trigger.contains(e.target as Node)
@@ -85,7 +97,7 @@ export function useSelect<T>(props: UseSelectProps<T>): UseSelectReturn<T> {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [open, setOpen, baseId])
+  }, [open, setOpen, triggerId])
 
   const handleTriggerKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -149,9 +161,16 @@ export function useSelect<T>(props: UseSelectProps<T>): UseSelectReturn<T> {
 
   return {
     triggerProps: {
-      id: `${baseId}-trigger`,
+      // Consumer overrides for id/aria-* are spread first; internal essential props
+      // that follow (onClick, onKeyDown, aria-haspopup, aria-expanded, aria-controls)
+      // are always set explicitly AFTER the spread so they cannot be clobbered.
+      // Consumer-provided aria-invalid/describedby/required/label survive because
+      // we do not re-set those properties below.
+      ...consumerTriggerProps,
+      // id uses the computed triggerId (= consumer id if provided, else auto-generated)
+      id: triggerId,
       'aria-expanded': open,
-      'aria-haspopup': 'listbox',
+      'aria-haspopup': 'listbox' as const,
       'aria-controls': `${baseId}-menu`,
       'aria-disabled': isDisabled || undefined,
       tabIndex: isDisabled ? -1 : 0,
@@ -161,7 +180,9 @@ export function useSelect<T>(props: UseSelectProps<T>): UseSelectReturn<T> {
     menuProps: {
       id: `${baseId}-menu`,
       role: 'listbox',
-      'aria-labelledby': `${baseId}-trigger`,
+      // aria-labelledby uses the effective trigger id so the listbox is correctly associated
+      // regardless of whether a custom trigger id was provided.
+      'aria-labelledby': triggerId,
       'aria-activedescendant': highlightedIndex >= 0 ? `${baseId}-option-${highlightedIndex}` : undefined,
       onKeyDown: handleMenuKeyDown as unknown as HTMLAttributes<HTMLUListElement>['onKeyDown'],
       tabIndex: -1,

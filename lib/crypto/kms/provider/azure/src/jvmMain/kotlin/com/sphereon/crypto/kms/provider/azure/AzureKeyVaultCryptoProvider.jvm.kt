@@ -60,6 +60,7 @@ import com.azure.security.keyvault.keys.models.KeyCurveName
 import com.azure.security.keyvault.keys.models.KeyOperation
 import com.azure.security.keyvault.keys.models.KeyProperties
 import com.azure.security.keyvault.keys.models.KeyType
+import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm as AzureSignatureAlgorithm
 import com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm as AzureKeyWrapAlgorithm
 import com.azure.security.keyvault.keys.cryptography.models.EncryptParameters
 import com.azure.security.keyvault.keys.cryptography.models.DecryptParameters
@@ -101,6 +102,8 @@ import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.core.kms.CertificateOptions
 import com.sphereon.crypto.core.kms.PredefinedKmsProviderTypes
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
+import com.sphereon.crypto.core.kms.command.SignatureEncodingCodec
 import com.sphereon.crypto.core.sign.model.SignInput
 import com.sphereon.crypto.core.sign.model.SignOutput
 import com.sphereon.crypto.core.sign.model.SignOutputData
@@ -288,6 +291,39 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         val verifyResult = cryptoClient.verify(algorithm, hash(keyInfo, input), signature).awaitSingleOrNull()
             ?: throw SignClientException("Failed to verify signature for key: ${keyInfo.alias}")
 
+        return verifyResult.isValid
+    }
+
+    override suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): ByteArray {
+        keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
+            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
+        requireDigestLength(signatureAlgorithm, digest)
+        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val signResult = cryptoClient.sign(signatureAlgorithm.toAzureSignatureAlgorithm(), digest).awaitSingleOrNull()
+            ?: throw SignClientException("Failed to create digest signature for key: ${keyInfo.alias}")
+        return normalizeAzureSignatureOutput(signResult.signature, signatureEncoding, signatureAlgorithm)
+    }
+
+    override suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): Boolean {
+        keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
+            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
+        requireDigestLength(signatureAlgorithm, digest)
+        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val nativeSignature = normalizeAzureSignatureInput(signature, signatureEncoding, signatureAlgorithm)
+        val verifyResult = cryptoClient.verify(signatureAlgorithm.toAzureSignatureAlgorithm(), digest, nativeSignature).awaitSingleOrNull()
+            ?: throw SignClientException("Failed to verify digest signature for key: ${keyInfo.alias}")
         return verifyResult.isValid
     }
 
@@ -662,6 +698,77 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
 
         return unwrapResult.key
     }
+
+    private fun SignatureAlgorithm.toAzureSignatureAlgorithm(): AzureSignatureAlgorithm =
+        when (this) {
+            SignatureAlgorithm.ECDSA_SHA256 -> AzureSignatureAlgorithm.ES256
+            SignatureAlgorithm.ECDSA_SHA384 -> AzureSignatureAlgorithm.ES384
+            SignatureAlgorithm.ECDSA_SHA512 -> AzureSignatureAlgorithm.ES512
+            SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1 -> AzureSignatureAlgorithm.PS256
+            SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1 -> AzureSignatureAlgorithm.PS384
+            SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1 -> AzureSignatureAlgorithm.PS512
+            SignatureAlgorithm.RSA_SHA256 -> AzureSignatureAlgorithm.RS256
+            SignatureAlgorithm.RSA_SHA384 -> AzureSignatureAlgorithm.RS384
+            SignatureAlgorithm.RSA_SHA512 -> AzureSignatureAlgorithm.RS512
+            else -> throw SignClientException("Digest signing is not supported for $this")
+        }
+
+    private fun requireDigestLength(
+        algorithm: SignatureAlgorithm,
+        digest: ByteArray,
+    ) {
+        val expected =
+            when (algorithm) {
+                SignatureAlgorithm.ECDSA_SHA256,
+                SignatureAlgorithm.RSA_SHA256,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1 -> 32
+                SignatureAlgorithm.ECDSA_SHA384,
+                SignatureAlgorithm.RSA_SHA384,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1 -> 48
+                SignatureAlgorithm.ECDSA_SHA512,
+                SignatureAlgorithm.RSA_SHA512,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1 -> 64
+                else -> throw SignClientException("Digest signing is not supported for $algorithm")
+            }
+        require(digest.size == expected) { "Digest for $algorithm must be $expected bytes, got ${digest.size}" }
+    }
+
+    private fun normalizeAzureSignatureOutput(
+        signature: ByteArray,
+        signatureEncoding: SignatureEncoding,
+        algorithm: SignatureAlgorithm,
+    ): ByteArray =
+        when {
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.RAW ->
+                if (SignatureEncodingCodec.isDer(signature)) {
+                    SignatureEncodingCodec.derToRaw(signature, SignatureEncodingCodec.scalarLength(algorithm))
+                } else {
+                    signature
+                }
+
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.DER ->
+                if (SignatureEncodingCodec.isDer(signature)) {
+                    signature
+                } else {
+                    SignatureEncodingCodec.rawToDer(signature, SignatureEncodingCodec.scalarLength(algorithm))
+                }
+
+            signatureEncoding == SignatureEncoding.RAW -> signature
+            else -> throw SignClientException("DER signature encoding is only supported for ECDSA algorithms")
+        }
+
+    private fun normalizeAzureSignatureInput(
+        signature: ByteArray,
+        signatureEncoding: SignatureEncoding,
+        algorithm: SignatureAlgorithm,
+    ): ByteArray =
+        when {
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.RAW -> signature
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.DER ->
+                SignatureEncodingCodec.derToRaw(signature, SignatureEncodingCodec.scalarLength(algorithm))
+            signatureEncoding == SignatureEncoding.RAW -> signature
+            else -> throw SignClientException("DER signature encoding is only supported for ECDSA algorithms")
+        }
 
     /**
      * Converts our KeyWrapAlgorithm to Azure's KeyWrapAlgorithm.

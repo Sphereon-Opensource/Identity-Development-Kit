@@ -146,10 +146,16 @@ kotlin {
                 implementation(sphereonlib.io.ktor.client.core)
                 implementation(sphereonlib.io.ktor.client.mock)
 
-                // Wallet facade (lib-wallet-impl contributes WalletImpl + WalletGraph to SessionScope)
+                // Wallet credential store implementation used by neutral interaction E2E tests
                 implementation(projects.libWalletImpl)
 
-                // In-memory blob backing store (BlobWalletDocumentStore used by WalletImpl)
+                // Neutral wallet interaction engine and OID4VP protocol adapter
+                implementation(projects.libWalletInteractionPublic)
+                implementation(projects.libWalletInteractionImpl)
+                implementation(projects.libWalletInteractionProtocolOid4vci)
+                implementation(projects.libWalletInteractionProtocolOid4vp)
+
+                // In-memory blob backing store (BlobWalletCredentialStore used by WalletImpl)
                 implementation(projects.libDataStoreBlobImpl)
                 implementation(projects.libDataStoreBlobImplMemory)
 

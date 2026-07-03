@@ -548,3 +548,221 @@ interface PerformKeyAgreementCommand : ServiceCommand<PerformKeyAgreementArgs, P
         const val COMMAND_ID = "kms.encryption.agree"
     }
 }
+
+// ============================================================================
+// Provider-backed ECDH Derive Command
+// ============================================================================
+
+@JsExportCompat
+@Serializable
+enum class EcdhDeriveMode {
+    RAW_X,
+    CONCAT_KDF,
+}
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("EcdhDeriveArgs", exact = true)
+@JsExportCompat
+@Serializable
+data class
+EcdhDeriveArgs
+    @JvmOverloads
+    constructor(
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
+        val privateKeyInfo: KeyInfoType<*>? = null,
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
+        val publicKeyInfo: KeyInfoType<*>? = null,
+        val algorithm: KeyAgreementAlgorithm = KeyAgreementAlgorithm.ECDH_ES,
+        val mode: EcdhDeriveMode = EcdhDeriveMode.RAW_X,
+        val keyDataLen: Int? = null,
+        val algorithmId: String? = null,
+        val partyUInfo: ByteArray? = null,
+        val partyVInfo: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as EcdhDeriveArgs
+
+            if (privateKeyInfo != other.privateKeyInfo) {
+                return false
+            }
+            if (publicKeyInfo != other.publicKeyInfo) {
+                return false
+            }
+            if (algorithm != other.algorithm) {
+                return false
+            }
+            if (mode != other.mode) {
+                return false
+            }
+            if (keyDataLen != other.keyDataLen) {
+                return false
+            }
+            if (algorithmId != other.algorithmId) {
+                return false
+            }
+            if (!nullableByteArrayContentEquals(partyUInfo, other.partyUInfo)) {
+                return false
+            }
+            if (!nullableByteArrayContentEquals(partyVInfo, other.partyVInfo)) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = privateKeyInfo?.hashCode() ?: 0
+            result = 31 * result + (publicKeyInfo?.hashCode() ?: 0)
+            result = 31 * result + algorithm.hashCode()
+            result = 31 * result + mode.hashCode()
+            result = 31 * result + (keyDataLen ?: 0)
+            result = 31 * result + (algorithmId?.hashCode() ?: 0)
+            result = 31 * result + nullableByteArrayContentHashCode(partyUInfo)
+            result = 31 * result + nullableByteArrayContentHashCode(partyVInfo)
+            return result
+        }
+    }
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("EcdhDeriveResult", exact = true)
+@JsExportCompat
+@Serializable
+data class
+EcdhDeriveResult
+    @JvmOverloads
+    constructor(
+        val derivedSecret: ByteArray,
+        val rawSharedSecret: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as EcdhDeriveResult
+
+            if (!derivedSecret.contentEquals(other.derivedSecret)) {
+                return false
+            }
+            if (!nullableByteArrayContentEquals(rawSharedSecret, other.rawSharedSecret)) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = derivedSecret.contentHashCode()
+            result = 31 * result + nullableByteArrayContentHashCode(rawSharedSecret)
+            return result
+        }
+    }
+
+@JsExportCompat
+interface EcdhDeriveCommand : ServiceCommand<EcdhDeriveArgs, EcdhDeriveResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "kms.ecdh.derive"
+    }
+}
+
+// ============================================================================
+// Provider-backed EC Point Multiplication Command
+// ============================================================================
+
+@JsExportCompat
+@Serializable
+enum class EcPointMultiplyOutput {
+    RAW_X,
+    FULL_POINT,
+}
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("EcPointMultiplyArgs", exact = true)
+@JsExportCompat
+@Serializable
+data class
+EcPointMultiplyArgs
+    @JvmOverloads
+    constructor(
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
+        val privateKeyInfo: KeyInfoType<*>? = null,
+        @Serializable(with = com.sphereon.crypto.core.KeyInfoTypeSerializer::class)
+        val publicKeyInfo: KeyInfoType<*>? = null,
+        val output: EcPointMultiplyOutput = EcPointMultiplyOutput.RAW_X,
+    )
+
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("EcPointMultiplyResult", exact = true)
+@JsExportCompat
+@Serializable
+data class
+EcPointMultiplyResult
+    @JvmOverloads
+    constructor(
+        val rawX: ByteArray,
+        val pointX: ByteArray? = null,
+        val pointY: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as EcPointMultiplyResult
+
+            if (!rawX.contentEquals(other.rawX)) {
+                return false
+            }
+            if (!nullableByteArrayContentEquals(pointX, other.pointX)) {
+                return false
+            }
+            if (!nullableByteArrayContentEquals(pointY, other.pointY)) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = rawX.contentHashCode()
+            result = 31 * result + nullableByteArrayContentHashCode(pointX)
+            result = 31 * result + nullableByteArrayContentHashCode(pointY)
+            return result
+        }
+    }
+
+@JsExportCompat
+interface EcPointMultiplyCommand : ServiceCommand<EcPointMultiplyArgs, EcPointMultiplyResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "kms.ecpoint.multiply"
+    }
+}
+
+private fun nullableByteArrayContentEquals(
+    left: ByteArray?,
+    right: ByteArray?,
+): Boolean =
+    when {
+        left === right -> true
+        left == null || right == null -> false
+        else -> left.contentEquals(right)
+    }
+
+private fun nullableByteArrayContentHashCode(value: ByteArray?): Int = value?.contentHashCode() ?: 0

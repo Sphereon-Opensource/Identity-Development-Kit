@@ -100,4 +100,70 @@ describe('Select', () => {
     expect(screen.getByText('Foo')).toBeDefined()
     expect(screen.getByText('Bar')).toBeDefined()
   })
+
+  // ── triggerProps overrides ────────────────────────────────────────────────
+
+  it('triggerProps.id overrides the auto-generated trigger id', () => {
+    render(<Select items={items} triggerProps={{ id: 'custom-trigger' }} />)
+    const trigger = screen.getByRole('button', { name: /select/i })
+    expect(trigger.id).toBe('custom-trigger')
+  })
+
+  it('triggerProps aria-invalid appears on the trigger button', () => {
+    render(<Select items={items} triggerProps={{ id: 'x', 'aria-invalid': true }} />)
+    const trigger = screen.getByRole('button', { name: /select/i })
+    expect(trigger.getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('triggerProps aria-describedby appears on the trigger button', () => {
+    render(<Select items={items} triggerProps={{ 'aria-describedby': 'desc-1' }} />)
+    const trigger = screen.getByRole('button', { name: /select/i })
+    expect(trigger.getAttribute('aria-describedby')).toBe('desc-1')
+  })
+
+  it('triggerProps aria-required appears on the trigger button', () => {
+    render(<Select items={items} triggerProps={{ 'aria-required': true }} />)
+    const trigger = screen.getByRole('button', { name: /select/i })
+    expect(trigger.getAttribute('aria-required')).toBe('true')
+  })
+
+  it('triggerProps do not clobber internal aria-haspopup', () => {
+    // @ts-expect-error — intentionally passing a bad value to verify internal wins
+    render(<Select items={items} triggerProps={{ 'aria-haspopup': 'menu' }} />)
+    const trigger = screen.getByRole('button', { name: /select/i })
+    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox')
+  })
+
+  it('triggerProps do not clobber internal aria-expanded', async () => {
+    // Trigger starts closed; aria-expanded should still be false regardless of consumer value
+    // @ts-expect-error — intentionally passing wrong value
+    render(<Select items={items} triggerProps={{ 'aria-expanded': true }} />)
+    const trigger = screen.getByRole('button', { name: /select/i })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('listbox aria-labelledby matches trigger id when custom triggerProps.id is provided', async () => {
+    const user = userEvent.setup()
+    render(<Select items={items} triggerProps={{ id: 'my-trigger' }} />)
+    await user.click(screen.getByRole('button', { name: /select/i }))
+    const listbox = screen.getByRole('listbox')
+    expect(listbox.getAttribute('aria-labelledby')).toBe('my-trigger')
+  })
+
+  it('open/select/keyboard still work when triggerProps is provided', async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <Select
+        items={items}
+        triggerProps={{ id: 'tr', 'aria-invalid': true, 'aria-describedby': 'd' }}
+        onSelect={onSelect}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /select/i }))
+    expect(screen.getByRole('listbox')).toBeDefined()
+    await user.click(screen.getByText('Apple'))
+    expect(onSelect).toHaveBeenCalledWith('Apple')
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
 })

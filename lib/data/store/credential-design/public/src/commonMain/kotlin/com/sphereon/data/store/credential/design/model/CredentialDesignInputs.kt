@@ -20,6 +20,7 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlin.jvm.JvmOverloads
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 @JsExportCompat
@@ -35,6 +36,7 @@ data class CreateCredentialDesignInput
         val displays: List<LocalizedCredentialDisplay>,
         val claims: List<ClaimPresentation> = emptyList(),
         val renderVariantIds: List<Uuid> = emptyList(),
+        val credentialType: CredentialTypeDescriptor? = null,
     )
 
 @JsExportCompat
@@ -50,6 +52,7 @@ data class UpdateCredentialDesignInput
         val claims: List<ClaimPresentation>? = null,
         val renderVariantIds: List<Uuid>? = null,
         val hostingMode: DesignHostingMode? = null,
+        val credentialType: CredentialTypeDescriptor? = null,
     )
 
 @JsExportCompat
@@ -143,6 +146,8 @@ data class ResolveCredentialDesignInput
         val preferredLocales: List<String> = emptyList(),
         val renderTarget: RenderVariantKind? = null,
         val externalMetadata: ExternalDesignMetadata? = null,
+        val designVersion: Int? = null,
+        val activeAt: Instant? = null,
     )
 
 @JsExportCompat
@@ -156,6 +161,8 @@ data class ResolveEntityDesignInput
         val bindingValue: String? = null,
         val preferredLocales: List<String> = emptyList(),
         val externalMetadata: ExternalDesignMetadata? = null,
+        val designVersion: Int? = null,
+        val activeAt: Instant? = null,
     )
 
 @JsExportCompat
@@ -225,6 +232,55 @@ data class UploadDesignAssetInput(
         return result
     }
 }
+
+/**
+ * Input for the DESIGN-AGNOSTIC, tenant-scoped asset upload surface. Unlike [UploadDesignAssetInput]
+ * this carries no `designId`/`locale`: the asset is content-addressed and shared tenant-wide. The
+ * [assetType] is informational (it comes from the request path) and does not affect the storage key,
+ * since identical bytes always dedup onto the same content-addressed blob regardless of asset type.
+ */
+@JsExportCompat
+@Serializable
+data class UploadTenantAssetInput(
+    val assetType: DesignAssetType,
+    val data: ByteArray,
+    val contentType: String,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) {
+            return true
+        }
+        if (other !is UploadTenantAssetInput) {
+            return false
+        }
+        return assetType == other.assetType && data.contentEquals(other.data) && contentType == other.contentType
+    }
+
+    override fun hashCode(): Int {
+        var result = assetType.hashCode()
+        result = 31 * result + data.contentHashCode()
+        result = 31 * result + contentType.hashCode()
+        return result
+    }
+}
+
+/**
+ * Filter for the tenant-scoped asset listing surface
+ * ([com.sphereon.data.store.credential.design.CredentialDesignService.listDesignAssets]).
+ *
+ * NOTE on [assetType]: a content-addressed blob keeps NO asset-type segment in its path, so the
+ * asset type cannot be recovered exactly. It is applied LOOSELY via the conventional content-type
+ * family of the type (PDF_TEMPLATE -> application/pdf, SVG_TEMPLATE -> image/svg+xml, LOGO /
+ * BACKGROUND_IMAGE -> any image/ type). [contentType] filters by a content-type prefix.
+ */
+@JsExportCompat
+@Serializable
+data class AssetFilter
+    @JvmOverloads
+    constructor(
+        val assetType: DesignAssetType? = null,
+        val contentType: String? = null,
+    )
 
 @JsExportCompat
 @Serializable

@@ -94,6 +94,29 @@ enum class StatusPurpose(
     }
 }
 
+/** Where the signed status-list token is expected to be served. */
+@Serializable
+@JsExportCompat
+enum class StatusListHostingMode(
+    val value: String,
+) {
+    /** The platform public hosting endpoint serves the token at [CreateStatusListArgs.statusListUri]. */
+    @SerialName("hosted")
+    HOSTED("hosted"),
+
+    /** The token is exported from management and hosted outside the platform. */
+    @SerialName("export")
+    EXPORT("export"),
+    ;
+
+    companion object {
+        fun fromValue(value: String): StatusListHostingMode? =
+            entries.firstOrNull { mode ->
+                mode.value.equals(value, ignoreCase = true) || mode.name.equals(value, ignoreCase = true)
+            }
+    }
+}
+
 /** Canonical Token Status List status values (also the W3C revocation/suspension 0/1 convention). */
 object StatusValues {
     const val VALID: Int = 0x00
@@ -203,6 +226,7 @@ data class StatusListResult(
     val spec: StatusListSpec,
     val purposes: List<StatusPurpose>,
     val proofFormat: StatusProofFormat,
+    val hostingMode: StatusListHostingMode = StatusListHostingMode.HOSTED,
     val bitsPerStatus: Int,
     val length: Int,
     val issuer: String,
@@ -241,6 +265,7 @@ data class StatusListSummary(
     val spec: StatusListSpec,
     val purposes: List<StatusPurpose>,
     val proofFormat: StatusProofFormat,
+    val hostingMode: StatusListHostingMode = StatusListHostingMode.HOSTED,
     val bitsPerStatus: Int,
     val length: Int,
     val issuedCount: Int,
@@ -299,6 +324,7 @@ data class CreateStatusListArgs(
     val spec: StatusListSpec,
     val purposes: List<StatusPurpose> = listOf(StatusPurpose.REVOCATION),
     val proofFormat: StatusProofFormat,
+    val hostingMode: StatusListHostingMode = StatusListHostingMode.HOSTED,
     val issuer: String,
     /** Public URI this list is hosted at; embedded into the status claim of issued credentials. */
     val statusListUri: String,

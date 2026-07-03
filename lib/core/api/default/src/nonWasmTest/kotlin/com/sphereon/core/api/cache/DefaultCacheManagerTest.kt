@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -215,6 +216,26 @@ class DefaultCacheManagerTest {
         }
 
     @Test
+    fun invalidateTenantAttemptsAllCachesWhenBackendInvalidationFails() =
+        runTest {
+            val manager = DefaultCacheManager()
+            val failingBackend = FailingPatternDeleteBackend()
+            manager.registerBackend(KacheCacheBackend())
+            manager.registerBackend(failingBackend)
+
+            val requirements = CacheRequirements.hybridWriteThrough("cache1")
+            val otherRequirements = CacheRequirements.hybridWriteThrough("cache2")
+
+            manager.createCache(requirements, CacheSerializers.string, CacheSerializers.string)
+            manager.createCache(otherRequirements, CacheSerializers.string, CacheSerializers.string)
+
+            assertFailsWith<IllegalStateException> {
+                manager.invalidateTenant("tenant-a")
+            }
+            assertEquals(2, failingBackend.deleteByPatternCalls)
+        }
+
+    @Test
     fun clearAllClearsAllCaches() =
         runTest {
             val manager = createManager()
@@ -258,4 +279,44 @@ class DefaultCacheManagerTest {
             assertTrue(stats.containsKey("cache1"))
             assertTrue(stats.containsKey("cache2"))
         }
+}
+
+private class FailingPatternDeleteBackend : CacheBackend {
+    var deleteByPatternCalls: Int = 0
+        private set
+
+    override val id: String = "failing-distributed"
+    override val capabilities: BackendCapabilities = BackendCapabilities.DISTRIBUTED
+
+    override suspend fun get(key: String): ByteArray? = null
+
+    override suspend fun set(
+        key: String,
+        value: ByteArray,
+        ttlMs: Long?,
+    ) {}
+
+    override suspend fun delete(key: String): Boolean = false
+
+    override suspend fun exists(key: String): Boolean = false
+
+    override suspend fun getMany(keys: Collection<String>): Map<String, ByteArray> = emptyMap()
+
+    override suspend fun setMany(
+        entries: Map<String, ByteArray>,
+        ttlMs: Long?,
+    ) {}
+
+    override suspend fun deleteByPattern(pattern: String): Int {
+        deleteByPatternCalls++
+        error("delete failed")
+    }
+
+    override suspend fun keys(pattern: String): List<String> = emptyList()
+
+    override suspend fun clear() {}
+
+    override suspend fun size(): Long = 0
+
+    override suspend fun isHealthy(): Boolean = true
 }

@@ -298,6 +298,8 @@ includeProject("lib-core-idn-public", "lib/core/idn/public")
 includeProject("lib-crypto-core-public", "lib/crypto/core/public")
 includeProject("lib-crypto-core-impl", "lib/crypto/core/impl")
 includeProject("lib-crypto-core", "lib/crypto/core")
+includeProject("lib-crypto-secdsa-public", "lib/crypto/secdsa/public")
+includeProject("lib-crypto-secdsa-impl", "lib/crypto/secdsa/impl")
 includeProject("lib-crypto-kms-provider-software", "lib/crypto/kms/provider/software")
 includeProject("lib-crypto-kms-provider-aws", "lib/crypto/kms/provider/aws")
 includeProject("lib-crypto-kms-provider-azure", "lib/crypto/kms/provider/azure")
@@ -378,10 +380,25 @@ includeProject("lib-openid-oid4vp-verifier-rest", "lib/openid/oid4vp/verifier/re
 includeProject("lib-openid-oid4vp-universal-public", "lib/openid/oid4vp/universal/public")
 includeProject("lib-openid-oid4vp-universal-impl", "lib/openid/oid4vp/universal/impl")
 
-// OpenID Wallet SDK
-includeProject("lib-wallet-public", "lib/openid/wallet/public")
-includeProject("lib-wallet-impl", "lib/openid/wallet/impl")
-includeProject("lib-wallet-cli", "lib/openid/wallet/cli")
+// Wallet SDK
+includeProject("lib-wallet-public", "lib/wallet/public")
+includeProject("lib-wallet-impl", "lib/wallet/impl")
+includeProject("lib-wallet-cli", "lib/wallet/cli")
+
+// Wallet Interaction API (protocol-neutral headless wallet runtime)
+includeProject("lib-wallet-interaction-public", "lib/wallet/interaction/public")
+includeProject("lib-wallet-interaction-impl", "lib/wallet/interaction/impl")
+includeProject("lib-wallet-interaction-client-rest", "lib/wallet/interaction/client-rest")
+includeProject("lib-wallet-interaction-presenter", "lib/wallet/interaction/presenter")
+includeProject("lib-wallet-interaction-protocol-oid4vci", "lib/wallet/interaction/protocol/oid4vci")
+includeProject("lib-wallet-interaction-protocol-oid4vp", "lib/wallet/interaction/protocol/oid4vp")
+includeProject("lib-wallet-interaction-protocol-iso18013", "lib/wallet/interaction/protocol/iso18013")
+
+includeProject("wallet-profile-public", "wallet/profile/public")
+includeProject("wallet-profile-impl", "wallet/profile/impl")
+includeProject("wallet-app-public", "wallet/app/public") // Phase 1
+includeProject("wallet-app-impl", "wallet/app/impl")
+includeProject("wallet-cli", "wallet/cli")
 
 // Data Link - BLE
 includeProject("lib-data-link-ble-public", "lib/data/link/ble/public")

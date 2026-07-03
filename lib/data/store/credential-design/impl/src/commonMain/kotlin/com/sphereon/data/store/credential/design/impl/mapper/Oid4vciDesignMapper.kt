@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright 2023-2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,14 +39,14 @@ import com.sphereon.openid.oid4vci.common.model.CredentialMetadataClaim
  * Bidirectional mapper between the canonical [ResolvedCredentialDesign] and
  * the OID4VCI [CredentialConfigurationSupported] wire format.
  *
- * Direction 1 (outbound): Design → OID4VCI, for metadata generation.
- * Direction 2 (inbound):  OID4VCI → Design, for importing external configurations.
+ * Direction 1 (outbound): Design â†’ OID4VCI, for metadata generation.
+ * Direction 2 (inbound):  OID4VCI â†’ Design, for importing external configurations.
  */
 object Oid4vciDesignMapper {
     private val PROVIDER = Oid4vciCredentialConfigDesignProvider()
 
     // -------------------------------------------------------------------------
-    // Direction 1: Design → OID4VCI  (outbound, for metadata generation)
+    // Direction 1: Design â†’ OID4VCI  (outbound, for metadata generation)
     // -------------------------------------------------------------------------
 
     /**
@@ -67,7 +67,7 @@ object Oid4vciDesignMapper {
     ): CredentialConfigurationSupported {
         val record = design.design
 
-        // Map displays — each picks the render variant whose localeApplicability contains
+        // Map displays â€” each picks the render variant whose localeApplicability contains
         // that display's locale, falling back to the first variant when none match.
         val displays =
             record.displays
@@ -76,7 +76,7 @@ object Oid4vciDesignMapper {
                     buildDisplayProperties(localDisplay, selectedVariant)
                 }.takeIf { it.isNotEmpty() }
 
-        // Map claims → OID4VCI 1.1 credential_metadata.claims (path-based)
+        // Map claims â†’ OID4VCI 1.1 credential_metadata.claims (path-based)
         val metadataClaims =
             record.claims
                 .map { claim ->
@@ -111,7 +111,7 @@ object Oid4vciDesignMapper {
                     val types =
                         buildList {
                             add("VerifiableCredential")
-                            binding?.vcType?.let { add(it) }
+                            binding?.type?.let { add(it) }
                         }
                     CredentialDefinition(type = types)
                 }
@@ -131,7 +131,7 @@ object Oid4vciDesignMapper {
     }
 
     // -------------------------------------------------------------------------
-    // Direction 2: OID4VCI → Design  (inbound, for import)
+    // Direction 2: OID4VCI â†’ Design  (inbound, for import)
     // -------------------------------------------------------------------------
 
     /**
@@ -158,7 +158,7 @@ object Oid4vciDesignMapper {
     }
 
     // -------------------------------------------------------------------------
-    // Helpers — outbound
+    // Helpers â€” outbound
     // -------------------------------------------------------------------------
 
     /**
@@ -171,7 +171,7 @@ object Oid4vciDesignMapper {
      * [DisplayProperties.name] is required.
      *
      * Logo / background URIs are passed through verbatim (they are stored RELATIVE and made
-     * absolute per-tenant at serve time — see
+     * absolute per-tenant at serve time â€” see
      * [com.sphereon.data.store.credential.design.PublicDesignAssetPaths.toAbsolute]).
      */
     fun buildIssuerDisplayProperties(
@@ -237,7 +237,7 @@ object Oid4vciDesignMapper {
     }
 
     // -------------------------------------------------------------------------
-    // SD policy conversion helpers (design ↔ issuer-format)
+    // SD policy conversion helpers (design â†” issuer-format)
     // -------------------------------------------------------------------------
 
     /**

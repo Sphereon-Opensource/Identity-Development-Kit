@@ -39,6 +39,7 @@ import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEn
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.InitPipelineSessionEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.IssueNonceEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.Oid4vciErrorRenderer
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -100,29 +101,10 @@ class Oid4vciIssuerProtocolHttpAdapter(
     companion object {
         const val ID: String = "OID4VCI_ISSUER"
 
-        /**
-         * Config key for the protocol base path the wallet-facing OID4VCI endpoints mount
-         * under. Empty (the default) serves them at the root of the credential issuer, which
-         * is the correct shape for a dedicated issuer on a per-tenant subdomain (the first
-         * and, in EDK, only instance). A non-empty value namespaces the endpoints under a
-         * path for deployments that host additional issuer instances behind one host.
-         */
-        const val BASE_PATH_KEY: String = "oid4vci.issuer.protocol.base-path"
+        const val BASE_PATH_KEY: String = Oid4vciIssuerProtocolConfig.BASE_PATH_KEY
 
         /** Normalised protocol base path from config: "" (root) or a leading-slash path with no trailing slash. */
-        fun resolveBasePath(appConfig: AppConfigService): String {
-            val raw =
-                appConfig
-                    .getPropertyAsString(key = BASE_PATH_KEY, defaultValue = null)
-                    ?.trim()
-                    .orEmpty()
-                    .trimEnd('/')
-            return when {
-                raw.isEmpty() -> ""
-                raw.startsWith("/") -> raw
-                else -> "/$raw"
-            }
-        }
+        fun resolveBasePath(appConfig: AppConfigService): String = Oid4vciIssuerProtocolConfig.resolveBasePath(appConfig)
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

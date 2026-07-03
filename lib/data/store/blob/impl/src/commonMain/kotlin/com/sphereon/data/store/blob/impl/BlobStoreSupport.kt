@@ -79,6 +79,10 @@ private val BlobStorePropertyNameAliases =
         "auto.create.dirs" to "autoCreateDirs",
         "maxentries" to "maxEntries",
         "max.entries" to "maxEntries",
+        "kvstoreid" to "kvStoreId",
+        "kv.store.id" to "kvStoreId",
+        "maxblobsizebytes" to "maxBlobSizeBytes",
+        "max.blob.size.bytes" to "maxBlobSizeBytes",
     )
 
 @Inject

@@ -20,10 +20,10 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 /**
- * IDK default [OAuth2AcrEnforcer]. Knows the SAML 2.0 PasswordProtectedTransport /
- * MobileTwoFactorContract / SmartcardPKI vocabulary used by the EDK
- * [com.sphereon.authz.authzen.stepup.DefaultAcrAalMapper] so the two layers agree
- * out of the box. Deployments that speak a different ACR vocabulary (eIDAS LoA URIs,
+ * IDK default [OAuth2AcrEnforcer]. Accepts the canonical NIST
+ * [AuthAssuranceLevel.acr] URNs used by command contracts and the legacy SAML 2.0
+ * PasswordProtectedTransport / MobileTwoFactorContract / SmartcardPKI vocabulary used by older
+ * EDK step-up deployments. Deployments that speak a different ACR vocabulary (eIDAS LoA URIs,
  * custom enterprise URIs, OIDC trust-profile URLs) override the binding via DI.
  *
  * Pure / stateless / AppScope. Caller supplies `nowEpochSeconds` for testability.
@@ -91,19 +91,15 @@ class DefaultOAuth2AcrEnforcer : OAuth2AcrEnforcer {
     private fun strongestRequestedAal(requested: List<String>): AuthAssuranceLevel? = requested.mapNotNull { aalFor(it) }.maxByOrNull { it.ordinal }
 
     private fun aalFor(acr: String): AuthAssuranceLevel? =
-        when (acr) {
-            SAML_PASSWORD_PROTECTED_TRANSPORT -> AuthAssuranceLevel.AAL1
-            SAML_MOBILE_TWO_FACTOR_CONTRACT -> AuthAssuranceLevel.AAL2
-            SAML_SMARTCARD_PKI -> AuthAssuranceLevel.AAL3
-            else -> null
-        }
+        AuthAssuranceLevel.entries.firstOrNull { it.acr == acr }
+            ?: when (acr) {
+                SAML_PASSWORD_PROTECTED_TRANSPORT -> AuthAssuranceLevel.AAL1
+                SAML_MOBILE_TWO_FACTOR_CONTRACT -> AuthAssuranceLevel.AAL2
+                SAML_SMARTCARD_PKI -> AuthAssuranceLevel.AAL3
+                else -> null
+            }
 
-    private fun acrFor(aal: AuthAssuranceLevel): String =
-        when (aal) {
-            AuthAssuranceLevel.AAL1 -> SAML_PASSWORD_PROTECTED_TRANSPORT
-            AuthAssuranceLevel.AAL2 -> SAML_MOBILE_TWO_FACTOR_CONTRACT
-            AuthAssuranceLevel.AAL3 -> SAML_SMARTCARD_PKI
-        }
+    private fun acrFor(aal: AuthAssuranceLevel): String = aal.acr
 
     companion object {
         const val SAML_PASSWORD_PROTECTED_TRANSPORT: String =

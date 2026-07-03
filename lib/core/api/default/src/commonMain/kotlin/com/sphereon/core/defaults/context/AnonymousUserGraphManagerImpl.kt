@@ -20,6 +20,7 @@ package com.sphereon.core.defaults.context
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
+import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.PropertySourceBootstrap
 import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.core.api.conf.TenantConfigService
@@ -78,6 +79,8 @@ class AnonymousUserGraphManagerImpl(
     private data class ContextHolder(
         val graph: UserContextGraph,
         val scope: Scope,
+        val tenantId: String,
+        val principalId: String,
     )
 
     // Atomic references for singleton contexts
@@ -103,9 +106,14 @@ class AnonymousUserGraphManagerImpl(
                     contextId = UserContext.ANONYMOUS,
                     tenantContextData = AnonymousContext.tenant,
                     principal = anonymousPrincipalAware,
-                ).let { ContextHolder(it.first, it.second) }
-
-            anonymousHolder.value = holder
+                )
+            try {
+                completeContextRegistration(holder)
+                anonymousHolder.value = holder
+            } catch (expected: Throwable) {
+                holder.scope.destroy()
+                throw expected
+            }
             holder.graph
         }
     }
@@ -129,9 +137,14 @@ class AnonymousUserGraphManagerImpl(
                     contextId = UserContext.BACKGROUND_SERVICE,
                     tenantContextData = AnonymousContext.tenant,
                     principal = anonymousPrincipalAware,
-                ).let { ContextHolder(it.first, it.second) }
-
-            backgroundHolder.value = holder
+                )
+            try {
+                completeContextRegistration(holder)
+                backgroundHolder.value = holder
+            } catch (expected: Throwable) {
+                holder.scope.destroy()
+                throw expected
+            }
             holder.graph
         }
     }
@@ -172,7 +185,7 @@ class AnonymousUserGraphManagerImpl(
         contextId: String,
         tenantContextData: TenantContextData,
         principal: PrincipalAware,
-    ): Pair<UserContextGraph, Scope> {
+    ): ContextHolder {
         // Create new context
         val context = UserContextImpl(tenant = tenantContextData, principal = principal.principal)
         val contextGraph = contextGraphFactory.createUserContext(context)
@@ -188,16 +201,25 @@ class AnonymousUserGraphManagerImpl(
         val instance = contextGraph.instance
         (instance as? UserContextInstanceImpl)?.initialize(contextGraph, scope)
 
-        registerContextConfigSources(
-            contextGraph = contextGraph,
+        return ContextHolder(
+            graph = contextGraph,
+            scope = scope,
             tenantId = tenantContextData.tenantId,
             principalId = principal.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID,
         )
+    }
 
-        // Register instances after the instance is initialized
-        scope.register(contextGraph.contextScopedInstances)
+    private fun completeContextRegistration(holder: ContextHolder) {
+        ConfigBootstrapGuard.withContextRegistration {
+            registerContextConfigSources(
+                contextGraph = holder.graph,
+                tenantId = holder.tenantId,
+                principalId = holder.principalId,
+            )
 
-        return contextGraph to scope
+            // Register instances after the instance is initialized
+            holder.scope.register(holder.graph.contextScopedInstances)
+        }
     }
 
     private fun registerContextConfigSources(

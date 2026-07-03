@@ -20,6 +20,7 @@ package com.sphereon.mdoc.transfer
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.cose.CoseKeyCborCodec
@@ -194,6 +195,7 @@ interface MdocTransferService {
      * Monad-first API: starts a QR engagement and returns an IdkResult with the engagement URI on success.
      * This is the preferred entry point for Swift/Objective‑C and cross-platform callers.
      */
+    @JsExportIgnoreCompat
     interface Try {
         suspend fun startQrEngagement(): IdkResult<String, IdkErrorType>
     }
@@ -203,6 +205,7 @@ interface MdocTransferService {
      */
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Throwing", exact = true)
+    @JsExportIgnoreCompat
     interface Throwing {
         suspend fun startQrEngagement(): String
     }

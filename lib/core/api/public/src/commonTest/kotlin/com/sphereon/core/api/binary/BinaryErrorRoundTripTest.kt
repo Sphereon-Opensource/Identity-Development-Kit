@@ -12,8 +12,10 @@ package com.sphereon.core.api.binary
 
 import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.Retryability
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * C20 regression coverage — BinaryError ⇄ IdkError round-trip used to collapse typed
@@ -73,6 +75,36 @@ class BinaryErrorRoundTripTest {
 
         assertEquals("UNAUTHORIZED", roundTripped.code)
         assertEquals(ErrorCategory.UNAUTHORIZED, roundTripped.category)
+    }
+
+    @Test
+    fun serviceUnavailablePreservesRetrySemantics() {
+        val original = IdkError.SERVICE_UNAVAILABLE_ERROR(
+            message = "Service is temporarily overloaded; slow down and retry later",
+            retryAfter = 3.seconds,
+        )
+
+        val roundTripped = BinaryError.fromIdkError(original).toIdkError()
+
+        assertEquals("SERVICE_UNAVAILABLE", roundTripped.code)
+        assertEquals(ErrorCategory.UNAVAILABLE, roundTripped.category)
+        assertEquals(Retryability.TRANSIENT, roundTripped.retryability)
+        assertEquals(3.seconds, roundTripped.retryAfter)
+    }
+
+    @Test
+    fun quotaExceededPreservesRetrySemantics() {
+        val original = IdkError.QUOTA_EXCEEDED_ERROR(
+            message = "gRPC command receiver is temporarily overloaded; slow down and retry later",
+            retryAfter = 4.seconds,
+        )
+
+        val roundTripped = BinaryError.fromIdkError(original).toIdkError()
+
+        assertEquals("QUOTA_EXCEEDED_ERROR", roundTripped.code)
+        assertEquals(ErrorCategory.RATE_LIMITED, roundTripped.category)
+        assertEquals(Retryability.TRANSIENT, roundTripped.retryability)
+        assertEquals(4.seconds, roundTripped.retryAfter)
     }
 
     @Test

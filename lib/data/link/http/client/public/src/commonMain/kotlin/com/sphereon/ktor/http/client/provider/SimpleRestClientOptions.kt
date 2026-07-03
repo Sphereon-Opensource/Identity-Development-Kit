@@ -53,9 +53,14 @@ data class SimpleRestClientOptions(
                 )
             },
             loggingConfig = {
-                level =
-                    io.ktor.client.plugins.logging.LogLevel
-                        .valueOf(logLevel.name)
+                level = logLevel.toKtorHttpLogLevel()
             },
         )
 }
+
+private fun LogLevel.toKtorHttpLogLevel(): io.ktor.client.plugins.logging.LogLevel =
+    when (this) {
+        LogLevel.TRACE -> io.ktor.client.plugins.logging.LogLevel.ALL
+        LogLevel.DEBUG, LogLevel.INFO -> io.ktor.client.plugins.logging.LogLevel.INFO
+        LogLevel.WARN, LogLevel.ERROR, LogLevel.OFF -> io.ktor.client.plugins.logging.LogLevel.NONE
+    }

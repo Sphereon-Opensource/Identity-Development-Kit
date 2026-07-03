@@ -22,6 +22,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
 import com.sphereon.statuslist.StatusListBinding
 import kotlinx.serialization.json.JsonElement
 
@@ -58,6 +59,7 @@ data class IssuanceContext(
     val holderBindingKey: JsonElement?,
     val holderIdentifier: String? = null,
     val holderKeyId: String? = null,
+    val keyAttestation: VerifiedKeyAttestation? = null,
     @JsExportIgnoreCompat
     val attributes: Map<String, JsonElement>,
     @JsExportIgnoreCompat

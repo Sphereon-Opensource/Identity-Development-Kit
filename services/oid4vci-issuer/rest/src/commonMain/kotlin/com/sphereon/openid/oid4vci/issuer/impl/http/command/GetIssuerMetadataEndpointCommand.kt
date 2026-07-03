@@ -231,6 +231,7 @@ class GetIssuerMetadataEndpointCommandImpl(
                     credentialResponseEncryption = configProvider.credentialResponseEncryption,
                     credentialRequestEncryption = resolvedRequestEncryption,
                     batchCredentialIssuance = configProvider.batchCredentialIssuance,
+                    preferredKeyStorageStatusPeriodSeconds = configProvider.preferredKeyStorageStatusPeriodSeconds,
                 ),
             )
 

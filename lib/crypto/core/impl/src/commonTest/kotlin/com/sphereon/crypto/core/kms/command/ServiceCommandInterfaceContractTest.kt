@@ -65,12 +65,16 @@ class ServiceCommandInterfaceContractTest {
             // KMS Signatures
             CommandSpec("CreateRawSignatureCommand", CreateRawSignatureCommand.COMMAND_ID, "kms", "kms.signature", "create"),
             CommandSpec("VerifyRawSignatureCommand", VerifyRawSignatureCommand.COMMAND_ID, "kms", "kms.signature", "verify"),
+            CommandSpec("SignDigestCommand", SignDigestCommand.COMMAND_ID, "kms", "kms.signature", "sign-digest"),
+            CommandSpec("VerifyDigestCommand", VerifyDigestCommand.COMMAND_ID, "kms", "kms.signature", "verify-digest"),
             // KMS Encryption
             CommandSpec("EncryptCommand", EncryptCommand.COMMAND_ID, "kms", "kms.encryption", "encrypt"),
             CommandSpec("DecryptCommand", DecryptCommand.COMMAND_ID, "kms", "kms.encryption", "decrypt"),
             CommandSpec("WrapKeyCommand", WrapKeyCommand.COMMAND_ID, "kms", "kms.encryption", "wrap"),
             CommandSpec("UnwrapKeyCommand", UnwrapKeyCommand.COMMAND_ID, "kms", "kms.encryption", "unwrap"),
             CommandSpec("PerformKeyAgreementCommand", PerformKeyAgreementCommand.COMMAND_ID, "kms", "kms.encryption", "agree"),
+            CommandSpec("EcdhDeriveCommand", EcdhDeriveCommand.COMMAND_ID, "kms", "kms.ecdh", "derive"),
+            CommandSpec("EcPointMultiplyCommand", EcPointMultiplyCommand.COMMAND_ID, "kms", "kms.ecpoint", "multiply"),
             // JWS
             CommandSpec("PrepareJwsCommand", PrepareJwsCommand.COMMAND_ID, "crypto", "crypto.jws", "prepare"),
             CommandSpec("CreateJwsCompactCommand", CreateJwsCompactCommand.COMMAND_ID, "crypto", "crypto.jws", "compact"),
@@ -210,8 +214,8 @@ class ServiceCommandInterfaceContractTest {
         // Given: commands expected to be in the KMS domain
         val kmsCommands = allCommands.filter { it.expectedDomain == "kms" }
 
-        // Then: there are exactly 13 KMS commands (5 key mgmt + 1 resolution + 2 sig + 5 enc)
-        assertEquals(13, kmsCommands.size, "Expected 13 KMS commands")
+        // Then: there are exactly 17 KMS commands (5 key mgmt + 1 resolution + 4 sig + 7 enc/ec primitives)
+        assertEquals(17, kmsCommands.size, "Expected 17 KMS commands")
 
         // And: they all actually derive "kms" as their domain
         for (cmd in kmsCommands) {
@@ -263,11 +267,11 @@ class ServiceCommandInterfaceContractTest {
 
     @Test
     fun totalMigratedCommandCountMatchesExpected() {
-        // Given: Covers Crypto Core (13 KMS), JWS (5), JWE (5) = 23 commands
+        // Given: Covers Crypto Core (17 KMS), JWS (5), JWE (5) = 27 commands
         assertEquals(
-            23,
+            27,
             allCommands.size,
-            "Should have exactly 23 migrated commands. If you add a new command, add it to allCommands list.",
+            "Should have exactly 27 migrated commands. If you add a new command, add it to allCommands list.",
         )
     }
 }

@@ -18,6 +18,8 @@ package com.sphereon.ktor.http.client.provider
 
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.log.LogLevel
+import com.sphereon.core.api.log.LoggerConfig
 import com.sphereon.crypto.core.kms.HasKeyStoreService
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyStoreManager
@@ -38,6 +40,8 @@ import io.ktor.client.plugins.cache.HttpCache
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.runBlocking
 import java.security.KeyStore
 import javax.net.ssl.SSLContext
@@ -96,7 +100,8 @@ class HttpClientFactoryJvmImpl(
 
                 if (enableLogging) {
                     install(Logging) {
-//                        loggingConfig?.invoke(this)
+                        level = loggingConfig.toKtorHttpClientLogLevel()
+                        sanitizeHeader { header -> header.isSensitiveHttpClientLogHeader() }
                     }
                 }
 
@@ -256,3 +261,17 @@ class HttpClientFactoryJvmImpl(
         }
     }
 }
+
+internal fun LoggerConfig.toKtorHttpClientLogLevel(): KtorLogLevel =
+    when (minLevel) {
+        LogLevel.TRACE -> KtorLogLevel.ALL
+        LogLevel.DEBUG, LogLevel.INFO -> KtorLogLevel.INFO
+        LogLevel.WARN, LogLevel.ERROR, LogLevel.OFF -> KtorLogLevel.NONE
+    }
+
+internal fun String.isSensitiveHttpClientLogHeader(): Boolean =
+    equals(HttpHeaders.Authorization, ignoreCase = true) ||
+        equals("Proxy-Authorization", ignoreCase = true) ||
+        equals(HttpHeaders.Cookie, ignoreCase = true) ||
+        equals(HttpHeaders.SetCookie, ignoreCase = true) ||
+        equals("X-Api-Key", ignoreCase = true)

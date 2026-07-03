@@ -19,6 +19,8 @@ package com.sphereon.data.store.credential.design
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.data.store.credential.design.model.AssetFilter
+import com.sphereon.data.store.credential.design.model.AssetInfo
 import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
@@ -43,6 +45,7 @@ import com.sphereon.data.store.credential.design.model.UpdateCredentialDesignInp
 import com.sphereon.data.store.credential.design.model.UpdateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.UpdateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
+import com.sphereon.data.store.credential.design.model.UploadTenantAssetInput
 import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
@@ -253,6 +256,24 @@ interface CredentialDesignService {
     suspend fun uploadDesignAsset(
         tenantId: String,
         input: UploadDesignAssetInput,
+    ): IdkResult<AssetReference, IdkError>
+
+    /**
+     * Lists the caller-tenant's CONTENT-ADDRESSED, design-agnostic asset blobs (stored under
+     * `vc-designs/{tenantId}/assets/by-hash/`), optionally narrowed by [AssetFilter].
+     */
+    suspend fun listDesignAssets(
+        tenantId: String,
+        filter: AssetFilter = AssetFilter(),
+    ): IdkResult<List<AssetInfo>, IdkError>
+
+    /**
+     * DESIGN-AGNOSTIC, tenant-scoped asset upload. Content-addresses the bytes (SHA-256) and dedups
+     * within the tenant, mirroring [uploadDesignAsset] but without a `designId`/`locale`.
+     */
+    suspend fun uploadTenantAsset(
+        tenantId: String,
+        input: UploadTenantAssetInput,
     ): IdkResult<AssetReference, IdkError>
 
     suspend fun getDesignAsset(

@@ -92,6 +92,7 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation(projects.libCoreApiDefault)
                 implementation(projects.libCryptoKeyPersistenceImpl)
+                implementation(projects.libCryptoSecdsaImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)

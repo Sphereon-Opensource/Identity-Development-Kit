@@ -21,6 +21,8 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.http.error.RestErrorBody
+import com.sphereon.core.api.http.error.RestErrorDetail
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyOutput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
@@ -50,6 +52,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.decodeFromString
@@ -58,6 +61,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * HTTP-based implementation of [ServiceCommandTransport] for IDK's KMS REST client.
@@ -137,7 +141,7 @@ class HttpServiceCommandTransport(
             val responseBody = response.bodyAsText()
 
             if (statusCode >= 400) {
-                return parseErrorResponse(statusCode, responseBody)
+                return parseErrorResponse(statusCode, responseBody, response.headers[HttpHeaders.RetryAfter])
             }
 
             if (responseBody.isBlank()) {
@@ -312,18 +316,42 @@ class HttpServiceCommandTransport(
     private fun <T : Any> parseErrorResponse(
         statusCode: Int,
         responseBody: String,
+        retryAfterHeader: String? = null,
     ): IdkResult<T, IdkError> {
+        val restError = parseRestError(responseBody)
+        val message = restError?.message ?: responseBody.ifEmpty { defaultMessageForStatus(statusCode) }
         val error =
             when (statusCode) {
-                400 -> IdkError.ILLEGAL_ARGUMENT_ERROR(message = responseBody.ifEmpty { "Bad request" })
-                401 -> IdkError.UNAUTHORIZED_ERROR(message = responseBody.ifEmpty { "Unauthorized" })
-                403 -> IdkError.FORBIDDEN_ERROR(message = responseBody.ifEmpty { "Forbidden" })
-                404 -> IdkError.NOT_FOUND_ERROR(message = responseBody.ifEmpty { "Not found" })
-                409 -> IdkError.INVALID_STATE(message = responseBody.ifEmpty { "Conflict" })
+                400 -> IdkError.ILLEGAL_ARGUMENT_ERROR(message = message)
+                401 -> IdkError.UNAUTHORIZED_ERROR(message = message)
+                403 -> IdkError.FORBIDDEN_ERROR(message = message)
+                404 -> IdkError.NOT_FOUND_ERROR(message = message)
+                409 -> IdkError.INVALID_STATE(message = message)
+                429 -> IdkError.QUOTA_EXCEEDED_ERROR(message = message)
+                503 -> IdkError.SERVICE_UNAVAILABLE_ERROR(message = message, retryAfter = retryAfterHeader.retryAfterSeconds())
+                504 -> IdkError.TIMEOUT_ERROR(message = message)
                 else -> IdkError.UNKNOWN_ERROR(message = "HTTP $statusCode: $responseBody")
             }
         return Err(error)
     }
+
+    private fun parseRestError(responseBody: String): RestErrorDetail? =
+        runCatching { json.decodeFromString(RestErrorBody.serializer(), responseBody).error }.getOrNull()
+
+    private fun String?.retryAfterSeconds() = this?.toLongOrNull()?.coerceAtLeast(1)?.seconds
+
+    private fun defaultMessageForStatus(statusCode: Int): String =
+        when (statusCode) {
+            400 -> "Bad request"
+            401 -> "Unauthorized"
+            403 -> "Forbidden"
+            404 -> "Not found"
+            409 -> "Conflict"
+            429 -> "Too many requests"
+            503 -> "Service temporarily unavailable"
+            504 -> "Gateway timeout"
+            else -> "HTTP $statusCode"
+        }
 
     /**
      * Closes the HTTP client.

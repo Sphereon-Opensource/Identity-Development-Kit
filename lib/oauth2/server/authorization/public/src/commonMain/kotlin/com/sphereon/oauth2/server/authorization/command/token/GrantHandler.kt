@@ -23,10 +23,12 @@ import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.TokenRequestData
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
 
 /**
  * A grant-type-specific token handler. One handler per RFC 6749 / RFC 8693 / RFC 8628 / OID4VCI 1.1
  * grant: `authorization_code`, `refresh_token`, `client_credentials`,
+ * `password`,
  * `urn:ietf:params:oauth:grant-type:token-exchange`,
  * `urn:ietf:params:oauth:grant-type:pre-authorized_code`,
  * `urn:ietf:params:oauth:grant-type:device_code`.
@@ -85,6 +87,8 @@ interface GrantHandler {
  *                    response / create id token).
  * @property serverConfig the resolved server instance config; pre-resolved here so each handler
  *                        does not re-read it from the [com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider].
+ * @property walletInstanceAttestation production Wallet Instance Attestation evidence accepted at
+ *                                      token client authentication, when present.
  */
 data class GrantContext(
     val tokenRequest: TokenRequestData,
@@ -94,4 +98,5 @@ data class GrantContext(
     val applied: HandleTokenRequestArgs,
     val commands: AuthorizationServerService.Commands,
     val serverConfig: OAuth2ServerInstanceConfig,
+    val walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
 )

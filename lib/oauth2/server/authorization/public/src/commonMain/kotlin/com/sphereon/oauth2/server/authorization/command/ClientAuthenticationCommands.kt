@@ -21,6 +21,15 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
+
+enum class ClientAuthenticationEndpoint {
+    TOKEN,
+    PAR,
+    REVOCATION,
+    INTROSPECTION,
+    OTHER,
+}
 
 /**
  * Arguments for verifying client authentication.
@@ -29,6 +38,7 @@ data class VerifyClientAuthenticationArgs(
     val clientAuthentication: ClientAuthenticationConfig,
     val clientId: String,
     val tokenEndpointUrl: String,
+    val endpoint: ClientAuthenticationEndpoint = ClientAuthenticationEndpoint.OTHER,
 )
 
 /**
@@ -38,6 +48,7 @@ data class VerifiedClientAuthentication(
     val clientId: String,
     val method: ClientAuthenticationMethod,
     val clientInstanceKey: Jwk? = null,
+    val walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
 )
 
 /**

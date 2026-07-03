@@ -23,6 +23,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.CreateStatusListArgs
 import com.sphereon.statuslist.DEFAULT_STATUS_LIST_LENGTH
 import com.sphereon.statuslist.StatusListDefinitionsProvider
+import com.sphereon.statuslist.StatusListHostingMode
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
@@ -47,6 +48,7 @@ import dev.zacsweers.metro.binding
  *       spec: token_status_list           # or bitstring_status_list
  *       purposes: revocation              # comma-separated StatusPurpose values
  *       proofFormat: jwt                  # optional; defaults per spec
+ *       hostingMode: hosted               # optional; hosted or export
  *       issuer: https://example.com       # optional per-list override
  *       length: 131072                    # optional
  *       bitsPerStatus: 1                  # optional
@@ -99,6 +101,9 @@ class ConfigDrivenStatusListDefinitionsProvider(
         val proofFormat =
             configService.getPropertyAsString("$prefix.proofFormat")?.let { parseProofFormat(it) }
                 ?: defaultProofFormat(spec)
+        val hostingMode =
+            configService.getPropertyAsString("$prefix.hostingMode")?.let { StatusListHostingMode.fromValue(it) }
+                ?: StatusListHostingMode.HOSTED
         val purposes =
             configService
                 .getPropertyAsString("$prefix.purposes")
@@ -128,6 +133,7 @@ class ConfigDrivenStatusListDefinitionsProvider(
             spec = spec,
             purposes = purposes,
             proofFormat = proofFormat,
+            hostingMode = hostingMode,
             issuer = issuer,
             statusListUri = uri,
             length = length,

@@ -38,6 +38,13 @@ export {
   allComponentTokenDefaults,
 } from './component-token-defaults'
 
+// Responsive breakpoints and hooks
+export { BREAKPOINTS, resolveBreakpoint, mediaUp, mediaDown } from './breakpoints'
+export type { BreakpointName } from './breakpoints'
+export { useMediaQuery } from './responsive/useMediaQuery'
+export { useBreakpoint } from './responsive/useBreakpoint'
+export type { BreakpointApi } from './responsive/useBreakpoint'
+
 // Types
 export type {
   ThemeMode,

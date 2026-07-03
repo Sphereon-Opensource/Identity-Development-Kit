@@ -126,6 +126,20 @@ private fun matchesStructuredPrefix(
     return payload == prefix || payload.startsWith("$prefix.")
 }
 
+private fun matchesStructuredTenant(
+    stringKey: String,
+    tenantId: String,
+): Boolean = stringKey.split("::").contains("t:$tenantId")
+
+private fun matchesStructuredPrincipal(
+    stringKey: String,
+    tenantId: String,
+    principalId: String,
+): Boolean {
+    val parts = stringKey.split("::")
+    return parts.contains("t:$tenantId") && parts.contains("p:$principalId")
+}
+
 private fun selectEvictionKey(
     keys: Set<String>,
     evictionPolicy: EvictionPolicy,
@@ -398,6 +412,19 @@ interface ConfigSnapshotCache {
     suspend fun invalidateByPrefix(prefix: String)
 
     /**
+     * Invalidate all snapshots for a tenant.
+     */
+    suspend fun invalidateTenant(tenantId: String)
+
+    /**
+     * Invalidate all snapshots for a principal.
+     */
+    suspend fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    )
+
+    /**
      * Get cache statistics.
      */
     fun getStats(): CacheStats
@@ -515,6 +542,17 @@ object NoOpSnapshotCache : ConfigSnapshotCache {
     }
 
     override suspend fun invalidateByPrefix(prefix: String) {
+        // No-op
+    }
+
+    override suspend fun invalidateTenant(tenantId: String) {
+        // No-op
+    }
+
+    override suspend fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    ) {
         // No-op
     }
 
@@ -761,6 +799,21 @@ class InMemorySnapshotCache(
         keysToRemove.forEach { removeEntry(it) }
     }
 
+    override suspend fun invalidateTenant(tenantId: String) {
+        val keysToRemove = cache.keys.filter { matchesStructuredTenant(it, tenantId) }
+        invalidations += keysToRemove.size
+        keysToRemove.forEach { removeEntry(it) }
+    }
+
+    override suspend fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    ) {
+        val keysToRemove = cache.keys.filter { matchesStructuredPrincipal(it, tenantId, principalId) }
+        invalidations += keysToRemove.size
+        keysToRemove.forEach { removeEntry(it) }
+    }
+
     override fun getStats(): CacheStats =
         CacheStats(
             hits = hits,
@@ -850,6 +903,19 @@ interface SyncConfigSnapshotCache {
     fun invalidateByPrefix(prefix: String)
 
     /**
+     * Invalidate all snapshots for a tenant.
+     */
+    fun invalidateTenant(tenantId: String)
+
+    /**
+     * Invalidate all snapshots for a principal.
+     */
+    fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    )
+
+    /**
      * Get cache statistics.
      */
     fun getStats(): CacheStats
@@ -876,6 +942,17 @@ object NoOpSyncSnapshotCache : SyncConfigSnapshotCache {
     }
 
     override fun invalidateByPrefix(prefix: String) {
+        // No-op
+    }
+
+    override fun invalidateTenant(tenantId: String) {
+        // No-op
+    }
+
+    override fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    ) {
         // No-op
     }
 
@@ -920,20 +997,19 @@ class InMemorySyncSnapshotCache(
         val cached = currentCache[stringKey]
 
         if (cached == null) {
-            missesRef.value = missesRef.value + 1L
+            missesRef.incrementAndGet()
             return null
         }
 
         if (cached.isExpired()) {
-            // Atomically remove expired entry
-            removeEntry(stringKey, currentCache)
-            expiredRef.value = expiredRef.value + 1L
-            missesRef.value = missesRef.value + 1L
+            removeEntryIfSame(stringKey, cached)
+            expiredRef.incrementAndGet()
+            missesRef.incrementAndGet()
             return null
         }
 
         recordAccess(stringKey, isNewEntry = false)
-        hitsRef.value = hitsRef.value + 1L
+        hitsRef.incrementAndGet()
         return cached
     }
 
@@ -948,32 +1024,65 @@ class InMemorySyncSnapshotCache(
             } else {
                 snapshot
             }
-        val isNewEntry = !cacheRef.value.containsKey(stringKey)
+        while (true) {
+            val currentCache = cacheRef.value
+            val isNewEntry = !currentCache.containsKey(stringKey)
+            val keyToEvict =
+                if (currentCache.size >= maxEntries && isNewEntry) {
+                    selectEvictionKey(
+                        keys = currentCache.keys,
+                        evictionPolicy = evictionPolicy,
+                        insertionOrder = insertionOrderRef.value,
+                        lastAccessOrder = lastAccessOrderRef.value,
+                        accessFrequency = accessFrequencyRef.value,
+                    )
+                } else {
+                    null
+                }
+            val updatedCache =
+                (keyToEvict?.let { currentCache - it } ?: currentCache) +
+                    (stringKey to snapshotWithTtl)
 
-        if (cacheRef.value.size >= maxEntries && isNewEntry) {
-            evictOne(cacheRef.value)
+            if (cacheRef.compareAndSet(currentCache, updatedCache)) {
+                if (keyToEvict != null) {
+                    removeTracking(keyToEvict)
+                    evictionsRef.incrementAndGet()
+                }
+                recordAccess(stringKey, isNewEntry)
+                return
+            }
         }
-
-        val updatedCache = cacheRef.value + (stringKey to snapshotWithTtl)
-        cacheRef.value = updatedCache
-        recordAccess(stringKey, isNewEntry)
     }
 
     override fun invalidateByPrefix(prefix: String) {
-        val currentCache = cacheRef.value
-        val keysToRemove =
-            currentCache.keys
-                .filter {
-                    matchesStructuredPrefix(it, prefix)
-                }.toSet()
-        if (keysToRemove.isNotEmpty()) {
-            invalidationsRef.value = invalidationsRef.value + keysToRemove.size.toLong()
-            var updatedCache = currentCache
-            keysToRemove.forEach { keyToRemove ->
-                removeTracking(keyToRemove)
-                updatedCache = updatedCache - keyToRemove
+        removeEntries { matchesStructuredPrefix(it, prefix) }
+    }
+
+    override fun invalidateTenant(tenantId: String) {
+        removeEntries { matchesStructuredTenant(it, tenantId) }
+    }
+
+    override fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    ) {
+        removeEntries { matchesStructuredPrincipal(it, tenantId, principalId) }
+    }
+
+    private fun removeEntries(matches: (String) -> Boolean) {
+        while (true) {
+            val currentCache = cacheRef.value
+            val keysToRemove = currentCache.keys.filter(matches).toSet()
+            if (keysToRemove.isEmpty()) {
+                return
             }
-            cacheRef.value = updatedCache
+            val updatedCache = currentCache.filterKeys { it !in keysToRemove }
+            if (cacheRef.compareAndSet(currentCache, updatedCache)) {
+                addInvalidations(keysToRemove.size.toLong())
+                keysToRemove.forEach { removeTracking(it) }
+                pruneTrackingToLiveKeys()
+                return
+            }
         }
     }
 
@@ -989,42 +1098,40 @@ class InMemorySyncSnapshotCache(
         )
 
     override fun clear() {
-        val currentSize = cacheRef.value.size.toLong()
-        invalidationsRef.value = invalidationsRef.value + currentSize
-        cacheRef.value = emptyMap()
-        insertionOrderRef.value = emptyMap()
-        lastAccessOrderRef.value = emptyMap()
-        accessFrequencyRef.value = emptyMap()
-        orderCounterRef.value = 0L
-    }
-
-    private fun evictOne(currentCache: Map<String, ConfigSnapshot>) {
-        val keyToEvict =
-            selectEvictionKey(
-                keys = currentCache.keys,
-                evictionPolicy = evictionPolicy,
-                insertionOrder = insertionOrderRef.value,
-                lastAccessOrder = lastAccessOrderRef.value,
-                accessFrequency = accessFrequencyRef.value,
-            )
-        if (keyToEvict != null) {
-            removeEntry(keyToEvict, cacheRef.value)
-            evictionsRef.value = evictionsRef.value + 1L
+        while (true) {
+            val currentCache = cacheRef.value
+            if (cacheRef.compareAndSet(currentCache, emptyMap())) {
+                addInvalidations(currentCache.size.toLong())
+                insertionOrderRef.value = emptyMap()
+                lastAccessOrderRef.value = emptyMap()
+                accessFrequencyRef.value = emptyMap()
+                orderCounterRef.value = 0L
+                return
+            }
         }
     }
 
-    private fun removeEntry(
+    private fun removeEntryIfSame(
         stringKey: String,
-        currentCache: Map<String, ConfigSnapshot>,
+        expected: ConfigSnapshot,
     ) {
-        removeTracking(stringKey)
-        cacheRef.value = currentCache - stringKey
+        while (true) {
+            val currentCache = cacheRef.value
+            if (currentCache[stringKey] != expected) {
+                return
+            }
+            if (cacheRef.compareAndSet(currentCache, currentCache - stringKey)) {
+                removeTracking(stringKey)
+                pruneTrackingToLiveKeys()
+                return
+            }
+        }
     }
 
     private fun removeTracking(stringKey: String) {
-        insertionOrderRef.value = insertionOrderRef.value - stringKey
-        lastAccessOrderRef.value = lastAccessOrderRef.value - stringKey
-        accessFrequencyRef.value = accessFrequencyRef.value - stringKey
+        updateInsertionOrder { it - stringKey }
+        updateLastAccessOrder { it - stringKey }
+        updateAccessFrequency { it - stringKey }
     }
 
     private fun recordAccess(
@@ -1033,17 +1140,72 @@ class InMemorySyncSnapshotCache(
     ) {
         val order = nextOrder()
         if (isNewEntry) {
-            insertionOrderRef.value = insertionOrderRef.value + (stringKey to order)
+            updateInsertionOrder { it + (stringKey to order) }
         }
-        lastAccessOrderRef.value = lastAccessOrderRef.value + (stringKey to order)
-        val nextFrequency = (accessFrequencyRef.value[stringKey] ?: 0L) + 1L
-        accessFrequencyRef.value = accessFrequencyRef.value + (stringKey to nextFrequency)
+        updateLastAccessOrder { it + (stringKey to order) }
+        updateAccessFrequency { current ->
+            current + (stringKey to ((current[stringKey] ?: 0L) + 1L))
+        }
+        pruneTrackingToLiveKeys()
     }
 
-    private fun nextOrder(): Long {
-        val next = orderCounterRef.value + 1L
-        orderCounterRef.value = next
-        return next
+    private fun nextOrder(): Long = orderCounterRef.incrementAndGet()
+
+    private fun pruneTrackingToLiveKeys() {
+        val liveKeys = cacheRef.value.keys
+        updateInsertionOrder { pruneToLiveKeys(it, liveKeys) }
+        updateLastAccessOrder { pruneToLiveKeys(it, liveKeys) }
+        updateAccessFrequency { pruneToLiveKeys(it, liveKeys) }
+    }
+
+    private fun <T> pruneToLiveKeys(
+        current: Map<String, T>,
+        liveKeys: Set<String>,
+    ): Map<String, T> =
+        if (current.isEmpty() || current.keys.all { it in liveKeys }) {
+            current
+        } else {
+            current.filterKeys { it in liveKeys }
+        }
+
+    private fun updateInsertionOrder(transform: (Map<String, Long>) -> Map<String, Long>) {
+        while (true) {
+            val current = insertionOrderRef.value
+            val updated = transform(current)
+            if (updated == current || insertionOrderRef.compareAndSet(current, updated)) {
+                return
+            }
+        }
+    }
+
+    private fun updateLastAccessOrder(transform: (Map<String, Long>) -> Map<String, Long>) {
+        while (true) {
+            val current = lastAccessOrderRef.value
+            val updated = transform(current)
+            if (updated == current || lastAccessOrderRef.compareAndSet(current, updated)) {
+                return
+            }
+        }
+    }
+
+    private fun updateAccessFrequency(transform: (Map<String, Long>) -> Map<String, Long>) {
+        while (true) {
+            val current = accessFrequencyRef.value
+            val updated = transform(current)
+            if (updated == current || accessFrequencyRef.compareAndSet(current, updated)) {
+                return
+            }
+        }
+    }
+
+    private fun addInvalidations(delta: Long) {
+        if (delta == 0L) return
+        while (true) {
+            val current = invalidationsRef.value
+            if (invalidationsRef.compareAndSet(current, current + delta)) {
+                return
+            }
+        }
     }
 }
 
@@ -1336,6 +1498,30 @@ class AsyncToSyncCacheAdapter(
     override fun isWarmedUp(key: SnapshotKey): Boolean = key.toStringKey() in warmedKeysRef.value
 
     override fun hasWarmedUp(): Boolean = hasWarmedUpRef.value
+
+    override fun invalidateByPrefix(prefix: String) {
+        syncCache.invalidateByPrefix(prefix)
+        warmedKeysRef.value = warmedKeysRef.value.filterNot { matchesStructuredPrefix(it, prefix) }.toSet()
+    }
+
+    override fun invalidateTenant(tenantId: String) {
+        syncCache.invalidateTenant(tenantId)
+        warmedKeysRef.value = warmedKeysRef.value.filterNot { matchesStructuredTenant(it, tenantId) }.toSet()
+    }
+
+    override fun invalidatePrincipal(
+        tenantId: String,
+        principalId: String,
+    ) {
+        syncCache.invalidatePrincipal(tenantId, principalId)
+        warmedKeysRef.value = warmedKeysRef.value.filterNot { matchesStructuredPrincipal(it, tenantId, principalId) }.toSet()
+    }
+
+    override fun clear() {
+        syncCache.clear()
+        warmedKeysRef.value = emptySet()
+        hasWarmedUpRef.value = false
+    }
 }
 
 /**

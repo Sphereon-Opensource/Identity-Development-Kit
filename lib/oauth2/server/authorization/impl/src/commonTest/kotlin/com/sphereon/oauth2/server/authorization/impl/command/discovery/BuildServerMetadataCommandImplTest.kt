@@ -148,6 +148,30 @@ class BuildServerMetadataCommandImplTest {
         }
 
     @Test
+    fun testWalletInstanceAttestationMetadataReflectsConfig() =
+        runTest {
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = "https://auth.example.com",
+                    attestation = FeaturePolicy.SUPPORTED,
+                    walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                    preferredClientStatusPeriodSeconds = 900,
+                )
+            val configProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(servers = mapOf("default" to config)),
+                )
+            val command = ctx.newBuildServerMetadataCommand(configProvider)
+
+            val result = command.execute(BuildServerMetadataArgs())
+
+            assertTrue(result.isOk)
+            assertEquals(true, result.value.walletInstanceAttestationRequired)
+            assertEquals(900, result.value.preferredClientStatusPeriod)
+            assertTrue(result.value.tokenEndpointAuthMethodsSupported!!.contains("attest_jwt_client_auth"))
+        }
+
+    @Test
     fun testExternalServerReturnsError() =
         runTest {
             val config =

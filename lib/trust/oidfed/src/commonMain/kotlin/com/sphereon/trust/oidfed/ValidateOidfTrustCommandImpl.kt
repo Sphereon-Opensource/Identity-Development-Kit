@@ -31,6 +31,11 @@ interface ValidateOidfTrustCommand : ServiceCommand<ValidateOidfTrustArgs, Trust
 @Serializable
 data class ValidateOidfTrustArgs(
     val entityIdentifier: String,
+    /**
+     * Candidate OpenID Federation trust anchors. These are not expected to be the entity being
+     * validated. Implementations should build and verify the chain upwards from [entityIdentifier]
+     * and accept the validation when any supplied anchor appears in the verified path.
+     */
     val trustAnchors: List<String> = emptyList(),
     val requiredTrustMarks: List<String> = emptyList(),
     val maxChainDepth: Int = 5,

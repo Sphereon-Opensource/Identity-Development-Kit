@@ -9,6 +9,7 @@ plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
     alias(sphereonplug.plugins.dev.zacsweers.metro)
+    alias(sphereonplug.plugins.org.jetbrains.kotlinx.atomicfu)
     id("maven-publish")
 }
 metro {
@@ -61,6 +62,7 @@ kotlin {
                 api(sphereonlib.at.asitplus.awesn1.core)
                 api(sphereonlib.at.asitplus.awesn1.crypto)
                 implementation(sphereonlib.io.ktor.client.core)
+                implementation(sphereonlib.org.jetbrains.kotlinx.atomicfu)
                 // DI annotations
                 implementation(libs.bundles.app.platform.di)
             }

@@ -44,6 +44,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAttestationChallengeStorage
@@ -54,6 +55,11 @@ import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.storage.AttestationChallengeStorage
 import com.sphereon.oauth2.server.authorization.storage.AttestationPopJtiStorage
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEnforcementRequest
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEnforcer
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceClientStatusEvidence
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceTrustEvidence
 import com.sphereon.trust.x509.X509TrustAnchorLoader
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -184,6 +190,40 @@ class VerifyAttestationClientAuthCommandImplTest {
             trustedAttesterIssuers = trustedAttesterIssuers,
         )
 
+    private fun trustedWalletInstanceEvidence(
+        evidenceId: String = "persisted-wia-1",
+        profile: String = "TS03_JWT",
+        format: String = "JWT",
+        signerCertificateProfile: String? = "HARDWARE_SECURE",
+        status: WalletInstanceClientStatusEvidence =
+            WalletInstanceClientStatusEvidence(
+                statusListUri = "https://status.example.com/wia/status.jwt",
+                index = "42",
+                status = "VALID",
+                revoked = false,
+                maintenanceExpiresAtEpochSeconds = Clock.System.now().epochSeconds + 600,
+            ),
+        trust: WalletInstanceTrustEvidence =
+            WalletInstanceTrustEvidence(
+                trusted = true,
+                decision = "TRUSTED",
+                expiresAtEpochSeconds = Clock.System.now().epochSeconds + 600,
+                signerCertificateProfile = signerCertificateProfile,
+            ),
+    ): WalletInstanceAttestationEvidence =
+        WalletInstanceAttestationEvidence(
+            evidenceId = evidenceId,
+            profile = profile,
+            format = format,
+            attestationExpiresAtEpochSeconds = Clock.System.now().epochSeconds + 600,
+            clientStatus = status,
+            trust = trust,
+            walletInstanceId = "wallet-instance-1",
+            walletProvider = "wallet-provider",
+            walletSolution = "wallet-solution",
+            signerCertificateProfile = signerCertificateProfile,
+        )
+
     private fun newCommand(
         clientRegistry: ClientRegistry = StubClientRegistry(clientRegistration()),
         jwtService: JwtService,
@@ -196,6 +236,7 @@ class VerifyAttestationClientAuthCommandImplTest {
         jtiStorage: AttestationPopJtiStorage = InMemoryAttestationPopJtiStorage(),
         x509TrustAnchorLoader: X509TrustAnchorLoader = EmptyX509TrustAnchorLoader,
         identifierService: IdentifierService = UnreachableIdentifierService,
+        walletInstanceAttestationEnforcer: WalletInstanceAttestationEnforcer? = null,
     ): VerifyAttestationClientAuthCommandImpl =
         VerifyAttestationClientAuthCommandImpl(
             ctx.execution,
@@ -206,17 +247,20 @@ class VerifyAttestationClientAuthCommandImplTest {
             jtiStorage,
             x509TrustAnchorLoader,
             identifierService,
+            walletInstanceAttestationEnforcer,
         )
 
     private fun args(
         clientId: String = "client-att",
         attestation: String = attestationJwt(attestationClaims()),
         pop: String = popJwt(popClaims()),
+        endpoint: ClientAuthenticationEndpoint = ClientAuthenticationEndpoint.TOKEN,
     ) = VerifyAttestationClientAuthArgs(
         clientId = clientId,
         attestationJwt = attestation,
         popJwt = pop,
         tokenEndpointUrl = tokenEndpointUrl,
+        endpoint = endpoint,
     )
 
     @Test
@@ -564,6 +608,109 @@ class VerifyAttestationClientAuthCommandImplTest {
         }
 
     @Test
+    fun productionWalletInstanceAttestationWithoutEnforcer_rejects() =
+        runTest {
+            val popPayload = popClaims()
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = asIssuer,
+                    attestation = FeaturePolicy.SUPPORTED,
+                    walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                )
+            val result =
+                newCommand(
+                    jwtService = StubJwtService(parsedPayloads = listOf(JsonObject(emptyMap()), popPayload)),
+                    config = config,
+                ).execute(args(pop = popJwt(popPayload)))
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client_attestation", result.error.code)
+        }
+
+    @Test
+    fun localWalletInstanceAttestationEvidence_rejects() =
+        runTest {
+            val popPayload = popClaims()
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = asIssuer,
+                    attestation = FeaturePolicy.SUPPORTED,
+                    walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                )
+            val result =
+                newCommand(
+                    jwtService = StubJwtService(parsedPayloads = listOf(JsonObject(emptyMap()), popPayload)),
+                    config = config,
+                    walletInstanceAttestationEnforcer =
+                        StubWalletInstanceAttestationEnforcer(
+                            trustedWalletInstanceEvidence(
+                                profile = "LOCAL_TEST_REFERENCE",
+                                signerCertificateProfile = "SOFTWARE_TEST",
+                            ),
+                        ),
+                ).execute(args(pop = popJwt(popPayload)))
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client_attestation", result.error.code)
+        }
+
+    @Test
+    fun revokedWalletInstanceAttestationEvidence_rejects() =
+        runTest {
+            val popPayload = popClaims()
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = asIssuer,
+                    attestation = FeaturePolicy.SUPPORTED,
+                    walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                )
+            val result =
+                newCommand(
+                    jwtService = StubJwtService(parsedPayloads = listOf(JsonObject(emptyMap()), popPayload)),
+                    config = config,
+                    walletInstanceAttestationEnforcer =
+                        StubWalletInstanceAttestationEnforcer(
+                            trustedWalletInstanceEvidence(
+                                status =
+                                    WalletInstanceClientStatusEvidence(
+                                        statusListUri = "https://status.example.com/wia/status.jwt",
+                                        index = "42",
+                                        status = "REVOKED",
+                                        revoked = true,
+                                    ),
+                            ),
+                        ),
+                ).execute(args(pop = popJwt(popPayload)))
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client_attestation", result.error.code)
+        }
+
+    @Test
+    fun trustedWalletInstanceAttestationEvidence_acceptsAndPropagates() =
+        runTest {
+            val popPayload = popClaims()
+            val config =
+                OAuth2ServerInstanceConfig(
+                    issuer = asIssuer,
+                    attestation = FeaturePolicy.SUPPORTED,
+                    walletInstanceAttestation = FeaturePolicy.REQUIRED,
+                )
+            val enforcer = StubWalletInstanceAttestationEnforcer(trustedWalletInstanceEvidence())
+            val result =
+                newCommand(
+                    jwtService = StubJwtService(parsedPayloads = listOf(JsonObject(emptyMap()), popPayload)),
+                    config = config,
+                    walletInstanceAttestationEnforcer = enforcer,
+                ).execute(args(pop = popJwt(popPayload), endpoint = ClientAuthenticationEndpoint.PAR))
+
+            assertTrue(result.isOk, "expected accept; got: ${if (result.isErr) result.error.message.defaultMessage else ""}")
+            assertEquals("persisted-wia-1", result.value.walletInstanceAttestation?.evidenceId)
+            assertEquals(ClientAuthenticationEndpoint.PAR, enforcer.requests.single().endpoint)
+            assertEquals(setOf(asIssuer, tokenEndpointUrl), enforcer.requests.single().acceptedAudiences)
+        }
+
+    @Test
     fun challengeClaimNamedChallenge_accepted() =
         runTest {
             // Normative §5.2 names the OPTIONAL challenge claim `challenge`; verify we read it
@@ -616,6 +763,17 @@ class VerifyAttestationClientAuthCommandImplTest {
 
     private object EmptyX509TrustAnchorLoader : X509TrustAnchorLoader {
         override suspend fun loadTrustedCerts(): List<String> = emptyList()
+    }
+
+    private class StubWalletInstanceAttestationEnforcer(
+        private val evidence: WalletInstanceAttestationEvidence,
+    ) : WalletInstanceAttestationEnforcer {
+        val requests = mutableListOf<WalletInstanceAttestationEnforcementRequest>()
+
+        override suspend fun enforce(request: WalletInstanceAttestationEnforcementRequest): IdkResult<WalletInstanceAttestationEvidence, IdkError> {
+            requests += request
+            return Ok(evidence)
+        }
     }
 
     private class StubClientRegistry(

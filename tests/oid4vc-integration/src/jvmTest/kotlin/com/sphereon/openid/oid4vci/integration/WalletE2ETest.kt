@@ -29,7 +29,6 @@ import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientFactoryJvmImpl
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
-import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
@@ -40,10 +39,12 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
-import com.sphereon.openid.wallet.CredentialInstanceState
-import com.sphereon.openid.wallet.ObtainCredentialRequest
-import com.sphereon.openid.wallet.WalletConfig
-import com.sphereon.openid.wallet.impl.di.WalletGraph
+import com.sphereon.wallet.impl.di.WalletGraph
+import com.sphereon.wallet.ObtainCredentialRequest
+import com.sphereon.wallet.ObtainCredentialResult
+import com.sphereon.wallet.WalletConfig
+import com.sphereon.wallet.credential.CredentialFormat
+import com.sphereon.wallet.credential.CredentialLifecycleState
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -218,6 +219,7 @@ class WalletE2ETest {
         private const val ISSUER_SIGNING_KEY_ALIAS = "issuer-vc-signing-key"
         private const val VERIFIER_SIGNING_KEY_ALIAS = "verifier-jar-signing-key"
         private const val WALLET_CLIENT_ID = "https://wallet.example.com"
+        private const val WALLET_INSTANCE_ID = "wallet-e2e"
 
         init {
             // Register credential configuration properties before the DI session graph is
@@ -324,7 +326,7 @@ class WalletE2ETest {
                 "TENANT",
             )
 
-            // Blob store used by BlobWalletDocumentStore -> DefaultBlobService.
+            // Blob store used by BlobWalletCredentialStore -> DefaultBlobService.
             // DefaultBlobService.defaultStoreId() returns the first ID from blobStoreService.getStoreIds()
             // which reads via BlobStoreConfigBinder from blob.stores.* config.
             // BlobInfo has no storeId set, so DefaultBlobService uses the default store.
@@ -348,7 +350,7 @@ class WalletE2ETest {
         }
     }
 
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, protocolBasePath = "/oid4vci")
 
     private val json =
         Json {
@@ -486,7 +488,7 @@ class WalletE2ETest {
     // Step 1: Issuer builds metadata + creates pre-auth offer
     // Step 2: wallet.exchangePreAuthorizedCode -> TokenSet
     // Step 3: wallet.createHolderKey -> alias
-    // Step 4: wallet.obtainCredential(count=1) -> WalletDocument with 1 instance
+    // Step 4: wallet.obtainCredential(count=1) -> CredentialRecord with 1 instance
     // Step 5: Assert document structure and persisted instances
     //
     // The matching presentation flow (verifier request -> wallet.present -> verifier verifies)
@@ -583,7 +585,7 @@ class WalletE2ETest {
             // =====================================================================
             // Step 3: Wallet creates a holder key
             // =====================================================================
-            val keyResult = wallet.createHolderKey()
+            val keyResult = wallet.createHolderKey(WALLET_INSTANCE_ID)
             assertTrue(
                 keyResult.isOk,
                 "createHolderKey should succeed: ${if (keyResult.isErr) keyResult.error.message.defaultMessage else ""}",
@@ -606,6 +608,7 @@ class WalletE2ETest {
             val obtainResult =
                 wallet.obtainCredential(
                     ObtainCredentialRequest(
+                        walletInstanceId = WALLET_INSTANCE_ID,
                         credentialIssuer = issuerUrl,
                         credentialConfigurationId = CREDENTIAL_CONFIG_ID,
                         accessToken = tokenSet.accessToken,
@@ -625,72 +628,73 @@ class WalletE2ETest {
             )
 
             // =====================================================================
-            // Step 5: Verify document structure and persistence
+            // Step 5: Verify credential record structure and persistence
             // =====================================================================
-            val doc = obtainResult.value
+            val doc = (obtainResult.value as ObtainCredentialResult.Stored).record
             assertEquals(
                 1,
-                doc.credentials.size,
-                "WalletDocument should have 1 credential instance (count=1)",
+                doc.instances.size,
+                "CredentialRecord should have 1 credential instance (count=1)",
             )
             assertEquals(
                 CREDENTIAL_CONFIG_ID,
-                doc.credentialTypeId,
-                "credentialTypeId should match the requested configuration ID",
+                doc.issuanceProvenance?.credentialConfigurationId,
+                "credentialConfigurationId should match the requested configuration ID",
             )
-            assertEquals(issuerUrl, doc.issuer.value, "issuer.value should match the issuer URL")
+            assertEquals(issuerUrl, doc.issuerRef.value, "issuerRef.value should match the issuer URL")
+            assertTrue(doc.credentialTypeRefs.isNotEmpty(), "credentialTypeRefs should classify the credential")
 
-            doc.credentials.forEach { instance ->
-                assertNotNull(instance.credentialId, "credentialId should be present")
+            doc.instances.forEach { instance ->
+                assertTrue(instance.id.isNotBlank(), "credential instance id should be present")
                 assertNotNull(instance.raw, "raw credential string should be present")
-                assertTrue(instance.raw.isNotEmpty(), "raw credential string should not be empty")
+                assertTrue(instance.raw?.isNotEmpty() == true, "raw credential string should not be empty")
                 assertEquals(
-                    "jwt_vc_json",
+                    CredentialFormat.JWT_VC_JSON,
                     instance.format,
                     "credential format should be jwt_vc_json",
                 )
                 assertEquals(
                     holderKeyAlias,
-                    instance.holderKeyAlias,
+                    instance.holderKeyRef?.alias,
                     "holderKeyAlias should match the key created in Step 3",
                 )
             }
 
             // =====================================================================
-            // Step 5b: Assert metadata via listMetadata / findMetadataByCredentialType
+            // Step 5b: Assert metadata via listMetadata / findByCredentialTypeRef
             // =====================================================================
-            val metaListResult = wallet.documents.listMetadata()
+            val metaListResult = wallet.credentials.listMetadata(WALLET_INSTANCE_ID)
             assertTrue(
                 metaListResult.isOk,
                 "listMetadata should succeed: ${if (metaListResult.isErr) metaListResult.error.message.defaultMessage else ""}",
             )
             assertTrue(metaListResult.value.isNotEmpty(), "listMetadata should return at least one entry")
 
-            val findMetaResult = wallet.documents.findMetadataByCredentialType(CREDENTIAL_CONFIG_ID)
+            val findMetaResult = wallet.credentials.findByCredentialTypeRef(WALLET_INSTANCE_ID, doc.credentialTypeRefs.first())
             assertTrue(
                 findMetaResult.isOk,
-                "findMetadataByCredentialType should succeed: ${if (findMetaResult.isErr) findMetaResult.error.message.defaultMessage else ""}",
+                "findByCredentialTypeRef should succeed: ${if (findMetaResult.isErr) findMetaResult.error.message.defaultMessage else ""}",
             )
             assertEquals(1, findMetaResult.value.size, "Should have exactly one metadata entry for this credential type")
 
             val meta = findMetaResult.value.first()
-            assertEquals(CREDENTIAL_CONFIG_ID, meta.credentialType, "metadata.credentialType should match config ID")
-            assertEquals(issuerUrl, meta.issuer.value, "metadata.issuer.value should match issuer URL")
-            assertEquals(CredentialFormat.JWT_VC_JSON, meta.credentialFormat, "metadata.credentialFormat should be JWT_VC_JSON")
+            assertEquals(CREDENTIAL_CONFIG_ID, meta.credentialConfigurationId, "metadata.credentialConfigurationId should match config ID")
+            assertEquals(issuerUrl, meta.issuerRef.value, "metadata.issuerRef.value should match issuer URL")
+            assertEquals(CredentialFormat.JWT_VC_JSON, meta.format, "metadata.format should be JWT_VC_JSON")
             assertEquals(1, meta.instanceCount, "metadata.instanceCount should be 1")
             assertEquals(0, meta.boundInstanceCount, "metadata.boundInstanceCount should be 0 before any presentation")
-            assertEquals(CredentialInstanceState.ACTIVE, meta.status, "metadata.status should be ACTIVE")
+            assertEquals(CredentialLifecycleState.ACTIVE, meta.lifecycleSummary.lifecycleState, "metadata lifecycle should be ACTIVE")
 
-            // Load the full document via get(documentId) and verify its structure
-            val getDocResult = wallet.documents.get(meta.documentId)
+            // Load the full record via getCredential(credentialRecordId) and verify its structure
+            val getDocResult = wallet.credentials.getCredential(WALLET_INSTANCE_ID, meta.credentialRecordId)
             assertTrue(
                 getDocResult.isOk,
-                "get(documentId) should succeed: ${if (getDocResult.isErr) getDocResult.error.message.defaultMessage else ""}",
+                "getCredential(credentialRecordId) should succeed: ${if (getDocResult.isErr) getDocResult.error.message.defaultMessage else ""}",
             )
             val persistedDoc = getDocResult.value
-            assertNotNull(persistedDoc, "Persisted document should not be null")
-            assertEquals(1, persistedDoc.credentials.size, "Persisted document should have 1 instance")
-            assertEquals(CREDENTIAL_CONFIG_ID, persistedDoc.credentialTypeId, "Persisted document credentialTypeId should match")
+            assertNotNull(persistedDoc, "Persisted credential record should not be null")
+            assertEquals(1, persistedDoc.instances.size, "Persisted credential record should have 1 instance")
+            assertEquals(CREDENTIAL_CONFIG_ID, persistedDoc.issuanceProvenance?.credentialConfigurationId, "Persisted credential configuration id should match")
 
             // =====================================================================
             // Step 5c: Assert subjects field from the issued credential
@@ -705,7 +709,7 @@ class WalletE2ETest {
             // When subjects ARE populated every entry must have a non-blank value and the
             // no-op identity resolver leaves identityIdentifierId null.
             // =====================================================================
-            for (subjectRef in doc.subjects) {
+            for (subjectRef in doc.subjectRefs) {
                 assertTrue(
                     subjectRef.value.isNotBlank(),
                     "Subject identifier must not be blank",
@@ -718,7 +722,7 @@ class WalletE2ETest {
             }
             // If the issuer set the holder DID in `sub` (expected when a DID-bound proof
             // was used), each subject value must be a DID.
-            doc.subjects.forEach { subjectRef ->
+            doc.subjectRefs.forEach { subjectRef ->
                 assertTrue(
                     subjectRef.value.startsWith("did:"),
                     "Subject identifier should be a DID when holder proof is DID-bound, got: ${subjectRef.value}",
@@ -788,13 +792,14 @@ class WalletE2ETest {
                 assertTrue(tokenResult.isOk, "exchangePreAuthorizedCode should succeed")
                 val tokenSet = tokenResult.value
 
-                val keyResult = wallet.createHolderKey()
+                val keyResult = wallet.createHolderKey(WALLET_INSTANCE_ID)
                 assertTrue(keyResult.isOk, "createHolderKey should succeed")
                 val holderKeyAlias = keyResult.value
 
                 val obtainResult =
                     wallet.obtainCredential(
                         ObtainCredentialRequest(
+                            walletInstanceId = WALLET_INSTANCE_ID,
                             credentialIssuer = issuerUrl,
                             credentialConfigurationId = SD_JWT_CONFIG_ID,
                             accessToken = tokenSet.accessToken,
@@ -811,6 +816,7 @@ class WalletE2ETest {
                     obtainResult.isOk,
                     "obtainCredential should succeed: ${if (obtainResult.isErr) obtainResult.error.message.defaultMessage else ""}",
                 )
+                val sdJwtRecord = (obtainResult.value as ObtainCredentialResult.Stored).record
 
                 // =====================================================================
                 // Step 6: Verifier creates authorization request (DCQL) for the dc+sd-jwt credential
@@ -876,13 +882,14 @@ class WalletE2ETest {
                 //   1. oid4vpHolder.parseAuthorizationRequest(requestUri) ->
                 //      GET /oid4vp/request-uri/{correlationId} via in-process factory
                 //   2. oid4vpHolder.resolveAuthorizationRequest -> resolves DCQL query
-                //   3. wallet.documents.findMetadataByCredentialType -> selects held credential
+                //   3. wallet.credentials.findByCredentialTypeRef -> selects held credential
                 //   4. oid4vpHolder.createAuthorizationResponse -> builds VP token
                 //   5. oid4vpHolder.submitAuthorizationResponse ->
                 //      POST /oid4vp/auth/response (direct_post) via in-process factory
                 // =====================================================================
                 val walletConfig =
                     WalletConfig(
+                        walletInstanceId = WALLET_INSTANCE_ID,
                         clientId = walletClientId,
                         redirectUri = walletRedirectUri,
                     )
@@ -897,31 +904,31 @@ class WalletE2ETest {
                 // =====================================================================
                 // Step 7b: Assert boundInstanceCount incremented after presentation
                 //
-                // WalletImpl.present copies the presented instance with boundTo = verifierRef
-                // and upserts the document. The metadata derivation counts boundTo != null
+                // WalletImpl.present appends a presentation binding to the selected instance
+                // and upserts the record. The metadata derivation counts non-empty bindingRefs
                 // instances, so boundInstanceCount should now be 1 for the sd-jwt document.
                 // The no-op identity resolver leaves identityIdentifierId null — that is expected and
                 // verified here (the ref is still set; correlationId is just absent).
                 // =====================================================================
-                val postPresentMetaResult = wallet.documents.findMetadataByCredentialType(SD_JWT_CONFIG_ID)
+                val postPresentMetaResult = wallet.credentials.findByCredentialTypeRef(WALLET_INSTANCE_ID, sdJwtRecord.credentialTypeRefs.first())
                 assertTrue(
                     postPresentMetaResult.isOk,
-                    "findMetadataByCredentialType after present should succeed: ${if (postPresentMetaResult.isErr) postPresentMetaResult.error.message.defaultMessage else ""}",
+                    "findByCredentialTypeRef after present should succeed: ${if (postPresentMetaResult.isErr) postPresentMetaResult.error.message.defaultMessage else ""}",
                 )
                 assertEquals(1, postPresentMetaResult.value.size, "Should have exactly one metadata entry for sd-jwt credential type after presentation")
                 val sdJwtMeta = postPresentMetaResult.value.first()
-                assertEquals(1, sdJwtMeta.boundInstanceCount, "boundInstanceCount should be 1 after presentation (instance got boundTo set)")
-                assertEquals(CredentialInstanceState.ACTIVE, sdJwtMeta.status, "sd-jwt credential status should remain ACTIVE after presentation")
+                assertEquals(1, sdJwtMeta.boundInstanceCount, "boundInstanceCount should be 1 after presentation (instance got a binding ref)")
+                assertEquals(CredentialLifecycleState.ACTIVE, sdJwtMeta.lifecycleSummary.lifecycleState, "sd-jwt credential status should remain ACTIVE after presentation")
 
-                // Verify the full document reflects the bound instance
-                val postPresentDocResult = wallet.documents.get(sdJwtMeta.documentId)
-                assertTrue(postPresentDocResult.isOk, "get(documentId) after present should succeed")
+                // Verify the full record reflects the bound instance
+                val postPresentDocResult = wallet.credentials.getCredential(WALLET_INSTANCE_ID, sdJwtMeta.credentialRecordId)
+                assertTrue(postPresentDocResult.isOk, "getCredential(credentialRecordId) after present should succeed")
                 val postPresentDoc = postPresentDocResult.value
-                assertNotNull(postPresentDoc, "Post-presentation document should not be null")
-                val boundInstance = postPresentDoc.credentials.firstOrNull { it.boundTo != null }
-                assertNotNull(boundInstance, "At least one instance should have boundTo set after presentation")
+                assertNotNull(postPresentDoc, "Post-presentation credential record should not be null")
+                val boundInstance = postPresentDoc.instances.firstOrNull { it.bindingRefs.isNotEmpty() }
+                assertNotNull(boundInstance, "At least one instance should have a presentation binding after presentation")
                 // identityIdentifierId is null because the no-op identity resolver does not enrich the ref
-                assertEquals(null, boundInstance.boundTo!!.identityIdentifierId, "no-op resolver leaves identityIdentifierId null")
+                assertEquals(null, boundInstance.bindingRefs.first().verifierRef.identityIdentifierId, "no-op resolver leaves identityIdentifierId null")
 
                 // =====================================================================
                 // Step 8: Assert the verifier session reached the RESPONSE_VERIFIED state

@@ -16,8 +16,15 @@
 
 package com.sphereon.core.defaults.context
 
+import com.sphereon.core.api.cache.CacheModule
+import com.sphereon.core.api.cache.CacheRequirements
+import com.sphereon.core.api.cache.CacheSerializers
+import com.sphereon.core.api.conf.MutableMapPropertySource
+import com.sphereon.core.api.session.currentTimeMillis
+import com.sphereon.core.api.testutil.appConfigService
 import com.sphereon.core.api.testutil.createCoreApiTestAppGraph
 import com.sphereon.di.context.UserContext
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -416,6 +423,151 @@ class UserContextManagerTest {
             assertTrue(appGraph.userContextManager.hasAuthenticated())
             appGraph.userContextManager.destroyAll()
             assertFalse(appGraph.userContextManager.hasAuthenticated())
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun destroyByIdInvalidatesTenantCachesWhenLastTenantContextIsDestroyed() =
+        runTest {
+            val appGraph = createAppGraph()
+            try {
+                val manager = appGraph.userContextManager as UserContextManagerImpl
+                val cacheManager = (appGraph as CacheModule.Graph).cacheManager
+                val cache =
+                    cacheManager.createCache(
+                        CacheRequirements(namespace = "user-context-destroy-last-tenant-test"),
+                        CacheSerializers.string,
+                        CacheSerializers.string,
+                    )
+                val instance =
+                    manager.createOrGetFromInputs(
+                        DefaultTenantInputString("destroy-cache-tenant"),
+                        DefaultPrincipalInputString("destroy-cache-user"),
+                    )
+
+                cache.putTenant("destroy-cache-tenant", "tenant-key", "tenant-value")
+                cache.putPrincipal("destroy-cache-tenant", "destroy-cache-user", "principal-key", "principal-value")
+
+                manager.destroyById(instance.contextId)
+
+                assertNull(cache.getTenant("destroy-cache-tenant", "tenant-key"))
+                assertNull(cache.getPrincipal("destroy-cache-tenant", "destroy-cache-user", "principal-key"))
+            } finally {
+                appGraph.destroy()
+            }
+        }
+
+    @Test
+    fun destroyByIdKeepsTenantCacheWhenAnotherTenantContextIsActive() =
+        runTest {
+            val appGraph = createAppGraph()
+            try {
+                val manager = appGraph.userContextManager as UserContextManagerImpl
+                val cacheManager = (appGraph as CacheModule.Graph).cacheManager
+                val cache =
+                    cacheManager.createCache(
+                        CacheRequirements(namespace = "user-context-destroy-shared-tenant-test"),
+                        CacheSerializers.string,
+                        CacheSerializers.string,
+                    )
+                val first =
+                    manager.createOrGetFromInputs(
+                        DefaultTenantInputString("shared-cache-tenant"),
+                        DefaultPrincipalInputString("shared-cache-user-1"),
+                    )
+                manager.createOrGetFromInputs(
+                    DefaultTenantInputString("shared-cache-tenant"),
+                    DefaultPrincipalInputString("shared-cache-user-2"),
+                )
+
+                cache.putTenant("shared-cache-tenant", "tenant-key", "tenant-value")
+                cache.putPrincipal("shared-cache-tenant", "shared-cache-user-1", "principal-key", "principal-value-1")
+                cache.putPrincipal("shared-cache-tenant", "shared-cache-user-2", "principal-key", "principal-value-2")
+
+                manager.destroyById(first.contextId)
+
+                assertEquals("tenant-value", cache.getTenant("shared-cache-tenant", "tenant-key"))
+                assertNull(cache.getPrincipal("shared-cache-tenant", "shared-cache-user-1", "principal-key"))
+                assertEquals("principal-value-2", cache.getPrincipal("shared-cache-tenant", "shared-cache-user-2", "principal-key"))
+            } finally {
+                appGraph.destroy()
+            }
+        }
+
+    @Test
+    fun idleCleanupDestroysExpiredRegularContext() {
+        val appGraph = createAppGraph()
+        try {
+            appGraph.appConfigService.addPropertySource(
+                MutableMapPropertySource("idle-cleanup-test").apply {
+                    addProperty("context.user.idle-timeout-ms", "1000")
+                    addProperty("context.user.idle-cleanup.enabled", "true")
+                },
+            )
+            val manager = appGraph.userContextManager as UserContextManagerImpl
+            val instance =
+                manager.createOrGetFromInputs(
+                    DefaultTenantInputString("idle-tenant"),
+                    DefaultPrincipalInputString("idle-user"),
+                )
+
+            assertTrue(manager.hasById(instance.contextId))
+            manager.runIdleCleanup(nowEpochMs = Long.MAX_VALUE)
+
+            assertFalse(manager.hasById(instance.contextId))
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun idleCleanupKeepsRecentlyAccessedRegularContext() {
+        val appGraph = createAppGraph()
+        try {
+            appGraph.appConfigService.addPropertySource(
+                MutableMapPropertySource("idle-cleanup-recent-test").apply {
+                    addProperty("context.user.idle-timeout-ms", "60000")
+                    addProperty("context.user.idle-cleanup.enabled", "true")
+                },
+            )
+            val manager = appGraph.userContextManager as UserContextManagerImpl
+            val instance =
+                manager.createOrGetFromInputs(
+                    DefaultTenantInputString("idle-recent-tenant"),
+                    DefaultPrincipalInputString("idle-recent-user"),
+                )
+
+            manager.getById(instance.contextId, makeActive = false)
+            manager.runIdleCleanup(nowEpochMs = currentTimeMillis())
+
+            assertTrue(manager.hasById(instance.contextId))
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun idleCleanupCanBeDisabled() {
+        val appGraph = createAppGraph()
+        try {
+            appGraph.appConfigService.addPropertySource(
+                MutableMapPropertySource("idle-cleanup-disabled-test").apply {
+                    addProperty("context.user.idle-timeout-ms", "1000")
+                    addProperty("context.user.idle-cleanup.enabled", "false")
+                },
+            )
+            val manager = appGraph.userContextManager as UserContextManagerImpl
+            val instance =
+                manager.createOrGetFromInputs(
+                    DefaultTenantInputString("idle-disabled-tenant"),
+                    DefaultPrincipalInputString("idle-disabled-user"),
+                )
+
+            manager.runIdleCleanup(nowEpochMs = Long.MAX_VALUE)
+
+            assertTrue(manager.hasById(instance.contextId))
         } finally {
             appGraph.destroy()
         }

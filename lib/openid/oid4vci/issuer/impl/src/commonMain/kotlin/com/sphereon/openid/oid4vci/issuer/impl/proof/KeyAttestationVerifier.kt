@@ -33,11 +33,15 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.KeyAttestationsRequired
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
+import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcementRequest
+import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
+import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcer as PersistedKeyAttestationEvidenceEnforcer
 import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -76,7 +80,10 @@ class KeyAttestationVerifier(
     private val verifyJwsCommand: VerifyJwsCommand,
     private val externalIdentifierResolver: MultiExternalIdentifierService,
     private val x509TrustAnchorLoader: X509TrustAnchorLoader,
+    private val persistedEvidenceEnforcer: PersistedKeyAttestationEvidenceEnforcer? = null,
 ) {
+    private val evidenceEnforcer = KeyAttestationEvidenceEnforcer()
+
     /**
      * Verify a single key-attestation JWT.
      *
@@ -95,6 +102,7 @@ class KeyAttestationVerifier(
         keyAttestationJwt: String,
         trustConfig: KeyAttesterTrustConfig?,
         policy: KeyAttestationsRequired?,
+        expectedAudience: String? = null,
         expectedNonce: String? = null,
         clockSkewSeconds: Long = DEFAULT_CLOCK_SKEW_SECONDS,
     ): IdkResult<ValidatedKeyAttestation, IdkError> {
@@ -171,23 +179,27 @@ class KeyAttestationVerifier(
             return invalidProof("key attestation has expired")
         }
 
+        if (expectedAudience != null && !claims.audienceContains(expectedAudience)) {
+            return invalidProof("key attestation 'aud' does not match expected audience '$expectedAudience'")
+        }
+
         val attestedKeysJson = claims["attested_keys"] as? JsonArray
         if (attestedKeysJson == null || attestedKeysJson.isEmpty()) {
             return invalidProof("key attestation JWT 'attested_keys' must be a non-empty array")
         }
         val attestedKeys =
             attestedKeysJson.mapIndexed { index, element ->
-                val obj =
-                    element as? JsonObject
-                        ?: return invalidProof("key attestation 'attested_keys[$index]' is not a JSON object")
-                runCatching { Jwk.fromJsonObject(obj) }.getOrElse {
-                    return invalidProof("key attestation 'attested_keys[$index]' is not a valid JWK: ${it.message}")
-                }
+                parseAttestedKeyJwk(element, index).getOrElse { return Err(it) }
             }
 
-        val attestationNonce = claims["nonce"]?.jsonPrimitive?.contentOrNull
+        val attestationNonce =
+            claims["c_nonce"]?.jsonPrimitive?.contentOrNull
+                ?: claims["nonce"]?.jsonPrimitive?.contentOrNull
+        if (expectedNonce != null && policy != null && attestationNonce == null) {
+            return invalidProof("production key attestation must carry 'c_nonce' matching the credential proof nonce")
+        }
         if (attestationNonce != null && expectedNonce != null && attestationNonce != expectedNonce) {
-            return invalidProof("key attestation 'nonce' does not match the expected c_nonce")
+            return invalidProof("key attestation 'c_nonce' does not match the expected credential proof nonce")
         }
 
         // 5. iss allow-list (only when the operator pinned one). The attestation MAY omit
@@ -202,26 +214,34 @@ class KeyAttestationVerifier(
 
         // 6. Policy check: every level the credential config requires MUST appear in the
         //    attestation's claim. Set membership per §11.2.3 (no ISO 18045 ordinal inference).
-        if (policy != null) {
-            val attestedStorage = claims["key_storage"]?.let { stringList(it) }.orEmpty()
-            policy.keyStorage?.forEach { required ->
-                if (required !in attestedStorage) {
-                    return invalidProof(
-                        "key attestation 'key_storage' does not include required level '$required' (got $attestedStorage)",
-                    )
-                }
+        val genericKeyAttestationEvidence =
+            evidenceEnforcer
+                .enforce(header = headerJson, claims = claims, policy = policy, attestedKeyCount = attestedKeys.size)
+                .getOrElse { return Err(it) }
+        val keyAttestationEvidence =
+            if (policy != null && genericKeyAttestationEvidence != null) {
+                val enforcer = persistedEvidenceEnforcer
+                    ?: return invalidProof("production key attestation requires persisted Wallet Unit evidence enforcement")
+                enforcer
+                    .enforce(
+                        KeyAttestationEvidenceEnforcementRequest(
+                            keyAttestationJwt = keyAttestationJwt,
+                            header = headerJson,
+                            claims = claims,
+                            evidence = genericKeyAttestationEvidence,
+                        ),
+                    ).getOrElse { return Err(it) }
+            } else {
+                genericKeyAttestationEvidence
             }
-            val attestedUserAuth = claims["user_authentication"]?.let { stringList(it) }.orEmpty()
-            policy.userAuthentication?.forEach { required ->
-                if (required !in attestedUserAuth) {
-                    return invalidProof(
-                        "key attestation 'user_authentication' does not include required level '$required' (got $attestedUserAuth)",
-                    )
-                }
-            }
-        }
 
-        return Ok(ValidatedKeyAttestation(attestedKeys = attestedKeys, claims = claims))
+        return Ok(
+            ValidatedKeyAttestation(
+                attestedKeys = attestedKeys,
+                claims = claims,
+                keyAttestation = keyAttestationEvidence,
+            ),
+        )
     }
 
     /**
@@ -324,9 +344,44 @@ class KeyAttestationVerifier(
 
     private fun base64UrlDecode(encoded: String): ByteArray = encoded.decodeFromBase64Url()
 
-    private fun stringList(element: kotlinx.serialization.json.JsonElement): List<String> =
-        runCatching { element.jsonArray.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } }
-            .getOrDefault(emptyList())
+    private fun parseAttestedKeyJwk(
+        element: JsonElement,
+        index: Int,
+    ): IdkResult<Jwk, IdkError> {
+        val obj =
+            element as? JsonObject
+                ?: return invalidProof("key attestation 'attested_keys[$index]' is not a JSON object")
+        val jwkObj =
+            when {
+                obj["kty"] != null -> obj
+                else ->
+                    parseEmbeddedPublicJwk(obj["publicKeyJwk"] ?: obj["public_key_jwk"] ?: obj["jwk"])
+                        ?: return invalidProof(
+                            "key attestation 'attested_keys[$index]' does not contain a JWK or publicKeyJwk",
+                        )
+            }
+        val jwk =
+            runCatching { Jwk.fromJsonObject(jwkObj) }.getOrElse {
+                return invalidProof("key attestation 'attested_keys[$index]' is not a valid JWK: ${it.message}")
+            }
+        return Ok(jwk)
+    }
+
+    private fun parseEmbeddedPublicJwk(element: JsonElement?): JsonObject? =
+        when (element) {
+            is JsonObject -> element
+            is JsonPrimitive ->
+                element.contentOrNull
+                    ?.let { value -> runCatching { Json.parseToJsonElement(value).jsonObject }.getOrNull() }
+            else -> null
+        }
+
+    private fun JsonObject.audienceContains(expectedAudience: String): Boolean =
+        when (val aud = this["aud"]) {
+            is JsonArray -> aud.any { (it as? JsonPrimitive)?.contentOrNull == expectedAudience }
+            is JsonPrimitive -> aud.contentOrNull == expectedAudience
+            else -> false
+        }
 
     private fun invalidProof(message: String): IdkResult<Nothing, IdkError> = Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = message))
 
@@ -350,4 +405,5 @@ class KeyAttestationVerifier(
 data class ValidatedKeyAttestation(
     val attestedKeys: List<Jwk>,
     val claims: JsonObject,
+    val keyAttestation: VerifiedKeyAttestation? = null,
 )

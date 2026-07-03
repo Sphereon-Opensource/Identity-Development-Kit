@@ -123,6 +123,16 @@ interface CryptoCoreCommandBindings {
         registry.get(VerifyRawSignatureCommand.COMMAND_ID) as? VerifyRawSignatureCommand
             ?: error("No binding for ${VerifyRawSignatureCommand.COMMAND_ID}")
 
+    @Provides
+    fun signDigest(registry: SessionScopedCommandRegistry): SignDigestCommand =
+        registry.get(SignDigestCommand.COMMAND_ID) as? SignDigestCommand
+            ?: error("No binding for ${SignDigestCommand.COMMAND_ID}")
+
+    @Provides
+    fun verifyDigest(registry: SessionScopedCommandRegistry): VerifyDigestCommand =
+        registry.get(VerifyDigestCommand.COMMAND_ID) as? VerifyDigestCommand
+            ?: error("No binding for ${VerifyDigestCommand.COMMAND_ID}")
+
     // Encryption commands
     @Provides
     fun encrypt(registry: SessionScopedCommandRegistry): EncryptCommand =
@@ -148,6 +158,16 @@ interface CryptoCoreCommandBindings {
     fun performKeyAgreement(registry: SessionScopedCommandRegistry): PerformKeyAgreementCommand =
         registry.get(PerformKeyAgreementCommand.COMMAND_ID) as? PerformKeyAgreementCommand
             ?: error("No binding for ${PerformKeyAgreementCommand.COMMAND_ID}")
+
+    @Provides
+    fun ecdhDerive(registry: SessionScopedCommandRegistry): EcdhDeriveCommand =
+        registry.get(EcdhDeriveCommand.COMMAND_ID) as? EcdhDeriveCommand
+            ?: error("No binding for ${EcdhDeriveCommand.COMMAND_ID}")
+
+    @Provides
+    fun ecPointMultiply(registry: SessionScopedCommandRegistry): EcPointMultiplyCommand =
+        registry.get(EcPointMultiplyCommand.COMMAND_ID) as? EcPointMultiplyCommand
+            ?: error("No binding for ${EcPointMultiplyCommand.COMMAND_ID}")
 
     // Key resolution commands
     @Provides

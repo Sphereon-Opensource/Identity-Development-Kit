@@ -234,6 +234,7 @@ class JwtProofVerifier(
                 ),
             )
         }
+        var keyAttestationEvidence: com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation? = null
         if (attestationJwt != null) {
             val trustConfig = issuerConfigProvider.keyAttesterTrustFor(credentialConfigId, supportedProofType)
             val validated =
@@ -242,8 +243,10 @@ class JwtProofVerifier(
                         keyAttestationJwt = attestationJwt,
                         trustConfig = trustConfig,
                         policy = attestationPolicy,
+                        expectedAudience = expectedAudience.takeIf { attestationPolicy != null },
                         expectedNonce = nonce,
                     ).getOrElse { return Err(it) }
+            keyAttestationEvidence = validated.keyAttestation
 
             val proofKeyJwk =
                 runCatching { Jwk.fromJsonObject(holderBindingKey.jsonObject) }.getOrNull()
@@ -280,6 +283,7 @@ class JwtProofVerifier(
                 holderIdentifier = holderIdentifier,
                 keyId = effectiveKid ?: kid?.takeIf { isDidKid },
                 algorithm = alg,
+                keyAttestation = keyAttestationEvidence,
             ),
         )
     }

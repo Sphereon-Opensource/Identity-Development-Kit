@@ -64,6 +64,8 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             "challenge_endpoint",
             "client_attestation_signing_alg_values_supported",
             "client_attestation_pop_signing_alg_values_supported",
+            "wallet_instance_attestation_required",
+            "preferred_client_status_period",
             "revocation_endpoint",
             "revocation_endpoint_auth_methods_supported",
             "revocation_endpoint_auth_signing_alg_values_supported",
@@ -134,6 +136,8 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
                 value.challengeEndpoint?.let { put("challenge_endpoint", JsonPrimitive(it)) }
                 value.clientAttestationSigningAlgValuesSupported?.let { put("client_attestation_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.clientAttestationPopSigningAlgValuesSupported?.let { put("client_attestation_pop_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
+                value.walletInstanceAttestationRequired?.let { put("wallet_instance_attestation_required", JsonPrimitive(it)) }
+                value.preferredClientStatusPeriod?.let { put("preferred_client_status_period", JsonPrimitive(it)) }
                 value.revocationEndpoint?.let { put("revocation_endpoint", JsonPrimitive(it)) }
                 value.revocationEndpointAuthMethodsSupported?.let { put("revocation_endpoint_auth_methods_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.revocationEndpointAuthSigningAlgValuesSupported?.let { put("revocation_endpoint_auth_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
@@ -228,6 +232,8 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             challengeEndpoint = jsonObject["challenge_endpoint"]?.jsonPrimitive?.content,
             clientAttestationSigningAlgValuesSupported = jsonObject["client_attestation_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             clientAttestationPopSigningAlgValuesSupported = jsonObject["client_attestation_pop_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
+            walletInstanceAttestationRequired = jsonObject["wallet_instance_attestation_required"]?.jsonPrimitive?.content?.toBoolean(),
+            preferredClientStatusPeriod = jsonObject["preferred_client_status_period"]?.jsonPrimitive?.content?.toInt(),
             revocationEndpoint = jsonObject["revocation_endpoint"]?.jsonPrimitive?.content,
             revocationEndpointAuthMethodsSupported = jsonObject["revocation_endpoint_auth_methods_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             revocationEndpointAuthSigningAlgValuesSupported = jsonObject["revocation_endpoint_auth_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
@@ -352,6 +358,10 @@ data class AuthorizationServerMetadata(
     val clientAttestationSigningAlgValuesSupported: List<String>? = null,
     @SerialName("client_attestation_pop_signing_alg_values_supported")
     val clientAttestationPopSigningAlgValuesSupported: List<String>? = null,
+    @SerialName("wallet_instance_attestation_required")
+    val walletInstanceAttestationRequired: Boolean? = null,
+    @SerialName("preferred_client_status_period")
+    val preferredClientStatusPeriod: Int? = null,
     // RFC 7009 - Token Revocation
     @SerialName("revocation_endpoint")
     val revocationEndpoint: String? = null,

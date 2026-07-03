@@ -31,9 +31,17 @@ import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.kms.EcdhUtils
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
+import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.command.DecryptArgs
 import com.sphereon.crypto.core.kms.command.DecryptCommand
 import com.sphereon.crypto.core.kms.command.DecryptResult
+import com.sphereon.crypto.core.kms.command.EcdhDeriveArgs
+import com.sphereon.crypto.core.kms.command.EcdhDeriveCommand
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyArgs
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyCommand
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
 import com.sphereon.crypto.core.kms.command.EncryptArgs
 import com.sphereon.crypto.core.kms.command.EncryptCommand
 import com.sphereon.crypto.core.kms.command.EncryptResult
@@ -335,6 +343,140 @@ class PerformKeyAgreementCommandImpl(
 
     override suspend fun supports(args: Any): Boolean =
         args is PerformKeyAgreementArgs &&
+            args.privateKeyInfo != null &&
+            args.publicKeyInfo != null
+}
+
+/**
+ * Implementation of EcdhDeriveCommand.
+ * Dispatches provider-backed ECDH derivation so the private key is not exported to the caller.
+ */
+@Inject
+@SingleIn(SessionScope::class)
+class EcdhDeriveCommandImpl(
+    execution: SessionExecution,
+    private val providerRegistry: KmsProviderRegistry,
+) : TypedServiceCommandAdapter<EcdhDeriveArgs, EcdhDeriveResult, IdkError>(
+        commandId = EcdhDeriveCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<EcdhDeriveArgs>(),
+        outputTypeToken = typeToken<EcdhDeriveResult>(),
+    ),
+    EcdhDeriveCommand {
+    override val commandId: String get() = EcdhDeriveCommand.COMMAND_ID
+
+    override suspend fun doExecute(
+        args: EcdhDeriveArgs,
+        applyDuring: (EcdhDeriveArgs) -> EcdhDeriveArgs,
+    ): IdkResult<EcdhDeriveResult, IdkError> {
+        val appliedArgs = applyDuring(args)
+        val privateKeyInfo =
+            appliedArgs.privateKeyInfo
+                ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "privateKeyInfo is required").asErrorResult()
+        val publicKeyInfo =
+            appliedArgs.publicKeyInfo
+                ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "publicKeyInfo is required").asErrorResult()
+
+        if (appliedArgs.mode == EcdhDeriveMode.CONCAT_KDF) {
+            if (appliedArgs.keyDataLen == null) {
+                return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "keyDataLen is required when mode is CONCAT_KDF").asErrorResult()
+            }
+            if (appliedArgs.algorithmId.isNullOrBlank()) {
+                return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "algorithmId is required when mode is CONCAT_KDF").asErrorResult()
+            }
+        }
+
+        return try {
+            val provider = providerRegistry.getProvider(privateKeyInfo.providerId, privateKeyInfo.signatureAlgorithm)
+            val operation =
+                if (appliedArgs.mode == EcdhDeriveMode.RAW_X) {
+                    KmsProviderOperation.ECDH_DERIVE_RAW_X
+                } else {
+                    KmsProviderOperation.ECDH_DERIVE_KDF
+                }
+            if (!provider.getCapabilities().supportsOperation(operation)) {
+                return IdkError
+                    .UNSUPPORTED_OPERATION_ERROR(
+                        operation = operation.name,
+                        reason = "Provider ${provider.id} does not advertise $operation",
+                    ).asErrorResult()
+            }
+            provider
+                .ecdhDerive(
+                    privateKeyInfo = privateKeyInfo,
+                    publicKeyInfo = publicKeyInfo,
+                    algorithm = appliedArgs.algorithm,
+                    mode = appliedArgs.mode,
+                    keyDataLen = appliedArgs.keyDataLen,
+                    algorithmId = appliedArgs.algorithmId,
+                    partyUInfo = appliedArgs.partyUInfo,
+                    partyVInfo = appliedArgs.partyVInfo,
+                ).asOkResult()
+        } catch (expected: Exception) {
+            log.warn("ECDH derive failed: ${expected.message}")
+            IdkError.fromString(message = "ECDH derive failed: ${expected.message}", code = "CRYPTO_ERROR", exception = expected).asErrorResult()
+        }
+    }
+
+    override suspend fun supports(args: Any): Boolean =
+        args is EcdhDeriveArgs &&
+            args.privateKeyInfo != null &&
+            args.publicKeyInfo != null
+}
+
+/**
+ * Implementation of EcPointMultiplyCommand.
+ * Exposes provider-backed raw-X point multiplication semantics.
+ */
+@Inject
+@SingleIn(SessionScope::class)
+class EcPointMultiplyCommandImpl(
+    execution: SessionExecution,
+    private val providerRegistry: KmsProviderRegistry,
+) : TypedServiceCommandAdapter<EcPointMultiplyArgs, EcPointMultiplyResult, IdkError>(
+        commandId = EcPointMultiplyCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<EcPointMultiplyArgs>(),
+        outputTypeToken = typeToken<EcPointMultiplyResult>(),
+    ),
+    EcPointMultiplyCommand {
+    override val commandId: String get() = EcPointMultiplyCommand.COMMAND_ID
+
+    override suspend fun doExecute(
+        args: EcPointMultiplyArgs,
+        applyDuring: (EcPointMultiplyArgs) -> EcPointMultiplyArgs,
+    ): IdkResult<EcPointMultiplyResult, IdkError> {
+        val appliedArgs = applyDuring(args)
+        val privateKeyInfo =
+            appliedArgs.privateKeyInfo
+                ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "privateKeyInfo is required").asErrorResult()
+        val publicKeyInfo =
+            appliedArgs.publicKeyInfo
+                ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "publicKeyInfo is required").asErrorResult()
+
+        return try {
+            val provider = providerRegistry.getProvider(privateKeyInfo.providerId, privateKeyInfo.signatureAlgorithm)
+            if (!provider.getCapabilities().supportsOperation(KmsProviderOperation.EC_POINT_MULTIPLY)) {
+                return IdkError
+                    .UNSUPPORTED_OPERATION_ERROR(
+                        operation = KmsProviderOperation.EC_POINT_MULTIPLY.name,
+                        reason = "Provider ${provider.id} does not advertise EC point multiplication",
+                    ).asErrorResult()
+            }
+            provider
+                .ecPointMultiply(
+                    privateKeyInfo = privateKeyInfo,
+                    publicKeyInfo = publicKeyInfo,
+                    output = appliedArgs.output,
+                ).asOkResult()
+        } catch (expected: Exception) {
+            log.warn("EC point multiplication failed: ${expected.message}")
+            IdkError.fromString(message = "EC point multiplication failed: ${expected.message}", code = "CRYPTO_ERROR", exception = expected).asErrorResult()
+        }
+    }
+
+    override suspend fun supports(args: Any): Boolean =
+        args is EcPointMultiplyArgs &&
             args.privateKeyInfo != null &&
             args.publicKeyInfo != null
 }

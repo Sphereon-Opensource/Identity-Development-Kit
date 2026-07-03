@@ -61,7 +61,7 @@ interface StaticOfferTestGraph {
  *   limit, which is the durable contract the GET handler reads on each fetch.
  */
 class StaticCredentialOfferE2ETest {
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, protocolBasePath = "/oid4vci")
 
     private val issuerHost = "issuer.example.com"
     private val issuerUrl = "https://$issuerHost"

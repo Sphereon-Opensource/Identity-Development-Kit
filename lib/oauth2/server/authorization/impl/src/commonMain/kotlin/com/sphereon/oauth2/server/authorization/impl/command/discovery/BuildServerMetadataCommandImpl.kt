@@ -271,6 +271,8 @@ class BuildServerMetadataCommandImpl(
                     } else {
                         null
                     },
+                walletInstanceAttestationRequired = config.walletInstanceAttestation.whenEnabled { config.walletInstanceAttestation.isRequired },
+                preferredClientStatusPeriod = config.walletInstanceAttestation.whenEnabled { config.preferredClientStatusPeriodSeconds },
                 // OIDC metadata (OpenID Connect Discovery 1.0)
                 userinfoEndpoint = config.oidc.whenEnabled { "$baseUrl/userinfo" },
                 subjectTypesSupported = config.oidc.whenEnabled { config.subjectTypesSupported },

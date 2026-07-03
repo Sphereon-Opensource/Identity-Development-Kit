@@ -113,6 +113,29 @@ data class ValidateAccessTokenArgs(
 )
 
 @JsExportCompat
+data class ValidatedWalletUnitStatusReference(
+    val statusListUri: String,
+    val index: String,
+    val status: String? = null,
+    val revoked: Boolean = false,
+    val maintenanceExpiresAtEpochSeconds: Long? = null,
+)
+
+@JsExportCompat
+data class ValidatedWalletInstanceAttestationEvidence(
+    val evidenceId: String,
+    val profile: String,
+    val format: String,
+    val expiresAtEpochSeconds: Long,
+    val clientStatus: ValidatedWalletUnitStatusReference,
+    val walletInstanceId: String? = null,
+    val walletProvider: String? = null,
+    val walletSolution: String? = null,
+    val walletUnitId: String? = null,
+    val walletAccountId: String? = null,
+)
+
+@JsExportCompat
 data class ValidatedTokenContext(
     val subject: String,
     val clientId: String,
@@ -140,6 +163,11 @@ data class ValidatedTokenContext(
     val upstreamSubject: String? = null,
     /** Upstream IdP issuer when the AS federated authentication. Null for local auth. */
     val upstreamIssuer: String? = null,
+    /**
+     * Persisted Wallet Unit WIA/status/trust evidence surfaced by the authorization server
+     * when production Wallet Instance Attestation enforcement was applied at PAR/token time.
+     */
+    val walletInstanceAttestation: ValidatedWalletInstanceAttestationEvidence? = null,
 )
 
 @JsExportCompat

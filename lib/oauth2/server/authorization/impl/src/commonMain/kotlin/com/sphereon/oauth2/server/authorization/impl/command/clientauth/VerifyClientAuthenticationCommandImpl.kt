@@ -33,11 +33,13 @@ import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.isRequired
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.ClientCredentials
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand
@@ -112,6 +114,21 @@ class VerifyClientAuthenticationCommandImpl(
                     attestationJwt = attestationAuth.attestation.clientAttestationJwt,
                     popJwt = attestationAuth.attestation.clientAttestationPopJwt,
                     tokenEndpointUrl = applied.tokenEndpointUrl,
+                    endpoint = applied.endpoint,
+                ),
+            )
+        }
+
+        if (applied.endpoint in WALLET_INSTANCE_ATTESTATION_REQUIRED_ENDPOINTS &&
+            configProvider.serverConfig.walletInstanceAttestation.isRequired
+        ) {
+            return Err(
+                IdkError.fromDTO(
+                    AuthorizationServerError.InvalidClient(
+                        details =
+                            "Wallet Instance Attestation is required at ${applied.endpoint.name.lowercase()} and must use " +
+                                "attestation-based client authentication",
+                    ),
                 ),
             )
         }
@@ -712,6 +729,8 @@ class VerifyClientAuthenticationCommandImpl(
 
     companion object {
         private val SUPPORTED_HS_ALGS = setOf("HS256", "HS384", "HS512")
+        private val WALLET_INSTANCE_ATTESTATION_REQUIRED_ENDPOINTS =
+            setOf(ClientAuthenticationEndpoint.PAR, ClientAuthenticationEndpoint.TOKEN)
 
         /** ±5 minutes, OIDC Core §9 clock-skew window applied to the assertion `iat`. */
         private const val ASSERTION_IAT_SKEW_SECONDS: Long = 300

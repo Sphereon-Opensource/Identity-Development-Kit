@@ -20,8 +20,12 @@ package com.sphereon.core.defaults.context
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
+import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.PropertySourceBootstrap
 import com.sphereon.core.api.conf.SecretProviderBootstrap
+import com.sphereon.core.api.context.ContextScopedResourceInvalidator
+import com.sphereon.core.api.session.currentTimeMillis
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.di.app.App
@@ -48,11 +52,14 @@ import kotlinx.atomicfu.AtomicRef
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import software.amazon.app.platform.scope.coroutine.addCoroutineScopeScoped
 import software.amazon.app.platform.scope.coroutine.coroutineScope
 import software.amazon.app.platform.scope.di.metro.addMetroDependencyGraph
@@ -72,6 +79,8 @@ class UserContextManagerImpl(
     private val tenantResolutionHandler: TenantResolutionHandler,
     private val anonymousUserGraphManager: AnonymousUserGraphManager,
     private val propertySourceBootstrap: PropertySourceBootstrap,
+    private val appConfigService: AppConfigService,
+    private val contextScopedResourceInvalidators: Set<ContextScopedResourceInvalidator>,
     appLogManager: AppLogManager,
     val app: App,
 ) : SynchronizedObject(),
@@ -88,6 +97,7 @@ class UserContextManagerImpl(
     // Each UserContextInstance already contains graph, scope, and context
     // Using AtomicRef for thread-safe access
     private val instances: AtomicRef<Map<String, UserContextInstance>> = atomic(emptyMap())
+    private val lastAccessEpochMs: AtomicRef<Map<String, Long>> = atomic(emptyMap())
 
     // Active instance tracking (atomic reference for thread-safe reads)
     private val activeAuthenticatedInstance: AtomicRef<UserContextInstance?> = atomic(null)
@@ -95,6 +105,21 @@ class UserContextManagerImpl(
     // Hot flow that emits the active instance
     // Note: This flow is backed by AtomicRef but exposed as StateFlow for API compatibility
     private val _activeInstance = MutableStateFlow<UserContextInstance?>(null)
+
+    init {
+        rootScopeProvider.rootScope.coroutineScope().launch {
+            while (isActive) {
+                val intervalMs = cleanupIntervalMs()
+                delay(intervalMs)
+                runCatching { runIdleCleanup() }
+                    .onFailure { error ->
+                        log.warn(
+                            "VDX_USER_CONTEXT_IDLE_CLEANUP_FAILED error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                        )
+                    }
+            }
+        }
+    }
 
     override val activeInstance: StateFlow<UserContextInstance> by lazy {
         _activeInstance
@@ -143,7 +168,7 @@ class UserContextManagerImpl(
             when (contextId) {
                 UserContext.ANONYMOUS -> anonymousUserGraphManager.getAnonymousGraph().instance
                 UserContext.BACKGROUND_SERVICE -> anonymousUserGraphManager.getBackgroundGraph().instance
-                else -> instances.value[contextId]
+                else -> instances.value[contextId]?.also { touchContext(contextId) }
             }
 
         // Background service can NEVER be made active
@@ -186,6 +211,9 @@ class UserContextManagerImpl(
                 else -> instances.value[contextId]
             }
         return if (instance != null) {
+            if (contextId != UserContext.ANONYMOUS) {
+                touchContext(contextId)
+            }
             setActiveInstance(instance)
             true
         } else {
@@ -290,20 +318,60 @@ class UserContextManagerImpl(
             }
 
             else -> {
-                synchronized(this) {
-                    val instance = instances.value[contextId]
-                    if (instance != null) {
-                        // Remove from map first
-                        instances.value = instances.value - contextId
+                var remainingInstancesAfterDestroy = emptyList<UserContextInstance>()
+                val instance =
+                    synchronized(this) {
+                        val currentInstances = instances.value
+                        val instance = currentInstances[contextId]
+                        if (instance != null) {
+                            // Remove from map first
+                            val updatedInstances = currentInstances - contextId
+                            instances.value = updatedInstances
+                            lastAccessEpochMs.value = lastAccessEpochMs.value - contextId
+                            remainingInstancesAfterDestroy = updatedInstances.values.toList()
 
-                        // Clear active if this was the active context
-                        if (activeAuthenticatedInstance.value?.contextId == contextId) {
-                            setActiveInstance(null)
+                            // Clear active if this was the active context
+                            if (activeAuthenticatedInstance.value?.contextId == contextId) {
+                                setActiveInstance(null)
+                            }
                         }
-
-                        // Destroy scope last
-                        instance.scope.destroy()
+                        instance
                     }
+                instance?.let { destroyedInstance ->
+                    var destroyError: Throwable? = null
+                    val rootChildrenBefore = rootChildrenCount()
+                    log.debug(
+                        "VDX_USER_CONTEXT_DESTROY_START contextId=${destroyedInstance.contextId.sanitizeLogToken()} " +
+                            "tenant=${destroyedInstance.context.tenant.tenantId.sanitizeLogToken()} " +
+                            "principal=${destroyedInstance.principalLogToken()} reason=destroy-by-id " +
+                            "retainedContextsAfterRemove=${remainingInstancesAfterDestroy.size} " +
+                            "rootChildrenBefore=${rootChildrenBefore ?: "unknown"}",
+                    )
+                    runCatching { destroyedInstance.scope.destroy() }
+                        .onSuccess {
+                            log.debug(
+                                "VDX_USER_CONTEXT_DESTROYED contextId=${destroyedInstance.contextId.sanitizeLogToken()} " +
+                                    "tenant=${destroyedInstance.context.tenant.tenantId.sanitizeLogToken()} " +
+                                    "principal=${destroyedInstance.principalLogToken()} reason=destroy-by-id " +
+                                    "retainedContexts=${remainingInstancesAfterDestroy.size} " +
+                                    "rootChildrenAfter=${rootChildrenCount() ?: "unknown"}",
+                            )
+                        }.onFailure { error ->
+                            destroyError = error
+                            log.warn(
+                                "VDX_USER_CONTEXT_DESTROY_FAILED contextId=${destroyedInstance.contextId.sanitizeLogToken()} " +
+                                    "tenant=${destroyedInstance.context.tenant.tenantId.sanitizeLogToken()} " +
+                                    "principal=${destroyedInstance.principalLogToken()} reason=destroy-by-id " +
+                                    "retainedContexts=${remainingInstancesAfterDestroy.size} " +
+                                    "error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                            )
+                        }
+                    invalidateResourcesForDestroyedContexts(
+                        destroyedInstances = listOf(destroyedInstance),
+                        remainingInstances = remainingInstancesAfterDestroy,
+                        reason = "destroy-by-id",
+                    )
+                    destroyError?.let { throw it }
                 }
             }
         }
@@ -318,20 +386,55 @@ class UserContextManagerImpl(
     }
 
     override fun destroyAll() {
-        synchronized(this) {
-            // Capture all instances to destroy
-            val instancesToDestroy = instances.value.values.toList()
+        val instancesToDestroy =
+            synchronized(this) {
+                // Capture all instances to destroy
+                val instancesToDestroy = instances.value.values.toList()
 
-            // Clear all state first
-            instances.value = emptyMap()
-            setActiveInstance(null)
+                // Clear all state first
+                instances.value = emptyMap()
+                lastAccessEpochMs.value = emptyMap()
+                setActiveInstance(null)
+                instancesToDestroy
+            }
 
-            // Destroy regular contexts after clearing state
-            instancesToDestroy.forEach { it.scope.destroy() }
-
-            // Destroy special contexts managed by AnonymousUserManager
-            anonymousUserGraphManager.clearAll()
+        // Destroy regular contexts after clearing state, but keep invalidation guaranteed.
+        var firstDestroyError: Throwable? = null
+        instancesToDestroy.forEach { instance ->
+            val rootChildrenBefore = rootChildrenCount()
+            log.debug(
+                "VDX_USER_CONTEXT_DESTROY_START contextId=${instance.contextId.sanitizeLogToken()} " +
+                    "tenant=${instance.context.tenant.tenantId.sanitizeLogToken()} " +
+                    "principal=${instance.principalLogToken()} reason=destroy-all retainedContextsAfterRemove=0 " +
+                    "rootChildrenBefore=${rootChildrenBefore ?: "unknown"}",
+            )
+            runCatching { instance.scope.destroy() }
+                .onSuccess {
+                    log.debug(
+                        "VDX_USER_CONTEXT_DESTROYED contextId=${instance.contextId.sanitizeLogToken()} " +
+                            "tenant=${instance.context.tenant.tenantId.sanitizeLogToken()} " +
+                            "principal=${instance.principalLogToken()} reason=destroy-all retainedContexts=0 " +
+                            "rootChildrenAfter=${rootChildrenCount() ?: "unknown"}",
+                    )
+                }.onFailure { error ->
+                    if (firstDestroyError == null) firstDestroyError = error
+                    log.warn(
+                        "VDX_USER_CONTEXT_DESTROY_FAILED contextId=${instance.contextId.sanitizeLogToken()} " +
+                            "tenant=${instance.context.tenant.tenantId.sanitizeLogToken()} " +
+                            "principal=${instance.principalLogToken()} reason=destroy-all retainedContexts=0 " +
+                            "error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                    )
+                }
         }
+        invalidateResourcesForDestroyedContexts(
+            destroyedInstances = instancesToDestroy,
+            remainingInstances = emptyList(),
+            reason = "destroy-all",
+        )
+        firstDestroyError?.let { throw it }
+
+        // Destroy special contexts managed by AnonymousUserManager
+        anonymousUserGraphManager.clearAll()
     }
 
     // Singleton context instances - always available
@@ -367,6 +470,7 @@ class UserContextManagerImpl(
     ): UserContextGraph {
         // Fast path: lock-free read if already exists
         instances.value[contextId]?.let { instance ->
+            touchContext(contextId)
             if (makeActive) {
                 setActiveInstance(instance)
             }
@@ -377,6 +481,7 @@ class UserContextManagerImpl(
         return synchronized(this) {
             // Double-check after acquiring lock
             instances.value[contextId]?.let { instance ->
+                touchContext(contextId)
                 if (makeActive) {
                     setActiveInstance(instance)
                 }
@@ -385,6 +490,14 @@ class UserContextManagerImpl(
 
             // Create new context
             val context = UserContextImpl(tenant = tenantContextData, principal = principal.principal)
+            val rootChildrenBefore = rootChildrenCount()
+            val retainedContextsBefore = instances.value.size
+            log.debug(
+                "VDX_USER_CONTEXT_CREATE_START contextId=${contextId.sanitizeLogToken()} " +
+                    "tenant=${tenantContextData.tenantId.sanitizeLogToken()} " +
+                    "principal=${principal.principalLogToken()} makeActive=$makeActive " +
+                    "retainedContextsBefore=$retainedContextsBefore rootChildrenBefore=${rootChildrenBefore ?: "unknown"}",
+            )
             val contextGraph = contextGraphFactory.createUserContext(context)
 
             val scope =
@@ -399,24 +512,33 @@ class UserContextManagerImpl(
 
             (instance as? UserContextInstanceImpl)?.initialize(contextGraph, scope)
 
-            registerContextConfigSources(
-                contextGraph = contextGraph,
-                tenantId = tenantContextData.tenantId,
-                principalId = principal.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID,
-            )
+            ConfigBootstrapGuard.withContextRegistration {
+                registerContextConfigSources(
+                    contextGraph = contextGraph,
+                    tenantId = tenantContextData.tenantId,
+                    principalId = principal.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID,
+                )
 
-            log.debug("instance context: ${instance.context}")
+                log.debug("instance context: ${instance.context}")
 
-            // Store the instance atomically
-            instances.value = instances.value + (contextId to instance)
+                // Store the instance atomically
+                instances.value = instances.value + (contextId to instance)
+                touchContext(contextId)
 
-            // Set as active if requested (before registration to ensure getActive() returns correct instance)
-            if (makeActive) {
-                setActiveInstance(instance)
+                // Set as active if requested (before registration to ensure getActive() returns correct instance)
+                if (makeActive) {
+                    setActiveInstance(instance)
+                }
+
+                // Register instances after the instance is stored and active
+                scope.register(contextGraph.contextScopedInstances)
+                log.debug(
+                    "VDX_USER_CONTEXT_CREATED contextId=${contextId.sanitizeLogToken()} " +
+                        "tenant=${tenantContextData.tenantId.sanitizeLogToken()} " +
+                        "principal=${principal.principalLogToken()} makeActive=$makeActive " +
+                        "retainedContextsAfter=${instances.value.size} rootChildrenAfter=${rootChildrenCount() ?: "unknown"}",
+                )
             }
-
-            // Register instances after the instance is stored and active
-            scope.register(contextGraph.contextScopedInstances)
 
             contextGraph
         }
@@ -430,6 +552,199 @@ class UserContextManagerImpl(
         activeAuthenticatedInstance.value = instance
         _activeInstance.value = instance
     }
+
+    internal fun runIdleCleanup(nowEpochMs: Long = currentTimeMillis()) {
+        if (!idleCleanupEnabled()) return
+        val timeoutMs = idleTimeoutMs()
+        if (timeoutMs <= 0L) return
+        val cutoff = nowEpochMs - timeoutMs
+        val candidates =
+            lastAccessEpochMs.value
+                .filterValues { it <= cutoff }
+                .keys
+        if (candidates.isEmpty()) return
+
+        var destroyedContextIds = emptyList<String>()
+        var instancesToDestroy = emptyList<UserContextInstance>()
+        var remainingInstancesAfterDestroy = emptyList<UserContextInstance>()
+        synchronized(this) {
+            val currentInstances = instances.value
+            val currentLastAccess = lastAccessEpochMs.value
+            val toDestroy =
+                candidates
+                    .filter { contextId ->
+                        contextId != UserContext.ANONYMOUS &&
+                            contextId != UserContext.BACKGROUND_SERVICE &&
+                            currentInstances.containsKey(contextId) &&
+                            (currentLastAccess[contextId] ?: Long.MAX_VALUE) <= cutoff
+                    }
+            if (toDestroy.isNotEmpty()) {
+                val toDestroySet = toDestroy.toSet()
+                instancesToDestroy = toDestroy.mapNotNull { currentInstances[it] }
+                destroyedContextIds = toDestroy
+                val updatedInstances = currentInstances.filterKeys { it !in toDestroySet }
+                instances.value = updatedInstances
+                lastAccessEpochMs.value = currentLastAccess.filterKeys { it !in toDestroySet }
+                remainingInstancesAfterDestroy = updatedInstances.values.toList()
+
+                if (activeAuthenticatedInstance.value?.contextId in toDestroySet) {
+                    setActiveInstance(null)
+                }
+            }
+        }
+
+        if (destroyedContextIds.isEmpty()) return
+
+        instancesToDestroy.forEach { instance ->
+            val rootChildrenBefore = rootChildrenCount()
+            log.debug(
+                "VDX_USER_CONTEXT_DESTROY_START contextId=${instance.contextId.sanitizeLogToken()} " +
+                    "tenant=${instance.context.tenant.tenantId.sanitizeLogToken()} " +
+                    "principal=${instance.principalLogToken()} reason=idle-cleanup " +
+                    "retainedContextsAfterRemove=${remainingInstancesAfterDestroy.size} " +
+                    "rootChildrenBefore=${rootChildrenBefore ?: "unknown"} idleTimeoutMs=$timeoutMs",
+            )
+            runCatching { instance.scope.destroy() }
+                .onSuccess {
+                    log.debug(
+                        "VDX_USER_CONTEXT_DESTROYED contextId=${instance.contextId.sanitizeLogToken()} " +
+                            "tenant=${instance.context.tenant.tenantId.sanitizeLogToken()} " +
+                            "principal=${instance.principalLogToken()} reason=idle-cleanup " +
+                            "retainedContexts=${remainingInstancesAfterDestroy.size} " +
+                            "rootChildrenAfter=${rootChildrenCount() ?: "unknown"} idleTimeoutMs=$timeoutMs",
+                    )
+                }
+                .onFailure { error ->
+                    log.warn(
+                        "VDX_USER_CONTEXT_IDLE_DESTROY_FAILED contextId=${instance.contextId.sanitizeLogToken()} " +
+                            "idleTimeoutMs=$timeoutMs error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                    )
+                }
+        }
+
+        invalidateResourcesForDestroyedContexts(
+            destroyedInstances = instancesToDestroy,
+            remainingInstances = remainingInstancesAfterDestroy,
+            reason = "idle-cleanup",
+        )
+
+        destroyedContextIds.forEach { contextId ->
+            log.info(
+                "VDX_USER_CONTEXT_IDLE_DESTROYED contextId=${contextId.sanitizeLogToken()} " +
+                    "idleTimeoutMs=$timeoutMs remaining=${instances.value.size}",
+            )
+        }
+    }
+
+    private fun invalidateResourcesForDestroyedContexts(
+        destroyedInstances: List<UserContextInstance>,
+        remainingInstances: Collection<UserContextInstance>,
+        reason: String,
+    ) {
+        if (destroyedInstances.isEmpty()) return
+
+        val remainingTenantIds = remainingInstances.map { it.context.tenant.tenantId }.toSet()
+        val remainingPrincipals =
+            remainingInstances
+                .map {
+                    it.context.tenant.tenantId to
+                        (it.context.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID)
+                }.toSet()
+        val destroyedByTenant = destroyedInstances.groupBy { it.context.tenant.tenantId }
+
+        com.sphereon.core.api.coroutines.runBlockingCompat {
+            destroyedByTenant.forEach { (tenantId, tenantInstances) ->
+                tenantInstances
+                    .map { it.context.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID }
+                    .distinct()
+                    .filter { principalId -> tenantId to principalId !in remainingPrincipals }
+                    .forEach { principalId ->
+                        notifyContextResourceInvalidators(
+                            scope = "PRINCIPAL",
+                            tenantId = tenantId,
+                            principalId = principalId,
+                            reason = reason,
+                        )
+                    }
+                if (tenantId !in remainingTenantIds) {
+                    notifyContextResourceInvalidators(
+                        scope = "TENANT",
+                        tenantId = tenantId,
+                        principalId = null,
+                        reason = reason,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun rootChildrenCount(): Int? = runCatching { rootScopeProvider.rootScope.children().size }.getOrNull()
+
+    private suspend fun notifyContextResourceInvalidators(
+        scope: String,
+        tenantId: String,
+        principalId: String?,
+        reason: String,
+    ) {
+        contextScopedResourceInvalidators.forEach { invalidator ->
+            runCatching {
+                if (principalId == null) {
+                    invalidator.invalidateTenantContext(tenantId, reason)
+                } else {
+                    invalidator.invalidatePrincipalContext(tenantId, principalId, reason)
+                }
+            }.onFailure { error ->
+                val principalPart = principalId?.let { " principal=${it.sanitizeLogToken()}" } ?: ""
+                log.warn(
+                    "VDX_CONTEXT_RESOURCE_INVALIDATION_FAILED invalidator=${invalidator::class.simpleName?.sanitizeLogToken() ?: "unknown"} " +
+                        "scope=$scope tenant=${tenantId.sanitizeLogToken()}$principalPart reason=${reason.sanitizeLogToken()} " +
+                        "error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                )
+            }
+        }
+    }
+
+    private fun touchContext(contextId: String) {
+        if (contextId == UserContext.ANONYMOUS || contextId == UserContext.BACKGROUND_SERVICE) return
+        val now = currentTimeMillis()
+        while (true) {
+            if (!instances.value.containsKey(contextId)) return
+            val current = lastAccessEpochMs.value
+            val updated = current + (contextId to now)
+            if (lastAccessEpochMs.compareAndSet(current, updated)) {
+                if (!instances.value.containsKey(contextId)) {
+                    removeLastAccess(contextId)
+                }
+                return
+            }
+        }
+    }
+
+    private fun removeLastAccess(contextId: String) {
+        while (true) {
+            val current = lastAccessEpochMs.value
+            if (!current.containsKey(contextId)) return
+            val updated = current - contextId
+            if (lastAccessEpochMs.compareAndSet(current, updated)) return
+        }
+    }
+
+    private fun idleCleanupEnabled(): Boolean =
+        appConfigService.getPropertyAsString(USER_CONTEXT_IDLE_CLEANUP_ENABLED, "true")
+            ?.toBooleanStrictOrNull()
+            ?: true
+
+    private fun idleTimeoutMs(): Long =
+        appConfigService.getPropertyAsString(USER_CONTEXT_IDLE_TIMEOUT_MS, DEFAULT_USER_CONTEXT_IDLE_TIMEOUT_MS.toString())
+            ?.toLongOrNull()
+            ?.coerceAtLeast(0L)
+            ?: DEFAULT_USER_CONTEXT_IDLE_TIMEOUT_MS
+
+    private fun cleanupIntervalMs(): Long =
+        appConfigService.getPropertyAsString(USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS, DEFAULT_USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS.toString())
+            ?.toLongOrNull()
+            ?.coerceAtLeast(1_000L)
+            ?: DEFAULT_USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS
 
     private fun generateContextId(
         tenant: TenantContextData,
@@ -464,4 +779,24 @@ class UserContextManagerImpl(
         principalConfigService?.let { propertySourceBootstrap.registerPrincipalSources(it, tenantId, principalId) }
         (contextGraph as? SecretProviderBootstrap.UserGraph)?.userSecretProviderBootstrap?.registerSecretProviders()
     }
+
+    private companion object {
+        const val USER_CONTEXT_IDLE_CLEANUP_ENABLED = "context.user.idle-cleanup.enabled"
+        const val USER_CONTEXT_IDLE_TIMEOUT_MS = "context.user.idle-timeout-ms"
+        const val USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS = "context.user.idle-cleanup.interval-ms"
+        const val DEFAULT_USER_CONTEXT_IDLE_TIMEOUT_MS = 300_000L
+        const val DEFAULT_USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS = 60_000L
+    }
 }
+
+private fun String.sanitizeLogToken(): String =
+    trim()
+        .ifBlank { "<blank>" }
+        .replace(Regex("[^A-Za-z0-9._:@-]"), "_")
+        .take(160)
+
+private fun PrincipalAware.principalLogToken(): String =
+    (principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID).sanitizeLogToken()
+
+private fun UserContextInstance.principalLogToken(): String =
+    (context.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID).sanitizeLogToken()

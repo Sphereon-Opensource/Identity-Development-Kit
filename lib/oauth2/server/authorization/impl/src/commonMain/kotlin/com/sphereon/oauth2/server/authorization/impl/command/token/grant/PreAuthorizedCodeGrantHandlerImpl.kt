@@ -28,6 +28,7 @@ import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.wallet.accessTokenClaims
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -86,6 +87,7 @@ class PreAuthorizedCodeGrantHandlerImpl : GrantHandler {
                         audience = listOfNotNull(verified.issuerIdentifier),
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
+                        additionalClaims = context.walletInstanceAttestation?.accessTokenClaims().orEmpty(),
                         baseUrlOverride = applied.baseUrlOverride,
                     ),
                 ).getOrElse { error -> return Err(error) }

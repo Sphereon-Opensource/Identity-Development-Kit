@@ -16,12 +16,20 @@
 
 package com.sphereon.crypto.kms.provider.software
 
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
+import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
+import com.sphereon.crypto.secdsa.impl.DefaultSecdsaPrimitives
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
@@ -113,6 +121,72 @@ class SoftwareCryptoProviderTest {
             assertNotNull(signature)
             val verification = softwareKMSProvider.isValidRawSignature(keyInfo = keyInfo, signature = signature, input = "test2".encodeToByteArray())
             assertFalse(verification)
+        }
+
+    @Test
+    fun testDigestSignatureSignsDigestWithoutHashingAgain() =
+        runTest {
+            val managedKeyPair = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managedKeyPair.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
+            val digest = hash("secdsa message".encodeToByteArray(), DigestAlg.SHA256)
+
+            val signature =
+                softwareKMSProvider.signDigest(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                )
+
+            assertTrue(
+                softwareKMSProvider.verifyDigest(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signature = signature,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                ),
+            )
+            assertFalse(
+                softwareKMSProvider.isValidRawSignature(
+                    keyInfo = keyInfo,
+                    input = digest,
+                    signature = signature,
+                ),
+                "A digest signature must not verify as a normal ECDSA signature over SHA-256(digest)",
+            )
+        }
+
+    @Test
+    fun testSplitSecdsaSignatureVerifiesAgainstPinDerivedPublicKey() =
+        runTest {
+            val primitives = DefaultSecdsaPrimitives()
+            val managedKeyPair = softwareKMSProvider.generateKeyAsync(alias = "software-nch-secdsa", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managedKeyPair.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
+            val pinScalar = primitives.scalar(byteArrayOf(0x07))
+            val nchPublicKey = primitives.pointFromJwk(managedKeyPair.jose.publicJwk)
+            val pinDerivedPublicKey = primitives.multiply(pinScalar, nchPublicKey)
+            val digest = hash("secdsa split signing".encodeToByteArray(), DigestAlg.SHA256)
+
+            val signature =
+                primitives.splitSign(
+                    digest = digest,
+                    pinScalar = pinScalar,
+                    nchKeyInfo = keyInfo,
+                    kmsProvider = softwareKMSProvider,
+                )
+
+            assertTrue(primitives.verifyDigestSignature(digest, pinDerivedPublicKey, signature))
+            assertFalse(
+                softwareKMSProvider.verifyDigest(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signature = signature.toRawBytes(),
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                ),
+                "A SECDSA split signature must verify under the PIN-derived public key, not the base NCH key",
+            )
         }
 
     @Test
@@ -354,6 +428,93 @@ class SoftwareCryptoProviderTest {
         assertNotNull(macGenOp.signatureAlgorithms)
         assertTrue(macGenOp.signatureAlgorithms!!.contains(SignatureAlgorithm.HMAC_SHA256))
     }
+
+    @Test
+    fun testCapabilitiesAdvertiseScdsaPhase1Primitives() {
+        val capabilities = softwareKMSProvider.getCapabilities()
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.SIGN_DIGEST))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.VERIFY_DIGEST))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.ECDH_DERIVE_RAW_X))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.ECDH_DERIVE_KDF))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.EC_POINT_MULTIPLY))
+        assertFalse(capabilities.supportsOperation(KmsProviderOperation.KEY_ATTESTATION))
+    }
+
+    @Test
+    fun testProviderBackedEcdhDeriveResolvesAliasOnlyPrivateKeys() =
+        runTest {
+            val alice = softwareKMSProvider.generateKeyAsync(alias = "alice-ecdh", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val bob = softwareKMSProvider.generateKeyAsync(alias = "bob-ecdh", alg = SignatureAlgorithm.ECDSA_SHA256)
+
+            val aliceReference = KeyInfo<com.sphereon.crypto.core.jose.Jwk>(providerId = softwareKMSProvider.id, alias = alice.alias)
+            val bobReference = KeyInfo<com.sphereon.crypto.core.jose.Jwk>(providerId = softwareKMSProvider.id, alias = bob.alias)
+
+            val aliceSecret =
+                softwareKMSProvider.ecdhDerive(
+                    privateKeyInfo = aliceReference,
+                    publicKeyInfo = bob.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC),
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    mode = EcdhDeriveMode.RAW_X,
+                )
+            val bobSecret =
+                softwareKMSProvider.ecdhDerive(
+                    privateKeyInfo = bobReference,
+                    publicKeyInfo = alice.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC),
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    mode = EcdhDeriveMode.RAW_X,
+                )
+
+            assertEquals(32, aliceSecret.derivedSecret.size)
+            assertContentEquals(aliceSecret.derivedSecret, bobSecret.derivedSecret)
+        }
+
+    @Test
+    fun testProviderBackedEcdhDeriveConcatKdf() =
+        runTest {
+            val alice = softwareKMSProvider.generateKeyAsync(alias = "alice-ecdh-kdf", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val bob = softwareKMSProvider.generateKeyAsync(alias = "bob-ecdh-kdf", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val aliceReference = KeyInfo<com.sphereon.crypto.core.jose.Jwk>(providerId = softwareKMSProvider.id, alias = alice.alias)
+
+            val result =
+                softwareKMSProvider.ecdhDerive(
+                    privateKeyInfo = aliceReference,
+                    publicKeyInfo = bob.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC),
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES_A256KW,
+                    mode = EcdhDeriveMode.CONCAT_KDF,
+                    keyDataLen = 256,
+                    algorithmId = "A256KW",
+                    partyUInfo = "alice".encodeToByteArray(),
+                    partyVInfo = "bob".encodeToByteArray(),
+                )
+
+            assertEquals(32, result.derivedSecret.size)
+            assertEquals(32, assertNotNull(result.rawSharedSecret).size)
+        }
+
+    @Test
+    fun testEcPointMultiplyReturnsSameRawXAsEcdhDerive() =
+        runTest {
+            val alice = softwareKMSProvider.generateKeyAsync(alias = "alice-point-multiply", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val bob = softwareKMSProvider.generateKeyAsync(alias = "bob-point-multiply", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val aliceReference = KeyInfo<com.sphereon.crypto.core.jose.Jwk>(providerId = softwareKMSProvider.id, alias = alice.alias)
+            val bobPublic = bob.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC)
+
+            val rawEcdh =
+                softwareKMSProvider.ecdhDerive(
+                    privateKeyInfo = aliceReference,
+                    publicKeyInfo = bobPublic,
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    mode = EcdhDeriveMode.RAW_X,
+                )
+            val pointMultiply =
+                softwareKMSProvider.ecPointMultiply(
+                    privateKeyInfo = aliceReference,
+                    publicKeyInfo = bobPublic,
+                    output = EcPointMultiplyOutput.RAW_X,
+                )
+
+            assertContentEquals(rawEcdh.derivedSecret, pointMultiply.rawX)
+        }
 
     @Test
     fun testKeyTypeMappingSymmetricFromJose() {

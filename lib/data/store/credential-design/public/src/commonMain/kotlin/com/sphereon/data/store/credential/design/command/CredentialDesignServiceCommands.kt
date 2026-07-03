@@ -19,6 +19,7 @@ package com.sphereon.data.store.credential.design.command
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.data.store.credential.design.model.AssetInfo
 import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.IssuerDesignRecord
@@ -395,5 +396,23 @@ interface GetDesignAssetByHashServiceCommand : ServiceCommand<GetDesignAssetByHa
 
     companion object {
         const val COMMAND_ID = "credential-design.assets.get-by-hash"
+    }
+}
+
+@JsExportCompat
+interface ListDesignAssetsServiceCommand : ServiceCommand<ListDesignAssetsArgs, List<AssetInfo>, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "credential-design.assets.list"
+    }
+}
+
+@JsExportCompat
+interface UploadTenantAssetServiceCommand : ServiceCommand<UploadTenantAssetArgs, AssetReference, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "credential-design.assets.upload-tenant"
     }
 }

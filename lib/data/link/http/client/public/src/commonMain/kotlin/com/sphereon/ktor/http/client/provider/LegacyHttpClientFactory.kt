@@ -33,6 +33,7 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.logging.LoggingConfig
+import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlin.experimental.ExperimentalObjCName
@@ -79,7 +80,14 @@ data class LegacyHttpClientOptions
         @JsExportIgnoreCompat
         val loggingConfig: (LoggingConfig.() -> Unit)? = {
             logger = httpClientLogger ?: Logger.DEFAULT
-            level = LogLevel.ALL
+            level = LogLevel.INFO
+            sanitizeHeader { header ->
+                header.equals(HttpHeaders.Authorization, ignoreCase = true) ||
+                    header.equals("Proxy-Authorization", ignoreCase = true) ||
+                    header.equals(HttpHeaders.Cookie, ignoreCase = true) ||
+                    header.equals(HttpHeaders.SetCookie, ignoreCase = true) ||
+                    header.equals("X-Api-Key", ignoreCase = true)
+            }
         },
         @JsExportIgnoreCompat
         val defaultRequest: (DefaultRequest.DefaultRequestBuilder.() -> Unit)? = null,

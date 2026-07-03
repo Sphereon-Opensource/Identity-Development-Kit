@@ -72,6 +72,7 @@ import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.core.kms.CertificateOptions
+import com.sphereon.crypto.core.kms.ConcatKdf
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.HasKeyStoreService
@@ -86,6 +87,11 @@ import com.sphereon.crypto.core.kms.KmsProviderCapabilities
 import com.sphereon.crypto.core.kms.KmsProviderConfigBase
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.OperationCapability
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.model.KeyProviderSettings
 import com.sphereon.crypto.core.sign.model.SignInput
 import com.sphereon.crypto.core.sign.model.SignOutput
@@ -234,6 +240,17 @@ class SoftwareKmsProviderImpl(
                             ),
                     ),
                     OperationCapability(
+                        operation = KmsProviderOperation.SIGN_DIGEST,
+                        supported = true,
+                        signatureAlgorithms =
+                            arrayOf(
+                                SignatureAlgorithm.ECDSA_SHA256,
+                                SignatureAlgorithm.ECDSA_SHA384,
+                                SignatureAlgorithm.ECDSA_SHA512,
+                            ),
+                        notes = "Signs caller-supplied digests/scalars without hashing again; currently supports ECDSA",
+                    ),
+                    OperationCapability(
                         operation = KmsProviderOperation.VERIFY,
                         supported = true,
                         signatureAlgorithms =
@@ -249,6 +266,17 @@ class SoftwareKmsProviderImpl(
                                 SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
                                 SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
                             ),
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.VERIFY_DIGEST,
+                        supported = true,
+                        signatureAlgorithms =
+                            arrayOf(
+                                SignatureAlgorithm.ECDSA_SHA256,
+                                SignatureAlgorithm.ECDSA_SHA384,
+                                SignatureAlgorithm.ECDSA_SHA512,
+                            ),
+                        notes = "Verifies caller-supplied digests/scalars without hashing again; currently supports ECDSA",
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.ENCRYPT,
@@ -299,8 +327,38 @@ class SoftwareKmsProviderImpl(
                                 KeyAgreementAlgorithm.ECDH_ES_A128KW,
                                 KeyAgreementAlgorithm.ECDH_ES_A192KW,
                                 KeyAgreementAlgorithm.ECDH_ES_A256KW,
-                            ),
+                        ),
                         notes = "Supports ECDH key agreement with P-256, P-384, and P-521 curves",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.ECDH_DERIVE_RAW_X,
+                        supported = true,
+                        keyAgreementAlgorithms =
+                            arrayOf(
+                                KeyAgreementAlgorithm.ECDH_ES,
+                                KeyAgreementAlgorithm.ECDH_ES_A128KW,
+                                KeyAgreementAlgorithm.ECDH_ES_A192KW,
+                                KeyAgreementAlgorithm.ECDH_ES_A256KW,
+                            ),
+                        notes = "Returns the raw ECDH x-coordinate without exporting the private key to the caller",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.ECDH_DERIVE_KDF,
+                        supported = true,
+                        keyAgreementAlgorithms =
+                            arrayOf(
+                                KeyAgreementAlgorithm.ECDH_ES,
+                                KeyAgreementAlgorithm.ECDH_ES_A128KW,
+                                KeyAgreementAlgorithm.ECDH_ES_A192KW,
+                                KeyAgreementAlgorithm.ECDH_ES_A256KW,
+                            ),
+                        notes = "Applies Concat KDF to provider-derived ECDH output",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.EC_POINT_MULTIPLY,
+                        supported = true,
+                        keyAgreementAlgorithms = arrayOf(KeyAgreementAlgorithm.ECDH_ES),
+                        notes = "Provider-backed raw-X point multiplication equivalent to ECDH1_DERIVE with CKD_NULL",
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.GENERATE_CERTIFICATE,
@@ -321,6 +379,10 @@ class SoftwareKmsProviderImpl(
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.ATTESTATION,
+                        supported = false,
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.KEY_ATTESTATION,
                         supported = false,
                     ),
                     OperationCapability(
@@ -932,6 +994,49 @@ class SoftwareKmsProviderImpl(
         }
     }
 
+    override suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): ByteArray {
+        require(digest.isNotEmpty()) { "digest is required" }
+        val (key, _, _, curveImpl, _) = keyInfoToBytesWithKeystoreLookup(keyInfo, mangedKeyRequired = true)
+
+        require(signatureAlgorithm.cryptoAlgorithm == CryptoAlg.ECDSA) { "Digest signing currently supports ECDSA algorithms only, got: $signatureAlgorithm" }
+        require(key.kty == JwaKeyType.EC) { "Digest signing with $signatureAlgorithm requires an EC key, got: ${key.kty}" }
+        require(key.d != null) { "Digest signing with $signatureAlgorithm requires a private EC key" }
+        require(curveImpl != null) { "Digest signing with $signatureAlgorithm requires a supported EC curve" }
+
+        val privateKey = key.toEcdsaPrivateKey(provider = cryptoProvider, curve = curveImpl)
+        return privateKey
+            .signatureGenerator(digest = null, format = signatureEncoding.toKmpEcdsaSignatureFormat())
+            .generateSignature(digest)
+    }
+
+    override suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): Boolean {
+        require(digest.isNotEmpty()) { "digest is required" }
+        require(signature.isNotEmpty()) { "signature is required" }
+        val (key, _, _, curveImpl, _) = keyInfoToBytesWithKeystoreLookup(keyInfo)
+
+        require(signatureAlgorithm.cryptoAlgorithm == CryptoAlg.ECDSA) { "Digest verification currently supports ECDSA algorithms only, got: $signatureAlgorithm" }
+        require(key.kty == JwaKeyType.EC) { "Digest verification with $signatureAlgorithm requires an EC key, got: ${key.kty}" }
+        require(key.x != null && key.y != null) { "Digest verification with $signatureAlgorithm requires a public EC key" }
+        require(curveImpl != null) { "Digest verification with $signatureAlgorithm requires a supported EC curve" }
+
+        val publicKey = key.toEcdsaPublicKey(provider = cryptoProvider, curve = curveImpl)
+        return publicKey
+            .signatureVerifier(digest = null, format = signatureEncoding.toKmpEcdsaSignatureFormat())
+            .tryVerifySignature(digest, signature)
+    }
+
     override suspend fun createSignature(
         signInput: SignInput,
         keyInfo: KeyInfoType<*>?,
@@ -1011,6 +1116,57 @@ class SoftwareKmsProviderImpl(
         return performKeyAgreementWithNativeKey(privateKeyInfo, publicKeyInfo, algorithm.identifier)
     }
 
+    override suspend fun ecdhDerive(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        algorithm: KeyAgreementAlgorithm,
+        mode: EcdhDeriveMode,
+        keyDataLen: Int?,
+        algorithmId: String?,
+        partyUInfo: ByteArray?,
+        partyVInfo: ByteArray?,
+    ): EcdhDeriveResult {
+        log.debug("Performing provider-backed ECDH derive with algorithm: ${algorithm.identifier}, mode: $mode")
+        val resolvedPrivateKeyInfo = resolveKeyIfNeeded(privateKeyInfo)
+        val resolvedPublicKeyInfo = resolvePublicKeyIfNeeded(publicKeyInfo)
+        val rawSharedSecret = performKeyAgreementWithNativeKey(resolvedPrivateKeyInfo, resolvedPublicKeyInfo, algorithm.identifier)
+
+        return when (mode) {
+            EcdhDeriveMode.RAW_X -> EcdhDeriveResult(derivedSecret = rawSharedSecret)
+            EcdhDeriveMode.CONCAT_KDF -> {
+                val derived =
+                    ConcatKdf.deriveKey(
+                        sharedSecret = rawSharedSecret,
+                        keyDataLen = requireNotNull(keyDataLen) { "keyDataLen is required when mode is CONCAT_KDF" },
+                        algorithmId = requireNotNull(algorithmId) { "algorithmId is required when mode is CONCAT_KDF" },
+                        apu = partyUInfo ?: ByteArray(0),
+                        apv = partyVInfo ?: ByteArray(0),
+                    )
+                EcdhDeriveResult(derivedSecret = derived, rawSharedSecret = rawSharedSecret)
+            }
+        }
+    }
+
+    override suspend fun ecPointMultiply(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        output: EcPointMultiplyOutput,
+    ): EcPointMultiplyResult {
+        require(output == EcPointMultiplyOutput.RAW_X) { "Only RAW_X EC point multiplication output is supported" }
+        val rawX =
+            ecdhDerive(
+                privateKeyInfo = privateKeyInfo,
+                publicKeyInfo = publicKeyInfo,
+                algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                mode = EcdhDeriveMode.RAW_X,
+                keyDataLen = null,
+                algorithmId = null,
+                partyUInfo = null,
+                partyVInfo = null,
+            ).derivedSecret
+        return EcPointMultiplyResult(rawX = rawX)
+    }
+
     override suspend fun generateMac(
         keyId: String,
         message: ByteArray,
@@ -1057,6 +1213,23 @@ class SoftwareKmsProviderImpl(
                 keyInfo.alias != null -> KeyInfo<Jwk>(alias = keyInfo.alias, keyVisibility = KeyVisibility.PRIVATE)
 
                 keyInfo.kid != null -> KeyInfo<Jwk>(kid = keyInfo.kid, keyVisibility = KeyVisibility.PRIVATE)
+
+                else -> throw IllegalArgumentException(
+                    "KeyInfo has no key material and no alias/kid to resolve from keystore",
+                )
+        }
+        return keyStore.getKey(lookup)
+    }
+
+    private suspend fun resolvePublicKeyIfNeeded(keyInfo: KeyInfoType<*>): KeyInfoType<*> {
+        if (keyInfo.key != null) {
+            return keyInfo
+        }
+        val lookup =
+            when {
+                keyInfo.alias != null -> KeyInfo<Jwk>(alias = keyInfo.alias, keyVisibility = KeyVisibility.PUBLIC)
+
+                keyInfo.kid != null -> KeyInfo<Jwk>(kid = keyInfo.kid, keyVisibility = KeyVisibility.PUBLIC)
 
                 else -> throw IllegalArgumentException(
                     "KeyInfo has no key material and no alias/kid to resolve from keystore",
@@ -1238,4 +1411,10 @@ internal fun KeyStoreConfig.withProviderScopedFileId(providerId: String): KeySto
         is Pkcs12KeyStoreConfig -> copy(id = providerId)
         is JksKeyStoreConfig -> copy(id = providerId)
         else -> this
+    }
+
+private fun SignatureEncoding.toKmpEcdsaSignatureFormat(): ECDSA.SignatureFormat =
+    when (this) {
+        SignatureEncoding.RAW -> ECDSA.SignatureFormat.RAW
+        SignatureEncoding.DER -> ECDSA.SignatureFormat.DER
     }

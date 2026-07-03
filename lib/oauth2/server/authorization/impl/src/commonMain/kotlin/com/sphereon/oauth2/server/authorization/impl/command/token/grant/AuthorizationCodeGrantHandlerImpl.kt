@@ -38,6 +38,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapper
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_ID_TOKEN
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_USERINFO
+import com.sphereon.oauth2.server.authorization.wallet.accessTokenClaims
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -130,6 +131,12 @@ class AuthorizationCodeGrantHandlerImpl(
         // keeps them on the stored token for the userinfo endpoint to read.
         val accessTokenAdditional =
             buildMap<String, Any> {
+                verified.codeData.authTime?.let { put(AUTH_TIME_CLAIM, it) }
+                verified.codeData.acr?.let { put(ACR_CLAIM, it) }
+                verified.codeData.amr
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { put(AMR_CLAIM, it) }
+
                 (verified.codeData.additionalData[SESSION_KEY_OIDC_CLAIMS_USERINFO] as? List<*>)
                     ?.filterIsInstance<String>()
                     ?.takeIf { it.isNotEmpty() }
@@ -151,6 +158,8 @@ class AuthorizationCodeGrantHandlerImpl(
                 if (roles.isNotEmpty()) {
                     put(ROLES_CLAIM, roles)
                 }
+
+                context.walletInstanceAttestation?.let { putAll(it.accessTokenClaims()) }
             }
         val accessToken =
             commands.createAccessToken
@@ -307,5 +316,8 @@ class AuthorizationCodeGrantHandlerImpl(
 
         /** RFC 9068 §2.2.3.1 / RFC 7643 §4.1.2 authorization claim name. */
         private const val ROLES_CLAIM = "roles"
+        private const val AUTH_TIME_CLAIM = "auth_time"
+        private const val ACR_CLAIM = "acr"
+        private const val AMR_CLAIM = "amr"
     }
 }

@@ -1,0 +1,75 @@
+/* StatusBadge — credential-stub chip: icon-cell | divider | label */
+/* All colour values are resolved via --badge-bg/--badge-text/--badge-strong/--badge-on-strong,
+   which are set by the component from the status → token map. No hardcoded hex anywhere. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--shape-radius-sm, 6px);
+  overflow: hidden;
+  height: 24px;
+  font-family: inherit;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* icon cell: fixed width, strong-colour icon, hairline divider on the right */
+.iconCell {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--badge-strong);
+  border-right: 1px solid color-mix(in srgb, var(--badge-text) 18%, transparent);
+}
+
+/* icon sizing */
+.icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* label cell */
+.label {
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* ── variants ────────────────────────────────────────────── */
+
+.tonal {
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  border: 1px solid color-mix(in srgb, var(--badge-text) 14%, transparent);
+}
+
+.solid {
+  background: var(--badge-strong);
+  color: var(--badge-on-strong);
+  border: none;
+}
+
+/* in solid mode the icon inherits the on-strong text colour and the divider is softer */
+.solid .iconCell {
+  color: var(--badge-on-strong);
+  border-right-color: color-mix(in srgb, var(--badge-on-strong) 18%, transparent);
+}
+
+.outline {
+  background: transparent;
+  color: var(--badge-text);
+  border: 1px solid color-mix(in srgb, var(--badge-strong) 50%, var(--color-border-subtle));
+}
+
+/* forced-colors (high-contrast) */
+@media (forced-colors: active) {
+  .tonal,
+  .solid,
+  .outline {
+    border: 1px solid ButtonText;
+    forced-color-adjust: none;
+  }
+}

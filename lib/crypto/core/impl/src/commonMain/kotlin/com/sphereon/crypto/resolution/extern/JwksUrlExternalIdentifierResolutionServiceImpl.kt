@@ -45,10 +45,9 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.delay
-import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -58,20 +57,33 @@ import kotlin.time.Duration.Companion.minutes
  * This service exists to ensure key retrieval is uniform and reusable across the IDK:
  * callers should rely on identifier resolution (crypto core) rather than ad-hoc HTTP fetching.
  */
-@Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<JwksUrlExternalIdentifierResolutionService>())
 @ContributesIntoSet(SessionScope::class, binding = binding<ExternalIdentifierService>())
-class JwksUrlExternalIdentifierResolutionServiceImpl(
+class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
-    private val cacheManager: CacheManager? = null,
+    private val cacheManager: CacheManager?,
+    @Suppress("UNUSED_PARAMETER")
+    cacheManagerBinding: Unit,
 ) : ExternalIdentifierServiceAdapter<ExternalIdentifierResult.JwksUrl>(
         supportedIdentifierMethods = listOf(IdentifierMethodDefaults.JWKS_URL),
         execution = execution,
         commandId = COMMAND_ID,
     ),
     JwksUrlExternalIdentifierResolutionService {
+    @Inject
+    constructor(
+        execution: SessionExecution,
+        httpClientFactory: HttpClientFactory,
+        cacheManager: CacheManager,
+    ) : this(execution, httpClientFactory, cacheManager, Unit)
+
+    constructor(
+        execution: SessionExecution,
+        httpClientFactory: HttpClientFactory,
+    ) : this(execution, httpClientFactory, null, Unit)
+
     /**
      * Per-`jwks_uri` JWKS cache via the IDK [CacheManager] abstraction, so a peer whose JWKS
      * endpoint is briefly unavailable (e.g. mid rolling-restart) does not fail validation.
@@ -148,72 +160,51 @@ class JwksUrlExternalIdentifierResolutionServiceImpl(
     }
 
     /**
-     * Fetch the raw JWKS JSON with a bounded, jittered retry on TRANSIENT failures only:
-     * transport/connection errors and HTTP 5xx (peer briefly unavailable / not-yet-ready,
-     * e.g. mid rolling-restart). A definite 4xx (and any other non-OK, non-5xx) is a real
-     * error and fails fast; a 200 whose body cannot be read is treated as transient. Nothing
-     * is cached: a recovered peer is re-resolved on the next call, a 200-with-missing-kid is
-     * surfaced (not retried) by the caller, and a stale/forged key is never trusted.
+     * Fetch the raw JWKS JSON. Bounded retry for transport errors and HTTP 5xx is configured
+     * on the Ktor client via [jwksHttpClientOptions], so this function only maps the final
+     * response into domain errors. A definite 4xx fails fast; a missing `kid` is surfaced by
+     * the caller and never retried here.
      */
-    private suspend fun fetchJwksJsonWithRetry(
+    private suspend fun fetchJwksJson(
         httpClient: HttpClient,
         url: String,
     ): IdkResult<String, IdkErrorType> {
-        var lastDetail = "unknown error"
-        var lastException: Throwable? = null
-        repeat(MAX_FETCH_ATTEMPTS) { attempt ->
-            if (attempt > 0) {
-                delay(retryBackoffMillis(attempt))
+        val response =
+            try {
+                httpClient.get(url)
+            } catch (expected: Exception) {
+                return IdkError
+                    .UNKNOWN_ERROR(
+                        message = "JWKS endpoint $url unavailable after ${MAX_FETCH_RETRIES + 1} attempts (transport error: ${expected.message})",
+                        exception = expected,
+                    ).asErrorResult()
             }
-            val response =
-                try {
-                    httpClient.get(url)
-                } catch (transient: Exception) {
-                    lastDetail = "transport error: ${transient.message}"
-                    lastException = transient
-                    log.debug("JWKS fetch attempt ${attempt + 1}/$MAX_FETCH_ATTEMPTS to $url failed (transport): ${transient.message}")
-                    return@repeat
-                }
-            when {
-                response.status == HttpStatusCode.OK -> {
-                    val body =
-                        try {
-                            response.body<String>()
-                        } catch (bodyError: Exception) {
-                            lastDetail = "response read error: ${bodyError.message}"
-                            lastException = bodyError
-                            log.debug("JWKS fetch attempt ${attempt + 1}/$MAX_FETCH_ATTEMPTS to $url failed reading body: ${bodyError.message}")
-                            return@repeat
-                        }
-                    return body.asOkResult()
-                }
 
-                response.status.value in 500..599 -> {
-                    lastDetail = "HTTP ${response.status.value}"
-                    log.debug("JWKS fetch attempt ${attempt + 1}/$MAX_FETCH_ATTEMPTS to $url failed (HTTP ${response.status.value})")
+        if (response.status != HttpStatusCode.OK) {
+            val prefix =
+                if (response.status.value in 500..599) {
+                    "JWKS endpoint $url unavailable after ${MAX_FETCH_RETRIES + 1} attempts"
+                } else {
+                    "Failed to fetch JWKS from $url"
                 }
-
-                else -> {
-                    return IdkError
-                        .UNKNOWN_ERROR(
-                            message = "Failed to fetch JWKS from $url: HTTP ${response.status.value}",
-                        ).asErrorResult()
-                }
-            }
+            return IdkError.UNKNOWN_ERROR(message = "$prefix: HTTP ${response.status.value}").asErrorResult()
         }
-        return IdkError
-            .UNKNOWN_ERROR(
-                message = "JWKS endpoint $url unavailable after $MAX_FETCH_ATTEMPTS attempts ($lastDetail)",
-                exception = lastException,
-            ).asErrorResult()
-    }
 
-    private fun retryBackoffMillis(attempt: Int): Long = BASE_RETRY_BACKOFF_MILLIS * attempt + Random.nextLong(RETRY_JITTER_MILLIS)
+        return try {
+            response.body<String>().asOkResult()
+        } catch (expected: Exception) {
+            IdkError
+                .UNKNOWN_ERROR(
+                    message = "JWKS endpoint $url returned an unreadable response body: ${expected.message}",
+                    exception = expected,
+                ).asErrorResult()
+        }
+    }
 
     /**
      * Resolve the JWKS for [url], serving a cached copy when it already contains the requested
      * key. On a cache miss OR a `kid` miss (rotation) the JWKS is fetched fresh (with
-     * [fetchJwksJsonWithRetry]) and the cache updated. A fetch/parse failure, or a JWKS with no
+     * [fetchJwksJson]) and the cache updated. A fetch/parse failure, or a JWKS with no
      * usable key, is NEVER cached — so a transient peer outage never pins a failure and a
      * recovered peer is re-resolved on the next call.
      */
@@ -229,14 +220,14 @@ class JwksUrlExternalIdentifierResolutionServiceImpl(
 
         val httpClient =
             try {
-                httpClientFactory.createClient(HttpClientOptions.createDefault())
+                httpClientFactory.createClient(jwksHttpClientOptions())
             } catch (expected: Exception) {
                 return IdkError.UNKNOWN_ERROR(message = "Failed to create HTTP client: ${expected.message}", exception = expected).asErrorResult()
             }
 
         val jwksJson =
             try {
-                fetchJwksJsonWithRetry(httpClient, url).getOrElse { return it.asErrorResult() }
+                fetchJwksJson(httpClient, url).getOrElse { return it.asErrorResult() }
             } finally {
                 try {
                     httpClient.close()
@@ -278,6 +269,17 @@ class JwksUrlExternalIdentifierResolutionServiceImpl(
         return requestedKid.isNullOrBlank() || resolved.any { it.kid == requestedKid }
     }
 
+    private fun jwksHttpClientOptions(): HttpClientOptions =
+        HttpClientOptions.createDefault().copy(
+            additionalConfig = {
+                install(HttpRequestRetry) {
+                    retryOnException(maxRetries = MAX_FETCH_RETRIES, retryOnTimeout = true)
+                    retryOnServerErrors(maxRetries = MAX_FETCH_RETRIES)
+                    delayMillis(respectRetryAfterHeader = true) { retry -> BASE_RETRY_BACKOFF_MILLIS * retry }
+                }
+            },
+        )
+
     override suspend fun supports(args: Any): Boolean {
         val externalArgs = args as? ExternalIdentifierOptsOrResult ?: return false
         val methodSupported =
@@ -317,15 +319,13 @@ class JwksUrlExternalIdentifierResolutionServiceImpl(
         val JWKS_CACHE_TTL: Duration = 10.minutes
 
         /**
-         * Bounded retry for a TRANSIENT JWKS-endpoint condition (transport failure / HTTP
+         * Bounded Ktor retry for a TRANSIENT JWKS-endpoint condition (transport failure / HTTP
          * 5xx) — e.g. a peer briefly unreachable or not-yet-ready during a rolling restart.
          * A definite 4xx and a 200-with-missing-kid are NOT retried, and failures are never
          * cached, so a real auth problem still fails fast and a recovered peer is picked up
-         * on the next request. Worst-case added latency on a fully-down peer is bounded
-         * (~3 attempts with sub-second jittered backoff).
+         * on the next request.
          */
-        const val MAX_FETCH_ATTEMPTS = 3
+        const val MAX_FETCH_RETRIES = 2
         private const val BASE_RETRY_BACKOFF_MILLIS = 200L
-        private const val RETRY_JITTER_MILLIS = 150L
     }
 }

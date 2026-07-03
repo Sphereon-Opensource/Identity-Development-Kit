@@ -16,6 +16,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import kotlin.time.Clock
@@ -26,6 +27,7 @@ const val OID4VCI_TEST_TENANT_ID = "default"
 
 class Oid4vciTestContext(
     testInstance: Any,
+    protocolBasePath: String = "",
 ) {
     init {
         // The OID4VCI integration tests run a single hosted AS that issues access tokens for
@@ -41,6 +43,18 @@ class Oid4vciTestContext(
             "${com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default.mode",
             "HOSTED",
         )
+        DefaultPrincipalMapPropertySource.addProperty(
+            "${com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default.grant-types-enabled",
+            "authorization_code,client_credentials,refresh_token,urn:ietf:params:oauth:grant-type:pre-authorized_code",
+        )
+        DefaultPrincipalMapPropertySource.addProperty(
+            "${com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default.internal-clients.issuer.client-id",
+            "issuer-service",
+        )
+        DefaultPrincipalMapPropertySource.addProperty(
+            "${com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default.internal-clients.issuer.client-secret",
+            "issuer-secret",
+        )
         // The OID4VCI Issuer adapter's `descriptorFor(configProvider.issuerIdentifier)` is
         // evaluated during DI graph construction (constructor arg of HttpEndpointCommandAdapter),
         // so the identifier MUST be present before any session graph touches the issuer
@@ -50,8 +64,8 @@ class Oid4vciTestContext(
             OID4VCI_TEST_ISSUER_URL,
         )
         DefaultAppMapPropertySource.addProperty(
-            "oid4vci.issuer.protocol.base-path",
-            "/oid4vci",
+            Oid4vciIssuerProtocolConfig.BASE_PATH_KEY,
+            Oid4vciIssuerProtocolConfig.normalizeBasePath(protocolBasePath),
         )
     }
 

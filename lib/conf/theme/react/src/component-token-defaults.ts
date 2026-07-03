@@ -8,8 +8,8 @@
 import type { ThemeTokenMap } from './types'
 
 export const buttonTokenDefaults: ThemeTokenMap = {
-  'comp.button.primary.background': '{palette.brand.700}',
-  'comp.button.primary.backgroundHover': '{palette.brand.800}',
+  'comp.button.primary.background': '{color.primary}',
+  'comp.button.primary.backgroundHover': '{palette.brand.600}',
   'comp.button.primary.backgroundActive': '{palette.brand.800}',
   'comp.button.primary.foreground': '{color.onPrimary}',
   'comp.button.primary.border': '{palette.brand.700}',
@@ -20,15 +20,15 @@ export const buttonTokenDefaults: ThemeTokenMap = {
   'comp.button.primary.paddingY': '{spacing.stack.sm}',
   'comp.button.primary.height': '42px',
   'comp.button.secondary.background': 'transparent',
-  'comp.button.secondary.backgroundHover': '{palette.brand.50}',
-  'comp.button.secondary.backgroundActive': '{palette.brand.100}',
+  'comp.button.secondary.backgroundHover': '{color.interactive.hover}',
+  'comp.button.secondary.backgroundActive': '{color.interactive.pressed}',
   'comp.button.secondary.foreground': '{color.text.primary}',
   'comp.button.secondary.border': '{color.secondary}',
   'comp.button.secondary.borderWidth': '{borderWidth.thin}',
   'comp.button.secondary.radius': '{shape.radius.3}',
   'comp.button.secondary.height': '42px',
   'comp.button.ghost.background': 'transparent',
-  'comp.button.ghost.backgroundHover': '{palette.brand.50}',
+  'comp.button.ghost.backgroundHover': '{color.interactive.hover}',
   'comp.button.ghost.foreground': '{color.primary}',
   'comp.button.ghost.radius': '{shape.radius.3}',
   'comp.button.ghost.height': '42px',
@@ -351,8 +351,8 @@ export const menuTokenDefaults: ThemeTokenMap = {
   'comp.menu.item.backgroundHover': '{color.interactive.hover}',
   'comp.menu.item.fontSize': '{text.style.subtitle1.desktop.fontSize}',
   'comp.menu.item.foreground': '{color.text.primary}',
-  'comp.menu.item.danger.foreground': '{palette.error.500}',
-  'comp.menu.item.danger.backgroundHover': '{palette.error.50}',
+  'comp.menu.item.danger.foreground': '{color.error}',
+  'comp.menu.item.danger.backgroundHover': '{color.errorContainer}',
 }
 
 export const panelTokenDefaults: ThemeTokenMap = {
@@ -438,8 +438,8 @@ export const confirmTokenDefaults: ThemeTokenMap = {
   'comp.confirm.modal.shadow': '0 20px 40px color-mix(in oklab, black 20%, transparent)',
   'comp.confirm.modal.width': '400px',
   'comp.confirm.icon.size': '56px',
-  'comp.confirm.icon.background': '{palette.error.50}',
-  'comp.confirm.icon.foreground': '{palette.error.500}',
+  'comp.confirm.icon.background': '{color.errorContainer}',
+  'comp.confirm.icon.foreground': '{color.error}',
   'comp.confirm.title.fontSize': '18px',
   'comp.confirm.message.fontSize': '14px',
   'comp.confirm.message.foreground': '{color.text.secondary}',
@@ -451,6 +451,11 @@ export const meatballTokenDefaults: ThemeTokenMap = {
   'comp.meatball.backgroundHover': '{palette.gray.100}',
   'comp.meatball.foreground': '{color.text.disabled}',
   'comp.meatball.foregroundHover': '{color.text.primary}',
+}
+
+export const ringTokenDefaults: ThemeTokenMap = {
+  'comp.focus.ring': '{shadow.focusRing}',
+  'comp.error.ring': '{shadow.errorRing}',
 }
 
 export const allComponentTokenDefaults: ThemeTokenMap = {
@@ -486,4 +491,5 @@ export const allComponentTokenDefaults: ThemeTokenMap = {
   ...selectionTokenDefaults,
   ...confirmTokenDefaults,
   ...meatballTokenDefaults,
+  ...ringTokenDefaults,
 }

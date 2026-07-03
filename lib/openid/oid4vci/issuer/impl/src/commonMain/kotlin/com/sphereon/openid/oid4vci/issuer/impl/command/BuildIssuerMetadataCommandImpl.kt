@@ -85,15 +85,16 @@ class BuildIssuerMetadataCommandImpl(
             CredentialIssuerMetadata(
                 credentialIssuer = applied.issuerIdentifier,
                 authorizationServers = applied.authorizationServers,
-                credentialEndpoint = "$baseUrl/oid4vci/credential",
-                deferredCredentialEndpoint = "$baseUrl/oid4vci/deferredCredential",
-                notificationEndpoint = "$baseUrl/oid4vci/notification",
-                nonceEndpoint = "$baseUrl/oid4vci/nonce",
+                credentialEndpoint = "$baseUrl/credential",
+                deferredCredentialEndpoint = "$baseUrl/deferredCredential",
+                notificationEndpoint = "$baseUrl/notification",
+                nonceEndpoint = "$baseUrl/nonce",
                 credentialConfigurationsSupported = applied.credentialConfigurations,
                 display = applied.display,
                 credentialResponseEncryption = applied.credentialResponseEncryption,
                 credentialRequestEncryption = applied.credentialRequestEncryption,
                 batchCredentialIssuance = applied.batchCredentialIssuance,
+                preferredKeyStorageStatusPeriod = applied.preferredKeyStorageStatusPeriodSeconds,
             ),
         )
     }

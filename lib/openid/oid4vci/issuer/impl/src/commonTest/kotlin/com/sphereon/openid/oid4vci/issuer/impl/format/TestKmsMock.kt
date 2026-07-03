@@ -64,8 +64,11 @@ import com.sphereon.crypto.core.kms.command.GetKeyResult
 import com.sphereon.crypto.core.kms.command.ListKeysResult
 import com.sphereon.crypto.core.kms.command.PerformKeyAgreementResult
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyResult
+import com.sphereon.crypto.core.kms.command.SignDigestResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.StoreKeyResult
 import com.sphereon.crypto.core.kms.command.UnwrapKeyResult
+import com.sphereon.crypto.core.kms.command.VerifyDigestResult
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureResult
 import com.sphereon.crypto.core.kms.command.WrapKeyResult
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
@@ -180,6 +183,26 @@ class TestKmsMock : KeyManagerService {
         input: ByteArray,
         signature: ByteArray,
     ): Boolean = true
+
+    override suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): ByteArray =
+        getProvider(keyInfo.providerId, signatureAlgorithm)
+            .signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)
+
+    override suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): Boolean =
+        getProvider(keyInfo.providerId, signatureAlgorithm)
+            .verifyDigest(keyInfo, digest, signature, signatureAlgorithm, signatureEncoding)
 
     @Suppress("UNCHECKED_CAST")
     override suspend fun <KT : KeyType> resolvePublicKey(
@@ -331,6 +354,24 @@ class TestKmsMock : KeyManagerService {
         input: ByteArray,
         signature: ByteArray,
     ): IdkResult<VerifyRawSignatureResult, IdkError> = Ok(VerifyRawSignatureResult(isValidRawSignature(keyInfo, input, signature)))
+
+    override suspend fun signDigestResult(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): IdkResult<SignDigestResult, IdkError> =
+        Ok(SignDigestResult(signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)))
+
+    override suspend fun verifyDigestResult(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): IdkResult<VerifyDigestResult, IdkError> =
+        Ok(VerifyDigestResult(verifyDigest(keyInfo, digest, signature, signatureAlgorithm, signatureEncoding)))
 
     override suspend fun encryptResult(
         keyInfo: KeyInfoType<*>,

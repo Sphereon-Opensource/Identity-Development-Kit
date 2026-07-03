@@ -564,6 +564,48 @@ class InMemorySnapshotCacheTest {
             assertEquals(1L, stats.invalidations)
             assertEquals(0L, stats.size)
         }
+
+    @Test
+    fun invalidateTenantRemovesTenantAndPrincipalSnapshots() =
+        runTest {
+            val cache = InMemorySnapshotCache()
+            val tenantKey = SnapshotKey(ConfigLevel.TENANT, "tenant-1", null, "kms.providers")
+            val principalKey = SnapshotKey(ConfigLevel.PRINCIPAL, "tenant-1", "user-1", "kms.providers")
+            val otherTenantKey = SnapshotKey(ConfigLevel.TENANT, "tenant-2", null, "kms.providers")
+            val snapshot = ConfigSnapshot(values = emptyMap(), createdAt = Clock.System.now(), expiresAt = Clock.System.now() + 1.hours)
+
+            cache.putSnapshot(tenantKey, snapshot)
+            cache.putSnapshot(principalKey, snapshot)
+            cache.putSnapshot(otherTenantKey, snapshot)
+
+            cache.invalidateTenant("tenant-1")
+
+            assertNull(cache.getSnapshot(tenantKey))
+            assertNull(cache.getSnapshot(principalKey))
+            assertNotNull(cache.getSnapshot(otherTenantKey))
+            assertEquals(2L, cache.getStats().invalidations)
+        }
+
+    @Test
+    fun invalidatePrincipalRemovesOnlyMatchingPrincipalSnapshots() =
+        runTest {
+            val cache = InMemorySnapshotCache()
+            val principalKey = SnapshotKey(ConfigLevel.PRINCIPAL, "tenant-1", "user-1", "kms.providers")
+            val otherPrincipalKey = SnapshotKey(ConfigLevel.PRINCIPAL, "tenant-1", "user-2", "kms.providers")
+            val tenantKey = SnapshotKey(ConfigLevel.TENANT, "tenant-1", null, "kms.providers")
+            val snapshot = ConfigSnapshot(values = emptyMap(), createdAt = Clock.System.now(), expiresAt = Clock.System.now() + 1.hours)
+
+            cache.putSnapshot(principalKey, snapshot)
+            cache.putSnapshot(otherPrincipalKey, snapshot)
+            cache.putSnapshot(tenantKey, snapshot)
+
+            cache.invalidatePrincipal("tenant-1", "user-1")
+
+            assertNull(cache.getSnapshot(principalKey))
+            assertNotNull(cache.getSnapshot(otherPrincipalKey))
+            assertNotNull(cache.getSnapshot(tenantKey))
+            assertEquals(1L, cache.getStats().invalidations)
+        }
 }
 
 class TtlConfigTest {
@@ -708,6 +750,18 @@ class NoOpSyncSnapshotCacheTest {
     @Test
     fun invalidateByPrefixDoesNothing() {
         NoOpSyncSnapshotCache.invalidateByPrefix("test")
+        // No exception
+    }
+
+    @Test
+    fun invalidateTenantDoesNothing() {
+        NoOpSyncSnapshotCache.invalidateTenant("tenant-123")
+        // No exception
+    }
+
+    @Test
+    fun invalidatePrincipalDoesNothing() {
+        NoOpSyncSnapshotCache.invalidatePrincipal("tenant-123", "user-456")
         // No exception
     }
 
@@ -874,6 +928,46 @@ class InMemorySyncSnapshotCacheTest {
         assertEquals(1L, stats.evictions)
         assertEquals(1L, stats.invalidations)
         assertEquals(0L, stats.size)
+    }
+
+    @Test
+    fun invalidateTenantRemovesTenantAndPrincipalSnapshots() {
+        val cache = InMemorySyncSnapshotCache()
+        val tenantKey = SnapshotKey(ConfigLevel.TENANT, "tenant-1", null, "kms.providers")
+        val principalKey = SnapshotKey(ConfigLevel.PRINCIPAL, "tenant-1", "user-1", "kms.providers")
+        val otherTenantKey = SnapshotKey(ConfigLevel.TENANT, "tenant-2", null, "kms.providers")
+        val snapshot = ConfigSnapshot(values = emptyMap(), createdAt = Clock.System.now(), expiresAt = Clock.System.now() + 1.hours)
+
+        cache.putSnapshot(tenantKey, snapshot)
+        cache.putSnapshot(principalKey, snapshot)
+        cache.putSnapshot(otherTenantKey, snapshot)
+
+        cache.invalidateTenant("tenant-1")
+
+        assertNull(cache.getSnapshot(tenantKey))
+        assertNull(cache.getSnapshot(principalKey))
+        assertNotNull(cache.getSnapshot(otherTenantKey))
+        assertEquals(2L, cache.getStats().invalidations)
+    }
+
+    @Test
+    fun invalidatePrincipalRemovesOnlyMatchingPrincipalSnapshots() {
+        val cache = InMemorySyncSnapshotCache()
+        val principalKey = SnapshotKey(ConfigLevel.PRINCIPAL, "tenant-1", "user-1", "kms.providers")
+        val otherPrincipalKey = SnapshotKey(ConfigLevel.PRINCIPAL, "tenant-1", "user-2", "kms.providers")
+        val tenantKey = SnapshotKey(ConfigLevel.TENANT, "tenant-1", null, "kms.providers")
+        val snapshot = ConfigSnapshot(values = emptyMap(), createdAt = Clock.System.now(), expiresAt = Clock.System.now() + 1.hours)
+
+        cache.putSnapshot(principalKey, snapshot)
+        cache.putSnapshot(otherPrincipalKey, snapshot)
+        cache.putSnapshot(tenantKey, snapshot)
+
+        cache.invalidatePrincipal("tenant-1", "user-1")
+
+        assertNull(cache.getSnapshot(principalKey))
+        assertNotNull(cache.getSnapshot(otherPrincipalKey))
+        assertNotNull(cache.getSnapshot(tenantKey))
+        assertEquals(1L, cache.getStats().invalidations)
     }
 }
 

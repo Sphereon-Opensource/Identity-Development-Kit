@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright 2023-2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -86,7 +86,7 @@ class Oid4vciDesignMapperTest {
     }
 
     // =========================================================================
-    // Direction 1: Design → OID4VCI
+    // Direction 1: Design â†’ OID4VCI
     // =========================================================================
 
     @Test
@@ -199,7 +199,7 @@ class Oid4vciDesignMapperTest {
     fun jwtVcJsonFormatSetsCredentialDefinitionTypeFromBinding() {
         val design =
             buildDesign(
-                bindings = listOf(DesignBinding(vcType = "EmployeeCredential")),
+                bindings = listOf(DesignBinding(type = "EmployeeCredential")),
             )
 
         val config = Oid4vciDesignMapper.toCredentialConfiguration(design, "jwt_vc_json")
@@ -218,7 +218,7 @@ class Oid4vciDesignMapperTest {
     fun ldpVcFormatSetsCredentialDefinitionType() {
         val design =
             buildDesign(
-                bindings = listOf(DesignBinding(vcType = "UniversityDegreeCredential")),
+                bindings = listOf(DesignBinding(type = "UniversityDegreeCredential")),
             )
 
         val config = Oid4vciDesignMapper.toCredentialConfiguration(design, "ldp_vc")
@@ -466,7 +466,7 @@ class Oid4vciDesignMapperTest {
     }
 
     // =========================================================================
-    // Direction 2: OID4VCI → Design
+    // Direction 2: OID4VCI â†’ Design
     // =========================================================================
 
     @Test

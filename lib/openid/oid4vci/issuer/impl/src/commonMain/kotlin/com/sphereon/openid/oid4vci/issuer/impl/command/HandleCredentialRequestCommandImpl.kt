@@ -50,6 +50,7 @@ import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribut
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
+import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedWalletInstanceAttestationEvidence
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenArgs
@@ -64,6 +65,7 @@ import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncr
 import com.sphereon.openid.oid4vci.issuer.impl.hook.PostIssuanceHookDispatcher
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.impl.proof.ProofVerifier
+import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
@@ -205,6 +207,8 @@ class HandleCredentialRequestCommandImpl(
         val preAuthCode: String?,
         val subject: String?,
         val hookAllowList: List<String>?,
+        val keyAttestations: List<VerifiedKeyAttestation> = emptyList(),
+        val walletInstanceAttestation: ValidatedWalletInstanceAttestationEvidence? = null,
     )
 
     override suspend fun doExecute(
@@ -259,6 +263,8 @@ class HandleCredentialRequestCommandImpl(
                 issuedAt = clock.now(),
                 boundUsageToken = correlation?.boundUsageToken,
                 preAuthCode = correlation?.preAuthCode,
+                keyAttestations = correlation?.keyAttestations.orEmpty(),
+                walletInstanceAttestation = correlation?.walletInstanceAttestation,
                 subject = correlation?.subject,
             )
 
@@ -387,6 +393,7 @@ class HandleCredentialRequestCommandImpl(
                     preAuthCode = session.preAuthCode,
                     subject = session.subject ?: tokenContext.subject,
                     hookAllowList = session.postIssuanceHookAllowList,
+                    walletInstanceAttestation = tokenContext.walletInstanceAttestation,
                 )
         } else {
             pendingHookContext =
@@ -395,6 +402,7 @@ class HandleCredentialRequestCommandImpl(
                     preAuthCode = null,
                     subject = tokenContext.subject,
                     hookAllowList = null,
+                    walletInstanceAttestation = tokenContext.walletInstanceAttestation,
                 )
         }
 
@@ -463,6 +471,10 @@ class HandleCredentialRequestCommandImpl(
             } else {
                 null
             }
+        pendingHookContext =
+            pendingHookContext?.copy(
+                keyAttestations = batchVerifiedProofs?.mapNotNull { it.keyAttestation }.orEmpty(),
+            )
         val initialContribution =
             if (session != null) {
                 attributeContributor
@@ -578,6 +590,7 @@ class HandleCredentialRequestCommandImpl(
                                             holderBindingKey = verifiedProof.holderBindingKey,
                                             holderIdentifier = verifiedProof.holderIdentifier,
                                             holderKeyId = verifiedProof.keyId,
+                                            keyAttestation = verifiedProof.keyAttestation,
                                             attributes = mergedAttributes,
                                             sdPolicies = sdPolicies,
                                             mandatoryClaims = mandatoryClaims,
@@ -631,6 +644,7 @@ class HandleCredentialRequestCommandImpl(
                         holderBindingKey = verifiedProof?.holderBindingKey,
                         holderIdentifier = verifiedProof?.holderIdentifier,
                         holderKeyId = verifiedProof?.keyId,
+                        keyAttestation = verifiedProof?.keyAttestation,
                         attributes = mergedAttributes,
                         sdPolicies = sdPolicies,
                         mandatoryClaims = mandatoryClaims,

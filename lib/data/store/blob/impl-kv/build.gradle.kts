@@ -19,6 +19,7 @@ kotlin {
                 api(projects.libDataStoreBlobPublic)
                 api(projects.libDataStoreKvPublic)
 
+                implementation(projects.libDataStoreKvImpl)
                 implementation(sphereonlib.org.jetbrains.kotlinx.atomicfu)
                 implementation(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)

@@ -18,10 +18,19 @@
 package com.sphereon.crypto.core.kms
 
 import com.sphereon.core.api.conf.CamelCaseKeyDenormalizerImpl
+import com.sphereon.core.api.conf.CachedConfigValue
+import com.sphereon.core.api.conf.ConfigBootstrapGuard
+import com.sphereon.core.api.conf.ConfigEnvironment
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.ConfigSnapshot
 import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.conf.DefaultPolymorphicConfigBinder
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
+import com.sphereon.core.api.conf.ResolutionMetadata
+import com.sphereon.core.api.conf.SnapshotKey
+import com.sphereon.core.api.conf.SyncConfigSnapshotCache
 import com.sphereon.core.api.conf.TypeSuffixEntryDetection
+import com.sphereon.core.api.conf.refreshableContentRevision
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.crypto.core.json.CryptoJsonSupport
@@ -34,6 +43,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+import kotlin.time.Clock
 
 @Inject
 @SingleIn(AppScope::class)
@@ -61,10 +71,13 @@ class NoOpKmsProviderFactoryImpl : KmsProviderFactory {
 class KmsProviderManagerImpl(
     factories: Set<KmsProviderFactory>,
     private val binder: KmsProviderConfigBinder,
+    private val snapshotCache: SyncConfigSnapshotCache,
+    appLogManager: AppLogManager,
 ) : KmsProviderManager {
     // Filter out the NO OP Factory which is only there to ensure injection works at all times
     private val factories =
         factories.filter { it.kmsProviderType != NoOpKmsProviderFactoryImpl.KMS_PROVIDER_TYPE }.toSet()
+    private val log = appLogManager.withTag("KmsProviderManager")
 
     /**
      * ==================================================================================================================================
@@ -90,11 +103,129 @@ class KmsProviderManagerImpl(
         configService: ConfigService,
         execution: SessionExecution,
     ): Set<KmsProvider> =
-        binder
-            .getKmsProviderConfigs(configService)
+        getBoundKmsProviderConfigs(configService, execution)
             .map {
                 createFromProviderConfig(it, execution)
             }.toSet()
+
+    private fun getBoundKmsProviderConfigs(
+        configService: ConfigService,
+        execution: SessionExecution,
+    ): Array<KmsProviderConfigBase> {
+        val allowSnapshotCache = !ConfigBootstrapGuard.isContextRegistrationInProgress()
+        val snapshotKey = providerConfigSnapshotKey(configService, execution, refresh = allowSnapshotCache)
+        if (!allowSnapshotCache) {
+            log.debug(
+                "VDX_KMS_PROVIDER_CONFIG_CACHE_BYPASS_BOOTSTRAP scope=${snapshotKey.scope} " +
+                    "tenant=${snapshotKey.tenantId ?: "none"} principal=${snapshotKey.principalId ?: "none"} " +
+                    "prefix=${snapshotKey.prefix}",
+            )
+            return binder.getKmsProviderConfigs(configService)
+        }
+
+        readProviderConfigSnapshot(snapshotKey)?.let {
+            log.debug(
+                "VDX_KMS_PROVIDER_CONFIG_CACHE_HIT scope=${snapshotKey.scope} tenant=${snapshotKey.tenantId ?: "none"} " +
+                    "principal=${snapshotKey.principalId ?: "none"} prefix=${snapshotKey.prefix} size=${it.size}",
+            )
+            return it
+        }
+
+        log.debug(
+            "VDX_KMS_PROVIDER_CONFIG_CACHE_MISS scope=${snapshotKey.scope} tenant=${snapshotKey.tenantId ?: "none"} " +
+                "principal=${snapshotKey.principalId ?: "none"} prefix=${snapshotKey.prefix}",
+        )
+        val configs = binder.getKmsProviderConfigs(configService)
+        writeProviderConfigSnapshot(snapshotKey, configs)
+        return configs
+    }
+
+    private fun providerConfigSnapshotKey(
+        configService: ConfigService,
+        execution: SessionExecution,
+        refresh: Boolean,
+    ): SnapshotKey {
+        val revision = configRevision(configService, refresh)
+        return SnapshotKey(
+            scope = configService.configLevel,
+            tenantId =
+                when (configService.configLevel) {
+                    ConfigLevel.APP -> null
+                    ConfigLevel.TENANT, ConfigLevel.PRINCIPAL -> execution.tenantId
+                },
+            principalId =
+                when (configService.configLevel) {
+                    ConfigLevel.PRINCIPAL -> execution.principalId
+                    ConfigLevel.APP, ConfigLevel.TENANT -> null
+                },
+            prefix = "$KMS_PROVIDER_CONFIG_SNAPSHOT_PREFIX.$revision",
+        )
+    }
+
+    private fun readProviderConfigSnapshot(snapshotKey: SnapshotKey): Array<KmsProviderConfigBase>? {
+        val value = snapshotCache.getSnapshot(snapshotKey)?.values?.get(KMS_PROVIDER_CONFIGS_SNAPSHOT_VALUE)?.value as? Array<*> ?: return null
+        return value
+            .filterIsInstance<KmsProviderConfigBase>()
+            .takeIf { it.size == value.size }
+            ?.toTypedArray()
+    }
+
+    private fun writeProviderConfigSnapshot(
+        snapshotKey: SnapshotKey,
+        configs: Array<KmsProviderConfigBase>,
+    ) {
+        val now = Clock.System.now()
+        snapshotCache.putSnapshot(
+            snapshotKey,
+            ConfigSnapshot(
+                values =
+                    mapOf(
+                        KMS_PROVIDER_CONFIGS_SNAPSHOT_VALUE to
+                            CachedConfigValue(
+                                value = configs,
+                                metadata =
+                                    ResolutionMetadata(
+                                        source = "KmsProviderConfigBinder",
+                                        scope = snapshotKey.scope,
+                                        originalKey = KMS_PROVIDERS_PREFIX,
+                                        normalizedKey = KMS_PROVIDERS_PREFIX,
+                                        order = 0,
+                                        isSecret = false,
+                                        isInterpolated = false,
+                                        resolvedAt = now,
+                                        ttl = null,
+                                    ),
+                                cachedAt = now,
+                                expiresAt = null,
+                                preserveType = true,
+                            ),
+                    ),
+                createdAt = now,
+                expiresAt = null,
+            ),
+        )
+        log.debug(
+            "VDX_KMS_PROVIDER_CONFIG_CACHE_STORED scope=${snapshotKey.scope} tenant=${snapshotKey.tenantId ?: "none"} " +
+                "principal=${snapshotKey.principalId ?: "none"} prefix=${snapshotKey.prefix} size=${configs.size}",
+        )
+    }
+
+    private fun configRevision(
+        config: ConfigEnvironment?,
+        refresh: Boolean,
+    ): Long {
+        if (config == null) {
+            return 0L
+        }
+        val sources = config.getPropertySources(includeParents = false)
+        val localRevision = (sources.revision * 31L) + sources.refreshableContentRevision(refresh)
+        return (localRevision * 31L) + configRevision(config.parent, refresh)
+    }
+
+    private companion object {
+        const val KMS_PROVIDER_CONFIGS_SNAPSHOT_VALUE = "configs"
+        const val KMS_PROVIDER_CONFIG_SNAPSHOT_PREFIX = "_derived.kms.provider-configs.bound"
+    }
 }
 
 /**

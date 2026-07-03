@@ -37,8 +37,11 @@ import com.sphereon.crypto.core.kms.command.GetKeyResult
 import com.sphereon.crypto.core.kms.command.ListKeysResult
 import com.sphereon.crypto.core.kms.command.PerformKeyAgreementResult
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyResult
+import com.sphereon.crypto.core.kms.command.SignDigestResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.StoreKeyResult
 import com.sphereon.crypto.core.kms.command.UnwrapKeyResult
+import com.sphereon.crypto.core.kms.command.VerifyDigestResult
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureResult
 import com.sphereon.crypto.core.kms.command.WrapKeyResult
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
@@ -221,6 +224,58 @@ interface KeyManagerService :
         input: ByteArray,
         signature: ByteArray,
     ): IdkResult<VerifyRawSignatureResult, IdkError>
+
+    /**
+     * Creates a signature over a caller-supplied digest using the command pattern.
+     *
+     * The provider must sign [digest] directly and must not hash it again.
+     */
+    suspend fun signDigestResult(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+        requireX5Chain: Boolean = false,
+    ): IdkResult<SignDigestResult, IdkError>
+
+    /**
+     * Verifies a signature over a caller-supplied digest using the command pattern.
+     *
+     * The provider must verify [digest] directly and must not hash it again.
+     */
+    suspend fun verifyDigestResult(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+    ): IdkResult<VerifyDigestResult, IdkError>
+
+    /**
+     * Creates a signature over a caller-supplied digest.
+     *
+     * The provider must sign [digest] directly and must not hash it again.
+     */
+    suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+        requireX5Chain: Boolean = false,
+    ): ByteArray
+
+    /**
+     * Verifies a signature over a caller-supplied digest.
+     *
+     * The provider must verify [digest] directly and must not hash it again.
+     */
+    suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+    ): Boolean
 
     /**
      * Encrypts plaintext using the command pattern with IdkResult return type.

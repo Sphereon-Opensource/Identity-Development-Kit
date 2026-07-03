@@ -10,6 +10,7 @@
  */
 
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
 plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
     alias(sphereonplug.plugins.org.jetbrains.compose)
@@ -36,6 +37,10 @@ kotlin {
                 nodejs()
             }
         }
+    }
+    configureWasmJsTargetIfEnabled {
+        browser()
+        nodejs()
     }
     configureIosTargetsIfEnabled()
 
@@ -73,6 +78,7 @@ kotlin {
         val jvmMain by getting {
             dependsOn(composeUiMain)
         }
+        findByName("wasmJsMain")?.dependsOn(composeUiMain)
         val jvmTest by getting {
             dependencies {
                 implementation(compose.foundation)

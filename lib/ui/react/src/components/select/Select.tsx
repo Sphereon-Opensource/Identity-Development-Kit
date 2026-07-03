@@ -6,6 +6,8 @@ export interface SelectProps<T> extends UseSelectProps<T> {
   placeholder?: string
   className?: string
   children?: never
+  // triggerProps is inherited from UseSelectProps — listed here for documentation clarity.
+  // Pass id, aria-invalid, aria-describedby, aria-required, aria-label to reach the trigger.
 }
 
 export interface SelectOptionProps {

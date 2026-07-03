@@ -26,6 +26,8 @@ import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.query.percentEncodeQueryComponent
 import com.sphereon.core.api.random.SecureRandom
+import com.sphereon.core.api.service.Amr
+import com.sphereon.core.api.service.AuthAssuranceLevel
 import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -238,6 +240,8 @@ class LoginSubmitHttpEndpointCommandImpl(
                 createdAt = now,
                 absoluteExpiresAt = now + session.absoluteTtlSeconds.seconds,
                 idleExpiresAt = now + session.idleTtlSeconds.seconds,
+                acr = AuthAssuranceLevel.AAL1.acr,
+                amr = listOf(Amr.PWD),
             )
         val stored = loginSessionStore.create(record)
         if (!stored.isOk) {
@@ -262,6 +266,7 @@ class LoginSubmitHttpEndpointCommandImpl(
             metadata =
                 mapOf(
                     "amr" to "pwd",
+                    "acr" to AuthAssuranceLevel.AAL1.acr,
                     "auth_method" to "PASSWORD",
                     "login_session_id" to loginSessionId,
                 ),

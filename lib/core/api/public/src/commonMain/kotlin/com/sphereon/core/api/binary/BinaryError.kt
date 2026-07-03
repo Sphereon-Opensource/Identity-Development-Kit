@@ -23,6 +23,7 @@ import com.sphereon.core.api.session.currentTimeMillis
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmStatic
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Serializable error envelope for transport across all codecs (JSON, Protobuf, CBOR).
@@ -102,6 +103,20 @@ data class BinaryError(
 
             "INVALID_STATE" -> {
                 IdkError.INVALID_STATE(message = message)
+            }
+
+            "SERVICE_UNAVAILABLE" -> {
+                IdkError.SERVICE_UNAVAILABLE_ERROR(
+                    message = message,
+                    retryAfter = details["retry_after"]?.toLongOrNull()?.coerceAtLeast(1)?.seconds,
+                )
+            }
+
+            "QUOTA_EXCEEDED_ERROR" -> {
+                IdkError.QUOTA_EXCEEDED_ERROR(
+                    message = message,
+                    retryAfter = details["retry_after"]?.toLongOrNull()?.coerceAtLeast(1)?.seconds,
+                )
             }
 
             "COMMAND_DISABLED" -> {
@@ -289,6 +304,7 @@ data class BinaryError(
                 "COMMAND_DISABLED" -> HTTP_SERVICE_UNAVAILABLE
                 "COMMAND_NOT_AUTHORIZED" -> HTTP_FORBIDDEN
                 "SERVICE_UNAVAILABLE" -> HTTP_SERVICE_UNAVAILABLE
+                "QUOTA_EXCEEDED_ERROR" -> HTTP_TOO_MANY_REQUESTS
                 "INTERNAL_ERROR" -> HTTP_INTERNAL_SERVER_ERROR
                 else -> HTTP_INTERNAL_SERVER_ERROR
             }

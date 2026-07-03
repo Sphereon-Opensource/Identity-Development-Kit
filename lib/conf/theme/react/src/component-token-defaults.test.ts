@@ -4,9 +4,9 @@ import {appShellTokenDefaults, buttonTokenDefaults, cardTokenDefaults, navTokenD
 import { getSystemDefaults } from './defaults'
 
 describe('card component tokens', () => {
-  it('keeps admin shell primary actions on the deep brand stop', () => {
-    expect(buttonTokenDefaults['comp.button.primary.background']).toBe('{palette.brand.700}')
-    expect(buttonTokenDefaults['comp.button.primary.backgroundHover']).toBe('{palette.brand.800}')
+  it('uses the semantic primary color for the primary button (lighter, brand-tuned)', () => {
+    expect(buttonTokenDefaults['comp.button.primary.background']).toBe('{color.primary}')
+    expect(buttonTokenDefaults['comp.button.primary.backgroundHover']).toBe('{palette.brand.600}')
     expect(buttonTokenDefaults['comp.button.primary.foreground']).toBe('{color.onPrimary}')
   })
 
@@ -43,7 +43,7 @@ describe('card component tokens', () => {
   })
 
   it('resolves card interaction tokens from system defaults', () => {
-    const tokens = resolveTokenReferences(getSystemDefaults('light'))
+    const tokens = resolveTokenReferences({...getSystemDefaults('light'), ...cardTokenDefaults})
 
     expect(tokens['comp.card.borderHover']).toBe(tokens['palette.brand.600'])
     expect(tokens['comp.card.shadowHover']).toContain(tokens['palette.brand.600'])

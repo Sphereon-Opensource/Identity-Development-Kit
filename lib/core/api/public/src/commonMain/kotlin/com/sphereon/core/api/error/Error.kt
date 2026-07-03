@@ -407,19 +407,27 @@ open class IdkError(
             causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
             resource: String? = null,
             message: String = "Quota exceeded${resource?.let { ": $it" } ?: ""}",
+            retryAfter: Duration? = null,
             throwable: Throwable? = null,
-        ) = IdkError(
-            code = "QUOTA_EXCEEDED_ERROR",
-            message =
-                Message(
-                    i18nKey = "com.sphereon.core.error.quota-exceeded-error",
-                    defaultMessage = message,
-                ),
-            severity = severity,
-            category = ErrorCategory.RATE_LIMITED,
-            causes = causes,
-            exception = throwable,
-        )
+        ): IdkError {
+            val retryAfterDelay = retryAfter
+            return object : IdkError(
+                code = "QUOTA_EXCEEDED_ERROR",
+                message =
+                    Message(
+                        i18nKey = "com.sphereon.core.error.quota-exceeded-error",
+                        defaultMessage = message,
+                    ),
+                severity = severity,
+                category = ErrorCategory.RATE_LIMITED,
+                causes = causes,
+                exception = throwable,
+                meta = retryAfterDelay?.let { mapOf("retry_after" to it.inWholeSeconds) } ?: emptyMap(),
+            ) {
+                override val retryability: Retryability get() = Retryability.TRANSIENT
+                override val retryAfter: Duration? get() = retryAfterDelay
+            }
+        }
 
         @JvmStatic
         @JsStatic
@@ -493,9 +501,11 @@ open class IdkError(
             severity: Severity = Severity.ERROR,
             causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
             message: String = "Service temporarily unavailable",
+            retryAfter: Duration? = null,
             throwable: Throwable? = null,
-        ): IdkError =
-            object : IdkError(
+        ): IdkError {
+            val retryAfterDelay = retryAfter
+            return object : IdkError(
                 code = "SERVICE_UNAVAILABLE",
                 message =
                     Message(
@@ -506,9 +516,12 @@ open class IdkError(
                 category = ErrorCategory.UNAVAILABLE,
                 causes = causes,
                 exception = throwable,
+                meta = retryAfterDelay?.let { mapOf("retry_after" to it.inWholeSeconds) } ?: emptyMap(),
             ) {
                 override val retryability: Retryability get() = Retryability.TRANSIENT
+                override val retryAfter: Duration? get() = retryAfterDelay
             }
+        }
 
         @JvmStatic
         @JsStatic

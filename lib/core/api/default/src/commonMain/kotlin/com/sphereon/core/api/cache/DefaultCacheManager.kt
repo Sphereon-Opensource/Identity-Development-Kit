@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.cache
 
+import com.sphereon.core.api.log.Log
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -40,6 +41,7 @@ class DefaultCacheManager : CacheManager {
     private val caches = mutableMapOf<String, ScopedCache<*, *>>()
     private val registeredRequirements = mutableMapOf<String, CacheRequirements>()
     private val defaultSerializers = mutableMapOf<String, Pair<CacheSerializer<*>, CacheSerializer<*>>>()
+    private val log = Log.app().withTag("DefaultCacheManager")
 
     // ========== Backend Registration ==========
 
@@ -174,9 +176,34 @@ class DefaultCacheManager : CacheManager {
     override fun aggregateStats(): Map<String, CacheStatistics> = caches.mapValues { (_, cache) -> cache.stats() }
 
     override suspend fun invalidateTenant(tenantId: String) {
+        val before = retainedEntrySnapshot()
+        val failures = mutableListOf<String>()
         caches.values.forEach { cache ->
             @Suppress("UNCHECKED_CAST")
-            (cache as ScopedCache<Any, Any>).invalidateTenant(tenantId)
+            runCatching {
+                (cache as ScopedCache<Any, Any>).invalidateTenant(tenantId)
+            }.onFailure { error ->
+                val failure = "${cache.namespace.sanitizeCacheLogToken()}:${error.cacheFailureToken()}"
+                failures += failure
+                log.warn(
+                    "VDX_CACHE_MANAGER_TENANT_NAMESPACE_INVALIDATION_FAILED " +
+                        "tenant=${tenantId.sanitizeCacheLogToken()} namespace=${cache.namespace.sanitizeCacheLogToken()} " +
+                        "backend=${cache.backendId.sanitizeCacheLogToken()} error=${error.cacheFailureToken()}"
+                )
+            }
+        }
+        val after = retainedEntrySnapshot()
+        log.debug(
+            "VDX_CACHE_MANAGER_TENANT_INVALIDATED tenant=${tenantId.sanitizeCacheLogToken()} " +
+                "cache.namespaces=${caches.size} entries.before=${before.total} entries.after=${after.total} " +
+                "entries.evicted=${(before.total - after.total).coerceAtLeast(0)} " +
+                "entries.retained=${after.total} entries.byNamespace=${after.byNamespace.toSizeLogToken()} " +
+                "snapshot.failures.before=${before.failures.toFailureLogToken()} " +
+                "snapshot.failures.after=${after.failures.toFailureLogToken()} " +
+                "invalidation.failures=${failures.toListLogToken()}"
+        )
+        if (failures.isNotEmpty()) {
+            error("Tenant cache invalidation failed for ${failures.joinToString(separator = ",")}")
         }
     }
 
@@ -184,9 +211,36 @@ class DefaultCacheManager : CacheManager {
         tenantId: String,
         principalId: String,
     ) {
+        val before = retainedEntrySnapshot()
+        val failures = mutableListOf<String>()
         caches.values.forEach { cache ->
             @Suppress("UNCHECKED_CAST")
-            (cache as ScopedCache<Any, Any>).invalidatePrincipal(tenantId, principalId)
+            runCatching {
+                (cache as ScopedCache<Any, Any>).invalidatePrincipal(tenantId, principalId)
+            }.onFailure { error ->
+                val failure = "${cache.namespace.sanitizeCacheLogToken()}:${error.cacheFailureToken()}"
+                failures += failure
+                log.warn(
+                    "VDX_CACHE_MANAGER_PRINCIPAL_NAMESPACE_INVALIDATION_FAILED " +
+                        "tenant=${tenantId.sanitizeCacheLogToken()} principal=${principalId.sanitizeCacheLogToken()} " +
+                        "namespace=${cache.namespace.sanitizeCacheLogToken()} backend=${cache.backendId.sanitizeCacheLogToken()} " +
+                        "error=${error.cacheFailureToken()}"
+                )
+            }
+        }
+        val after = retainedEntrySnapshot()
+        log.debug(
+            "VDX_CACHE_MANAGER_PRINCIPAL_INVALIDATED tenant=${tenantId.sanitizeCacheLogToken()} " +
+                "principal=${principalId.sanitizeCacheLogToken()} cache.namespaces=${caches.size} " +
+                "entries.before=${before.total} entries.after=${after.total} " +
+                "entries.evicted=${(before.total - after.total).coerceAtLeast(0)} " +
+                "entries.retained=${after.total} entries.byNamespace=${after.byNamespace.toSizeLogToken()} " +
+                "snapshot.failures.before=${before.failures.toFailureLogToken()} " +
+                "snapshot.failures.after=${after.failures.toFailureLogToken()} " +
+                "invalidation.failures=${failures.toListLogToken()}"
+        )
+        if (failures.isNotEmpty()) {
+            error("Principal cache invalidation failed for ${failures.joinToString(separator = ",")}")
         }
     }
 
@@ -195,4 +249,61 @@ class DefaultCacheManager : CacheManager {
     }
 
     override suspend fun isHealthy(): Boolean = backends.values.all { it.isHealthy() }
+
+    private suspend fun retainedEntrySnapshot(): RetainedEntrySnapshot {
+        val byNamespace = mutableMapOf<String, Long>()
+        val failures = mutableMapOf<String, String>()
+        caches.entries.forEach { (namespace, cache) ->
+            runCatching {
+                cache.size()
+            }.onSuccess { size ->
+                byNamespace[namespace] = size
+            }.onFailure { error ->
+                failures[namespace] = error.cacheFailureToken()
+            }
+        }
+        return RetainedEntrySnapshot(
+            total = byNamespace.values.sum(),
+            byNamespace = byNamespace.entries.sortedBy { it.key }.associate { it.key to it.value },
+            failures = failures,
+        )
+    }
+
+    private data class RetainedEntrySnapshot(
+        val total: Long,
+        val byNamespace: Map<String, Long>,
+        val failures: Map<String, String>,
+    )
 }
+
+private fun Map<String, Long>.toSizeLogToken(): String =
+    if (isEmpty()) {
+        "<empty>"
+    } else {
+        entries.joinToString(separator = ",") { (namespace, size) ->
+            "${namespace.sanitizeCacheLogToken()}:$size"
+        }
+    }
+
+private fun Map<String, String>.toFailureLogToken(): String =
+    if (isEmpty()) {
+        "<empty>"
+    } else {
+        entries.joinToString(separator = ",") { (namespace, error) ->
+            "${namespace.sanitizeCacheLogToken()}:${error.sanitizeCacheLogToken()}"
+        }
+    }
+
+private fun List<String>.toListLogToken(): String =
+    if (isEmpty()) {
+        "<empty>"
+    } else {
+        joinToString(separator = ",") { it.sanitizeCacheLogToken() }
+    }
+
+private fun Throwable.cacheFailureToken(): String = (message ?: this::class.simpleName ?: "unknown").sanitizeCacheLogToken()
+
+private fun String?.sanitizeCacheLogToken(): String =
+    (this?.trim()?.ifBlank { "<blank>" } ?: "<null>")
+        .replace(Regex("[^A-Za-z0-9._:@-]"), "_")
+        .take(160)

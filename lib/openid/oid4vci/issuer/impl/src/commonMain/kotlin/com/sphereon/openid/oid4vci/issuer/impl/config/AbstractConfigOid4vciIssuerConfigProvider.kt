@@ -68,7 +68,7 @@ import kotlinx.serialization.json.jsonObject
  * and evaluated fresh on each read. ALL config reads (issuer-level keys AND the per-credential
  * subtree) are resolved relative to that namespace:
  *  - issuer-level keys: `<namespace>.<key>` (e.g. `<namespace>.identifier`)
- *  - per-credential keys: `<namespace>.credentials.[<configId>].<key>` via [credentialsNamespace]
+ *  - per-credential keys: `<namespace>.credentials.[<configId>].<key>`
  *
  * Subclasses choose the namespace:
  *  - [ConfigDrivenOid4vciIssuerConfigProvider] pins it to the singular `oid4vci.issuer` namespace.
@@ -98,28 +98,50 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     protected val namespace: String
         get() = namespaceProvider()
 
+    private val singularNamespace: String
+        get() = ConfigDrivenOid4vciIssuerConfigProvider.NAMESPACE
+
     private fun namespaceProperty(relativeKey: String): String? =
-        configService.getPropertyAsString("${namespace}.$relativeKey")
+        propertyInNamespace(namespace, relativeKey)
+            ?: if (namespace != singularNamespace) propertyInNamespace(singularNamespace, relativeKey) else null
+
+    private fun namespaceSubProperties(relativePrefix: String): Map<String, String> {
+        val active = subPropertiesInNamespace(namespace, relativePrefix)
+        if (namespace == singularNamespace) return active
+        val fallback = subPropertiesInNamespace(singularNamespace, relativePrefix)
+        return fallback + active
+    }
+
+    private fun propertyInNamespace(
+        ns: String,
+        relativeKey: String,
+    ): String? = configService.getPropertyAsString("$ns.$relativeKey")
+
+    private fun subPropertiesInNamespace(
+        ns: String,
+        relativePrefix: String,
+    ): Map<String, String> =
+        configService.getSubPropertiesAsString(setOf("$ns.$relativePrefix"), stripPrefix = true, redact = false)
 
     private fun credentialConfigIds(): List<String>? = namespaceProperty("credentialConfigurationIds")?.splitComma()
 
-    /**
-     * Per-credential subtree root, derived from [namespace] so it tracks the selected instance.
-     * The singular constant `CredentialIssuancePolicyConfig.CONFIG_NAMESPACE` (`oid4vci.issuer.credentials`)
-     * bakes in the singular issuer namespace and therefore cannot be used directly once the issuer
-     * namespace is instance-relative; we reconstruct it as `<namespace>.credentials`.
-     */
-    private val credentialsNamespace: String
-        get() = "$namespace.credentials"
+    private fun credentialProperty(
+        configId: String,
+        relativeKey: String,
+    ): String? = namespaceProperty("credentials.[$configId].$relativeKey")
 
-    private fun credentialPrefix(configId: String): String {
-        return "$credentialsNamespace.[$configId]"
-    }
+    private fun credentialClaimProperty(
+        configId: String,
+        claimName: String,
+        relativeKey: String,
+    ): String? =
+        credentialProperty(configId, "claims.[$claimName].$relativeKey")
+            ?: credentialProperty(configId, "claims.$claimName.$relativeKey")
 
     override val issuerIdentifier: String
         get() {
             val ns = namespace
-            val value = configService.getPropertyAsString("$ns.identifier")
+            val value = namespaceProperty("identifier")
             require(!value.isNullOrBlank()) {
                 "$ns.identifier is required: every OID4VCI issuer surface (metadata, credential offers, " +
                     "issuance) needs an absolute http(s) URL identifying this issuer per OID4VCI 1.0 §11.2.2"
@@ -232,58 +254,63 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     override val credentialResponseEncryption: MetadataCredentialResponseEncryption?
         get() {
-            val prefix = "$namespace.encryption.response"
+            val mode =
+                encryptionMode(
+                    modeKey = "encryption.response.mode",
+                    legacyRequiredKey = "encryption.response.encryptionRequired",
+                )
+            if (mode == EncryptionMode.DISABLED) return null
+
             val algValues =
-                configService
-                    .getPropertyAsString("$prefix.algValuesSupported")
+                namespaceProperty("encryption.response.algValuesSupported")
                     ?.splitComma()
                     ?.takeIf { it.isNotEmpty() }
                     ?: return null
             val encValues =
-                configService
-                    .getPropertyAsString("$prefix.encValuesSupported")
+                namespaceProperty("encryption.response.encValuesSupported")
                     ?.splitComma()
                     ?.takeIf { it.isNotEmpty() }
                     ?: return null
             // Empty `zip_values_supported` → omit the field on the wire (it's OPTIONAL per
             // OID4VCI 1.0 §11.2.4 and a 1.1 addition; 1.0 conformance fails on `[]` vs absent).
             val zipValues =
-                configService
-                    .getPropertyAsString("$prefix.zipValuesSupported")
+                namespaceProperty("encryption.response.zipValuesSupported")
                     ?.splitComma()
                     ?.takeIf { it.isNotEmpty() }
-            val required = configService.getPropertyAsString("$prefix.encryptionRequired")?.toBoolean() ?: false
             return MetadataCredentialResponseEncryption(
                 algValuesSupported = algValues,
                 encValuesSupported = encValues,
                 zipValuesSupported = zipValues,
-                encryptionRequired = required,
+                encryptionRequired = mode == EncryptionMode.REQUIRED,
             )
         }
 
     override val credentialRequestEncryption: MetadataCredentialRequestEncryption?
         get() {
-            val prefix = "$namespace.encryption.request"
             // Two ways to opt in: either a static `jwks` JSON-string (legacy / testing only —
             // pastes a full JWKS into config), or a `decryption-key-alias` that points at a KMS
             // alias whose public JWK the metadata builder publishes at runtime. The KMS path is
             // the production answer; never commit a private key to YAML / git.
-            val staticJwksJson = configService.getPropertyAsString("$prefix.jwks")
-            val decryptionAlias = configService.getPropertyAsString("$prefix.decryptionKeyAlias")?.takeIf { it.isNotBlank() }
+            val mode =
+                encryptionMode(
+                    modeKey = "encryption.request.mode",
+                    legacyRequiredKey = "encryption.request.encryptionRequired",
+                )
+            if (mode == EncryptionMode.DISABLED) return null
+
+            val staticJwksJson = namespaceProperty("encryption.request.jwks")
+            val decryptionAlias = namespaceProperty("encryption.request.decryptionKeyAlias")?.takeIf { it.isNotBlank() }
             if (staticJwksJson == null && decryptionAlias == null) return null
 
             val encValues =
-                configService
-                    .getPropertyAsString("$prefix.encValuesSupported")
+                namespaceProperty("encryption.request.encValuesSupported")
                     ?.splitComma()
                     ?.takeIf { it.isNotEmpty() }
                     ?: return null
             val zipValues =
-                configService
-                    .getPropertyAsString("$prefix.zipValuesSupported")
+                namespaceProperty("encryption.request.zipValuesSupported")
                     ?.splitComma()
                     ?.takeIf { it.isNotEmpty() }
-            val required = configService.getPropertyAsString("$prefix.encryptionRequired")?.toBoolean() ?: false
 
             // Placeholder JWKS — the metadata builder swaps in the real one resolved from
             // [credentialRequestDecryptionKey] when that opts is set. The static-jwks path is
@@ -298,7 +325,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 jwks = jwks,
                 encValuesSupported = encValues,
                 zipValuesSupported = zipValues,
-                encryptionRequired = required,
+                encryptionRequired = mode == EncryptionMode.REQUIRED,
             )
         }
 
@@ -307,6 +334,9 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             val batchSize = namespaceProperty("batch.maxSize")?.toIntOrNull() ?: return null
             return BatchCredentialIssuance(batchSize = batchSize)
         }
+
+    override val preferredKeyStorageStatusPeriodSeconds: Int?
+        get() = namespaceProperty("preferredKeyStorageStatusPeriodSeconds")?.toIntOrNull()?.takeIf { it > 0 }
 
     override val credentialSigningConfigs: Map<String, CredentialSigningConfig>
         get() {
@@ -329,39 +359,34 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     // -------------------------------------------------------------------------
 
     private fun buildCredentialConfiguration(configId: String): CredentialConfigurationSupported {
-        val prefix = credentialPrefix(configId)
-
-        val formatValue = configService.getPropertyAsString("$prefix.format")
+        val formatValue = credentialProperty(configId, "format")
         val format =
             formatValue?.let { CredentialFormat.fromValue(it) }
                 ?: CredentialFormat.SD_JWT_DC
 
-        val scope = configService.getPropertyAsString("$prefix.scope")
-        val vct = configService.getPropertyAsString("$prefix.vct")?.takeIf { it.isNotEmpty() }
-        val doctype = configService.getPropertyAsString("$prefix.doctype")?.takeIf { it.isNotEmpty() }
+        val scope = credentialProperty(configId, "scope")
+        val vct = credentialProperty(configId, "vct")?.takeIf { it.isNotEmpty() }
+        val doctype = credentialProperty(configId, "doctype")?.takeIf { it.isNotEmpty() }
 
         val signingAlgorithms =
-            configService
-                .getPropertyAsString("$prefix.signingAlgorithms")
+            credentialProperty(configId, "signingAlgorithms")
                 ?.splitComma()
                 ?.mapNotNull { JwaAlgorithm.fromValue(it) }
                 ?: emptyList()
 
         val bindingMethods =
-            configService
-                .getPropertyAsString("$prefix.bindingMethods")
+            credentialProperty(configId, "bindingMethods")
                 ?.splitComma()
                 ?: emptyList()
 
-        val proofTypes = buildProofTypes(prefix)
-        val proofTypeAttestations = buildProofTypeAttestations(prefix, proofTypes.keys)
+        val proofTypes = buildProofTypes(configId)
+        val proofTypeAttestations = buildProofTypeAttestations(configId, proofTypes.keys)
         val credentialDefinitionTypes =
-            configService
-                .getPropertyAsString("$prefix.credentialDefinition.types")
+            credentialProperty(configId, "credentialDefinition.types")
                 ?.splitComma()
 
         // Read claim names from config
-        val claimNames = discoverClaimNames(prefix)
+        val claimNames = discoverClaimNames(configId)
 
         return credentialConfiguration(format) {
             this.scope = scope
@@ -382,8 +407,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             val isMdoc = format.value == "mso_mdoc"
             for (claimName in claimNames) {
                 val mandatory =
-                    configService.getProperty("$prefix.claims.$claimName.mandatory", Boolean::class, false)
-                        ?: false
+                    credentialClaimProperty(configId, claimName, "mandatory")?.toBoolean() ?: false
                 val path: List<String> =
                     if (isMdoc) {
                         val lastDot = claimName.lastIndexOf('.')
@@ -395,7 +419,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                     } else {
                         listOf(claimName)
                     }
-                val claimDisplays = buildClaimDisplays("$prefix.claims.[$claimName]")
+                val claimDisplays = buildClaimDisplays(configId, claimName)
                 claim(path) {
                     this.mandatory = mandatory
                     if (claimDisplays.isEmpty()) {
@@ -434,7 +458,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             // consumers (wallets, demo UIs) can brand the credential without a separate type-
             // metadata document — essential for mso_mdoc, which has no SD-JWT VCT to carry branding,
             // and equally for wallets that only read OID4VCI metadata (not VCT type metadata).
-            buildCredentialDisplays(prefix).forEach { (locale, d) ->
+            buildCredentialDisplays(configId).forEach { (locale, d) ->
                 display {
                     name = d.name
                     this.locale = locale
@@ -478,8 +502,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * stripped.
      */
     private fun discoverDisplayLocales(displayPrefix: String): List<String> =
-        configService
-            .getSubPropertiesAsString(setOf(displayPrefix), stripPrefix = true, redact = false)
+        namespaceSubProperties(displayPrefix)
             .keys
             .mapNotNull { key ->
                 val first = key.split('.').firstOrNull() ?: return@mapNotNull null
@@ -490,35 +513,36 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 }
             }.distinct()
 
-    /** Read the per-locale credential display map under `<prefix>.display.[<locale>]`. */
-    private fun buildCredentialDisplays(prefix: String): Map<String, CredentialDisplayEntry> =
-        discoverDisplayLocales("$prefix.display")
+    /** Read the per-locale credential display map under `<namespace>.credentials.[<id>].display.[<locale>]`. */
+    private fun buildCredentialDisplays(configId: String): Map<String, CredentialDisplayEntry> =
+        discoverDisplayLocales("credentials.[$configId].display")
             .mapNotNull { locale ->
-                val dp = "$prefix.display.[$locale]"
-                val name = configService.getPropertyAsString("$dp.name") ?: return@mapNotNull null
+                val name = credentialProperty(configId, "display.[$locale].name") ?: return@mapNotNull null
                 locale to
                     CredentialDisplayEntry(
                         name = name,
-                        description = configService.getPropertyAsString("$dp.description"),
-                        backgroundColor = configService.getPropertyAsString("$dp.backgroundColor"),
-                        textColor = configService.getPropertyAsString("$dp.textColor"),
-                        logoUri = configService.getPropertyAsString("$dp.logo.uri"),
-                        logoAltText = configService.getPropertyAsString("$dp.logo.altText"),
-                        backgroundImageUri = configService.getPropertyAsString("$dp.backgroundImage.uri"),
-                        backgroundImageAltText = configService.getPropertyAsString("$dp.backgroundImage.altText"),
+                        description = credentialProperty(configId, "display.[$locale].description"),
+                        backgroundColor = credentialProperty(configId, "display.[$locale].backgroundColor"),
+                        textColor = credentialProperty(configId, "display.[$locale].textColor"),
+                        logoUri = credentialProperty(configId, "display.[$locale].logo.uri"),
+                        logoAltText = credentialProperty(configId, "display.[$locale].logo.altText"),
+                        backgroundImageUri = credentialProperty(configId, "display.[$locale].backgroundImage.uri"),
+                        backgroundImageAltText = credentialProperty(configId, "display.[$locale].backgroundImage.altText"),
                     )
             }.toMap()
 
-    /** Read the per-locale claim display map under `<claimPrefix>.display.[<locale>]`. */
-    private fun buildClaimDisplays(claimPrefix: String): Map<String, ClaimDisplayEntry> =
-        discoverDisplayLocales("$claimPrefix.display")
+    /** Read the per-locale claim display map under `<namespace>.credentials.[<id>].claims.[<claim>].display.[<locale>]`. */
+    private fun buildClaimDisplays(
+        configId: String,
+        claimName: String,
+    ): Map<String, ClaimDisplayEntry> =
+        discoverDisplayLocales("credentials.[$configId].claims.[$claimName].display")
             .mapNotNull { locale ->
-                val dp = "$claimPrefix.display.[$locale]"
                 val label =
-                    configService.getPropertyAsString("$dp.label")
-                        ?: configService.getPropertyAsString("$dp.name")
+                    credentialClaimProperty(configId, claimName, "display.[$locale].label")
+                        ?: credentialClaimProperty(configId, claimName, "display.[$locale].name")
                         ?: return@mapNotNull null
-                locale to ClaimDisplayEntry(label = label, description = configService.getPropertyAsString("$dp.description"))
+                locale to ClaimDisplayEntry(label = label, description = credentialClaimProperty(configId, claimName, "display.[$locale].description"))
             }.toMap()
 
     // -------------------------------------------------------------------------
@@ -541,8 +565,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         val ids = credentialConfigIds() ?: return emptyMap()
         val out = LinkedHashMap<String, VctRef>()
         for (configId in ids) {
-            val prefix = credentialPrefix(configId)
-            val vctUrl = configService.getPropertyAsString("$prefix.vct")?.takeIf { it.isNotEmpty() } ?: continue
+            val vctUrl = credentialProperty(configId, "vct")?.takeIf { it.isNotEmpty() } ?: continue
             val bare = vctUrl.substringAfterLast('/').takeIf { it.isNotEmpty() } ?: configId
             out[bare] = VctRef(configId, vctUrl)
         }
@@ -557,9 +580,8 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     }
 
     private fun buildVctTypeMetadataInput(ref: VctRef): VctTypeMetadataInput? {
-        val prefix = credentialPrefix(ref.configId)
         val displays =
-            buildCredentialDisplays(prefix).map { (locale, d) ->
+            buildCredentialDisplays(ref.configId).map { (locale, d) ->
                 VctDisplayInput(
                     locale = locale,
                     name = d.name,
@@ -572,17 +594,17 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 )
             }
         val claims =
-            discoverClaimNames(prefix).map { claimName ->
+            discoverClaimNames(ref.configId).map { claimName ->
                 val mandatory =
-                    configService.getProperty("$prefix.claims.$claimName.mandatory", Boolean::class, false) ?: false
+                    credentialClaimProperty(ref.configId, claimName, "mandatory")?.toBoolean() ?: false
                 // Selective-disclosure flag per claim (SD-JWT VC type metadata). Defaults to ALWAYS
                 // (the claim is individually disclosable, i.e. optional/toggleable for a verifier);
                 // set `sd: allowed` or `sd: never` to make a claim required / always-present.
                 val sd =
-                    configService.getPropertyAsString("$prefix.claims.[$claimName].sd")?.let { parseClaimSd(it) }
+                    credentialClaimProperty(ref.configId, claimName, "sd")?.let { parseClaimSd(it) }
                         ?: ClaimSdMetadata.ALWAYS
                 val claimDisplays =
-                    buildClaimDisplays("$prefix.claims.[$claimName]").map { (locale, cd) ->
+                    buildClaimDisplays(ref.configId, claimName).map { (locale, cd) ->
                         VctClaimDisplayInput(locale = locale, label = cd.label, description = cd.description)
                     }
                 // sd-jwt claim paths are single-segment field names; the bracketed config key carries
@@ -610,11 +632,10 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * contributes at least a `mandatory` attribute; we walk segments from the right until
      * we hit a known attribute name and treat everything before it as the claim name.
      */
-    private fun discoverClaimNames(prefix: String): List<String> {
-        val claimsPrefix = "$prefix.claims"
+    private fun discoverClaimNames(configId: String): List<String> {
+        val claimsPrefix = "credentials.[$configId].claims"
         val attributeSuffixes = setOf("mandatory", "display")
-        return configService
-            .getSubPropertiesAsString(setOf(claimsPrefix), stripPrefix = true, redact = false)
+        return namespaceSubProperties(claimsPrefix)
             .keys
             .mapNotNull { key ->
                 val segments = key.split('.')
@@ -630,22 +651,20 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     }
 
     private fun buildCredentialSigningConfig(configId: String): CredentialSigningConfig {
-        val prefix = credentialPrefix(configId)
-
         // Per-credential alias wins; otherwise fall back to the issuer-level signing key
         // (`<namespace>.signingKeyAlias`, written per-tenant by the issuer bootstrap).
         // Credentials sign with the issuer's key by default, so deployments that provision a
         // single tenant signing key need not repeat it on every credential configuration.
         val signingKeyAlias =
-            configService.getPropertyAsString("$prefix.signingKeyAlias")
+            credentialProperty(configId, "signingKeyAlias")
                 ?: metadataSigningKeyAlias
         val signingKeyMode =
             SigningKeyMode.fromConfig(
-                configService.getPropertyAsString("$prefix.signingKeyMode"),
+                credentialProperty(configId, "signingKeyMode"),
             )
-        val signingCertChainPath = configService.getPropertyAsString("$prefix.signingCertChainPath")
+        val signingCertChainPath = credentialProperty(configId, "signingCertChainPath")
         val expirationInDays =
-            configService.getPropertyAsString("$prefix.expirationInDays")?.toIntOrNull()?.takeIf { it > 0 }
+            credentialProperty(configId, "expirationInDays")?.toIntOrNull()?.takeIf { it > 0 }
 
         return CredentialSigningConfig(
             signingKeyAlias = signingKeyAlias,
@@ -680,9 +699,8 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * no `statusListId`.
      */
     override fun statusListBindingFor(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> {
-        val prefix = credentialPrefix(credentialConfigId)
         val listId =
-            configService.getPropertyAsString("$prefix.statusListId")?.takeIf { it.isNotBlank() }
+            credentialProperty(credentialConfigId, "statusListId")?.takeIf { it.isNotBlank() }
                 ?: return Ok(null)
         val definitions =
             statusListDefinitionsProvider?.invoke()
@@ -727,23 +745,20 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * safe we publish whatever remains.
      */
     private fun buildProofTypeAttestations(
-        prefix: String,
+        configId: String,
         proofTypeKeys: Set<String>,
     ): Map<String, KeyAttestationsRequired> =
         proofTypeKeys
             .associateWith { proofTypeKey ->
-                val typePrefix = "$prefix.proofTypes.$proofTypeKey.keyAttestations"
                 val enabled =
-                    configService.getPropertyAsString("$typePrefix.enabled")?.toBoolean() ?: false
+                    credentialProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.enabled")?.toBoolean() ?: false
                 if (!enabled) return@associateWith null
                 val keyStorage =
-                    configService
-                        .getPropertyAsString("$typePrefix.keyStorage")
+                    credentialProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.keyStorage")
                         ?.splitComma()
                         ?.takeIf { it.isNotEmpty() }
                 val userAuth =
-                    configService
-                        .getPropertyAsString("$typePrefix.userAuthentication")
+                    credentialProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.userAuthentication")
                         ?.splitComma()
                         ?.takeIf { it.isNotEmpty() }
                 if (keyStorage == null && userAuth == null) return@associateWith null
@@ -761,18 +776,15 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * to global X.509 anchors loaded by `lib/trust/x509`.
      */
     private fun buildKeyAttesterTrustConfigsForCredential(configId: String,): Map<String, KeyAttesterTrustConfig> {
-        val credentialPrefix = credentialPrefix(configId)
-        val proofTypeKeys = buildProofTypes(credentialPrefix).keys
+        val proofTypeKeys = buildProofTypes(configId).keys
         if (proofTypeKeys.isEmpty()) return emptyMap()
         return proofTypeKeys
             .mapNotNull { proofType ->
-                val trustPrefix =
-                    "$credentialPrefix.proofTypes.$proofType.keyAttestations.keyAttesterTrust"
-                val jwks = parseTrustedJwks(configService.getPropertyAsString("$trustPrefix.jwks"))
-                val issuers = configService.getPropertyAsString("$trustPrefix.issuers")?.splitComma()?.takeIf { it.isNotEmpty() }
+                val trustPrefix = "proofTypes.$proofType.keyAttestations.keyAttesterTrust"
+                val jwks = parseTrustedJwks(credentialProperty(configId, "$trustPrefix.jwks"))
+                val issuers = credentialProperty(configId, "$trustPrefix.issuers")?.splitComma()?.takeIf { it.isNotEmpty() }
                 val x509Paths =
-                    configService
-                        .getPropertyAsString("$trustPrefix.x509AnchorPaths")
+                    credentialProperty(configId, "$trustPrefix.x509AnchorPaths")
                         ?.splitComma()
                         ?.takeIf { it.isNotEmpty() }
                 if (jwks == null && issuers == null && x509Paths == null) return@mapNotNull null
@@ -819,17 +831,14 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      *
      * Returns a map of proof type key to list of algorithm string values.
      */
-    private fun buildProofTypes(prefix: String): Map<String, List<String>> {
-        val proofTypesPrefix = "$prefix.proofTypes"
-
+    private fun buildProofTypes(configId: String): Map<String, List<String>> {
         // Strategy 1: explicit comma-separated list of proof type names
-        val explicitTypes = configService.getPropertyAsString(proofTypesPrefix)?.splitComma()
+        val explicitTypes = credentialProperty(configId, "proofTypes")?.splitComma()
 
         // Strategy 2: discover from sub-property keys (e.g. proofTypes.jwt.signingAlgorithms -> "jwt")
         val discoveredTypes =
             if (explicitTypes.isNullOrEmpty()) {
-                configService
-                    .getSubPropertiesAsString(setOf(proofTypesPrefix), stripPrefix = true, redact = false)
+                namespaceSubProperties("credentials.[$configId].proofTypes")
                     .keys
                     .mapNotNull { key -> key.split(".").firstOrNull() }
                     .distinct()
@@ -840,8 +849,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         val result = mutableMapOf<String, List<String>>()
         for (proofTypeKey in discoveredTypes) {
             val algorithms =
-                configService
-                    .getPropertyAsString("$proofTypesPrefix.$proofTypeKey.signingAlgorithms")
+                credentialProperty(configId, "proofTypes.$proofTypeKey.signingAlgorithms")
                     ?.splitComma()
             if (!algorithms.isNullOrEmpty()) {
                 result[proofTypeKey] = algorithms
@@ -854,6 +862,30 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private enum class EncryptionMode {
+        DISABLED,
+        SUPPORTED,
+        REQUIRED,
+    }
+
+    private fun encryptionMode(
+        modeKey: String,
+        legacyRequiredKey: String,
+    ): EncryptionMode {
+        when (namespaceProperty(modeKey)?.trim()?.lowercase()) {
+            "disabled" -> return EncryptionMode.DISABLED
+            "supported" -> return EncryptionMode.SUPPORTED
+            "required" -> return EncryptionMode.REQUIRED
+            null, "" -> Unit
+            else -> return EncryptionMode.DISABLED
+        }
+        return if (namespaceProperty(legacyRequiredKey)?.toBoolean() == true) {
+            EncryptionMode.REQUIRED
+        } else {
+            EncryptionMode.DISABLED
+        }
+    }
 
     private fun String.splitComma(): List<String> = split(",").map { it.trim() }.filter { it.isNotEmpty() }
 }

@@ -50,4 +50,5 @@ data class ClaimPresentation
         val markdownAllowed: Boolean = false,
         val entryCodes: List<String>? = null,
         val unit: String? = null,
+        val defaultValue: String? = null,
     )

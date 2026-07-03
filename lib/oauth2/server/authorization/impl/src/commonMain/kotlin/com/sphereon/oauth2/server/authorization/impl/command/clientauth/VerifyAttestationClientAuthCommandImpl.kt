@@ -37,8 +37,10 @@ import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isEnabled
+import com.sphereon.oauth2.common.config.isRequired
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
 import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthArgs
 import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthCommand
@@ -47,6 +49,9 @@ import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.storage.AttestationChallengeStorage
 import com.sphereon.oauth2.server.authorization.storage.AttestationPopJtiStorage
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEnforcementRequest
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEnforcer
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
 import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -116,6 +121,7 @@ class VerifyAttestationClientAuthCommandImpl(
     private val jtiStorage: AttestationPopJtiStorage,
     private val x509TrustAnchorLoader: X509TrustAnchorLoader,
     private val identifierService: IdentifierService,
+    private val walletInstanceAttestationEnforcer: WalletInstanceAttestationEnforcer? = null,
 ) : TypedServiceCommandAdapter<VerifyAttestationClientAuthArgs, VerifiedClientAuthentication, IdkError>(
         commandId = VerifyAttestationClientAuthCommand.COMMAND_ID,
         execution = execution,
@@ -450,14 +456,74 @@ class VerifyAttestationClientAuthCommandImpl(
                 .getOrElse { error -> return Err(error) }
         }
 
-        // 12. All checks passed
+        // 12. When production WIA enforcement is configured, bind the OAuth2 client-auth result
+        // to persisted Wallet Unit evidence at the same point that still has the raw attestation
+        // JWT and PoP JWT. This keeps PAR and /token enforcement in one place and avoids making
+        // generic OAuth2/OIDC client-auth methods depend on Wallet Unit persistence.
+        val walletInstanceAttestation =
+            enforceWalletInstanceAttestationIfRequired(
+                args = args,
+                resolvedClientId = resolvedClientId,
+                configIssuer = configIssuer,
+            ).getOrElse { return Err(it) }
+
+        // 13. All checks passed
         return Ok(
             VerifiedClientAuthentication(
                 clientId = resolvedClientId,
                 method = ClientAuthenticationMethod.ATTEST_JWT_CLIENT_AUTH,
                 clientInstanceKey = clientInstanceKey,
+                walletInstanceAttestation = walletInstanceAttestation,
             ),
         )
+    }
+
+    private suspend fun enforceWalletInstanceAttestationIfRequired(
+        args: VerifyAttestationClientAuthArgs,
+        resolvedClientId: String,
+        configIssuer: String?,
+    ): IdkResult<WalletInstanceAttestationEvidence?, AuthorizationServerError> {
+        if (args.endpoint !in walletInstanceAttestationEndpoints) {
+            return Ok(null)
+        }
+        if (!configProvider.serverConfig.walletInstanceAttestation.isRequired) {
+            return Ok(null)
+        }
+
+        val enforcer =
+            walletInstanceAttestationEnforcer
+                ?: return Err(
+                    AuthorizationServerError.InvalidClientAttestation(
+                        details =
+                            "Wallet Instance Attestation production enforcement is configured, " +
+                                "but no persisted-evidence enforcer is bound",
+                    ),
+                )
+
+        val audiences = listOfNotNull(configIssuer, args.tokenEndpointUrl.takeIf { it.isNotBlank() }).toSet()
+        val evidence =
+            enforcer
+                .enforce(
+                    WalletInstanceAttestationEnforcementRequest(
+                        clientId = resolvedClientId,
+                        endpoint = args.endpoint,
+                        endpointUrl = args.tokenEndpointUrl,
+                        acceptedAudiences = audiences,
+                        attestationJwt = args.attestationJwt,
+                        attestationPopJwt = args.popJwt,
+                    ),
+                ).getOrElse { error ->
+                    return Err(
+                        AuthorizationServerError.InvalidClientAttestation(
+                            details = "Wallet Instance Attestation production enforcement failed: ${error.message.defaultMessage}",
+                        ),
+                    )
+                }
+
+        WalletInstanceAttestationProductionPolicy.validate(evidence)?.let { reason ->
+            return Err(AuthorizationServerError.InvalidClientAttestation(details = reason))
+        }
+        return Ok(evidence)
     }
 
     /** Build a JWKS document (`{"keys": [...]}`) so `verifyJws` accepts only those keys as signers. */
@@ -581,4 +647,8 @@ class VerifyAttestationClientAuthCommandImpl(
             trustedAttesterIssuers = null,
             trustedAttesterJwks = null,
         )
+
+    private companion object {
+        val walletInstanceAttestationEndpoints = setOf(ClientAuthenticationEndpoint.PAR, ClientAuthenticationEndpoint.TOKEN)
+    }
 }

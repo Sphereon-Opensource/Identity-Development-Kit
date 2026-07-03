@@ -21,6 +21,7 @@ import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.transfer.TransferInstance
 import com.sphereon.mdoc.transfer.TransferManager
@@ -179,6 +180,7 @@ interface EngagementInstance : MdocEngagementEvent.Handlers {
      */
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Try", exact = true)
+    @JsExportIgnoreCompat
     interface Try {
         suspend fun start(): IdkResult<TransferManager, IdkErrorType>
 
@@ -277,6 +279,7 @@ interface EngagementInstance : MdocEngagementEvent.Handlers {
      */
     fun close()
 
+    @JsExportIgnoreCompat
     companion object Log {
         fun id(
             engagementInstance: EngagementInstance,

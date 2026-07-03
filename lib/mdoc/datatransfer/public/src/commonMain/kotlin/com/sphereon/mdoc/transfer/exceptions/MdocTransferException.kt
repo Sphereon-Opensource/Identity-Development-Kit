@@ -19,20 +19,25 @@ package com.sphereon.mdoc.transfer.exceptions
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.js.JsName
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MdocTransferException", exact = true)
 @JsExportCompat
 class MdocTransferException : Exception {
+    @JsName("empty")
     constructor()
 
+    @JsName("fromMessage")
     constructor(message: String) : super(message)
 
+    @JsName("fromMessageAndCause")
     constructor(
         message: String,
         cause: Throwable,
     ) : super(message, cause)
 
+    @JsName("fromCause")
     constructor(cause: Throwable) : super(cause)
 }

@@ -51,6 +51,7 @@ import kotlin.native.ObjCName
  * - authorization_code (RFC 6749 Section 4.1.3)
  * - refresh_token (RFC 6749 Section 6)
  * - client_credentials (RFC 6749 Section 4.4)
+ * - password (RFC 6749 Section 4.3)
  * - token-exchange (RFC 8693)
  */
 @Inject
@@ -105,6 +106,8 @@ class ParseTokenRequestCommandImpl(
 
                 "client_credentials" -> GrantType.CLIENT_CREDENTIALS
 
+                "password" -> GrantType.PASSWORD
+
                 "urn:ietf:params:oauth:grant-type:pre-authorized_code" -> GrantType.PRE_AUTHORIZED_CODE
 
                 "urn:ietf:params:oauth:grant-type:token-exchange" -> GrantType.TOKEN_EXCHANGE
@@ -140,6 +143,8 @@ class ParseTokenRequestCommandImpl(
                 GrantType.REFRESH_TOKEN -> parseRefreshTokenGrant(requestBody)
 
                 GrantType.CLIENT_CREDENTIALS -> parseClientCredentialsGrant(requestBody)
+
+                GrantType.PASSWORD -> parsePasswordGrant(requestBody)
 
                 GrantType.PRE_AUTHORIZED_CODE -> parsePreAuthorizedCodeGrant(requestBody)
 
@@ -210,8 +215,25 @@ class ParseTokenRequestCommandImpl(
      */
     private fun parseClientCredentialsGrant(requestBody: Map<String, List<String>>): GrantParameters {
         val scope = requestBody["scope"]?.firstOrNull()
+        val audiences = requestBody["audience"] ?: emptyList()
 
         return GrantParameters.ClientCredentials(
+            scope = scope,
+            audiences = audiences,
+        )
+    }
+
+    /**
+     * Parse resource owner password credentials grant request (RFC 6749 Section 4.3.2)
+     */
+    private fun parsePasswordGrant(requestBody: Map<String, List<String>>): GrantParameters {
+        val username = requestBody["username"]?.firstOrNull() ?: ""
+        val password = requestBody["password"]?.firstOrNull() ?: ""
+        val scope = requestBody["scope"]?.firstOrNull()
+
+        return GrantParameters.Password(
+            username = username,
+            password = password,
             scope = scope,
         )
     }

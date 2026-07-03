@@ -13,6 +13,8 @@
 package com.sphereon.openid.oid4vci.issuer.hook
 
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
+import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedWalletInstanceAttestationEvidence
+import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -49,6 +51,16 @@ data class PostIssuanceHookArgs(
     val boundUsageToken: String? = null,
     /** Pre-authorized code associated with this issuance, if the pre-auth flow was used. */
     val preAuthCode: String? = null,
+    /**
+     * Verified Wallet Unit key-attestation evidence summaries from credential-request proof
+     * verification. Hooks can use the status references later for PID revocation tracking.
+     */
+    val keyAttestations: List<VerifiedKeyAttestation> = emptyList(),
+    /**
+     * Persisted Wallet Unit WIA/status/trust evidence accepted by the AS at PAR/token time.
+     * Present only for production Wallet Unit-bound OID4VCI issuance.
+     */
+    val walletInstanceAttestation: ValidatedWalletInstanceAttestationEvidence? = null,
     /**
      * Stable local identifier (Uuid string) of the subject the credential
      * was issued to, if known. Some flows issue without a local Identity

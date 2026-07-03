@@ -141,6 +141,8 @@ class OAuth2ServersConfigBinderRoundTripTest {
         assertEquals(9_000_005, server.attestationMaxLifetimeSeconds, "attestationMaxLifetimeSeconds")
         assertEquals(9_000_006, server.attestationPopMaxAgeSeconds, "attestationPopMaxAgeSeconds")
         assertEquals(9_000_007, server.attestationPopJtiReplayWindowSeconds, "attestationPopJtiReplayWindowSeconds")
+        assertEquals(FeaturePolicy.REQUIRED, server.walletInstanceAttestation, "walletInstanceAttestation")
+        assertEquals(9_000_009, server.preferredClientStatusPeriodSeconds, "preferredClientStatusPeriodSeconds")
         // JARM
         assertEquals(FeaturePolicy.REQUIRED, server.jarm, "jarm")
         assertEquals(setOf("sentinel-authorization-signing-alg-values-supported"), server.authorizationSigningAlgValuesSupported, "authorizationSigningAlgValuesSupported")
@@ -233,6 +235,8 @@ class OAuth2ServersConfigBinderRoundTripTest {
             "$prefix.attestation-max-lifetime-seconds" to 9_000_005,
             "$prefix.attestation-pop-max-age-seconds" to 9_000_006,
             "$prefix.attestation-pop-jti-replay-window-seconds" to 9_000_007,
+            "$prefix.wallet-instance-attestation" to "REQUIRED",
+            "$prefix.preferred-client-status-period-seconds" to 9_000_009,
             // JARM
             "$prefix.jarm" to "REQUIRED",
             "$prefix.authorization-signing-alg-values-supported" to "sentinel-authorization-signing-alg-values-supported",

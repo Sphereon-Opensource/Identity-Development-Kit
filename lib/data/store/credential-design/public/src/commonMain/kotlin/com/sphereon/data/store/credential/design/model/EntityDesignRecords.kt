@@ -30,6 +30,7 @@ data class EntityLocaleDesign
         val locale: String,
         val displayName: String? = null,
         val description: String? = null,
+        val logo: AssetReference? = null,
     )
 
 @JsExportCompat

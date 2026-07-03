@@ -134,6 +134,7 @@ data class BuildIssuerMetadataArgs(
     val credentialResponseEncryption: MetadataCredentialResponseEncryption? = null,
     val credentialRequestEncryption: MetadataCredentialRequestEncryption? = null,
     val batchCredentialIssuance: BatchCredentialIssuance? = null,
+    val preferredKeyStorageStatusPeriodSeconds: Int? = null,
 )
 
 @JsExportCompat

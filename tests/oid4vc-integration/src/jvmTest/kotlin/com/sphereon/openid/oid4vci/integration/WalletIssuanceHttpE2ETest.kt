@@ -93,7 +93,7 @@ interface WalletIssuanceHttpTestGraph {
  * - Error codes and status codes follow the OID4VCI / OAuth2 specs
  */
 class WalletIssuanceHttpE2ETest {
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, protocolBasePath = "/oid4vci")
 
     private val json =
         Json {

@@ -508,5 +508,12 @@
       "comp.meatball.foreground",
       "comp.meatball.foregroundHover"
     ]
+  },
+  {
+    "const": "ringTokenDefaults",
+    "keys": [
+      "comp.focus.ring",
+      "comp.error.ring"
+    ]
   }
 ]

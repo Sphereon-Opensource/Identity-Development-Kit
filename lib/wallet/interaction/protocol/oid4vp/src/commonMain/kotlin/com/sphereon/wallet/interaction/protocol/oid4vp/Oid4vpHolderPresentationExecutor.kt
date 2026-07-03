@@ -1,0 +1,210 @@
+/*
+ * Copyright 2026 Sphereon International B.V.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ */
+
+package com.sphereon.wallet.interaction.protocol.oid4vp
+
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.openid.oid4vp.common.ResponseMode
+import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
+import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
+import com.sphereon.openid.oid4vp.holder.SelectedCredential
+import com.sphereon.openid.oid4vp.holder.SubmissionResult
+import com.sphereon.openid.oid4vp.holder.WalletConfig
+import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionState
+import kotlinx.serialization.decodeFromString
+
+interface Oid4vpSelectedCredentialResolver {
+    suspend fun resolveSelectedCredentials(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+        resolvedRequest: ResolvedOid4vpRequest,
+        selectedCredentialIdsByRequirement: Map<String, List<String>>,
+    ): List<SelectedCredential>
+
+    suspend fun recordPresentationSubmitted(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+        resolvedRequest: ResolvedOid4vpRequest,
+        selectedCredentialIdsByRequirement: Map<String, List<String>>,
+        selectedCredentials: List<SelectedCredential>,
+    ) {
+    }
+}
+
+interface Oid4vpWalletConfigProvider {
+    suspend fun walletConfig(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+    ): WalletConfig?
+
+    companion object {
+        val none: Oid4vpWalletConfigProvider =
+            object : Oid4vpWalletConfigProvider {
+                override suspend fun walletConfig(
+                    context: WalletInteractionContext,
+                    state: WalletInteractionState,
+                ): WalletConfig? = null
+            }
+    }
+}
+
+class Oid4vpHolderPresentationExecutor(
+    private val holder: Oid4vpHolderService,
+    private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
+    private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
+    private val responseMode: ResponseMode? = null,
+) : Oid4vpPresentationExecutor {
+    override suspend fun submitPresentation(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+    ): Oid4vpPresentationExecutionResult {
+        val privateValues =
+            context.privateSessionStore
+                .get(context.sessionId, Oid4vpWalletInteractionProtocolAdapter.ADAPTER_ID)
+                ?.values
+                .orEmpty()
+        val rawRequest =
+            privateValues["entry_point.raw"]
+                ?: return failed(
+                    code = "oid4vp.authorization_request_missing",
+                    messageKey = "wallet.interaction.error.oid4vp_authorization_request_missing",
+                    retryable = true,
+                )
+
+        val request =
+            cachedAuthorizationRequest(privateValues)
+                ?: run {
+                    val parsed = holder.parseAuthorizationRequest(rawRequest, walletConfigProvider.walletConfig(context, state))
+                    if (parsed.isErr) {
+                        return failed("oid4vp.request_parse_failed", "wallet.interaction.error.oid4vp_request_parse_failed", parsed.error)
+                    }
+                    parsed.value
+                }
+
+        val resolved = holder.resolveAuthorizationRequest(request)
+        if (resolved.isErr) {
+            return failed("oid4vp.request_resolve_failed", "wallet.interaction.error.oid4vp_request_resolve_failed", resolved.error)
+        }
+
+        val selectedCredentials =
+            try {
+                selectedCredentialResolver.resolveSelectedCredentials(
+                    context = context,
+                    state = state,
+                    resolvedRequest = resolved.value,
+                    selectedCredentialIdsByRequirement = selectedIdsByRequirement(privateValues, state),
+                )
+            } catch (_: Exception) {
+                return failed(
+                    code = "oid4vp.credential_resolution_failed",
+                    messageKey = "wallet.interaction.error.oid4vp_credential_resolution_failed",
+                    retryable = true,
+                )
+            }
+
+        val response = holder.createAuthorizationResponse(resolved.value, selectedCredentials)
+        if (response.isErr) {
+            return failed("oid4vp.response_creation_failed", "wallet.interaction.error.oid4vp_response_creation_failed", response.error)
+        }
+
+        val submission = holder.submitAuthorizationResponse(resolved.value, response.value, responseMode)
+        if (submission.isErr) {
+            return failed("oid4vp.response_submission_failed", "wallet.interaction.error.oid4vp_response_submission_failed", submission.error)
+        }
+
+        suspend fun recordPresentationSubmitted(): Oid4vpPresentationExecutionResult.Failed? =
+            try {
+                selectedCredentialResolver.recordPresentationSubmitted(
+                    context = context,
+                    state = state,
+                    resolvedRequest = resolved.value,
+                    selectedCredentialIdsByRequirement = selectedIdsByRequirement(privateValues, state),
+                    selectedCredentials = selectedCredentials,
+                )
+                null
+            } catch (_: Exception) {
+                failed(
+                    code = "oid4vp.presentation_history_update_failed",
+                    messageKey = "wallet.interaction.error.oid4vp_presentation_history_update_failed",
+                    retryable = false,
+                )
+            }
+
+        return when (val result = submission.value) {
+            is SubmissionResult.Success -> {
+                recordPresentationSubmitted()
+                    ?: (
+                        result.redirectUri?.let { Oid4vpPresentationExecutionResult.RedirectRequired(it) }
+                            ?: Oid4vpPresentationExecutionResult.Submitted()
+                    )
+            }
+
+            is SubmissionResult.Redirect -> {
+                recordPresentationSubmitted()
+                    ?: Oid4vpPresentationExecutionResult.RedirectRequired(result.redirectUri)
+            }
+
+            is SubmissionResult.Error -> {
+                Oid4vpPresentationExecutionResult.Failed(
+                    code = "oid4vp.verifier_error",
+                    messageKey = "wallet.interaction.error.oid4vp_verifier_error",
+                    arguments = mapOf("protocolError" to result.error),
+                )
+            }
+        }
+    }
+
+    private fun selectedIdsByRequirement(
+        privateValues: Map<String, String>,
+        state: WalletInteractionState,
+    ): Map<String, List<String>> {
+        privateValues["selected_credential_ids_by_requirement"]?.let { serialized ->
+            return Oid4vpWalletInteractionProtocolAdapter.json.decodeFromString(serialized)
+        }
+        val selectedIds = state.disclosure?.selectedCredentialIds.orEmpty()
+        val requirements = state.credentialSelection?.requirements.orEmpty()
+        return if (selectedIds.isNotEmpty() && requirements.size == 1) {
+            mapOf(requirements.single().id to selectedIds)
+        } else {
+            emptyMap()
+        }
+    }
+
+    private fun cachedAuthorizationRequest(privateValues: Map<String, String>): AuthorizationRequest? =
+        privateValues["authorization_request"]?.let { serialized ->
+            runCatching {
+                Oid4vpWalletInteractionProtocolAdapter.json.decodeFromString(AuthorizationRequest.serializer(), serialized)
+            }.getOrNull()
+        }
+
+    private fun failed(
+        code: String,
+        messageKey: String,
+        error: IdkError,
+        retryable: Boolean = false,
+    ): Oid4vpPresentationExecutionResult.Failed =
+        failed(
+            code = code,
+            messageKey = messageKey,
+            retryable = retryable,
+            arguments = mapOf("providerErrorCode" to error.code),
+        )
+
+    private fun failed(
+        code: String,
+        messageKey: String,
+        retryable: Boolean = false,
+        arguments: Map<String, String> = emptyMap(),
+    ): Oid4vpPresentationExecutionResult.Failed =
+        Oid4vpPresentationExecutionResult.Failed(
+            code = code,
+            messageKey = messageKey,
+            retryable = retryable,
+            arguments = arguments,
+        )
+}

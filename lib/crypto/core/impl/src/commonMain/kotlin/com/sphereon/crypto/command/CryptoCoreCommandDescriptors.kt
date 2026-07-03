@@ -21,6 +21,8 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.DecryptCommand
 import com.sphereon.crypto.core.kms.command.DeleteKeyCommand
+import com.sphereon.crypto.core.kms.command.EcdhDeriveCommand
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyCommand
 import com.sphereon.crypto.core.kms.command.EncryptCommand
 import com.sphereon.crypto.core.kms.command.GenerateKeyCommand
 import com.sphereon.crypto.core.kms.command.GenerateMacCommand
@@ -28,9 +30,11 @@ import com.sphereon.crypto.core.kms.command.GetKeyCommand
 import com.sphereon.crypto.core.kms.command.ListKeysCommand
 import com.sphereon.crypto.core.kms.command.PerformKeyAgreementCommand
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyCommand
+import com.sphereon.crypto.core.kms.command.SignDigestCommand
 import com.sphereon.crypto.core.kms.command.StoreKeyCommand
 import com.sphereon.crypto.core.kms.command.UnwrapKeyCommand
 import com.sphereon.crypto.core.kms.command.VerifyMacCommand
+import com.sphereon.crypto.core.kms.command.VerifyDigestCommand
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.WrapKeyCommand
 import com.sphereon.crypto.jose.jwe.CreateJweCompactCommand
@@ -56,6 +60,8 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsCommandImpl
 import com.sphereon.crypto.kms.command.CreateRawSignatureCommandImpl
 import com.sphereon.crypto.kms.command.DecryptCommandImpl
 import com.sphereon.crypto.kms.command.DeleteKeyCommandImpl
+import com.sphereon.crypto.kms.command.EcdhDeriveCommandImpl
+import com.sphereon.crypto.kms.command.EcPointMultiplyCommandImpl
 import com.sphereon.crypto.kms.command.EncryptCommandImpl
 import com.sphereon.crypto.kms.command.GenerateKeyCommandImpl
 import com.sphereon.crypto.kms.command.GenerateMacCommandImpl
@@ -63,9 +69,11 @@ import com.sphereon.crypto.kms.command.GetKeyCommandImpl
 import com.sphereon.crypto.kms.command.ListKeysCommandImpl
 import com.sphereon.crypto.kms.command.PerformKeyAgreementCommandImpl
 import com.sphereon.crypto.kms.command.ResolvePublicKeyCommandImpl
+import com.sphereon.crypto.kms.command.SignDigestCommandImpl
 import com.sphereon.crypto.kms.command.StoreKeyCommandImpl
 import com.sphereon.crypto.kms.command.UnwrapKeyCommandImpl
 import com.sphereon.crypto.kms.command.VerifyMacCommandImpl
+import com.sphereon.crypto.kms.command.VerifyDigestCommandImpl
 import com.sphereon.crypto.kms.command.VerifyRawSignatureCommandImpl
 import com.sphereon.crypto.kms.command.WrapKeyCommandImpl
 import com.sphereon.di.session.SessionScope
@@ -84,6 +92,14 @@ interface CryptoCoreCommandDescriptors {
     @Provides @IntoMap
     @StringKey(VerifyRawSignatureCommand.COMMAND_ID)
     fun verifyRawSignature(impl: VerifyRawSignatureCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(SignDigestCommand.COMMAND_ID)
+    fun signDigest(impl: SignDigestCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(VerifyDigestCommand.COMMAND_ID)
+    fun verifyDigest(impl: VerifyDigestCommandImpl): ServiceCommand<*, *, *> = impl
 
     // Key resolution commands
     @Provides @IntoMap
@@ -131,6 +147,14 @@ interface CryptoCoreCommandDescriptors {
     @Provides @IntoMap
     @StringKey(PerformKeyAgreementCommand.COMMAND_ID)
     fun performKeyAgreement(impl: PerformKeyAgreementCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(EcdhDeriveCommand.COMMAND_ID)
+    fun ecdhDerive(impl: EcdhDeriveCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(EcPointMultiplyCommand.COMMAND_ID)
+    fun ecPointMultiply(impl: EcPointMultiplyCommandImpl): ServiceCommand<*, *, *> = impl
 
     // JWE commands
     @Provides @IntoMap

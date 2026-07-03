@@ -44,6 +44,8 @@ enum class KmsProviderOperation {
     // Cryptographic Operations - Signature
     SIGN,
     VERIFY,
+    SIGN_DIGEST,
+    VERIFY_DIGEST,
 
     // Cryptographic Operations - Encryption (for JWE, data encryption)
     ENCRYPT,
@@ -55,6 +57,9 @@ enum class KmsProviderOperation {
 
     // Key Agreement (for ECDH-ES)
     KEY_AGREEMENT,
+    ECDH_DERIVE_RAW_X,
+    ECDH_DERIVE_KDF,
+    EC_POINT_MULTIPLY,
 
     // Certificate Operations
     GENERATE_CERTIFICATE,
@@ -68,6 +73,7 @@ enum class KmsProviderOperation {
     // Advanced Capabilities
     HARDWARE_BACKED,
     ATTESTATION,
+    KEY_ATTESTATION,
 }
 
 /**
@@ -234,9 +240,42 @@ KmsProviderCapabilities
         fun supportsKeyAgreement(): Boolean = supportsOperation(KmsProviderOperation.KEY_AGREEMENT)
 
         /**
+         * Checks if the provider supports signing caller-supplied digests/scalars.
+         */
+        fun supportsDigestSigning(): Boolean = supportsOperation(KmsProviderOperation.SIGN_DIGEST)
+
+        /**
+         * Checks if the provider supports verification over caller-supplied digests/scalars.
+         */
+        fun supportsDigestVerification(): Boolean = supportsOperation(KmsProviderOperation.VERIFY_DIGEST)
+
+        /**
+         * Checks if the provider can derive the raw ECDH x-coordinate without exporting private keys to the caller.
+         */
+        fun supportsEcdhDeriveRawX(): Boolean = supportsOperation(KmsProviderOperation.ECDH_DERIVE_RAW_X)
+
+        /**
+         * Checks if the provider can derive ECDH output and apply Concat KDF.
+         */
+        fun supportsEcdhDeriveKdf(): Boolean = supportsOperation(KmsProviderOperation.ECDH_DERIVE_KDF)
+
+        /**
+         * Checks if the provider supports provider-backed EC point multiplication semantics.
+         */
+        fun supportsEcPointMultiply(): Boolean = supportsOperation(KmsProviderOperation.EC_POINT_MULTIPLY)
+
+        /**
          * Checks if the provider supports key wrapping operations.
          */
         fun supportsKeyWrap(): Boolean = supportsOperation(KmsProviderOperation.WRAP_KEY)
+
+        /**
+         * Checks if the provider supports key attestation.
+         */
+        fun supportsKeyAttestation(): Boolean =
+            supportsAttestation ||
+                supportsOperation(KmsProviderOperation.KEY_ATTESTATION) ||
+                supportsOperation(KmsProviderOperation.ATTESTATION)
 
         /**
          * Gets the capability details for a specific operation.
@@ -488,7 +527,7 @@ KmsProviderQuery
             }
 
             // Check attestation
-            if (requiresAttestation && !capabilities.supportsAttestation) {
+            if (requiresAttestation && !capabilities.supportsKeyAttestation()) {
                 return false
             }
 

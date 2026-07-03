@@ -60,6 +60,9 @@ kotlin {
 
                 // Crypto core impl for ExternalIdentifierServiceAdapter
                 implementation(projects.libCryptoCoreImpl)
+
+                // X.509 trust anchors for reusable key-attestation x5c validation
+                implementation(projects.libTrustX509)
             }
         }
         val commonTest by getting {

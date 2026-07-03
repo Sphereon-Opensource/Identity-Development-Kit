@@ -249,6 +249,8 @@ class EvaluateCompletenessEndpointCommandTest {
                     FakeHandleCredentialRequestCommand(),
                     FakeDecryptJweCommand(),
                     fakeConfigProvider,
+                    com.sphereon.openid.oid4vci.issuer.impl.http.NoOpOid4vciRestConfigProvider,
+                    DefaultOid4vciIssuerPublicUrlResolver(com.sphereon.openid.oid4vci.issuer.impl.http.NoOpAppConfigService),
                     credentialResponseEncryptor,
                 )
             val deferredCommand =

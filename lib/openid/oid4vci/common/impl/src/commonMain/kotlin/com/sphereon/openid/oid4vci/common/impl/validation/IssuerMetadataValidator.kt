@@ -43,4 +43,7 @@ val issuerMetadataValidator =
                 constrain("batch_credential_issuance.batch_size must be > 0") { it > 0 }
             }
         }
+        CredentialIssuerMetadata::preferredKeyStorageStatusPeriod ifPresent {
+            constrain("preferred_key_storage_status_period must be > 0") { it > 0 }
+        }
     }

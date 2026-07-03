@@ -407,6 +407,16 @@ sealed interface GrantParameters {
      */
     data class ClientCredentials(
         val scope: String? = null,
+        val audiences: List<String> = emptyList(),
+    ) : GrantParameters
+
+    /**
+     * Resource owner password credentials grant parameters (RFC 6749 Section 4.3).
+     */
+    data class Password(
+        val username: String,
+        val password: String,
+        val scope: String? = null,
     ) : GrantParameters
 
     /**

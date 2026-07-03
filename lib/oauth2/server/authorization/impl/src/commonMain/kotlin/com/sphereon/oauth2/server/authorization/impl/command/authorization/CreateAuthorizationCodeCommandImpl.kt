@@ -302,10 +302,13 @@ class CreateAuthorizationCodeCommandImpl(
      * Returns null for unknown ACR vocabularies — the enforcer treats null as AAL1.
      */
     private fun inferAalFromAcr(acr: String?): AuthAssuranceLevel? =
-        when (acr) {
-            "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport" -> AuthAssuranceLevel.AAL1
-            "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract" -> AuthAssuranceLevel.AAL2
-            "urn:oasis:names:tc:SAML:2.0:ac:classes:SmartcardPKI" -> AuthAssuranceLevel.AAL3
-            else -> null
+        acr?.let { value ->
+            AuthAssuranceLevel.entries.firstOrNull { it.acr == value }
+                ?: when (value) {
+                    "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport" -> AuthAssuranceLevel.AAL1
+                    "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract" -> AuthAssuranceLevel.AAL2
+                    "urn:oasis:names:tc:SAML:2.0:ac:classes:SmartcardPKI" -> AuthAssuranceLevel.AAL3
+                    else -> null
+                }
         }
 }

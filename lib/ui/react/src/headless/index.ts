@@ -43,3 +43,8 @@ export type {
 } from '../components/blob-explorer/blob-types'
 export { useQrClaimPolling } from './useQrClaimPolling'
 export type { UseQrClaimPollingArgs, UseQrClaimPollingReturn } from './useQrClaimPolling'
+export { useFocusTrap } from './use-focus-trap'
+export { useRovingTabindex } from './use-roving-tabindex'
+export type { RovingItemProps, UseRovingTabindex } from './use-roving-tabindex'
+export { AnnouncerProvider, useAnnouncer, LiveRegion } from './use-announcer'
+export type { AnnouncerApi } from './use-announcer'

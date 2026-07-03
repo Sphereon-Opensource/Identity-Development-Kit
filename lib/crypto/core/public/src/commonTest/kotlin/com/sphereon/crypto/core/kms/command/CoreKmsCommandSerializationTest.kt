@@ -4,12 +4,15 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.json.cryptoJsonSerializer
+import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import kotlinx.serialization.encodeToString
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -86,5 +89,78 @@ class CoreKmsCommandSerializationTest {
         assertEquals("software", keyInfo.providerId)
         assertEquals("acme-assertion", keyInfo.alias)
         assertEquals("did:jwk:example#0", keyInfo.kid)
+    }
+
+    @Test
+    fun signDigestArgsSerializesManagedKeyReferenceForRemoteTransport() {
+        val digest = "caller-supplied-digest".encodeToByteArray()
+        val encoded =
+            json.encodeToString(
+                SignDigestArgs(
+                    keyInfo =
+                        ManagedKeyReference(
+                            providerId = "software",
+                            alias = "secdsa-signing",
+                            kid = "did:jwk:example#digest",
+                        ),
+                    digest = digest,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.DER,
+                ),
+            )
+
+        val decoded = json.decodeFromString<SignDigestArgs>(encoded)
+
+        val keyInfo = assertNotNull(decoded.keyInfo)
+        assertEquals("software", keyInfo.providerId)
+        assertEquals("secdsa-signing", keyInfo.alias)
+        assertEquals(SignatureAlgorithm.ECDSA_SHA256, decoded.signatureAlgorithm)
+        assertEquals(SignatureEncoding.DER, decoded.signatureEncoding)
+        assertContentEquals(digest, decoded.digest)
+    }
+
+    @Test
+    fun ecdhDeriveArgsSerializesKeyReferencesForRemoteTransport() {
+        val encoded =
+            json.encodeToString(
+                EcdhDeriveArgs(
+                    privateKeyInfo = ManagedKeyReference(providerId = "software", alias = "alice-private"),
+                    publicKeyInfo = ManagedKeyReference(providerId = "software", alias = "bob-public"),
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES_A256KW,
+                    mode = EcdhDeriveMode.CONCAT_KDF,
+                    keyDataLen = 256,
+                    algorithmId = "A256KW",
+                    partyUInfo = "apu".encodeToByteArray(),
+                    partyVInfo = "apv".encodeToByteArray(),
+                ),
+            )
+
+        val decoded = json.decodeFromString<EcdhDeriveArgs>(encoded)
+
+        assertEquals("alice-private", assertNotNull(decoded.privateKeyInfo).alias)
+        assertEquals("bob-public", assertNotNull(decoded.publicKeyInfo).alias)
+        assertEquals(KeyAgreementAlgorithm.ECDH_ES_A256KW, decoded.algorithm)
+        assertEquals(EcdhDeriveMode.CONCAT_KDF, decoded.mode)
+        assertEquals(256, decoded.keyDataLen)
+        assertEquals("A256KW", decoded.algorithmId)
+        assertContentEquals("apu".encodeToByteArray(), decoded.partyUInfo)
+        assertContentEquals("apv".encodeToByteArray(), decoded.partyVInfo)
+    }
+
+    @Test
+    fun ecPointMultiplyArgsSerializesKeyReferencesForRemoteTransport() {
+        val encoded =
+            json.encodeToString(
+                EcPointMultiplyArgs(
+                    privateKeyInfo = ManagedKeyReference(providerId = "software", alias = "activation-scalar"),
+                    publicKeyInfo = ManagedKeyReference(providerId = "software", alias = "activation-point"),
+                ),
+            )
+
+        val decoded = json.decodeFromString<EcPointMultiplyArgs>(encoded)
+
+        assertEquals("activation-scalar", assertNotNull(decoded.privateKeyInfo).alias)
+        assertEquals("activation-point", assertNotNull(decoded.publicKeyInfo).alias)
+        assertEquals(EcPointMultiplyOutput.RAW_X, decoded.output)
     }
 }

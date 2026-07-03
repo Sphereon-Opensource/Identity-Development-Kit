@@ -18,6 +18,7 @@
 package com.sphereon.core.api.conf
 
 import com.sphereon.core.compat.JsExportCompat
+import kotlin.concurrent.Volatile
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.reflect.KClass

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright 2023-2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,13 +29,16 @@ internal fun DesignBinding.matchesKey(
         DesignBindingKey.CREDENTIAL_CONFIGURATION_ID -> credentialConfigurationId == value
         DesignBindingKey.SCHEMA_ID -> schemaId == value
         DesignBindingKey.DOC_TYPE -> docType == value
-        DesignBindingKey.VC_TYPE -> vcType == value
-        DesignBindingKey.VC_CONTEXT -> vcContext == value
+        DesignBindingKey.TYPE -> type == value
+        DesignBindingKey.CONTEXT -> context == value
         DesignBindingKey.ISSUER_ID -> issuerId == value
         DesignBindingKey.ISSUER_DID -> issuerDid == value
         DesignBindingKey.ISSUER_URI -> issuerUri == value
         DesignBindingKey.VERIFIER_CLIENT_ID -> verifierClientId == value
         DesignBindingKey.OCA_SAID -> ocaSaid == value
+        DesignBindingKey.CREDENTIAL_TYPE_FORMAT -> credentialType?.format?.name == value
+        DesignBindingKey.CREDENTIAL_DESIGN_ID -> credentialDesignId?.toString() == value
+        DesignBindingKey.CREDENTIAL_DESIGN_VERSION -> credentialDesignVersion?.toString() == value
     }
 
 internal fun List<DesignBinding>.anyMatchesKey(

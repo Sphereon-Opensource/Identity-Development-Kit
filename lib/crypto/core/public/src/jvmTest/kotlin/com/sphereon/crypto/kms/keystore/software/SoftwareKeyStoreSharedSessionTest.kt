@@ -26,6 +26,8 @@ import com.sphereon.crypto.core.interop.derPrivateKeyToJwk
 import com.sphereon.crypto.core.interop.derPublicKeyToJwk
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
+import com.sphereon.crypto.core.kms.KeyStoreLoaderOpts
+import com.sphereon.crypto.core.kms.model.PredefinedKeyStoreTypes
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import java.security.KeyPairGenerator
@@ -91,8 +93,71 @@ class SoftwareKeyStoreSharedSessionTest {
     }
 
     @Test
+    fun keyStoreLoaderSharesRepeatedFileLoadsAndSupportsForcedReload() =
+        runTest {
+            val dir = Files.createTempDirectory("sks-loader-cache").toFile().also { it.deleteOnExit() }
+            val path = dir.resolve("cached.p12").absolutePath
+            val opts =
+                KeyStoreLoaderOpts(
+                    type = PredefinedKeyStoreTypes.PKCS12.keyStoreType,
+                    source = KeyStoreLoaderOpts.Source.File(path, autoCreate = true),
+                    keyStorePassword = "test-password",
+                )
+
+            KeyStoreLoaderFactory.clearCache()
+            try {
+                val first = KeyStoreLoaderFactory.load(opts)
+                val second = KeyStoreLoaderFactory.load(opts)
+                val reloaded = KeyStoreLoaderFactory.load(opts, forceReload = true)
+
+                assertTrue(first === second, "repeated file loads should share the cached keystore")
+                assertTrue(first !== reloaded, "forceReload must bypass the cached keystore")
+            } finally {
+                KeyStoreLoaderFactory.clearCache()
+            }
+        }
+
+    @Test
+    fun tenantInvalidationRemovesOnlyMatchingTenantKeyStoreLoads() =
+        runTest {
+            val dir = Files.createTempDirectory("sks-loader-tenant-cache").toFile().also { it.deleteOnExit() }
+            val tenantAPath = dir.resolve("tenant-a/software.p12").apply { parentFile.mkdirs() }.absolutePath
+            val tenantBPath = dir.resolve("tenant-b/software.p12").apply { parentFile.mkdirs() }.absolutePath
+            val optsA =
+                KeyStoreLoaderOpts(
+                    type = PredefinedKeyStoreTypes.PKCS12.keyStoreType,
+                    source = KeyStoreLoaderOpts.Source.File(tenantAPath, autoCreate = true),
+                    keyStorePassword = "test-password",
+                )
+            val optsB =
+                KeyStoreLoaderOpts(
+                    type = PredefinedKeyStoreTypes.PKCS12.keyStoreType,
+                    source = KeyStoreLoaderOpts.Source.File(tenantBPath, autoCreate = true),
+                    keyStorePassword = "test-password",
+                )
+
+            KeyStoreLoaderFactory.clearCache()
+            try {
+                val firstA = KeyStoreLoaderFactory.load(optsA)
+                val firstB = KeyStoreLoaderFactory.load(optsB)
+                val result = KeyStoreLoaderFactory.invalidateTenant("tenant-a")
+                val secondA = KeyStoreLoaderFactory.load(optsA)
+                val secondB = KeyStoreLoaderFactory.load(optsB)
+
+                assertEquals(2, result.keyStoresBefore)
+                assertEquals(1, result.keyStoresAfter)
+                assertEquals(1, result.keyStoresEvicted)
+                assertTrue(firstA !== secondA, "invalidated tenant keystore should be loaded again")
+                assertTrue(firstB === secondB, "other tenant keystore should remain cached")
+            } finally {
+                KeyStoreLoaderFactory.clearCache()
+            }
+        }
+
+    @Test
     fun keyStoredThroughOneInstanceIsResolvedThroughAReusedSecondInstance() =
         runTest {
+            KeyStoreLoaderFactory.clearCache()
             val dir = Files.createTempDirectory("sks-shared-session").toFile().also { it.deleteOnExit() }
             val path = dir.resolve("license.p12").absolutePath
 
@@ -122,6 +187,7 @@ class SoftwareKeyStoreSharedSessionTest {
     @Test
     fun reusedInstanceResolvesTheOverwrittenKeyNotTheStaleSelfGeneratedOne() =
         runTest {
+            KeyStoreLoaderFactory.clearCache()
             val dir = Files.createTempDirectory("sks-shared-overwrite").toFile().also { it.deleteOnExit() }
             val path = dir.resolve("license.p12").absolutePath
 

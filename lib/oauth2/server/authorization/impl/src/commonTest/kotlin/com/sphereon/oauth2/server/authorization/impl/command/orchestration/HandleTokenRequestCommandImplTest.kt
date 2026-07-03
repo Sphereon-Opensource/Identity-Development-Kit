@@ -354,6 +354,81 @@ class HandleTokenRequestCommandImplTest {
             assertEquals("read", result.value.scope)
         }
 
+    @Test
+    fun clientCredentialsGrantPropagatesRequestedAudienceToAccessToken() =
+        runTest {
+            var capturedAccessTokenArgs: CreateAccessTokenArgs? = null
+            val service =
+                serviceForClientCredentialsFlow(
+                    parseStub =
+                        stubParseTokenRequest {
+                            Ok(
+                                TokenRequestData(
+                                    grantType = GrantType.CLIENT_CREDENTIALS,
+                                    clientId = "tenant-as-service",
+                                    clientAuthentication =
+                                        ClientAuthenticationConfig.Basic(
+                                            credentials =
+                                                com.sphereon.oauth2.common.model
+                                                    .ClientCredentials(clientId = "tenant-as-service", clientSecret = "secret"),
+                                        ),
+                                    grantParameters =
+                                        GrantParameters.ClientCredentials(
+                                            scope = "internal",
+                                            audiences = listOf("enterprise-tenant-kms"),
+                                        ),
+                                    httpUrl = "https://as.example.com/token",
+                                ),
+                            )
+                        },
+                    verifyClientAuthStub =
+                        stubVerifyClientAuthentication {
+                            Ok(VerifiedClientAuthentication(clientId = it.clientId, method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC))
+                        },
+                    verifyGrantStub =
+                        stubVerifyClientCredentialsGrant {
+                            Ok(VerifiedClientCredentialsGrant(subject = "tenant-as-service", clientId = "tenant-as-service", scope = "internal"))
+                        },
+                    createAccessTokenStub =
+                        stubCreateAccessToken { args ->
+                            capturedAccessTokenArgs = args
+                            Ok(StringResult(value = "AT-KMS"))
+                        },
+                    createTokenResponseStub =
+                        stubCreateTokenResponse { args ->
+                            Ok(TokenResponse(accessToken = args.accessToken, tokenType = args.tokenType, scope = args.scope))
+                        },
+                )
+            val command =
+                HandleTokenRequestCommandImpl(
+                    execution = ctx.execution,
+                    authorizationServerService = service,
+                    serversConfigProvider = configProvider,
+                    clientRegistry = newClientRegistry(),
+                    verifyDpopProofCommand = rejectingDpopVerify,
+                    dpopProofJtiCache = newDpopJtiCache(),
+                    dpopNonceManager = newDpopNonceManager(),
+                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                )
+
+            val result =
+                command.execute(
+                    HandleTokenRequestArgs(
+                        requestBody =
+                            mapOf(
+                                "grant_type" to listOf("client_credentials"),
+                                "scope" to listOf("internal"),
+                                "audience" to listOf("enterprise-tenant-kms"),
+                            ),
+                        requestHeaders = mapOf("Authorization" to "Basic dGVuYW50LWFzLXNlcnZpY2U6c2VjcmV0"),
+                        httpUrl = "https://as.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isOk, "expected success but got ${if (!result.isOk) result.error else "ok"}")
+            assertEquals(listOf("enterprise-tenant-kms"), capturedAccessTokenArgs?.audience)
+        }
+
     /**
      * Regression: A2 fix. The HTTP shell resolves a per-request base URL from `Host` +
      * `X-Forwarded-Proto` and threads it through [HandleTokenRequestArgs.baseUrlOverride] so

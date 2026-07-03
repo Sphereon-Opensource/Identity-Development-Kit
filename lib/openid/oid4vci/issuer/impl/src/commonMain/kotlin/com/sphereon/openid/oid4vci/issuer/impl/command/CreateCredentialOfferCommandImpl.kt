@@ -41,6 +41,7 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import com.sphereon.openid.oid4vci.issuer.impl.pipeline.OfferPipelineInitializer
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
@@ -345,7 +346,9 @@ class CreateCredentialOfferCommandImpl(
             } else {
                 "?"
             }
-        val offerEndpoint = "$issuerBase/credentials/offers/$offerId"
+        val protocolBasePath = Oid4vciIssuerProtocolConfig.resolveBasePath(conf.app)
+        val protocolBase = Oid4vciIssuerProtocolConfig.appendBasePath(issuerBase, protocolBasePath)
+        val offerEndpoint = "$protocolBase/credentials/offers/$offerId"
         return "$scheme${separator}credential_offer_uri=${percentEncodeQueryComponent(offerEndpoint)}"
     }
 }

@@ -32,8 +32,9 @@ import kotlin.native.ObjCName
  * Uses an existing KvStore instance (resolved by [kvStoreId]) for persistence.
  *
  * This is useful for small blobs (config files, certificates, small documents) where a separate
- * filesystem or cloud backend is overkill. The Kottage KvStore backend provides persistence
- * via embedded SQLite.
+ * filesystem or cloud backend is overkill. The backing store is resolved from the normal
+ * `kv.stores.<id>` configuration, so deployments can use memory, embedded kottage, PostgreSQL,
+ * or any other registered KvStore backend.
  *
  * ```properties
  * blob.stores.small-docs.type=kvstore
@@ -41,7 +42,7 @@ import kotlin.native.ObjCName
  * blob.stores.small-docs.kvStoreId=blob-kv-store
  *
  * # The backing KvStore must also be configured:
- * kv.stores.blob-kv-store.type=kottage
+ * kv.stores.blob-kv-store.type=database
  * kv.stores.blob-kv-store.scopeBinding=TENANT
  * ```
  */

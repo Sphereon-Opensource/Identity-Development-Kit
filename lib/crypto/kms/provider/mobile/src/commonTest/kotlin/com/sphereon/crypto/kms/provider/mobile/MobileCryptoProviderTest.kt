@@ -18,11 +18,19 @@
 package com.sphereon.crypto.kms.provider.mobile
 
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.core.compat.Uuid
 import com.sphereon.core.defaults.app.staticMinimalTestAppGraph
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
+import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
+import com.sphereon.crypto.secdsa.impl.DefaultSecdsaPrimitives
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -42,7 +50,15 @@ class MobileCryptoProviderTest {
         val user = app.userContextManager.getAnonymous()
         val session = user.sessionContextManager.createOrGetFromId("test-session")
 
-        mobileCryptoProvider = MobileKmsProviderImpl(MobileKmsProviderConfig(id = "test-mobile"), execution = session.asCoreApiServiceGraph().serviceExecution)
+        val providerId = "test-mobile-${Uuid.v4String()}"
+        mobileCryptoProvider =
+            MobileKmsProviderImpl(
+                MobileKmsProviderConfig(
+                    id = providerId,
+                    defaultConfigValues = mapOf("jks.path" to "build/mobile-kms-test/$providerId.p12"),
+                ),
+                execution = session.asCoreApiServiceGraph().serviceExecution,
+            )
     }
 
     @Test
@@ -101,6 +117,72 @@ class MobileCryptoProviderTest {
             assertNotNull(signature)
             val verification = mobileCryptoProvider.isValidRawSignature(keyInfo = keyInfo, signature = signature, input = "test2".encodeToByteArray())
             assertFalse(verification)
+        }
+
+    @Test
+    fun testDigestSignatureSignsDigestWithoutHashingAgain() =
+        runTest {
+            val managedKeyPair = mobileCryptoProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managedKeyPair.joseToManagedKeyInfo()
+            val digest = hash("secdsa message".encodeToByteArray(), DigestAlg.SHA256)
+
+            val signature =
+                mobileCryptoProvider.signDigest(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                )
+
+            assertTrue(
+                mobileCryptoProvider.verifyDigest(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signature = signature,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                ),
+            )
+            assertFalse(
+                mobileCryptoProvider.isValidRawSignature(
+                    keyInfo = keyInfo,
+                    input = digest,
+                    signature = signature,
+                ),
+                "A digest signature must not verify as a normal ECDSA signature over SHA-256(digest)",
+            )
+        }
+
+    @Test
+    fun testSplitSecdsaSignatureVerifiesAgainstPinDerivedPublicKey() =
+        runTest {
+            val primitives = DefaultSecdsaPrimitives()
+            val managedKeyPair = mobileCryptoProvider.generateKeyAsync(alias = "mobile-nch-secdsa", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managedKeyPair.joseToManagedKeyInfo()
+            val pinScalar = primitives.scalar(byteArrayOf(0x07))
+            val nchPublicKey = primitives.pointFromJwk(managedKeyPair.jose.publicJwk)
+            val pinDerivedPublicKey = primitives.multiply(pinScalar, nchPublicKey)
+            val digest = hash("secdsa mobile split signing".encodeToByteArray(), DigestAlg.SHA256)
+
+            val signature =
+                primitives.splitSign(
+                    digest = digest,
+                    pinScalar = pinScalar,
+                    nchKeyInfo = keyInfo,
+                    kmsProvider = mobileCryptoProvider,
+                )
+
+            assertTrue(primitives.verifyDigestSignature(digest, pinDerivedPublicKey, signature))
+            assertFalse(
+                mobileCryptoProvider.verifyDigest(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signature = signature.toRawBytes(),
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                ),
+                "A SECDSA split signature must verify under the PIN-derived public key, not the base NCH key",
+            )
         }
 
     @Test
@@ -181,6 +263,92 @@ class MobileCryptoProviderTest {
         val keyTypes = mobileCryptoProvider.supportedKeyTypes()
         assertContentEquals(arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA), keyTypes)
     }
+
+    @Test
+    fun testCapabilitiesAdvertiseScdsaPhase1Primitives() {
+        val capabilities = mobileCryptoProvider.getCapabilities()
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.SIGN_DIGEST))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.VERIFY_DIGEST))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.KEY_AGREEMENT))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.ECDH_DERIVE_RAW_X))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.ECDH_DERIVE_KDF))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.EC_POINT_MULTIPLY))
+        assertFalse(capabilities.supportsOperation(KmsProviderOperation.KEY_ATTESTATION))
+    }
+
+    @Test
+    fun testProviderBackedEcdhDeriveRawX() =
+        runTest {
+            val alice = mobileCryptoProvider.generateKeyAsync(alias = "alice-mobile-ecdh", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val bob = mobileCryptoProvider.generateKeyAsync(alias = "bob-mobile-ecdh", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val aliceKeyInfo = alice.joseToManagedKeyInfo()
+            val bobKeyInfo = bob.joseToManagedKeyInfo()
+
+            val aliceSecret =
+                mobileCryptoProvider.ecdhDerive(
+                    privateKeyInfo = aliceKeyInfo,
+                    publicKeyInfo = bobKeyInfo,
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    mode = EcdhDeriveMode.RAW_X,
+                )
+            val bobSecret =
+                mobileCryptoProvider.ecdhDerive(
+                    privateKeyInfo = bobKeyInfo,
+                    publicKeyInfo = aliceKeyInfo,
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    mode = EcdhDeriveMode.RAW_X,
+                )
+
+            assertEquals(32, aliceSecret.derivedSecret.size)
+            assertContentEquals(aliceSecret.derivedSecret, bobSecret.derivedSecret)
+        }
+
+    @Test
+    fun testProviderBackedEcdhDeriveConcatKdf() =
+        runTest {
+            val alice = mobileCryptoProvider.generateKeyAsync(alias = "alice-mobile-ecdh-kdf", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val bob = mobileCryptoProvider.generateKeyAsync(alias = "bob-mobile-ecdh-kdf", alg = SignatureAlgorithm.ECDSA_SHA256)
+
+            val result =
+                mobileCryptoProvider.ecdhDerive(
+                    privateKeyInfo = alice.joseToManagedKeyInfo(),
+                    publicKeyInfo = bob.joseToManagedKeyInfo(),
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES_A256KW,
+                    mode = EcdhDeriveMode.CONCAT_KDF,
+                    keyDataLen = 256,
+                    algorithmId = "A256KW",
+                    partyUInfo = "alice".encodeToByteArray(),
+                    partyVInfo = "bob".encodeToByteArray(),
+                )
+
+            assertEquals(32, result.derivedSecret.size)
+            assertEquals(32, assertNotNull(result.rawSharedSecret).size)
+        }
+
+    @Test
+    fun testEcPointMultiplyReturnsSameRawXAsEcdhDerive() =
+        runTest {
+            val alice = mobileCryptoProvider.generateKeyAsync(alias = "alice-mobile-point-multiply", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val bob = mobileCryptoProvider.generateKeyAsync(alias = "bob-mobile-point-multiply", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val aliceKeyInfo = alice.joseToManagedKeyInfo()
+            val bobKeyInfo = bob.joseToManagedKeyInfo()
+
+            val rawEcdh =
+                mobileCryptoProvider.ecdhDerive(
+                    privateKeyInfo = aliceKeyInfo,
+                    publicKeyInfo = bobKeyInfo,
+                    algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    mode = EcdhDeriveMode.RAW_X,
+                )
+            val pointMultiply =
+                mobileCryptoProvider.ecPointMultiply(
+                    privateKeyInfo = aliceKeyInfo,
+                    publicKeyInfo = bobKeyInfo,
+                    output = EcPointMultiplyOutput.RAW_X,
+                )
+
+            assertContentEquals(rawEcdh.derivedSecret, pointMultiply.rawX)
+        }
 
     @Test
     fun testSupportedAlg() {

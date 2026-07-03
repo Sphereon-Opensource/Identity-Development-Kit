@@ -27,6 +27,8 @@ import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInp
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
 import com.sphereon.data.store.credential.design.model.CreateVerifierDesignInput
+import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
+import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
 import com.sphereon.data.store.credential.design.model.CredentialDesignModuleConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.CredentialDesignRefreshConfig
@@ -51,6 +53,14 @@ fun createCredentialDesignValidator(config: CredentialDesignValidationConfig) =
                 maxItems(config.maxBindingsPerDesign)
             }
             run {
+                constrain("credentialType is required and must carry the format-specific type value") { input ->
+                    input.credentialType?.let(::hasRequiredCredentialTypeValue) == true
+                }
+                constrain("binding credential type hints must match the credential design type") { input ->
+                    input.credentialType?.let { credentialType ->
+                        input.bindings.all { binding -> bindingMatchesCredentialType(binding, credentialType) }
+                    } ?: false
+                }
                 constrain("HOSTED VCT bindings require vct or credentialConfigurationId") { input ->
                     input.bindings.all(::hasHostedVctSeed)
                 }
@@ -158,6 +168,18 @@ val resolveCredentialDesignValidator =
 
 val credentialDesignRecordValidator =
     Validation<CredentialDesignRecord> {
+        CredentialDesignRecord::credentialType {
+            constrain("is required and must carry exactly one format-specific type value") { type ->
+                type != null && hasRequiredCredentialTypeValue(type)
+            }
+        }
+        run {
+            constrain("binding credential type hints must match the credential design type") { record ->
+                record.credentialType?.let { credentialType ->
+                    record.bindings.all { binding -> bindingMatchesCredentialType(binding, credentialType) }
+                } ?: false
+            }
+        }
         CredentialDesignRecord::bindings { minItems(1) }
         CredentialDesignRecord::displays { minItems(1) }
         CredentialDesignRecord::displays onEach {
@@ -204,3 +226,24 @@ private fun hasHostedVctSeed(binding: DesignBinding): Boolean =
 private fun hasValidExternalVct(binding: DesignBinding): Boolean =
     binding.vctHostingMode != VctHostingMode.EXTERNAL ||
         binding.vct?.contains("://") == true
+
+private fun hasRequiredCredentialTypeValue(type: CredentialTypeDescriptor): Boolean =
+    credentialTypeDiscriminatorCount(type) == 1 &&
+        when (type.format) {
+        CredentialTypeFormat.SD_JWT_VC -> !type.vct.isNullOrBlank()
+        CredentialTypeFormat.MSO_MDOC -> !type.docType.isNullOrBlank()
+        CredentialTypeFormat.W3C_VC -> !type.type.isNullOrBlank()
+    }
+
+private fun credentialTypeDiscriminatorCount(type: CredentialTypeDescriptor): Int =
+    listOf(type.vct, type.docType, type.type).count { !it.isNullOrBlank() }
+
+private fun bindingMatchesCredentialType(binding: DesignBinding, type: CredentialTypeDescriptor): Boolean {
+    val bindingType = binding.credentialType
+    if (bindingType != null && bindingType != type) return false
+    if (!binding.vct.isNullOrBlank() && binding.vct != type.vct) return false
+    if (!binding.docType.isNullOrBlank() && binding.docType != type.docType) return false
+    if (!binding.type.isNullOrBlank() && binding.type != type.type) return false
+    if (!binding.context.isNullOrBlank() && binding.context != type.context) return false
+    return true
+}

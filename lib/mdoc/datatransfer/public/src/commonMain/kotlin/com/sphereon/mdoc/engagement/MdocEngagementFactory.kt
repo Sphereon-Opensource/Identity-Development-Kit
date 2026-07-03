@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.percentDecode
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.mdoc.transfer.device.BleOptions
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
@@ -43,6 +44,7 @@ interface MdocEngagementFactory {
     val holder: Holder
     val reader: Reader
 
+    @JsExportIgnoreCompat
     interface Holder {
         /**
          * Initializes an engagement instance from a pre-configured builder.
@@ -94,6 +96,7 @@ interface MdocEngagementFactory {
 
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Reader", exact = true)
+    @JsExportIgnoreCompat
     interface Reader {
         suspend fun createEngagement(init: ReaderConfiguration.() -> Unit = {}): IdkResult<EngagementInstance, IdkError>
     }

@@ -22,7 +22,7 @@
       "$value": "#7C40E8"
     },
     "secondary": {
-      "$value": "#C7ADF5"
+      "$value": "{palette.brand.400}"
     },
     "onSecondary": {
       "$value": "#202537"
@@ -46,16 +46,16 @@
       "$value": "#E6C1F3"
     },
     "error": {
-      "$value": "#DB7759"
+      "$value": "#FFB3C1"
     },
     "onError": {
-      "$value": "#320C04"
+      "$value": "#4C0519"
     },
     "errorContainer": {
-      "$value": "#52190B"
+      "$value": "#9F1239"
     },
     "onErrorContainer": {
-      "$value": "#FFEAE3"
+      "$value": "#FFE4E6"
     },
     "surface": {
       "$value": "#161922"
@@ -127,7 +127,7 @@
     },
     "feedback": {
       "success": {
-        "$value": "#15FF5D"
+        "$value": "#4ADE80"
       },
       "successContainer": {
         "$value": "color-mix(in srgb, {palette.success.500} 12%, transparent)"
@@ -208,6 +208,11 @@
       "disabled": {
         "$value": "#22262F"
       }
+    },
+    "gradient": {
+      "brand": {
+        "$value": "linear-gradient(180deg, {palette.brand.500} 0%, {palette.brand.700} 100%)"
+      }
     }
   },
   "shadow": {
@@ -236,6 +241,12 @@
     },
     "overlay": {
       "$value": "0 12px 24px rgba(0,0,0,0.6)"
+    },
+    "focusRing": {
+      "$value": "0 0 0 1.5px {color.primary}, 0 0 0 4px color-mix(in srgb, {color.primary} 40%, transparent)"
+    },
+    "errorRing": {
+      "$value": "0 0 0 3px color-mix(in srgb, {color.error} 70%, transparent)"
     }
   }
 }

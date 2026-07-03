@@ -26,8 +26,10 @@ import com.sphereon.core.api.encodeToHex
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobService
+import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.data.store.credential.design.PublicDesignAssetPaths
 import com.sphereon.data.store.credential.design.config.CredentialDesignConfigProvider
@@ -42,12 +44,17 @@ import com.sphereon.data.store.credential.design.impl.resolution.PartyStoreDesig
 import com.sphereon.data.store.credential.design.impl.resolution.SchemaInferenceDesignProvider
 import com.sphereon.data.store.credential.design.impl.resolution.SdJwtVctDesignProvider
 import com.sphereon.data.store.credential.design.impl.resolution.W3cRenderMethodDesignProvider
+import com.sphereon.data.store.credential.design.model.AssetFilter
+import com.sphereon.data.store.credential.design.model.AssetInfo
 import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
+import com.sphereon.data.store.credential.design.model.DesignAssetType
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
 import com.sphereon.data.store.credential.design.model.CreateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
+import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
+import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.DesignFilter
@@ -70,6 +77,7 @@ import com.sphereon.data.store.credential.design.model.UpdateCredentialDesignInp
 import com.sphereon.data.store.credential.design.model.UpdateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.UpdateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
+import com.sphereon.data.store.credential.design.model.UploadTenantAssetInput
 import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
 import com.sphereon.data.store.credential.design.persistence.CredentialDesignRepository
 import com.sphereon.data.store.credential.design.persistence.DerivedRenderHintsRepository
@@ -77,12 +85,14 @@ import com.sphereon.data.store.credential.design.persistence.IssuerDesignReposit
 import com.sphereon.data.store.credential.design.persistence.RenderVariantRepository
 import com.sphereon.data.store.credential.design.persistence.SourceSnapshotRepository
 import com.sphereon.data.store.credential.design.persistence.VerifierDesignRepository
+import com.sphereon.data.store.credential.design.validation.credentialDesignRecordValidator
 import com.sphereon.di.session.SessionScope
 import com.sphereon.sdjwt.vc.SdJwtVcTypeMetadata
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import io.konform.validation.Invalid
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
@@ -158,6 +168,7 @@ class DefaultCredentialDesignService(
                 tenantId = tenantId,
                 alias = input.alias,
                 hostingMode = input.hostingMode,
+                credentialType = input.credentialType,
                 bindings = input.bindings,
                 credentialTemplateId = input.credentialTemplateId,
                 issuerDesignId = input.issuerDesignId,
@@ -167,6 +178,7 @@ class DefaultCredentialDesignService(
                 createdAt = now,
                 updatedAt = now,
             )
+        validateCredentialDesignRecord(record)?.let { return it }
         credentialDesignRepository.create(record)
         return Ok(record)
     }
@@ -210,6 +222,7 @@ class DefaultCredentialDesignService(
         val updated =
             existing.copy(
                 alias = input.alias ?: existing.alias,
+                credentialType = input.credentialType ?: existing.credentialType,
                 bindings = input.bindings ?: existing.bindings,
                 credentialTemplateId = input.credentialTemplateId ?: existing.credentialTemplateId,
                 issuerDesignId = input.issuerDesignId ?: existing.issuerDesignId,
@@ -219,6 +232,7 @@ class DefaultCredentialDesignService(
                 hostingMode = input.hostingMode ?: existing.hostingMode,
                 updatedAt = now,
             )
+        validateCredentialDesignRecord(updated)?.let { return it }
         credentialDesignRepository.update(updated)
         return Ok(updated)
     }
@@ -506,6 +520,7 @@ class DefaultCredentialDesignService(
                     alias = input.alias,
                     hostingMode = DesignHostingMode.CACHED_EXTERNAL,
                     bindings = input.bindings,
+                    credentialType = normalized.credentialType ?: credentialTypeFromBindings(input.bindings),
                     sourceSnapshotIds = listOf(snapshot.id),
                     createdAt = now,
                     updatedAt = now,
@@ -517,12 +532,14 @@ class DefaultCredentialDesignService(
                     alias = input.alias,
                     hostingMode = DesignHostingMode.CACHED_EXTERNAL,
                     bindings = input.bindings,
-                    displays = listOf(LocalizedCredentialDisplay(locale = "", name = input.alias ?: "Imported")),
+                    displays = listOf(LocalizedCredentialDisplay(locale = "und", name = input.alias ?: "Imported")),
                     sourceSnapshotIds = listOf(snapshot.id),
                     createdAt = now,
                     updatedAt = now,
+                    credentialType = credentialTypeFromBindings(input.bindings),
                 )
             }
+        validateCredentialDesignRecord(record)?.let { return it }
         credentialDesignRepository.create(record)
         return Ok(record)
     }
@@ -673,6 +690,7 @@ class DefaultCredentialDesignService(
                 sourceSnapshotIds = existing.sourceSnapshotIds + newSnapshot.id,
                 updatedAt = Clock.System.now(),
             )
+        validateCredentialDesignRecord(updated)?.let { return it }
         credentialDesignRepository.update(updated)
         return Ok(updated)
     }
@@ -977,6 +995,61 @@ class DefaultCredentialDesignService(
         return Ok(reference)
     }
 
+    override suspend fun listDesignAssets(
+        tenantId: String,
+        filter: AssetFilter,
+    ): IdkResult<List<AssetInfo>, IdkError> {
+        // The blob list is filtered by PREFIX (the per-tenant content-addressed asset directory).
+        // DefaultBlobService scopes the prefix under the tenant and unscopes the returned paths, so
+        // each descriptor.path comes back as "vc-designs/$tenantId/assets/by-hash/<hash>".
+        val byHashPrefix = "${assetBlobPath(tenantId, "")}"
+        val listResult =
+            blobService.listBlobs(
+                info = BlobInfo(tenantId = tenantId),
+                options = ListOptions(prefix = byHashPrefix, recursive = true),
+            )
+        if (listResult.isErr) return Err(listResult.error)
+
+        val assets =
+            listResult.value.descriptors
+                .mapNotNull { descriptor -> descriptor.toAssetInfo() }
+                .filter { asset -> assetMatchesFilter(asset, filter) }
+        return Ok(assets)
+    }
+
+    override suspend fun uploadTenantAsset(
+        tenantId: String,
+        input: UploadTenantAssetInput,
+    ): IdkResult<AssetReference, IdkError> {
+        // Same content-addressing/dedup logic as [uploadDesignAsset], minus designId/locale: the
+        // asset is shared tenant-wide and keyed solely by the SHA-256 of its bytes.
+        val digest = hash(input.data, DigestAlg.SHA256)
+        val hexHash = digest.encodeToHex()
+        val b64 = digest.encodeToBase64()
+
+        val blobPath = assetBlobPath(tenantId, hexHash)
+
+        val existing = blobService.getBlobInfo(BlobInfo(path = blobPath, tenantId = tenantId))
+        if (existing.isErr) {
+            val storeResult =
+                blobService.storeBlob(
+                    target = BlobInfo(path = blobPath, tenantId = tenantId, contentType = input.contentType),
+                    data = input.data,
+                )
+            if (storeResult.isErr) return Err(storeResult.error)
+        }
+
+        val publicUri = PublicDesignAssetPaths.assetPath(hexHash, input.contentType)
+        return Ok(
+            AssetReference(
+                uri = publicUri,
+                integrity = "sha256-$b64",
+                contentType = input.contentType,
+                localBlob = BlobInfo(path = blobPath, tenantId = tenantId),
+            ),
+        )
+    }
+
     override suspend fun getDesignAsset(
         tenantId: String,
         input: GetDesignAssetInput,
@@ -1042,6 +1115,47 @@ class DefaultCredentialDesignService(
         tenantId: String,
         hash: String,
     ): String = "vc-designs/$tenantId/assets/by-hash/$hash"
+
+    /**
+     * Maps a content-addressed asset blob descriptor to an [AssetInfo], or `null` when the blob's
+     * leaf is not a valid SHA-256 hash (defensive: the by-hash directory only holds hash-named blobs).
+     */
+    private fun BlobDescriptor.toAssetInfo(): AssetInfo? {
+        val hashLeaf = PublicDesignAssetPaths.hashFromLeaf(path.substringAfterLast('/'))
+        if (!hashLeaf.matches(HASH_PATTERN)) return null
+        val contentType = contentType ?: "application/octet-stream"
+        return AssetInfo(
+            // Build the PUBLIC relative uri exactly like uploadDesignAsset (host applied at serve time).
+            uri = PublicDesignAssetPaths.assetPath(hashLeaf, this.contentType),
+            contentType = contentType,
+            hash = hashLeaf,
+            sizeBytes = sizeBytes,
+            createdAt = createdAt,
+        )
+    }
+
+    /**
+     * Applies the [AssetFilter] to an [AssetInfo]. NOTE: a content-addressed blob keeps no asset-type
+     * segment, so [AssetFilter.assetType] is matched LOOSELY by the type's conventional content-type
+     * family (LOGO / BACKGROUND_IMAGE are not distinguishable and both match any `image/` type).
+     * [AssetFilter.contentType] is matched as a case-insensitive content-type prefix.
+     */
+    private fun assetMatchesFilter(
+        asset: AssetInfo,
+        filter: AssetFilter,
+    ): Boolean {
+        val mediaType = asset.contentType.substringBefore(';').trim().lowercase()
+        val contentTypeOk =
+            filter.contentType?.let { mediaType.startsWith(it.substringBefore(';').trim().lowercase()) } ?: true
+        val assetTypeOk =
+            when (filter.assetType) {
+                null -> true
+                DesignAssetType.PDF_TEMPLATE -> mediaType == "application/pdf"
+                DesignAssetType.SVG_TEMPLATE -> mediaType == "image/svg+xml"
+                DesignAssetType.LOGO, DesignAssetType.BACKGROUND_IMAGE -> mediaType.startsWith("image/")
+            }
+        return contentTypeOk && assetTypeOk
+    }
 
     /** Path scheme used by the legacy authenticated [getDesignAsset] download API. */
     private fun legacyAssetBlobPath(
@@ -1134,6 +1248,36 @@ class DefaultCredentialDesignService(
                 null
             } // Unknown or unsupported source type — create shell record
         }
+
+    private fun validateCredentialDesignRecord(record: CredentialDesignRecord): IdkResult<CredentialDesignRecord, IdkError>? {
+        val validation = credentialDesignRecordValidator(record)
+        if (validation !is Invalid) return null
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "Validation failed: ${validation.errors.joinToString { "${it.dataPath}: ${it.message}" }}",
+            ),
+        )
+    }
+
+    private fun credentialTypeFromBindings(bindings: List<DesignBinding>): CredentialTypeDescriptor? {
+        val credentialTypes = bindings.mapNotNull(::credentialTypeFromBinding).distinct()
+        return credentialTypes.singleOrNull()
+    }
+
+    private fun credentialTypeFromBinding(binding: DesignBinding): CredentialTypeDescriptor? {
+        binding.credentialType?.let { return it }
+        val discriminatorCount = listOf(binding.vct, binding.docType, binding.type).count { !it.isNullOrBlank() }
+        if (discriminatorCount != 1) return null
+        return when {
+            !binding.vct.isNullOrBlank() ->
+                CredentialTypeDescriptor(format = CredentialTypeFormat.SD_JWT_VC, vct = binding.vct)
+            !binding.docType.isNullOrBlank() ->
+                CredentialTypeDescriptor(format = CredentialTypeFormat.MSO_MDOC, docType = binding.docType)
+            !binding.type.isNullOrBlank() ->
+                CredentialTypeDescriptor(format = CredentialTypeFormat.W3C_VC, type = binding.type, context = binding.context)
+            else -> null
+        }
+    }
 
     private companion object {
         val HASH_PATTERN = Regex("^[0-9a-f]{64}$")

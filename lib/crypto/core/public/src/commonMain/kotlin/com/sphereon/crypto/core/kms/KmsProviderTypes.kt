@@ -29,6 +29,11 @@ import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.ManagedKeyPair
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.sign.SimpleSignatureService
 import com.sphereon.crypto.core.sign.model.SignInput
 import com.sphereon.crypto.core.sign.model.SignOutput
@@ -296,6 +301,57 @@ interface KmsProvider :
         alg: SignatureAlgorithm? = null,
         certificateOptions: CertificateOptions? = null,
     ): ManagedKeyPair
+
+    /**
+     * Creates a signature over caller-supplied digest data.
+     *
+     * Providers that support this operation must sign [digest] directly and must not hash it again.
+     */
+    suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+        requireX5Chain: Boolean = false,
+    ): ByteArray = throw UnsupportedOperationException("Provider $id does not support ${KmsProviderOperation.SIGN_DIGEST}")
+
+    /**
+     * Verifies a signature over caller-supplied digest data.
+     *
+     * Providers that support this operation must verify [digest] directly and must not hash it again.
+     */
+    suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding = SignatureEncoding.RAW,
+    ): Boolean = throw UnsupportedOperationException("Provider $id does not support ${KmsProviderOperation.VERIFY_DIGEST}")
+
+    /**
+     * Derives an ECDH raw x-coordinate or KDF output without exporting the private key to the caller.
+     */
+    suspend fun ecdhDerive(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        algorithm: KeyAgreementAlgorithm = KeyAgreementAlgorithm.ECDH_ES,
+        mode: EcdhDeriveMode = EcdhDeriveMode.RAW_X,
+        keyDataLen: Int? = null,
+        algorithmId: String? = null,
+        partyUInfo: ByteArray? = null,
+        partyVInfo: ByteArray? = null,
+    ): EcdhDeriveResult = throw UnsupportedOperationException(
+        "Provider $id does not support ${if (mode == EcdhDeriveMode.RAW_X) KmsProviderOperation.ECDH_DERIVE_RAW_X else KmsProviderOperation.ECDH_DERIVE_KDF}",
+    )
+
+    /**
+     * Performs provider-backed EC point multiplication semantics. Phase 1 providers may expose raw-X output only.
+     */
+    suspend fun ecPointMultiply(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        output: EcPointMultiplyOutput = EcPointMultiplyOutput.RAW_X,
+    ): EcPointMultiplyResult = throw UnsupportedOperationException("Provider $id does not support ${KmsProviderOperation.EC_POINT_MULTIPLY}")
 
     /**
      * Generate a MAC (Message Authentication Code) for the given message using the specified key.

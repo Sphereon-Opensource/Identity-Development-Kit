@@ -31,6 +31,7 @@ import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
@@ -140,6 +141,7 @@ class HandleTokenRequestCommandImpl(
                         clientAuthentication = effectiveAuth,
                         clientId = tokenRequest.clientId,
                         tokenEndpointUrl = applied.httpUrl,
+                        endpoint = ClientAuthenticationEndpoint.TOKEN,
                     ),
                 ).getOrElse { error -> return Err(error) }
 
@@ -154,6 +156,7 @@ class HandleTokenRequestCommandImpl(
                 applied = applied,
                 commands = commands,
                 serverConfig = serversConfigProvider.serverConfig,
+                walletInstanceAttestation = verifiedAuth.walletInstanceAttestation,
             )
 
         val handler =

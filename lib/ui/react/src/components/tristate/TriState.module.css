@@ -1,0 +1,19 @@
+/*
+ * Active capability states get a FILLED brand pill (not the plain surface pill, which was
+ * washed out on the light track). This reads in both light and dark, and the two levels form a
+ * clear escalation up the capability ladder:
+ *   - Supported: soft tonal fill (primary-container) + its on-color text (AA in both modes)
+ *   - Required:  solid primary fill + on-primary text                (~5.4:1 AA)
+ * Set via SegmentedControl's --segment-active-bg / --segment-active-color custom properties so
+ * they win over `.segment.active` without a cross-module specificity battle. The icon uses
+ * currentColor, so it tracks the text color. Inactive segments don't read these vars.
+ */
+.supported {
+  --segment-active-bg: var(--color-primary-container);
+  --segment-active-color: var(--color-on-primary-container);
+}
+
+.required {
+  --segment-active-bg: var(--color-primary);
+  --segment-active-color: var(--color-on-primary);
+}

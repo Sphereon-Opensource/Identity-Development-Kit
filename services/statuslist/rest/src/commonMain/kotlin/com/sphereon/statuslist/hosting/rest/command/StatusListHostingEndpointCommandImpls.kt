@@ -24,7 +24,10 @@ import com.sphereon.core.api.http.response.ResponseBuilder
 import com.sphereon.core.api.http.util.RequestUtils
 import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.StatusListRef
+import com.sphereon.statuslist.StatusListErrors
+import com.sphereon.statuslist.StatusListHostingMode
 import com.sphereon.statuslist.StatusListToken
+import com.sphereon.statuslist.command.GetStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants
 import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants.CommandIds
@@ -52,6 +55,7 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     id: String,
     execution: SessionExecution,
     endpoint: HttpEndpointDescriptor,
+    private val getStatusList: GetStatusListCommand,
     private val service: GetStatusListTokenCommand,
 ) : HttpEndpointCommandAdapter(
         id = id,
@@ -67,6 +71,10 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
         val ref = resolveRef(request).getOrElse { return Err(it) }
+        val list = getStatusList.execute(ref).getOrElse { return Err(it) }
+        if (list.hostingMode == StatusListHostingMode.EXPORT) {
+            return Err(StatusListErrors.listNotFound(ref.correlationId ?: ref.statusListUri ?: "<none>"))
+        }
         return service.execute(ref).map { token -> token.toRawResponse() }
     }
 
@@ -87,12 +95,14 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
 @ContributesBinding(SessionScope::class, binding = binding<GetStatusListTokenByCorrelationIdEndpointCommand>())
 class GetStatusListTokenByCorrelationIdEndpointCommandImpl(
     execution: SessionExecution,
+    getStatusList: GetStatusListCommand,
     service: GetStatusListTokenCommand,
     private val hostingConfig: StatusListHostingConfig,
 ) : AbstractGetStatusListTokenEndpointCommand(
         id = CommandIds.HTTP_GET_TOKEN_BY_CORRELATION_ID,
         execution = execution,
         endpoint = GetStatusListTokenByCorrelationIdEndpointCommand.ENDPOINT,
+        getStatusList = getStatusList,
         service = service,
     ),
     GetStatusListTokenByCorrelationIdEndpointCommand {

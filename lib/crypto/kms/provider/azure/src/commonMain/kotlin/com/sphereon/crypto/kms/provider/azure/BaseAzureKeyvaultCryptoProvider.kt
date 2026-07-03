@@ -117,6 +117,23 @@ abstract class BaseAzureKeyvaultCryptoProvider(
                         notes = "Supports ECDSA and RSA (PKCS#1 v1.5 and PSS) signatures",
                     ),
                     OperationCapability(
+                        operation = KmsProviderOperation.SIGN_DIGEST,
+                        supported = true,
+                        signatureAlgorithms =
+                            arrayOf(
+                                SignatureAlgorithm.ECDSA_SHA256,
+                                SignatureAlgorithm.ECDSA_SHA384,
+                                SignatureAlgorithm.ECDSA_SHA512,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
+                                SignatureAlgorithm.RSA_SHA256,
+                                SignatureAlgorithm.RSA_SHA384,
+                                SignatureAlgorithm.RSA_SHA512,
+                            ),
+                        notes = "Azure Key Vault sign operation signs caller-provided digests; ECDSA DER/RAW normalization is handled at the provider boundary",
+                    ),
+                    OperationCapability(
                         operation = KmsProviderOperation.VERIFY,
                         supported = true,
                         signatureAlgorithms =
@@ -132,6 +149,23 @@ abstract class BaseAzureKeyvaultCryptoProvider(
                                 SignatureAlgorithm.RSA_SHA512,
                             ),
                         notes = "Supports ECDSA and RSA (PKCS#1 v1.5 and PSS) signature verification",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.VERIFY_DIGEST,
+                        supported = true,
+                        signatureAlgorithms =
+                            arrayOf(
+                                SignatureAlgorithm.ECDSA_SHA256,
+                                SignatureAlgorithm.ECDSA_SHA384,
+                                SignatureAlgorithm.ECDSA_SHA512,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
+                                SignatureAlgorithm.RSA_SHA256,
+                                SignatureAlgorithm.RSA_SHA384,
+                                SignatureAlgorithm.RSA_SHA512,
+                            ),
+                        notes = "Azure Key Vault verify operation verifies caller-provided digests; ECDSA DER/RAW normalization is handled at the provider boundary",
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.ENCRYPT,

@@ -165,6 +165,17 @@ class KacheCacheBackendTest {
         }
 
     @Test
+    fun keysMatchingPatternIgnoresNullKeys() {
+        val keys =
+            keysMatchingPattern(
+                pattern = "config::*",
+                keys = listOf("config::APP::key1", null, "tokens::APP::key2"),
+            )
+
+        assertEquals(listOf("config::APP::key1"), keys)
+    }
+
+    @Test
     fun isHealthyReturnsTrue() =
         runTest {
             val backend = createBackend()

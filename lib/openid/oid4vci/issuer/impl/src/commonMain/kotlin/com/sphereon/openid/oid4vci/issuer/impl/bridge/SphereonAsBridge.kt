@@ -29,6 +29,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.oauth2.server.authorization.command.GetUserInfoArgs
@@ -46,11 +47,15 @@ import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisteredPreAuthCode
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
+import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedWalletInstanceAttestationEvidence
+import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedWalletUnitStatusReference
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -63,6 +68,8 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+
+private const val ISSUER_INTERNAL_CLIENT_ROLE = "issuer"
 
 /**
  * AS bridge for the embedded Sphereon OAuth2 AS (same-process).
@@ -77,6 +84,7 @@ class SphereonAsBridge(
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
     private val authorizationServerService: AuthorizationServerService,
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
+    private val oauth2ConfigProvider: OAuth2ServersConfigProvider? = null,
     private val execution: SessionExecution,
 ) : Oid4vciAuthorizationServerBridge {
     override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
@@ -139,6 +147,14 @@ class SphereonAsBridge(
         Ok(AuthorizationContextRef(issuerState = args.issuerState, sessionId = args.issuerState))
 
     override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult<ValidatedTokenContext, IdkError> {
+        val introspectingClientId =
+            oauth2ConfigProvider
+                ?.serverConfig
+                ?.internalClients
+                ?.get(ISSUER_INTERNAL_CLIENT_ROLE)
+                ?.first
+                .orEmpty()
+
         // Introspect the access token via the AS service
         val introspection =
             authorizationServerService
@@ -146,7 +162,7 @@ class SphereonAsBridge(
                     IntrospectTokenArgs(
                         token = args.accessToken,
                         tokenTypeHint = "access_token",
-                        clientId = "",
+                        clientId = introspectingClientId,
                     ),
                 ).getOrElse { return Err(it) }
 
@@ -245,6 +261,7 @@ class SphereonAsBridge(
                 authTime = authTime,
                 upstreamSubject = upstreamSubject,
                 upstreamIssuer = upstreamIssuer,
+                walletInstanceAttestation = parseWalletInstanceAttestation(additionalClaims),
             ),
         )
     }
@@ -330,6 +347,46 @@ class SphereonAsBridge(
         val bytes = CryptographyRandom.nextBytes(count)
         return bytes.joinToString("") { alphabet[(it.toInt() and 0xFF).mod(alphabet.length)].toString() }
     }
+
+    private fun parseWalletInstanceAttestation(additionalClaims: Map<String, JsonElement>): ValidatedWalletInstanceAttestationEvidence? {
+        val clientStatus =
+            additionalClaims["client_status"] as? JsonObject
+                ?: return null
+        val evidence =
+            additionalClaims["wallet_instance_attestation"] as? JsonObject
+                ?: return null
+        val statusListUri = clientStatus.stringClaim("status_list_uri") ?: return null
+        val index = clientStatus.stringClaim("index") ?: return null
+        val evidenceId = evidence.stringClaim("evidence_id") ?: return null
+        val profile = evidence.stringClaim("profile") ?: return null
+        val format = evidence.stringClaim("format") ?: return null
+        val expiresAt = evidence.longClaim("expires_at") ?: return null
+        return ValidatedWalletInstanceAttestationEvidence(
+            evidenceId = evidenceId,
+            profile = profile,
+            format = format,
+            expiresAtEpochSeconds = expiresAt,
+            clientStatus =
+                ValidatedWalletUnitStatusReference(
+                    statusListUri = statusListUri,
+                    index = index,
+                    status = clientStatus.stringClaim("status"),
+                    revoked = clientStatus.booleanClaim("revoked") ?: false,
+                    maintenanceExpiresAtEpochSeconds = clientStatus.longClaim("maintenance_expires_at"),
+                ),
+            walletInstanceId = evidence.stringClaim("wallet_instance_id"),
+            walletProvider = evidence.stringClaim("wallet_provider"),
+            walletSolution = evidence.stringClaim("wallet_solution"),
+            walletUnitId = evidence.stringClaim("wallet_unit_id"),
+            walletAccountId = evidence.stringClaim("wallet_account_id"),
+        )
+    }
+
+    private fun JsonObject.stringClaim(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+
+    private fun JsonObject.longClaim(key: String): Long? = (this[key] as? JsonPrimitive)?.longOrNull
+
+    private fun JsonObject.booleanClaim(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 
     private companion object {
         const val DEFAULT_TX_CODE_LENGTH = 6

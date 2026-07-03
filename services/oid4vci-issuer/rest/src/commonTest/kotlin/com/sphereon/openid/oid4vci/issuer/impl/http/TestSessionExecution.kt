@@ -19,6 +19,8 @@ import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
+import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfig
+import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import kotlinx.io.files.Path
 import kotlin.reflect.KClass
 
@@ -98,6 +100,10 @@ internal object NoOpAppConfigService : AppConfigService {
     ): Map<String, String> = emptyMap()
 
     override fun getNamespace(): String = "test"
+}
+
+internal object NoOpOid4vciRestConfigProvider : Oid4vciRestConfigProvider {
+    override fun getConfig(): Oid4vciRestConfig = Oid4vciRestConfig(externalBaseUrl = null)
 }
 
 internal class NoOpContextConfig : ContextConfig {

@@ -25,14 +25,19 @@ import com.sphereon.data.store.credential.design.model.ClaimPresentation
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
+import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
+import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
+import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.CredentialDesignModuleConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignValidationConfig
+import com.sphereon.data.store.credential.design.model.DesignHostingMode
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.EntityLocaleDesign
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
 import com.sphereon.data.store.credential.design.model.RenderVariantKind
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.VctHostingMode
+import com.sphereon.data.store.credential.design.validation.credentialDesignRecordValidator
 import com.sphereon.data.store.credential.design.validation.createCredentialDesignValidator
 import com.sphereon.data.store.credential.design.validation.createIssuerDesignValidator
 import com.sphereon.data.store.credential.design.validation.createRenderVariantValidator
@@ -42,9 +47,28 @@ import io.konform.validation.Invalid
 import io.konform.validation.Valid
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 
 class CredentialDesignValidatorTest {
     private val defaultConfig = CredentialDesignValidationConfig()
+
+    private fun sdJwtType(vct: String) = CredentialTypeDescriptor(CredentialTypeFormat.SD_JWT_VC, vct = vct)
+
+    private fun credentialDesignRecord(
+        credentialType: CredentialTypeDescriptor? = sdJwtType("urn:example:pid"),
+    ): CredentialDesignRecord {
+        val now = Clock.System.now()
+        return CredentialDesignRecord(
+            id = kotlin.uuid.Uuid.random(),
+            tenantId = "tenant-1",
+            hostingMode = DesignHostingMode.LOCAL,
+            bindings = listOf(DesignBinding(vct = "urn:example:pid")),
+            displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Person ID")),
+            createdAt = now,
+            updatedAt = now,
+            credentialType = credentialType,
+        )
+    }
 
     @Test
     fun validCreateCredentialDesignPasses() {
@@ -55,10 +79,45 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "urn:example:pid")),
+                        credentialType = sdJwtType("urn:example:pid"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Person ID")),
                     ),
             )
         assertTrue(validator(args) is Valid)
+    }
+
+    @Test
+    fun credentialDesignRecordWithoutCredentialTypeFails() {
+        val result = credentialDesignRecordValidator(credentialDesignRecord(credentialType = null))
+
+        assertTrue(result is Invalid)
+    }
+
+    @Test
+    fun credentialDesignRecordWithEmptyFormatTypeFails() {
+        val result =
+            credentialDesignRecordValidator(
+                credentialDesignRecord(credentialType = CredentialTypeDescriptor(CredentialTypeFormat.W3C_VC)),
+            )
+
+        assertTrue(result is Invalid)
+    }
+
+    @Test
+    fun credentialDesignRecordWithAmbiguousFormatTypeFails() {
+        val result =
+            credentialDesignRecordValidator(
+                credentialDesignRecord(
+                    credentialType =
+                        CredentialTypeDescriptor(
+                            format = CredentialTypeFormat.W3C_VC,
+                            type = "EmployeeCredential",
+                            vct = "urn:example:employee",
+                        ),
+                ),
+            )
+
+        assertTrue(result is Invalid)
     }
 
     @Test
@@ -70,6 +129,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "test")),
+                        credentialType = sdJwtType("test"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Test")),
                     ),
             )
@@ -85,6 +145,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = emptyList(),
+                        credentialType = sdJwtType("test"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Test")),
                     ),
             )
@@ -100,6 +161,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "test")),
+                        credentialType = sdJwtType("test"),
                         displays = emptyList(),
                     ),
             )
@@ -116,6 +178,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = (1..3).map { DesignBinding(vct = "vct-$it") },
+                        credentialType = sdJwtType("vct-1"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Test")),
                     ),
             )
@@ -132,6 +195,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "test")),
+                        credentialType = sdJwtType("test"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Test")),
                         claims =
                             listOf(
@@ -155,6 +219,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "test")),
+                        credentialType = sdJwtType("test"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "x", name = "Test")),
                     ),
             )
@@ -170,6 +235,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "test")),
+                        credentialType = sdJwtType("test"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "")),
                     ),
             )
@@ -185,6 +251,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "EmployeeBadge", vctHostingMode = VctHostingMode.HOSTED)),
+                        credentialType = sdJwtType("EmployeeBadge"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Employee Badge")),
                     ),
             )
@@ -206,6 +273,7 @@ class CredentialDesignValidatorTest {
                                     vctHostingMode = VctHostingMode.HOSTED,
                                 ),
                             ),
+                        credentialType = sdJwtType("EmployeeBadge"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Employee Badge")),
                     ),
             )
@@ -221,6 +289,7 @@ class CredentialDesignValidatorTest {
                 input =
                     CreateCredentialDesignInput(
                         bindings = listOf(DesignBinding(vct = "EmployeeBadge", vctHostingMode = VctHostingMode.EXTERNAL)),
+                        credentialType = sdJwtType("EmployeeBadge"),
                         displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "Employee Badge")),
                     ),
             )

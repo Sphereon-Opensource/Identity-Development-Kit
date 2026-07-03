@@ -18,6 +18,7 @@ package com.sphereon.oauth2.server.authorization.command.clientauth
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
 
 /**
@@ -38,6 +39,7 @@ data class VerifyAttestationClientAuthArgs(
     val attestationJwt: String,
     val popJwt: String,
     val tokenEndpointUrl: String,
+    val endpoint: ClientAuthenticationEndpoint = ClientAuthenticationEndpoint.TOKEN,
 )
 
 /**

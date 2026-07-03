@@ -28,8 +28,13 @@ import com.sphereon.data.store.credential.design.command.GetDesignAssetArgs
 import com.sphereon.data.store.credential.design.command.GetDesignAssetByHashArgs
 import com.sphereon.data.store.credential.design.command.GetDesignAssetByHashServiceCommand
 import com.sphereon.data.store.credential.design.command.GetDesignAssetServiceCommand
+import com.sphereon.data.store.credential.design.command.ListDesignAssetsArgs
+import com.sphereon.data.store.credential.design.command.ListDesignAssetsServiceCommand
 import com.sphereon.data.store.credential.design.command.UploadDesignAssetArgs
 import com.sphereon.data.store.credential.design.command.UploadDesignAssetServiceCommand
+import com.sphereon.data.store.credential.design.command.UploadTenantAssetArgs
+import com.sphereon.data.store.credential.design.command.UploadTenantAssetServiceCommand
+import com.sphereon.data.store.credential.design.model.AssetInfo
 import com.sphereon.data.store.credential.design.model.AssetReference
 import com.sphereon.data.store.credential.design.model.ResolvedDesignAsset
 import com.sphereon.di.session.SessionScope
@@ -108,5 +113,53 @@ class GetDesignAssetByHashServiceCommandImpl(
     ): IdkResult<ResolvedDesignAsset, IdkError> {
         val input = applyDuring(args)
         return designService.getDesignAssetByHash(input.tenantId, input.hash)
+    }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<ListDesignAssetsServiceCommand>())
+class ListDesignAssetsServiceCommandImpl(
+    execution: SessionExecution,
+    private val designService: CredentialDesignService,
+) : TypedServiceCommandAdapter<ListDesignAssetsArgs, List<AssetInfo>, IdkError>(
+        commandId = ListDesignAssetsServiceCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<ListDesignAssetsArgs>(),
+        outputTypeToken = typeToken<List<AssetInfo>>(),
+    ),
+    ListDesignAssetsServiceCommand {
+    override val commandId: String get() = ListDesignAssetsServiceCommand.COMMAND_ID
+
+    override suspend fun doExecute(
+        args: ListDesignAssetsArgs,
+        applyDuring: (ListDesignAssetsArgs) -> ListDesignAssetsArgs,
+    ): IdkResult<List<AssetInfo>, IdkError> {
+        val input = applyDuring(args)
+        return designService.listDesignAssets(input.tenantId, input.filter)
+    }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<UploadTenantAssetServiceCommand>())
+class UploadTenantAssetServiceCommandImpl(
+    execution: SessionExecution,
+    private val designService: CredentialDesignService,
+) : TypedServiceCommandAdapter<UploadTenantAssetArgs, AssetReference, IdkError>(
+        commandId = UploadTenantAssetServiceCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<UploadTenantAssetArgs>(),
+        outputTypeToken = typeToken<AssetReference>(),
+    ),
+    UploadTenantAssetServiceCommand {
+    override val commandId: String get() = UploadTenantAssetServiceCommand.COMMAND_ID
+
+    override suspend fun doExecute(
+        args: UploadTenantAssetArgs,
+        applyDuring: (UploadTenantAssetArgs) -> UploadTenantAssetArgs,
+    ): IdkResult<AssetReference, IdkError> {
+        val input = applyDuring(args)
+        return designService.uploadTenantAsset(input.tenantId, input.input)
     }
 }

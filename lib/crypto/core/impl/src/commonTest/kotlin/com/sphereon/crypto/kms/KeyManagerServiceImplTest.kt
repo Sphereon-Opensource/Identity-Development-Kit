@@ -22,13 +22,16 @@ import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.kmsQuery
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import com.sphereon.crypto.core.testutil.createCryptoTestAppGraph
@@ -289,6 +292,34 @@ class KeyManagerServiceImplTest {
 
             val isValid = keyManagerService.isValidRawSignature(keyInfoWithProvider, data, signature)
             assertTrue(isValid)
+        }
+
+    @Test
+    fun signDigestShouldUseDigestSignatureCapability() =
+        runTest {
+            val keyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateKeyInfo = keyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val publicKeyInfo = keyPair.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val digest = hash("service-level digest signature".encodeToByteArray(), DigestAlg.SHA256)
+
+            val signature =
+                keyManagerService.signDigest(
+                    keyInfo = privateKeyInfo,
+                    digest = digest,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                )
+
+            assertTrue(
+                keyManagerService.verifyDigest(
+                    keyInfo = publicKeyInfo,
+                    digest = digest,
+                    signature = signature,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    signatureEncoding = SignatureEncoding.RAW,
+                ),
+            )
+            assertFalse(keyManagerService.isValidRawSignature(publicKeyInfo, digest, signature))
         }
 
     // =========== Key Agreement Tests ===========

@@ -16,14 +16,13 @@
 
 package com.sphereon.data.store.blob.kv
 
+import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.BlobStoreConfigBase
 import com.sphereon.data.store.blob.BlobStoreFactory
-import com.sphereon.data.store.kv.KvStore
-import com.sphereon.data.store.kv.KvStoreConfigBase
-import com.sphereon.data.store.kv.KvStoreFactory
-import com.sphereon.data.store.kv.KvStoreScopeBinding
+import com.sphereon.data.store.kv.impl.KvStoreConfigBinder
+import com.sphereon.data.store.kv.impl.KvStoreManager
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
@@ -36,8 +35,9 @@ import kotlin.native.ObjCName
 /**
  * Factory for creating [KvBlobStore] instances backed by KvStore.
  *
- * Resolves the backing KvStore by ID from the set of available [KvStoreFactory] multibindings.
- * The [KvBlobStoreConfig.kvStoreId] references a configured KvStore (e.g., memory or kottage).
+ * Resolves the backing KvStore by ID from the configured KV store registry.
+ * The [KvBlobStoreConfig.kvStoreId] references a configured KvStore (for example memory,
+ * kottage, or database).
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -45,7 +45,9 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("KvBlobStoreFactoryImpl", exact = true)
 class KvBlobStoreFactoryImpl(
-    private val kvStoreFactories: Set<KvStoreFactory>,
+    private val appConfigService: AppConfigService,
+    private val kvStoreConfigBinder: KvStoreConfigBinder,
+    private val kvStoreManager: KvStoreManager,
 ) : BlobStoreFactory {
     override val backendId: String = KvBlobStoreConfig.BACKEND_ID
 
@@ -64,28 +66,18 @@ class KvBlobStoreFactoryImpl(
                         "Ensure 'blob.stores.${config.id}.type=kvstore' is set in config.",
                 )
 
-        // Create a KvStore config for the backing store
+        val configService = execution?.conf?.principal ?: appConfigService
         val kvConfig =
-            com.sphereon.data.store.kv.InMemoryKvStoreConfig(
-                id = typedConfig.kvStoreId,
-                scopeBinding =
-                    when (typedConfig.scopeBinding) {
-                        com.sphereon.data.store.blob.BlobStoreScopeBinding.APP -> KvStoreScopeBinding.APP
-                        com.sphereon.data.store.blob.BlobStoreScopeBinding.TENANT -> KvStoreScopeBinding.TENANT
-                    },
-            )
-
-        // Find the matching KvStore factory
-        val kvFactory =
-            kvStoreFactories
-                .filter { it.backendId != "___NO_OP___" }
-                .firstOrNull { it.backendId.equals(kvConfig.backendId, ignoreCase = true) }
-                ?: throw IllegalArgumentException(
-                    "No KvStoreFactory found for backendId '${kvConfig.backendId}'. " +
-                        "Available: ${kvStoreFactories.map { it.backendId }.distinct().sorted()}",
+            try {
+                kvStoreConfigBinder.getKvStoreConfig(configService, typedConfig.kvStoreId)
+            } catch (e: IllegalArgumentException) {
+                throw IllegalArgumentException(
+                    "KvStore blob store '${typedConfig.id}' references kvStoreId '${typedConfig.kvStoreId}', " +
+                        "but no matching kv.stores.${typedConfig.kvStoreId} configuration could be resolved.",
+                    e,
                 )
-
-        val kvStore = kvFactory.create(kvConfig, execution)
+            }
+        val kvStore = kvStoreManager.createFromKvStoreConfig(kvConfig, execution)
         return KvBlobStore(kvStore = kvStore, maxBlobSizeBytes = typedConfig.maxBlobSizeBytes)
     }
 }

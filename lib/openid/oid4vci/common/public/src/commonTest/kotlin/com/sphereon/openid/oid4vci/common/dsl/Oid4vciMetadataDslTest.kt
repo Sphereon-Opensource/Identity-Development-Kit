@@ -405,6 +405,7 @@ class Oid4vciMetadataDslTest {
                 authorizationServer("https://auth.example.com")
                 nonceEndpoint = "https://issuer.example.com/nonce"
                 batchCredentialIssuance(10)
+                preferredKeyStorageStatusPeriod = 900
 
                 credentialConfiguration("IdentityCredential", CredentialFormat.SD_JWT_DC) {
                     vct = "https://credentials.example.com/identity"
@@ -426,6 +427,7 @@ class Oid4vciMetadataDslTest {
         assertEquals(metadata.nonceEndpoint, decoded.nonceEndpoint)
         assertEquals(metadata.authorizationServers, decoded.authorizationServers)
         assertEquals(metadata.batchCredentialIssuance?.batchSize, decoded.batchCredentialIssuance?.batchSize)
+        assertEquals(900, decoded.preferredKeyStorageStatusPeriod)
 
         val origConfig = metadata.credentialConfigurationsSupported["IdentityCredential"]!!
         val decodedConfig = decoded.credentialConfigurationsSupported["IdentityCredential"]

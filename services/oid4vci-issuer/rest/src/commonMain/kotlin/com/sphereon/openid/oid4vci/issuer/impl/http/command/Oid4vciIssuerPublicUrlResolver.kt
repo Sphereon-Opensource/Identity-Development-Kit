@@ -12,10 +12,12 @@ package com.sphereon.openid.oid4vci.issuer.impl.http.command
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -32,7 +34,7 @@ import dev.zacsweers.metro.SingleIn
  * (authenticated calls resolve it from the bearer token).
  *
  * [endpointBaseUrl] is the base used for wallet-facing protocol endpoints such as
- * `/oid4vci/credential` (i.e. [issuerIdentifier] plus the protocol mount).
+ * `/credential` or `/oid4vci/credential` when an explicit protocol mount is configured.
  *
  * NOTE (multi-instance): in deployments that run several issuer instances per tenant (VDX), a
  * per-instance resolver must populate these from the SPECIFIC instance's registration, not a
@@ -62,14 +64,20 @@ interface Oid4vciIssuerPublicUrlResolver {
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-class DefaultOid4vciIssuerPublicUrlResolver : Oid4vciIssuerPublicUrlResolver {
+class DefaultOid4vciIssuerPublicUrlResolver(
+    private val appConfig: AppConfigService,
+) : Oid4vciIssuerPublicUrlResolver {
     override suspend fun resolve(
         request: GenericHttpRequest,
         issuerConfigProvider: Oid4vciIssuerConfigProvider,
         restConfigProvider: Oid4vciRestConfigProvider,
     ): IdkResult<Oid4vciIssuerPublicUrls, IdkError> {
         val issuerIdentifier = issuerConfigProvider.issuerIdentifier.trimEnd('/')
-        val endpointBaseUrl = (restConfigProvider.getConfig().externalBaseUrl ?: issuerIdentifier).trimEnd('/')
+        val endpointBaseUrl =
+            Oid4vciIssuerProtocolConfig.appendBasePath(
+                baseUrl = restConfigProvider.getConfig().externalBaseUrl ?: issuerIdentifier,
+                basePath = Oid4vciIssuerProtocolConfig.resolveBasePath(appConfig),
+            )
         return Ok(
             Oid4vciIssuerPublicUrls(
                 issuerIdentifier = issuerIdentifier,

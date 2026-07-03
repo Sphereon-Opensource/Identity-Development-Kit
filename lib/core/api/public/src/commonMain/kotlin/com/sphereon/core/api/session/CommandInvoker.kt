@@ -110,10 +110,8 @@ suspend inline fun <
  *
  * Validation:
  *  - Returns `Err(NOT_FOUND_ERROR)` if the id is not registered.
- *  - Returns `Err(COMMAND_ARG_NOT_SUPPORTED_ERROR)` if the resolved command's
- *    [com.sphereon.core.api.service.ServiceCommand.inputTypeToken] does not match
- *    the reified `TInput` at runtime, OR if the command's `supports(input)`
- *    rejects the value.
+ *  - Returns `Err(COMMAND_ARG_NOT_SUPPORTED_ERROR)` if the command's
+ *    `supports(input)` rejects the value.
  *
  * ```kotlin
  * val result = invoker.executeById<GetKeyInput, KeyInfo>("kms.keys.get", GetKeyInput("my-key"))
@@ -128,19 +126,6 @@ suspend inline fun <reified TInput : Any, reified TOutput : Any> CommandInvoker.
     val command =
         resolve(commandId)
             ?: return IdkResult.err(IdkError.NOT_FOUND_ERROR(message = "Command '$commandId' not found"))
-    val expectedType = command.inputTypeToken.kType
-    val actualType = kotlin.reflect.typeOf<TInput>()
-    if (expectedType != actualType) {
-        return IdkResult.err(
-            IdkError.COMMAND_ARG_NOT_SUPPORTED_ERROR(
-                command = command,
-                arg = input,
-                message =
-                    "Command '$commandId' expects input type $expectedType but " +
-                        "byId caller supplied $actualType",
-            ),
-        )
-    }
     if (!command.supports(input)) {
         return IdkResult.err(
             IdkError.COMMAND_ARG_NOT_SUPPORTED_ERROR(command = command, arg = input),

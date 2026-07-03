@@ -52,6 +52,7 @@ internal object CredentialIssuerMetadataSerializer : KSerializer<CredentialIssue
     private const val KEY_RESPONSE_ENCRYPTION = "credential_response_encryption"
     private const val KEY_REQUEST_ENCRYPTION = "credential_request_encryption"
     private const val KEY_BATCH_ISSUANCE = "batch_credential_issuance"
+    private const val KEY_PREFERRED_KEY_STORAGE_STATUS_PERIOD = "preferred_key_storage_status_period"
 
     private val knownJsonKeys =
         setOf(
@@ -68,6 +69,7 @@ internal object CredentialIssuerMetadataSerializer : KSerializer<CredentialIssue
             KEY_RESPONSE_ENCRYPTION,
             KEY_REQUEST_ENCRYPTION,
             KEY_BATCH_ISSUANCE,
+            KEY_PREFERRED_KEY_STORAGE_STATUS_PERIOD,
         )
 
     override fun serialize(
@@ -108,6 +110,9 @@ internal object CredentialIssuerMetadataSerializer : KSerializer<CredentialIssue
                 }
                 value.batchCredentialIssuance?.let {
                     put(KEY_BATCH_ISSUANCE, json.encodeToJsonElement(BatchCredentialIssuance.serializer(), it))
+                }
+                value.preferredKeyStorageStatusPeriod?.let {
+                    put(KEY_PREFERRED_KEY_STORAGE_STATUS_PERIOD, JsonPrimitive(it))
                 }
 
                 value.additionalMetadata.forEach { (key, jsonValue) ->
@@ -166,6 +171,7 @@ internal object CredentialIssuerMetadataSerializer : KSerializer<CredentialIssue
                 jsonObject[KEY_BATCH_ISSUANCE]?.let {
                     json.decodeFromJsonElement(BatchCredentialIssuance.serializer(), it)
                 },
+            preferredKeyStorageStatusPeriod = jsonObject[KEY_PREFERRED_KEY_STORAGE_STATUS_PERIOD]?.jsonPrimitive?.content?.toInt(),
             additionalMetadata = additionalMetadata,
         )
     }

@@ -26,6 +26,7 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
+import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.CreatePushedAuthorizationResponseArgs
 import com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.PushedAuthorizationResponse
@@ -94,6 +95,7 @@ class HandlePushedAuthorizationRequestCommandImpl(
                     clientAuthentication = clientAuth,
                     clientId = resolvedClientId,
                     tokenEndpointUrl = applied.parEndpointUrl ?: "",
+                    endpoint = ClientAuthenticationEndpoint.PAR,
                 ),
             ).getOrElse { error -> return Err(error) }
 

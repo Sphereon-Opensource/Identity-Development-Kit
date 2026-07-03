@@ -85,12 +85,19 @@ import com.sphereon.crypto.core.kms.command.PerformKeyAgreementResult
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyArgs
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyCommand
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyResult
+import com.sphereon.crypto.core.kms.command.SignDigestArgs
+import com.sphereon.crypto.core.kms.command.SignDigestCommand
+import com.sphereon.crypto.core.kms.command.SignDigestResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.StoreKeyArgs
 import com.sphereon.crypto.core.kms.command.StoreKeyCommand
 import com.sphereon.crypto.core.kms.command.StoreKeyResult
 import com.sphereon.crypto.core.kms.command.UnwrapKeyArgs
 import com.sphereon.crypto.core.kms.command.UnwrapKeyCommand
 import com.sphereon.crypto.core.kms.command.UnwrapKeyResult
+import com.sphereon.crypto.core.kms.command.VerifyDigestArgs
+import com.sphereon.crypto.core.kms.command.VerifyDigestCommand
+import com.sphereon.crypto.core.kms.command.VerifyDigestResult
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureResult
@@ -143,6 +150,8 @@ open class KeyManagerServiceImpl
         // Signature commands
         private val createRawSignatureCommand: CreateRawSignatureCommand,
         private val verifyRawSignatureCommand: VerifyRawSignatureCommand,
+        private val signDigestCommand: SignDigestCommand,
+        private val verifyDigestCommand: VerifyDigestCommand,
         // Encryption commands
         private val encryptCommand: EncryptCommand,
         private val decryptCommand: DecryptCommand,
@@ -359,6 +368,63 @@ open class KeyManagerServiceImpl
                 return getProvider(kms, alg).isValidRawSignature(resolvedKeyInfo, input, signature)
             }
             return getProviderById(defaultProviderId()).isValidRawSignature(resolvedKeyInfo, input, signature)
+        }
+
+        override suspend fun signDigest(
+            keyInfo: KeyInfoType<*>,
+            digest: ByteArray,
+            signatureAlgorithm: SignatureAlgorithm,
+            signatureEncoding: SignatureEncoding,
+            requireX5Chain: Boolean,
+        ): ByteArray {
+            val command = signDigestCommand
+            val exec = execution
+            if (command != null && exec != null) {
+                val args =
+                    SignDigestArgs(
+                        keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                        digest = digest,
+                        signatureAlgorithm = signatureAlgorithm,
+                        signatureEncoding = signatureEncoding,
+                        requireX5Chain = requireX5Chain,
+                    )
+                val result = command.execute(args)
+                return result.getOrElse { throw PKIException(it.message.defaultMessage ?: "Digest signature creation failed") }.signature
+            }
+            return getProvider(providerId = keyInfo.providerId, alg = signatureAlgorithm)
+                .signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)
+        }
+
+        override suspend fun verifyDigest(
+            keyInfo: KeyInfoType<*>,
+            digest: ByteArray,
+            signature: ByteArray,
+            signatureAlgorithm: SignatureAlgorithm,
+            signatureEncoding: SignatureEncoding,
+        ): Boolean {
+            val resolvedKeyInfo =
+                if (keyInfo.key == null && keyInfo.kid == null && keyInfo.alias == null && !keyInfo.x5c.isNullOrEmpty()) {
+                    resolvePublicKey(keyInfo, identifierMethod = IdentifierMethod.x5c)
+                } else {
+                    keyInfo
+                }
+
+            val command = verifyDigestCommand
+            val exec = execution
+            if (command != null && exec != null) {
+                val args =
+                    VerifyDigestArgs(
+                        keyInfo = resolvedKeyInfo,
+                        digest = digest,
+                        signature = signature,
+                        signatureAlgorithm = signatureAlgorithm,
+                        signatureEncoding = signatureEncoding,
+                    )
+                val result = command.execute(args)
+                return result.getOrElse { throw PKIException(it.message.defaultMessage ?: "Digest signature verification failed") }.isValid
+            }
+            return getProvider(resolvedKeyInfo.providerId, signatureAlgorithm)
+                .verifyDigest(resolvedKeyInfo, digest, signature, signatureAlgorithm, signatureEncoding)
         }
 
         // Encryption operations - delegate to commands when available
@@ -654,6 +720,56 @@ open class KeyManagerServiceImpl
                     ?: return IdkError.UNKNOWN_ERROR(message = "SessionExecution not available").asErrorResult()
 
             val args = VerifyRawSignatureArgs(keyInfo = keyInfo, input = input, signature = signature)
+            return command.execute(args)
+        }
+
+        override suspend fun signDigestResult(
+            keyInfo: KeyInfoType<*>,
+            digest: ByteArray,
+            signatureAlgorithm: SignatureAlgorithm,
+            signatureEncoding: SignatureEncoding,
+            requireX5Chain: Boolean,
+        ): IdkResult<SignDigestResult, IdkError> {
+            val command =
+                signDigestCommand
+                    ?: return IdkError.NOT_FOUND_ERROR(resource = "SignDigestCommand", message = "Command not available").asErrorResult()
+            val exec =
+                execution
+                    ?: return IdkError.UNKNOWN_ERROR(message = "SessionExecution not available").asErrorResult()
+
+            val args =
+                SignDigestArgs(
+                    keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                    digest = digest,
+                    signatureAlgorithm = signatureAlgorithm,
+                    signatureEncoding = signatureEncoding,
+                    requireX5Chain = requireX5Chain,
+                )
+            return command.execute(args)
+        }
+
+        override suspend fun verifyDigestResult(
+            keyInfo: KeyInfoType<*>,
+            digest: ByteArray,
+            signature: ByteArray,
+            signatureAlgorithm: SignatureAlgorithm,
+            signatureEncoding: SignatureEncoding,
+        ): IdkResult<VerifyDigestResult, IdkError> {
+            val command =
+                verifyDigestCommand
+                    ?: return IdkError.NOT_FOUND_ERROR(resource = "VerifyDigestCommand", message = "Command not available").asErrorResult()
+            val exec =
+                execution
+                    ?: return IdkError.UNKNOWN_ERROR(message = "SessionExecution not available").asErrorResult()
+
+            val args =
+                VerifyDigestArgs(
+                    keyInfo = keyInfo,
+                    digest = digest,
+                    signature = signature,
+                    signatureAlgorithm = signatureAlgorithm,
+                    signatureEncoding = signatureEncoding,
+                )
             return command.execute(args)
         }
 

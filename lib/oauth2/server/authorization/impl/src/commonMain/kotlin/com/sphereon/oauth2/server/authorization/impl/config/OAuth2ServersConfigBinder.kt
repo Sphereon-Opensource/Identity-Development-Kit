@@ -194,6 +194,7 @@ class OAuth2ServersConfigBinder(
                 "scopes-supported",
                 "oidc",
                 "par",
+                "wallet-instance-attestation",
                 "introspection",
                 "revocation",
                 "trust-forwarded-headers",
@@ -444,6 +445,13 @@ class OAuth2ServersConfigBinder(
                     Int::class,
                     defaults.attestationPopJtiReplayWindowSeconds,
                 ) ?: defaults.attestationPopJtiReplayWindowSeconds,
+            walletInstanceAttestation = readFeaturePolicy("$serverPrefix.wallet-instance-attestation", defaults.walletInstanceAttestation),
+            preferredClientStatusPeriodSeconds =
+                configService.getProperty(
+                    "$serverPrefix.preferred-client-status-period-seconds",
+                    Int::class,
+                    defaults.preferredClientStatusPeriodSeconds,
+                ) ?: defaults.preferredClientStatusPeriodSeconds,
             // RFC 8705 (OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access
             // Tokens). [mtls] gates discovery's `mtls_endpoint_aliases` and the AS's acceptance
             // of `tls_client_auth` / `self_signed_tls_client_auth`. The bound flag is the

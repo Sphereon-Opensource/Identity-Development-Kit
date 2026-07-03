@@ -23,6 +23,8 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.random.GenerateTokenArgs
 import com.sphereon.core.api.random.NextBytesArgs
 import com.sphereon.core.api.random.SecureRandom
+import com.sphereon.core.api.service.Amr
+import com.sphereon.core.api.service.AuthAssuranceLevel
 import com.sphereon.core.api.service.ByteArrayResult
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
@@ -296,6 +298,8 @@ class LoginHttpFlowTest {
             assertNotNull(stored, "OidcLoginSession must be persisted")
             assertEquals("alice", stored.sub)
             assertEquals(AuthenticationMethod.PASSWORD, stored.authMethod)
+            assertEquals(AuthAssuranceLevel.AAL1.acr, stored.acr)
+            assertEquals(listOf(Amr.PWD), stored.amr)
         }
 
     @Test
@@ -380,6 +384,7 @@ class LoginHttpFlowTest {
             assertEquals(OAuth2AuditEventType.LOGIN, event.type)
             assertEquals("alice", event.subject)
             assertEquals("pwd", event.metadata["amr"])
+            assertEquals(AuthAssuranceLevel.AAL1.acr, event.metadata["acr"])
             assertEquals("PASSWORD", event.metadata["auth_method"])
             assertEquals("login-sid-1", event.metadata["login_session_id"])
             assertNull(event.errorCode)

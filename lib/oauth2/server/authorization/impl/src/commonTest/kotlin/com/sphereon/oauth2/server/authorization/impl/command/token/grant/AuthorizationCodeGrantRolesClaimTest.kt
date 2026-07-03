@@ -43,9 +43,16 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAuth
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationTokenClaims
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceClientStatusEvidence
+import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceTrustEvidence
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -160,7 +167,33 @@ class AuthorizationCodeGrantRolesClaimTest {
             scopeClaimsMapper = null,
         )
 
-    private fun grantContext(commands: AuthorizationServerService.Commands): GrantContext {
+    private fun walletInstanceAttestationEvidence(): WalletInstanceAttestationEvidence =
+        WalletInstanceAttestationEvidence(
+            evidenceId = "persisted-wia-1",
+            profile = "TS03_JWT",
+            format = "JWT",
+            attestationExpiresAtEpochSeconds = Clock.System.now().epochSeconds + 600,
+            clientStatus =
+                WalletInstanceClientStatusEvidence(
+                    statusListUri = "https://status.example.com/wia/status.jwt",
+                    index = "42",
+                    status = "VALID",
+                ),
+            trust =
+                WalletInstanceTrustEvidence(
+                    trusted = true,
+                    decision = "TRUSTED",
+                    expiresAtEpochSeconds = Clock.System.now().epochSeconds + 600,
+                    signerCertificateProfile = "HARDWARE_SECURE",
+                ),
+            walletInstanceId = "wallet-instance-1",
+            signerCertificateProfile = "HARDWARE_SECURE",
+        )
+
+    private fun grantContext(
+        commands: AuthorizationServerService.Commands,
+        walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
+    ): GrantContext {
         val tokenRequest =
             TokenRequestData(
                 grantType = GrantType.AUTHORIZATION_CODE,
@@ -182,15 +215,19 @@ class AuthorizationCodeGrantRolesClaimTest {
                 ),
             commands = commands,
             serverConfig = OAuth2ServerInstanceConfig(issuer = "https://as.example.com"),
+            walletInstanceAttestation = walletInstanceAttestation,
         )
     }
 
-    private suspend fun mintWithUserClaims(userClaims: Map<String, Any>): CreateAccessTokenArgs {
+    private suspend fun mintWithUserClaims(
+        userClaims: Map<String, Any>,
+        codeData: AuthorizationCodeData = codeData(),
+    ): CreateAccessTokenArgs {
         val commands =
             CapturingCommands(
                 verifyStub(
                     VerifiedAuthorizationCodeGrant(
-                        codeData = codeData(),
+                        codeData = codeData,
                         subject = "operator-1",
                         clientId = "client-1",
                         scope = "openid",
@@ -230,6 +267,27 @@ class AuthorizationCodeGrantRolesClaimTest {
         }
 
     @Test
+    fun authenticationContextFromCodeLandsInAccessTokenAdditionalClaims() =
+        runTest {
+            val authTime = 1_782_936_100L
+            val args =
+                mintWithUserClaims(
+                    userClaims = mapOf("email" to "operator@acme.example"),
+                    codeData =
+                        codeData().copy(
+                            authTime = authTime,
+                            acr = "urn:nist:sp:800-63:aal1",
+                            amr = listOf("pwd"),
+                        ),
+                )
+
+            assertEquals(authTime, args.additionalClaims["auth_time"], "auth_time must reach the access-token mint")
+            assertEquals("urn:nist:sp:800-63:aal1", args.additionalClaims["acr"], "acr must reach the access-token mint")
+            assertEquals(listOf("pwd"), args.additionalClaims["amr"], "amr must reach the access-token mint")
+            assertFalse(args.additionalClaims.containsKey("email"), "identity claims must NOT leak into the access token")
+        }
+
+    @Test
     fun rolesJsonArrayFromFederatedClaimsLandsInAccessTokenAdditionalClaims() =
         runTest {
             val args =
@@ -253,5 +311,38 @@ class AuthorizationCodeGrantRolesClaimTest {
 
             val emptyRoles = mintWithUserClaims(mapOf("roles" to emptyList<String>()))
             assertFalse(emptyRoles.additionalClaims.containsKey("roles"), "empty roles collection must not mint an empty claim")
+        }
+
+    @Test
+    fun walletInstanceAttestationEvidenceLandsInAccessTokenAdditionalClaims() =
+        runTest {
+            val commands =
+                CapturingCommands(
+                    verifyStub(
+                        VerifiedAuthorizationCodeGrant(
+                            codeData = codeData(),
+                            subject = "operator-1",
+                            clientId = "client-1",
+                            scope = "openid",
+                        ),
+                    ),
+                )
+            val handler = newHandler()
+            val context = grantContext(commands, walletInstanceAttestationEvidence())
+            val result = handler.handle(context.tokenRequest.grantParameters, context)
+
+            assertTrue(result.isOk, "auth-code grant must succeed, got ${if (!result.isOk) result.error else "ok"}")
+            val args = commands.capturedAccessTokenArgs
+            assertNotNull(args, "createAccessToken must be invoked")
+
+            val clientStatus = args.additionalClaims[WalletInstanceAttestationTokenClaims.CLIENT_STATUS] as? JsonObject
+            assertNotNull(clientStatus, "client_status must be available to the access-token mint")
+            assertEquals("https://status.example.com/wia/status.jwt", clientStatus["status_list_uri"]?.jsonPrimitive?.contentOrNull)
+            assertEquals("42", clientStatus["index"]?.jsonPrimitive?.contentOrNull)
+
+            val attestation = args.additionalClaims[WalletInstanceAttestationTokenClaims.WALLET_INSTANCE_ATTESTATION] as? JsonObject
+            assertNotNull(attestation, "wallet_instance_attestation must be available to the access-token mint")
+            assertEquals("persisted-wia-1", attestation["evidence_id"]?.jsonPrimitive?.contentOrNull)
+            assertEquals("TS03_JWT", attestation["profile"]?.jsonPrimitive?.contentOrNull)
         }
 }

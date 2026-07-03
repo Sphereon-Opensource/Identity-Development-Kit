@@ -31,6 +31,7 @@ import aws.sdk.kotlin.services.kms.model.KeySpec
 import aws.sdk.kotlin.services.kms.model.KeyState
 import aws.sdk.kotlin.services.kms.model.KeyUsageType
 import aws.sdk.kotlin.services.kms.model.KmsInvalidSignatureException
+import aws.sdk.kotlin.services.kms.model.MessageType
 import aws.sdk.kotlin.services.kms.model.ScheduleKeyDeletionRequest
 import aws.sdk.kotlin.services.kms.model.SignRequest
 import aws.sdk.kotlin.services.kms.model.SigningAlgorithmSpec
@@ -47,6 +48,7 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.generic.CryptoAlg
 import com.sphereon.crypto.core.generic.CoseKeyPair
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.JoseKeyPair
@@ -61,12 +63,19 @@ import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.interop.toDerEcdsaPublicKeyBytes
+import com.sphereon.crypto.core.kms.ConcatKdf
 import com.sphereon.crypto.core.kms.CertificateOptions
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import com.sphereon.crypto.core.kms.PredefinedKmsProviderTypes
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
+import com.sphereon.crypto.core.kms.command.SignatureEncodingCodec
 import com.sphereon.crypto.core.x509.Certificate
 import java.math.BigInteger
 import java.security.KeyFactory
@@ -95,6 +104,10 @@ actual class AwsKmsCryptoProvider actual constructor(
     ): ManagedKeyPair {
         require(certificateOptions == null) { "Certificate options are not yet supported by AWS KMS" }
         val signingAlgorithm = alg ?: SignatureAlgorithm.ECDSA_SHA256
+        val keyAgreementKey =
+            keyOperations?.any { operation ->
+                operation == KeyOperations.DERIVE_KEY || operation == KeyOperations.DERIVE_BITS
+            } == true
 
         if (!isSupportedSignatureAlgorithm(signingAlgorithm)) {
             val algName = when (signingAlgorithm) {
@@ -118,11 +131,17 @@ actual class AwsKmsCryptoProvider actual constructor(
             SignatureAlgorithm.RSA_SHA512 -> KeySpec.Rsa4096
             else -> throw IllegalArgumentException("Unsupported signature algorithm: $signingAlgorithm")
         }
+        require(
+            !keyAgreementKey ||
+                keySpec == KeySpec.EccNistP256 ||
+                keySpec == KeySpec.EccNistP384 ||
+                keySpec == KeySpec.EccNistP521,
+        ) { "AWS KMS KEY_AGREEMENT keys must be EC NIST keys" }
 
         // Create key in AWS KMS
         val client = getAWSKmsClient()
         val createKeyResponse = client.createKey(CreateKeyRequest {
-            this.keyUsage = KeyUsageType.SignVerify
+            this.keyUsage = if (keyAgreementKey) KeyUsageType.KeyAgreement else KeyUsageType.SignVerify
             this.keySpec = keySpec
         })
 
@@ -146,12 +165,24 @@ actual class AwsKmsCryptoProvider actual constructor(
         val publicKeyDer: ByteArray = getPublicKeyResponse.publicKey
             ?: throw IllegalStateException("Public key not found")
 
-        return toManagedKeyPair(publicKeyDer, kid, alias ?: kid, signingAlgorithm)
+        val joseKeyOperations =
+            if (keyAgreementKey) {
+                arrayOf(JoseKeyOperations.DERIVE_KEY, JoseKeyOperations.DERIVE_BITS)
+            } else {
+                arrayOf(JoseKeyOperations.SIGN, JoseKeyOperations.VERIFY)
+            }
+        return toManagedKeyPair(publicKeyDer, kid, alias ?: kid, signingAlgorithm, joseKeyOperations)
     }
 
-    private fun toManagedKeyPair(publicKeyDer: ByteArray, kid: String, alias: String, signatureAlgorithm: SignatureAlgorithm? = null): ManagedKeyPair {
+    private fun toManagedKeyPair(
+        publicKeyDer: ByteArray,
+        kid: String,
+        alias: String,
+        signatureAlgorithm: SignatureAlgorithm? = null,
+        joseKeyOperations: Array<JoseKeyOperations> = arrayOf(JoseKeyOperations.SIGN, JoseKeyOperations.VERIFY),
+    ): ManagedKeyPair {
         // Create JWK from public key
-        val jwk = createJwkFromPublicKey(publicKeyDer, kid, signatureAlgorithm)
+        val jwk = createJwkFromPublicKey(publicKeyDer, kid, signatureAlgorithm, joseKeyOperations)
         val joseKeyPair = JoseKeyPair(null, jwk)
 
         return ManagedKeyPair(
@@ -211,6 +242,52 @@ actual class AwsKmsCryptoProvider actual constructor(
         }
     }
 
+    override suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): ByteArray {
+        requireDigestLength(signatureAlgorithm, digest)
+        val signResponse =
+            getAWSKmsClient().sign(
+                SignRequest {
+                    keyId = determineAwsKeyId(keyInfo)
+                    message = digest
+                    messageType = MessageType.fromValue("DIGEST")
+                    signingAlgorithm = signatureAlgorithm.toSigningAlgorithmSpec()
+                },
+            )
+        val nativeSignature = signResponse.signature ?: throw IllegalStateException("AWS KMS did not return a signature")
+        return normalizeAwsSignatureOutput(nativeSignature, signatureEncoding, signatureAlgorithm)
+    }
+
+    override suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): Boolean {
+        requireDigestLength(signatureAlgorithm, digest)
+        val nativeSignature = normalizeAwsSignatureInput(signature, signatureEncoding, signatureAlgorithm)
+        return try {
+            getAWSKmsClient()
+                .verify(
+                    VerifyRequest {
+                        keyId = determineAwsKeyId(keyInfo)
+                        message = digest
+                        this.signature = nativeSignature
+                        messageType = MessageType.fromValue("DIGEST")
+                        signingAlgorithm = signatureAlgorithm.toSigningAlgorithmSpec()
+                    },
+                ).signatureValid
+        } catch (_: KmsInvalidSignatureException) {
+            false
+        }
+    }
+
     private fun SignatureAlgorithm.toSigningAlgorithmSpec(): SigningAlgorithmSpec {
         return when (this) {
             SignatureAlgorithm.ECDSA_SHA256 -> SigningAlgorithmSpec.EcdsaSha256
@@ -228,6 +305,52 @@ actual class AwsKmsCryptoProvider actual constructor(
         }
     }
 
+    private fun requireDigestLength(
+        algorithm: SignatureAlgorithm,
+        digest: ByteArray,
+    ) {
+        val expected =
+            when (algorithm) {
+                SignatureAlgorithm.ECDSA_SHA256 -> 32
+                SignatureAlgorithm.ECDSA_SHA384 -> 48
+                SignatureAlgorithm.ECDSA_SHA512 -> 64
+                SignatureAlgorithm.RSA_SHA256,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1 -> 32
+                SignatureAlgorithm.RSA_SHA384,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1 -> 48
+                SignatureAlgorithm.RSA_SHA512,
+                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1 -> 64
+                else -> throw IllegalArgumentException("Digest signing is not supported for $algorithm")
+            }
+        require(digest.size == expected) { "Digest for $algorithm must be $expected bytes, got ${digest.size}" }
+    }
+
+    private fun normalizeAwsSignatureOutput(
+        signature: ByteArray,
+        signatureEncoding: SignatureEncoding,
+        algorithm: SignatureAlgorithm,
+    ): ByteArray =
+        when {
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.RAW ->
+                SignatureEncodingCodec.derToRaw(signature, SignatureEncodingCodec.scalarLength(algorithm))
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.DER -> signature
+            signatureEncoding == SignatureEncoding.RAW -> signature
+            else -> throw IllegalArgumentException("DER signature encoding is only supported for ECDSA algorithms")
+        }
+
+    private fun normalizeAwsSignatureInput(
+        signature: ByteArray,
+        signatureEncoding: SignatureEncoding,
+        algorithm: SignatureAlgorithm,
+    ): ByteArray =
+        when {
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.RAW ->
+                SignatureEncodingCodec.rawToDer(signature, SignatureEncodingCodec.scalarLength(algorithm))
+            algorithm.cryptoAlgorithm == CryptoAlg.ECDSA && signatureEncoding == SignatureEncoding.DER -> signature
+            signatureEncoding == SignatureEncoding.RAW -> signature
+            else -> throw IllegalArgumentException("DER signature encoding is only supported for ECDSA algorithms")
+        }
+
     /**
      * Creates a JWK (JSON Web Key) representation from the DER-encoded public key.
      *
@@ -239,7 +362,12 @@ actual class AwsKmsCryptoProvider actual constructor(
      * @return A Jwk representing the public key.
      * @throws IllegalArgumentException if the key is not a valid EC or RSA key.
      */
-    fun createJwkFromPublicKey(publicKeyDer: ByteArray, keyId: String, signatureAlgorithm: SignatureAlgorithm? = null): Jwk {
+    fun createJwkFromPublicKey(
+        publicKeyDer: ByteArray,
+        keyId: String,
+        signatureAlgorithm: SignatureAlgorithm? = null,
+        joseKeyOperations: Array<JoseKeyOperations> = arrayOf(JoseKeyOperations.SIGN, JoseKeyOperations.VERIFY),
+    ): Jwk {
         val keySpec = X509EncodedKeySpec(publicKeyDer)
 
         // Convert BigInteger to a fixed-length byte array (unsigned representation)
@@ -290,7 +418,7 @@ actual class AwsKmsCryptoProvider actual constructor(
                 .withCrv(crv)
                 .withX(xEncoded)
                 .withY(yEncoded)
-                .withKeyOps(arrayOf(JoseKeyOperations.SIGN, JoseKeyOperations.VERIFY))
+                .withKeyOps(joseKeyOperations)
                 .build()
         } catch (_: Exception) {
             // Try RSA
@@ -322,7 +450,7 @@ actual class AwsKmsCryptoProvider actual constructor(
                 .withAlg(alg)
                 .withN(nEncoded)
                 .withE(eEncoded)
-                .withKeyOps(arrayOf(JoseKeyOperations.SIGN, JoseKeyOperations.VERIFY))
+                .withKeyOps(joseKeyOperations)
                 .build()
         }
     }
@@ -540,6 +668,59 @@ actual class AwsKmsCryptoProvider actual constructor(
             ?: throw IllegalStateException("Key agreement failed - no shared secret returned")
     }
 
+    override suspend fun ecdhDerive(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        algorithm: KeyAgreementAlgorithm,
+        mode: EcdhDeriveMode,
+        keyDataLen: Int?,
+        algorithmId: String?,
+        partyUInfo: ByteArray?,
+        partyVInfo: ByteArray?,
+    ): EcdhDeriveResult {
+        val rawSharedSecret =
+            performKeyAgreement(
+                privateKeyInfo = privateKeyInfo,
+                publicKeyInfo = publicKeyInfo,
+                algorithm = algorithm,
+                keyDataLen = null,
+            )
+        return when (mode) {
+            EcdhDeriveMode.RAW_X -> EcdhDeriveResult(derivedSecret = rawSharedSecret)
+            EcdhDeriveMode.CONCAT_KDF -> {
+                val derived =
+                    ConcatKdf.deriveKey(
+                        sharedSecret = rawSharedSecret,
+                        keyDataLen = requireNotNull(keyDataLen) { "keyDataLen is required when mode is CONCAT_KDF" },
+                        algorithmId = requireNotNull(algorithmId) { "algorithmId is required when mode is CONCAT_KDF" },
+                        apu = partyUInfo ?: ByteArray(0),
+                        apv = partyVInfo ?: ByteArray(0),
+                    )
+                EcdhDeriveResult(derivedSecret = derived, rawSharedSecret = rawSharedSecret)
+            }
+        }
+    }
+
+    override suspend fun ecPointMultiply(
+        privateKeyInfo: KeyInfoType<*>,
+        publicKeyInfo: KeyInfoType<*>,
+        output: EcPointMultiplyOutput,
+    ): EcPointMultiplyResult {
+        require(output == EcPointMultiplyOutput.RAW_X) { "AWS KMS EC point multiplication supports RAW_X output only" }
+        val rawX =
+            ecdhDerive(
+                privateKeyInfo = privateKeyInfo,
+                publicKeyInfo = publicKeyInfo,
+                algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                mode = EcdhDeriveMode.RAW_X,
+                keyDataLen = null,
+                algorithmId = null,
+                partyUInfo = null,
+                partyVInfo = null,
+            ).derivedSecret
+        return EcPointMultiplyResult(rawX = rawX)
+    }
+
     /**
      * Converts ContentEncryptionAlgorithm to AWS KMS EncryptionAlgorithmSpec.
      * AWS KMS symmetric keys use SYMMETRIC_DEFAULT (AES-256-GCM).
@@ -576,4 +757,3 @@ fun determineAwsKeyId(keyInfo: KeyInfoType<*>): String {
     val keyIdArg = keyInfo.alias ?: keyInfo.kid ?: throw IllegalArgumentException("KMS key reference is required")
     return if (keyInfo.alias == keyInfo.kid || keyInfo.alias == null || keyIdArg.startsWith("alias/")) keyIdArg else "alias/$keyIdArg"
 }
-

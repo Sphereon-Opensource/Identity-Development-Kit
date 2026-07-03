@@ -1,0 +1,144 @@
+/* ChipsField — token-driven styles; no hardcoded hex values */
+
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: var(--comp-input-min-height, 40px);
+  padding: 6px var(--comp-forminput-padding-inline, 14px);
+  border: 1px solid var(--comp-forminput-border, var(--color-border-default));
+  border-radius: var(--comp-forminput-radius, var(--shape-radius-md, 8px));
+  background: var(--comp-forminput-background, var(--color-surface));
+  box-sizing: border-box;
+  cursor: text;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.container:hover:not(:has(input:disabled)) {
+  border-color: var(--comp-forminput-border-hover, var(--color-text-disabled));
+}
+
+.container:focus-within {
+  border-color: var(--comp-forminput-border-focus, var(--color-primary));
+  box-shadow: var(--comp-focus-ring);
+}
+
+.container.invalid {
+  border-color: var(--color-error);
+}
+
+.container.invalid:focus-within {
+  box-shadow: var(--comp-error-ring);
+}
+
+/* Chips */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--shape-radius-full, 999px);
+  background: color-mix(in srgb, var(--color-on-surface) 4%, var(--color-surface));
+  border: 1px solid var(--color-border-subtle, var(--color-border-default));
+  padding: 2px 4px 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  max-width: 240px;
+  box-sizing: border-box;
+}
+
+.chipText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.removeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  border-radius: var(--shape-radius-full, 999px);
+  transition: color 100ms ease;
+}
+
+.removeButton:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}
+
+.removeButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.removeButton:focus-visible {
+  outline: none;
+  box-shadow: var(--comp-focus-ring);
+}
+
+/* Add input — borderless inside the container */
+
+.input {
+  flex: 1;
+  min-width: 100px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--comp-forminput-font-size, 0.875rem);
+  color: var(--color-on-surface);
+  padding: 2px 0;
+}
+
+.input::placeholder {
+  color: var(--color-text-disabled);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}
+
+/* Per-item validation error */
+
+.itemError {
+  font-size: 0.72rem;
+  color: var(--color-error);
+  margin: 2px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .container,
+  .removeButton {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .container {
+    border: 1px solid ButtonText;
+  }
+
+  .container:focus-within {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+
+  .container.invalid {
+    border-color: LinkText;
+  }
+
+  .chip {
+    border: 1px solid ButtonText;
+  }
+}

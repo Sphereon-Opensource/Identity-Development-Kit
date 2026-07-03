@@ -39,12 +39,14 @@ import dev.zacsweers.metro.binding
  * Provides metadata about the issuer protocol endpoints so the
  * HttpAdapterCatalog can route incoming requests to this adapter.
  *
- * Endpoints:
- * - GET /oid4vci/credentials/offers/{offerId}
- * - POST /oid4vci/nonce
- * - POST /oid4vci/credential
- * - POST /oid4vci/deferredCredential
- * - POST /oid4vci/notification
+ * Endpoints are mounted at root by default and under the configured protocol base path when
+ * `oid4vci.issuer.protocol.base-path` is set.
+ *
+ * - GET {basePath}/credentials/offers/{offerId}
+ * - POST {basePath}/nonce
+ * - POST {basePath}/credential
+ * - POST {basePath}/deferredCredential
+ * - POST {basePath}/notification
  *
  * (SD-JWT VC type metadata moved to the public `/public/schema/vct/{vctId}` hosting adapter — see
  * [com.sphereon.openid.oid4vci.issuer.impl.http.VctHostingHttpAdapter].)

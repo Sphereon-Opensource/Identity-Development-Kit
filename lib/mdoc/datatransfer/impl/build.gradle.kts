@@ -122,16 +122,20 @@ kotlin {
 
         val androidDeviceTest by getting {
             dependencies {
-                dependsOn(androidHostTest)
                 implementation(sphereonlib.io.github.g0dkar.qrcode.kotlin)
                 implementation(sphereonlib.dev.whyoleg.cryptography.provider.jdk)
                 implementation(projects.libCryptoKmsProviderSoftware)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.android)
+                implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoCorePublic)
                 implementation(projects.libCoreApiDefault)
+                implementation(projects.libMdocCoreImpl)
+                implementation(projects.libMdocReader)
                 implementation(libs.bundles.app.platform.di)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)
+                implementation(sphereonlib.io.mockk.mockk)
+                implementation(sphereonlib.app.cash.turbine.turbine)
                 implementation(sphereonlib.androidx.test.rules)
                 implementation(kotlin("test"))
                 implementation(sphereonlib.androidx.test.ext.junit)

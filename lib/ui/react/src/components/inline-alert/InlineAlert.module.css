@@ -1,0 +1,85 @@
+/* InlineAlert — tonal surface alert: icon | title + message | optional dismiss */
+/* All colour values resolved via --badge-bg/--badge-text/--badge-strong set by the component. */
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  border: 1px solid color-mix(in srgb, var(--badge-text) 14%, transparent);
+  border-radius: var(--shape-radius-lg, 12px);
+  padding: 13px 14px;
+  font-family: inherit;
+}
+
+/* leading icon wrapper */
+.iconWrapper {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--badge-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* icon sizing */
+.icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* text content */
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.message {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* dismiss button */
+.dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--badge-text);
+  border-radius: var(--shape-radius-sm, 4px);
+  outline: none;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.dismiss:hover {
+  opacity: 1;
+}
+
+.dismiss:focus-visible {
+  outline: var(--comp-focus-ring);
+}
+
+/* forced-colors (high-contrast) */
+@media (forced-colors: active) {
+  .alert {
+    border: 1px solid ButtonText;
+    forced-color-adjust: none;
+  }
+
+  .dismiss {
+    forced-color-adjust: auto;
+  }
+}

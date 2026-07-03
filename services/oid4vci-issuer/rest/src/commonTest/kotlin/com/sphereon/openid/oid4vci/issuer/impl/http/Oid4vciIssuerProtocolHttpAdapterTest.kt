@@ -82,7 +82,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeConfigProvider,
             fakeRestConfigProvider,
             FakeMultiManagedIdentifierService,
-            DefaultOid4vciIssuerPublicUrlResolver(),
+            DefaultOid4vciIssuerPublicUrlResolver(NoOpAppConfigService),
         )
     private val credentialOfferCommand =
         GetCredentialOfferEndpointCommandImpl(
@@ -112,6 +112,8 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeHandleCredential,
             fakeDecryptJweCommand,
             fakeConfigProvider,
+            fakeRestConfigProvider,
+            DefaultOid4vciIssuerPublicUrlResolver(NoOpAppConfigService),
             credentialResponseEncryptor,
         )
     private val deferredCommand =
@@ -229,7 +231,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
                     pathConfigProvider,
                     fakeRestConfigProvider,
                     FakeMultiManagedIdentifierService,
-                    DefaultOid4vciIssuerPublicUrlResolver(),
+                    DefaultOid4vciIssuerPublicUrlResolver(NoOpAppConfigService),
                 )
             val adapter =
                 Oid4vciIssuerMetadataHttpAdapter(
@@ -554,6 +556,8 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
                     handleCredential,
                     fakeDecryptJweCommand,
                     preparingConfigProvider,
+                    fakeRestConfigProvider,
+                    DefaultOid4vciIssuerPublicUrlResolver(NoOpAppConfigService),
                     encryptor,
                 )
 

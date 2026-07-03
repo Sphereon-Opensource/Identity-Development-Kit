@@ -24,6 +24,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -51,6 +52,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class AttestationProofVerifier(
     private val keyAttestationVerifier: KeyAttestationVerifier,
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
+    private val nonceManager: NonceManager,
 ) : ProofVerifier {
     override val supportedProofType: String = "attestation"
 
@@ -79,7 +81,31 @@ class AttestationProofVerifier(
                     keyAttestationJwt = attestationJwt,
                     trustConfig = trustConfig,
                     policy = policy,
+                    expectedAudience = expectedAudience.takeIf { policy != null },
                 ).getOrElse { return Err(it) }
+
+        val attestationNonce =
+            validated.claims["c_nonce"]?.jsonPrimitive?.contentOrNull()
+                ?: validated.claims["nonce"]?.jsonPrimitive?.contentOrNull()
+        if (policy != null && attestationNonce == null) {
+            return Err(
+                IdkError.fromString(
+                    code = Oid4vciErrors.INVALID_PROOF,
+                    message = "Invalid attestation proof: production key attestation must carry c_nonce",
+                ),
+            )
+        }
+        if (attestationNonce != null) {
+            val nonceEntry = nonceManager.consume(attestationNonce).getOrElse { return Err(it) }
+            if (nonceEntry == null) {
+                return Err(
+                    IdkError.fromString(
+                        code = "invalid_nonce",
+                        message = "Invalid attestation proof: c_nonce is invalid or expired",
+                    ),
+                )
+            }
+        }
 
         val firstAttestedKey =
             validated.attestedKeys.firstOrNull()
@@ -104,6 +130,7 @@ class AttestationProofVerifier(
                 holderIdentifier = validated.claims["iss"]?.jsonPrimitive?.content,
                 keyId = firstAttestedKey.kid,
                 algorithm = firstAttestedKey.alg?.value,
+                keyAttestation = validated.keyAttestation,
             ),
         )
     }

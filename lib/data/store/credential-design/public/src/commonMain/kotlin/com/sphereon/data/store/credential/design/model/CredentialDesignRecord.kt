@@ -64,4 +64,5 @@ data class CredentialDesignRecord
         val attributeProfileVersion: Long? = null,
         val createdAt: Instant,
         val updatedAt: Instant,
+        val credentialType: CredentialTypeDescriptor? = null,
     )

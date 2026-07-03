@@ -1729,6 +1729,19 @@ private class Oid4vciFakeHandleTokenRequestCommand(
                     ),
                 )
             }
+
+            is GrantParameters.Password -> {
+                Err(
+                    IdkError(
+                        code = "unsupported_grant_type",
+                        message =
+                            IdkError.Message(
+                                i18nKey = "oauth2.as.error.unsupported_grant_type",
+                                defaultMessage = "password grant not supported in this OID4VCI E2E fake",
+                            ),
+                    ),
+                )
+            }
         }
     }
 }

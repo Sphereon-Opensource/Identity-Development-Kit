@@ -19,6 +19,7 @@ package com.sphereon.mdoc.engagement
 
 import com.sphereon.core.api.encodeToHex
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.mdoc.data.device.DeviceRequestCborCodec
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -389,20 +390,25 @@ fun SessionUiState.getParsedDeviceRequest(deviceRequestCborCodec: DeviceRequestC
 @JsExportCompat
 sealed interface SessionEvent {
     /** QR code is being shown - QR visibility is managed via engagement state, not separate hide events */
+    @JsExportIgnoreCompat
     data object QrShow : SessionEvent
 
     /** NFC prompt should be shown */
+    @JsExportIgnoreCompat
     data object NfcPromptShown : SessionEvent
 
     /** NFC handover succeeded */
+    @JsExportIgnoreCompat
     data object NfcHandoverSuccess : SessionEvent
 
     /** Transfer is connecting */
+    @JsExportIgnoreCompat
     data object TransferConnecting : SessionEvent
 
 //    data object TransferConnectionSelected : SessionEvent
 
     /** Transfer connected successfully */
+    @JsExportIgnoreCompat
     data object TransferConnected : SessionEvent
 
     /**
@@ -414,6 +420,7 @@ sealed interface SessionEvent {
      */
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("UserInteractionRequired", exact = true)
+    @JsExportIgnoreCompat
     data class UserInteractionRequired(
         val deviceRequest: ByteArray,
     ) : SessionEvent {
@@ -436,14 +443,17 @@ sealed interface SessionEvent {
     }
 
     /** User accepted the document request */
+    @JsExportIgnoreCompat
     data object UserAccepted : SessionEvent
 
     /** User declined the document request */
+    @JsExportIgnoreCompat
     data object UserDeclined : SessionEvent
 
     /** Transfer progress update */
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("TransferProgress", exact = true)
+    @JsExportIgnoreCompat
     data class TransferProgress(
         val fraction: Float,
     ) : SessionEvent
@@ -454,6 +464,7 @@ sealed interface SessionEvent {
      * @property outcome The type of terminal outcome (success, error, declined, etc.)
      * @property message Optional human-readable message describing the outcome
      */
+    @JsExportIgnoreCompat
     data class Terminal(
         val outcome: TerminalOutcome,
         val message: String? = null,

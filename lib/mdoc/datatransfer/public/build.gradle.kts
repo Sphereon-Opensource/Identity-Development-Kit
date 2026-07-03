@@ -2,6 +2,7 @@ import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
 import com.sphereon.gradle.plugin.configureLinuxTargetIfEnabled
 import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.JsModuleKind
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -36,6 +37,22 @@ kotlin {
 
     configureIosTargetsIfEnabled()
     configureLinuxTargetIfEnabled()
+
+    run {
+        val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
+        if ("all" in kmpTargets || "js" in kmpTargets) {
+            js {
+                compilerOptions {
+                    moduleKind = JsModuleKind.MODULE_ES
+                    target = "es2015"
+                }
+                browser { testTask { enabled = false } }
+                nodejs { testTask { useMocha { timeout = "60000" } } }
+                binaries.library()
+                generateTypeScriptDefinitions()
+            }
+        }
+    }
 
     configureWasmJsTargetIfEnabled {
         nodejs()

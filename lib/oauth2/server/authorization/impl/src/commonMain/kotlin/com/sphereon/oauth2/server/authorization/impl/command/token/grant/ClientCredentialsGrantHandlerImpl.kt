@@ -78,6 +78,7 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
+                        audience = ccParams.audiences,
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
                         baseUrlOverride = applied.baseUrlOverride,

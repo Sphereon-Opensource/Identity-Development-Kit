@@ -109,6 +109,23 @@ abstract class BaseAwsKmsCryptoProvider(
                         notes = "Supports ECDSA and RSA (PKCS#1 v1.5 and PSS) signatures",
                     ),
                     OperationCapability(
+                        operation = KmsProviderOperation.SIGN_DIGEST,
+                        supported = true,
+                        signatureAlgorithms =
+                            arrayOf(
+                                SignatureAlgorithm.ECDSA_SHA256,
+                                SignatureAlgorithm.ECDSA_SHA384,
+                                SignatureAlgorithm.ECDSA_SHA512,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
+                                SignatureAlgorithm.RSA_SHA256,
+                                SignatureAlgorithm.RSA_SHA384,
+                                SignatureAlgorithm.RSA_SHA512,
+                            ),
+                        notes = "Uses AWS KMS Sign with MessageType=DIGEST; ECDSA DER/RAW normalization is handled at the provider boundary",
+                    ),
+                    OperationCapability(
                         operation = KmsProviderOperation.VERIFY,
                         supported = true,
                         signatureAlgorithms =
@@ -124,6 +141,23 @@ abstract class BaseAwsKmsCryptoProvider(
                                 SignatureAlgorithm.RSA_SHA512,
                             ),
                         notes = "Supports ECDSA and RSA (PKCS#1 v1.5 and PSS) signature verification",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.VERIFY_DIGEST,
+                        supported = true,
+                        signatureAlgorithms =
+                            arrayOf(
+                                SignatureAlgorithm.ECDSA_SHA256,
+                                SignatureAlgorithm.ECDSA_SHA384,
+                                SignatureAlgorithm.ECDSA_SHA512,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1,
+                                SignatureAlgorithm.RSA_SSA_PSS_SHA512_MGF1,
+                                SignatureAlgorithm.RSA_SHA256,
+                                SignatureAlgorithm.RSA_SHA384,
+                                SignatureAlgorithm.RSA_SHA512,
+                            ),
+                        notes = "Uses AWS KMS Verify with MessageType=DIGEST; ECDSA DER/RAW normalization is handled at the provider boundary",
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.ENCRYPT,
@@ -177,7 +211,25 @@ abstract class BaseAwsKmsCryptoProvider(
                         operation = KmsProviderOperation.KEY_AGREEMENT,
                         supported = true,
                         keyAgreementAlgorithms = arrayOf(KeyAgreementAlgorithm.ECDH_ES),
-                        notes = "ECDH supported via DeriveSharedSecret API (since June 2024). Requires KMS keys with KEY_AGREEMENT usage (create via AWS Console/SDK).",
+                        notes = "ECDH supported via DeriveSharedSecret API. Requires AWS KMS keys with KEY_AGREEMENT usage.",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.ECDH_DERIVE_RAW_X,
+                        supported = true,
+                        keyAgreementAlgorithms = arrayOf(KeyAgreementAlgorithm.ECDH_ES),
+                        notes = "Returns the raw shared-secret x-coordinate from AWS KMS DeriveSharedSecret",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.ECDH_DERIVE_KDF,
+                        supported = true,
+                        keyAgreementAlgorithms = arrayOf(KeyAgreementAlgorithm.ECDH_ES),
+                        notes = "Applies IDK ConcatKDF to the AWS KMS raw shared secret",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.EC_POINT_MULTIPLY,
+                        supported = true,
+                        keyAgreementAlgorithms = arrayOf(KeyAgreementAlgorithm.ECDH_ES),
+                        notes = "Provider-backed raw-X point multiplication via AWS KMS DeriveSharedSecret",
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.GENERATE_CERTIFICATE,

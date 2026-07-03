@@ -592,6 +592,47 @@ class VerifyTokenExchangeGrantCommandImplTest {
             assertEquals("read write", result.value.scope, "Subject scope is inherited when none is requested")
         }
 
+    @Test
+    fun testAuthenticationContextClaimsPropagateToExchangedToken() =
+        runTest {
+            val registry = setupClientRegistry(tokenExchangeClient)
+            val command = createCommand(registry)
+
+            val subjectJwt =
+                createTestJwt(
+                    mapOf(
+                        "sub" to "user123",
+                        "scope" to "openid profile",
+                        "acr" to "urn:nist:sp:800-63:aal2",
+                        "amr" to listOf("pwd", "mfa"),
+                        "auth_time" to 1782930000L,
+                        "email" to "user@example.com",
+                    ),
+                )
+
+            val result =
+                command.execute(
+                    VerifyTokenExchangeGrantArgs(
+                        subjectToken = subjectJwt,
+                        subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        actorToken = null,
+                        actorTokenType = null,
+                        resources = emptyList(),
+                        audiences = listOf("enterprise-wallet-unit"),
+                        scope = null,
+                        requestedTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        clientId = tokenExchangeClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Should succeed")
+            val additionalClaims = result.value.additionalClaims
+            assertEquals("urn:nist:sp:800-63:aal2", additionalClaims["acr"])
+            assertEquals(listOf("pwd", "mfa"), additionalClaims["amr"])
+            assertEquals(1782930000L, additionalClaims["auth_time"])
+            assertTrue("email" !in additionalClaims, "Token exchange must not broad-copy identity claims")
+        }
+
     // --- ID token type tests ---
 
     @Test

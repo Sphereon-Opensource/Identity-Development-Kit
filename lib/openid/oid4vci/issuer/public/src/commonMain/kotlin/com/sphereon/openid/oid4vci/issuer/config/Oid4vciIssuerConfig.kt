@@ -135,6 +135,14 @@ interface Oid4vciIssuerConfigProvider {
         get() = null
 
     /**
+     * Optional key-storage-status refresh period advertised in Credential Issuer metadata when
+     * production key-attestation evidence is expected. The value is seconds and maps to
+     * `preferred_key_storage_status_period`.
+     */
+    val preferredKeyStorageStatusPeriodSeconds: Int?
+        get() = null
+
+    /**
      * Per-credential signing configuration (key alias, key reference mode, cert chain path).
      *
      * Keyed by credential configuration ID. Used at issuance time to resolve the signing key

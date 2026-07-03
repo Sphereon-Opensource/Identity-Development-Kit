@@ -1,0 +1,33 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+}
+
+/* Group label — visually identical to Field's .label */
+.label {
+  font-size: 0.8125rem;
+  font-weight: 560;
+  letter-spacing: -0.003em;
+  color: var(--color-text-primary);
+}
+
+.required {
+  color: var(--color-error);
+  margin-left: 2px;
+}
+
+/* Per-option description rendered beside the Radio label */
+.optionDescription {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Wrapper for a Radio + its per-option description */
+.optionWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 2px);
+}

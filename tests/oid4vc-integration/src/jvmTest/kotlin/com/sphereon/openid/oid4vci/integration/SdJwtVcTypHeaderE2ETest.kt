@@ -55,7 +55,7 @@ interface SdJwtVcFormatHandlerTestGraph {
  * (e.g. credo-ts `SdJwtVcService.ts:339-341`) reject the credential.
  */
 class SdJwtVcTypHeaderE2ETest {
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, protocolBasePath = "/oid4vci")
     private val json = Json { ignoreUnknownKeys = true }
 
     @OptIn(ExperimentalEncodingApi::class)

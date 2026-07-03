@@ -17,6 +17,7 @@
 package com.sphereon.data.store.credential.design.command
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.data.store.credential.design.model.AssetFilter
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
@@ -32,6 +33,7 @@ import com.sphereon.data.store.credential.design.model.UpdateCredentialDesignInp
 import com.sphereon.data.store.credential.design.model.UpdateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.UpdateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
+import com.sphereon.data.store.credential.design.model.UploadTenantAssetInput
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 import kotlin.uuid.Uuid
@@ -241,4 +243,20 @@ data class GetDesignAssetArgs(
 data class GetDesignAssetByHashArgs(
     val tenantId: String,
     val hash: String,
+)
+
+@JsExportCompat
+@Serializable
+data class ListDesignAssetsArgs
+    @JvmOverloads
+    constructor(
+        val tenantId: String,
+        val filter: AssetFilter = AssetFilter(),
+    )
+
+@JsExportCompat
+@Serializable
+data class UploadTenantAssetArgs(
+    val tenantId: String,
+    val input: UploadTenantAssetInput,
 )

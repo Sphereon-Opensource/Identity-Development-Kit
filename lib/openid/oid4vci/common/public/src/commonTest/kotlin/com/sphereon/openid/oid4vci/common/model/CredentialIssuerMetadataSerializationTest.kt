@@ -306,6 +306,31 @@ class CredentialIssuerMetadataSerializationTest {
     }
 
     @Test
+    fun preferredKeyStorageStatusPeriodRoundTrip() {
+        val jsonString =
+            """
+            {
+                "credential_issuer": "https://issuer.example.com",
+                "credential_endpoint": "https://issuer.example.com/credential",
+                "credential_configurations_supported": {
+                    "TestCredential": { "format": "jwt_vc_json" }
+                },
+                "preferred_key_storage_status_period": 900
+            }
+            """.trimIndent()
+
+        val decoded = json.decodeFromString<CredentialIssuerMetadata>(jsonString)
+
+        assertEquals(900, decoded.preferredKeyStorageStatusPeriod)
+
+        val reEncoded = json.encodeToString(decoded)
+        val reObj = json.parseToJsonElement(reEncoded).jsonObject
+        assertEquals(900, reObj["preferred_key_storage_status_period"]?.jsonPrimitive?.int)
+        val reDecoded = json.decodeFromString<CredentialIssuerMetadata>(reEncoded)
+        assertEquals(decoded, reDecoded)
+    }
+
+    @Test
     fun version11MetadataWithCredentialResponseEncryptionTopLevel() {
         val jsonString =
             """

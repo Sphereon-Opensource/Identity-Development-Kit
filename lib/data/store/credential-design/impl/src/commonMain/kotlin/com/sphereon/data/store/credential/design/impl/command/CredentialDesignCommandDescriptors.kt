@@ -43,6 +43,7 @@ import com.sphereon.data.store.credential.design.command.ImportCredentialDesignS
 import com.sphereon.data.store.credential.design.command.ImportIssuerDesignServiceCommand
 import com.sphereon.data.store.credential.design.command.ImportVerifierDesignServiceCommand
 import com.sphereon.data.store.credential.design.command.ListCredentialDesignsServiceCommand
+import com.sphereon.data.store.credential.design.command.ListDesignAssetsServiceCommand
 import com.sphereon.data.store.credential.design.command.ListIssuerDesignsServiceCommand
 import com.sphereon.data.store.credential.design.command.ListRenderVariantsServiceCommand
 import com.sphereon.data.store.credential.design.command.ListVerifierDesignsServiceCommand
@@ -58,6 +59,7 @@ import com.sphereon.data.store.credential.design.command.UpdateIssuerDesignServi
 import com.sphereon.data.store.credential.design.command.UpdateRenderVariantServiceCommand
 import com.sphereon.data.store.credential.design.command.UpdateVerifierDesignServiceCommand
 import com.sphereon.data.store.credential.design.command.UploadDesignAssetServiceCommand
+import com.sphereon.data.store.credential.design.command.UploadTenantAssetServiceCommand
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.IntoMap
@@ -232,4 +234,12 @@ interface CredentialDesignCommandDescriptors {
     @Provides @IntoMap
     @StringKey(GetDesignAssetByHashServiceCommand.COMMAND_ID)
     fun getDesignAssetByHash(impl: GetDesignAssetByHashServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(ListDesignAssetsServiceCommand.COMMAND_ID)
+    fun listDesignAssets(impl: ListDesignAssetsServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(UploadTenantAssetServiceCommand.COMMAND_ID)
+    fun uploadTenantAsset(impl: UploadTenantAssetServiceCommandImpl): ServiceCommand<*, *, *> = impl
 }

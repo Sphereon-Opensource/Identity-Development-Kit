@@ -21,6 +21,7 @@ import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.cose.CoseKeyType
@@ -212,6 +213,7 @@ interface TransferManager :
      */
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Try", exact = true)
+    @JsExportIgnoreCompat
     interface Try {
         suspend fun start(): IdkResult<TransferManager, IdkErrorType>
 

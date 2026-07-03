@@ -12,8 +12,14 @@ import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.statuslist.StatusListContentTypes
+import com.sphereon.statuslist.StatusListHostingMode
 import com.sphereon.statuslist.StatusListRef
+import com.sphereon.statuslist.StatusListResult
+import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusListToken
+import com.sphereon.statuslist.StatusProofFormat
+import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.command.GetStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
 import com.sphereon.statuslist.hosting.rest.command.GetStatusListTokenByCorrelationIdEndpointCommandImpl
 import com.sphereon.statuslist.hosting.rest.test.createTestSessionExecution
@@ -33,10 +39,12 @@ class StatusListHostingHttpAdapterTest {
     private val signedToken = "eyJhbGciOiJFUzI1NiJ9.statuslist.signature"
 
     private inner class Fixture(
-        ttlSeconds: Long?
+        ttlSeconds: Long?,
+        hostingMode: StatusListHostingMode = StatusListHostingMode.HOSTED,
     ) {
         val execution: SessionExecution = createTestSessionExecution()
-        val stub =
+        val metadataStub = StubGetStatusList(execution, hostingMode)
+        val tokenStub =
             StubGetToken(
                 execution,
                 StatusListToken(
@@ -50,7 +58,12 @@ class StatusListHostingHttpAdapterTest {
                 execution = execution,
                 endpoints =
                     listOf(
-                        GetStatusListTokenByCorrelationIdEndpointCommandImpl(execution, stub, StatusListHostingConfig()),
+                        GetStatusListTokenByCorrelationIdEndpointCommandImpl(
+                            execution,
+                            metadataStub,
+                            tokenStub,
+                            StatusListHostingConfig(),
+                        ),
                     ),
             )
     }
@@ -72,7 +85,7 @@ class StatusListHostingHttpAdapterTest {
             assertEquals("public, max-age=3600", response.headers["Cache-Control"])
             // The public `/{id}` route resolves the stable business key (the human-readable
             // correlationId that credentials embed) first, falling back to the technical id.
-            assertEquals(StatusListRef(correlationId = "sl-7", statusListUri = "http://localhost/public/statuslists/sl-7"), f.stub.captured)
+            assertEquals(StatusListRef(correlationId = "sl-7", statusListUri = "http://localhost/public/statuslists/sl-7"), f.tokenStub.captured)
         }
 
     @Test
@@ -82,10 +95,26 @@ class StatusListHostingHttpAdapterTest {
             val response =
                 f.adapter.handleRequest(
                     GenericHttpRequest.withTextBody(method = "GET", path = base("/corr-9"), body = null),
-                )
+            )
             assertEquals(200, response.statusCode)
             assertEquals(signedToken, response.bodyBytes?.decodeToString())
-            assertEquals(StatusListRef(correlationId = "corr-9", statusListUri = "http://localhost/public/statuslists/corr-9"), f.stub.captured)
+            assertEquals(StatusListRef(correlationId = "corr-9", statusListUri = "http://localhost/public/statuslists/corr-9"), f.tokenStub.captured)
+        }
+
+    @Test
+    fun exportMode_isNotServedFromPublicHostingEndpoint() =
+        runTest {
+            val f = Fixture(ttlSeconds = null, hostingMode = StatusListHostingMode.EXPORT)
+            val response =
+                f.adapter.handleRequest(
+                    GenericHttpRequest.withTextBody(method = "GET", path = base("/export-only"), body = null),
+                )
+            assertEquals(404, response.statusCode)
+            assertEquals(
+                StatusListRef(correlationId = "export-only", statusListUri = "http://localhost/public/statuslists/export-only"),
+                f.metadataStub.captured,
+            )
+            assertEquals(null, f.tokenStub.captured)
         }
 
     @Test
@@ -99,6 +128,45 @@ class StatusListHostingHttpAdapterTest {
             val cacheControl = assertNotNull(response.headers["Cache-Control"])
             assertEquals("public, max-age=${StatusListHostingApiConstants.DEFAULT_CACHE_MAX_AGE_SECONDS}", cacheControl)
         }
+
+    private inner class StubGetStatusList(
+        execution: SessionExecution,
+        private val hostingMode: StatusListHostingMode,
+    ) : TypedServiceCommandAdapter<StatusListRef, StatusListResult, IdkError>(
+            commandId = GetStatusListCommand.COMMAND_ID,
+            execution = execution,
+            inputTypeToken = typeToken<StatusListRef>(),
+            outputTypeToken = typeToken<StatusListResult>(),
+        ),
+        GetStatusListCommand {
+        override val commandId: String get() = GetStatusListCommand.COMMAND_ID
+        var captured: StatusListRef? = null
+
+        override suspend fun doExecute(
+            args: StatusListRef,
+            applyDuring: (StatusListRef) -> StatusListRef,
+        ): IdkResult<StatusListResult, IdkError> {
+            val ref = applyDuring(args)
+            captured = ref
+            val correlationId = ref.correlationId ?: "sl-1"
+            return Ok(
+                StatusListResult(
+                    id = "sl-1",
+                    correlationId = correlationId,
+                    spec = StatusListSpec.TOKEN_STATUS_LIST,
+                    purposes = listOf(StatusPurpose.REVOCATION),
+                    proofFormat = StatusProofFormat.JWT,
+                    hostingMode = hostingMode,
+                    bitsPerStatus = 1,
+                    length = 131_072,
+                    issuer = "did:example:issuer",
+                    statusListUri = ref.statusListUri ?: "http://localhost/public/statuslists/$correlationId",
+                    signedToken = signedToken,
+                    contentType = StatusListContentTypes.STATUSLIST_JWT,
+                ),
+            )
+        }
+    }
 
     private inner class StubGetToken(
         execution: SessionExecution,

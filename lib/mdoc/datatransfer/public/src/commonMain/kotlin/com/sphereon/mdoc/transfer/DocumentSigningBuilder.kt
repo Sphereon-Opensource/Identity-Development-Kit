@@ -24,6 +24,7 @@ import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.js.JsName
 import kotlin.native.ObjCName
 
 /**
@@ -74,6 +75,7 @@ interface DocumentSigningBuilder {
      * @param deviceNamespaces Device-signed namespaces (usually empty)
      * @return This builder for method chaining
      */
+    @JsName("addDocument")
     fun add(
         request: DocRequest,
         document: Document,
@@ -87,6 +89,7 @@ interface DocumentSigningBuilder {
      * @param signingRequest The DocumentSigningRequest with all associations
      * @return This builder for method chaining
      */
+    @JsName("addSigningRequest")
     fun add(signingRequest: DocumentSigningRequest): DocumentSigningBuilder
 
     /**

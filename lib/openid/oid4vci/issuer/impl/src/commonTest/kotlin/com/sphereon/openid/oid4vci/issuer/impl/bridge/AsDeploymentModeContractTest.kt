@@ -36,6 +36,9 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServersConfig
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.oauth2.common.model.VerifyDpopProofResult
@@ -135,11 +138,17 @@ class AsDeploymentModeContractTest {
     private class FakeAuthorizationServerService(
         private var introspectionResult: IdkResult<TokenIntrospectionResponse, IdkError>,
     ) : AuthorizationServerService {
+        var lastIntrospectTokenArgs: IntrospectTokenArgs? = null
+            private set
+
         fun setIntrospectionResult(result: IdkResult<TokenIntrospectionResponse, IdkError>) {
             introspectionResult = result
         }
 
-        override suspend fun introspectToken(args: IntrospectTokenArgs): IdkResult<TokenIntrospectionResponse, IdkError> = introspectionResult
+        override suspend fun introspectToken(args: IntrospectTokenArgs): IdkResult<TokenIntrospectionResponse, IdkError> {
+            lastIntrospectTokenArgs = args
+            return introspectionResult
+        }
 
         // --- All other methods are not used by the bridge and throw ---
         override suspend fun parseTokenRequest(args: ParseTokenRequestArgs) = notUsed()
@@ -313,6 +322,23 @@ class AsDeploymentModeContractTest {
         override val conf: ContextConfig = FakeContextConfig(principalConfig)
     }
 
+    private class FakeOAuth2ServersConfigProvider(
+        override val serverConfig: OAuth2ServerInstanceConfig,
+    ) : OAuth2ServersConfigProvider {
+        private val config = OAuth2ServersConfig(servers = mapOf("default" to serverConfig))
+
+        override fun getConfig(): OAuth2ServersConfig = config
+
+        override fun getServer(id: String): OAuth2ServerInstanceConfig? = config.getServer(id)
+
+        override fun getDefaultServer(): OAuth2ServerInstanceConfig = config.getDefaultServer()
+
+        override fun resolveIssuer(
+            serverId: String,
+            tenantId: String,
+        ): String = getServer(serverId)?.issuer ?: "https://issuer.example.com"
+    }
+
     // ========================================================================
     // Embedded/Hosted mode — SphereonAsBridge
     // ========================================================================
@@ -324,12 +350,14 @@ class AsDeploymentModeContractTest {
                 Ok(TokenIntrospectionResponse(active = false)),
             ),
         configProperties: Map<String, String> = emptyMap(),
+        oauth2ConfigProvider: OAuth2ServersConfigProvider? = null,
     ): Pair<SphereonAsBridge, FakeAuthorizationServerService> {
         val bridge =
             SphereonAsBridge(
                 preAuthorizedCodeStorage = storage,
                 authorizationServerService = asService,
                 verifyDpopProofCommand = NoopVerifyDpopProofCommand,
+                oauth2ConfigProvider = oauth2ConfigProvider,
                 execution = FakeSessionExecution(configProperties),
             )
         return bridge to asService
@@ -501,6 +529,36 @@ class AsDeploymentModeContractTest {
             assertEquals("openid", ctx.scope)
             assertEquals(listOf("IdentityCredential"), ctx.credentialConfigurationIds)
             assertEquals(listOf("id-1", "id-2"), ctx.credentialIdentifiers)
+        }
+
+    @Test
+    fun embeddedModeUsesConfiguredIssuerInternalClientForIntrospection() =
+        runTest {
+            val introspectionResponse =
+                TokenIntrospectionResponse(
+                    active = true,
+                    sub = "user-123",
+                    clientId = "wallet-client",
+                )
+            val asService = FakeAuthorizationServerService(Ok(introspectionResponse))
+            val configProvider =
+                FakeOAuth2ServersConfigProvider(
+                    OAuth2ServerInstanceConfig(
+                        issuer = "https://issuer.example.com",
+                        internalClients = mapOf("issuer" to ("issuer-service" to "issuer-secret")),
+                    ),
+                )
+
+            val (bridge, _) =
+                createEmbeddedBridge(
+                    asService = asService,
+                    oauth2ConfigProvider = configProvider,
+                )
+
+            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "valid-token"))
+
+            assertTrue(result.isOk, "validateAccessToken should succeed for active token")
+            assertEquals("issuer-service", asService.lastIntrospectTokenArgs?.clientId)
         }
 
     @Test

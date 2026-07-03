@@ -168,6 +168,23 @@ data class OAuth2ServerInstanceConfig(
     // bounds how long a jti needs to stay in the dedup table. Default 600s gives ample headroom
     // around the 120s freshness window without growing the table unnecessarily.
     val attestationPopJtiReplayWindowSeconds: Int = 600,
+    /**
+     * Wallet Instance Attestation (WIA) production enforcement for PAR and token
+     * attestation-based client authentication. This is intentionally separate from the generic
+     * OAuth client-attestation feature above: [attestation] accepts the OAuth2 client-auth method,
+     * while [walletInstanceAttestation] decides whether the AS must bind that authentication to
+     * persisted Wallet Unit evidence, status evidence, and trust evidence.
+     *
+     * REQUIRED is production mode and fails closed when no persisted-evidence enforcer is bound.
+     * SUPPORTED only advertises the capability; backendless/local IDK flows cannot satisfy
+     * REQUIRED by construction.
+     */
+    val walletInstanceAttestation: FeaturePolicy = FeaturePolicy.DISABLED,
+    /**
+     * Optional client-status refresh period advertised in AS metadata when WIA is enabled.
+     * The value is seconds and maps to the discovery field `preferred_client_status_period`.
+     */
+    val preferredClientStatusPeriodSeconds: Int? = null,
     // JARM (OpenID Foundation JWT Secured Authorization Response Mode for OAuth 2.0,
     // https://openid.net/specs/oauth-v2-jarm.html). Gated DISABLED by default so discovery
     // does not advertise JARM signing/encryption metadata or `*.jwt` response modes until a
