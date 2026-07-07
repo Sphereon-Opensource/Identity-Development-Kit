@@ -75,6 +75,24 @@ class BrowserSecurityHeadersTest {
     }
 
     @Test
+    fun htmlCategoryWithImageOriginsExtendsImgSrc() {
+        val headers =
+            securityHeadersFor(
+                ResponseCategory.HTML,
+                nonce = "abc123",
+                imageOrigins = setOf("https://cdn.example", "https://assets.example"),
+            )
+        // Cross-origin theme images are whitelisted through img-src only; every other fetch
+        // directive stays pinned to 'self'. Origins are sorted for a deterministic header.
+        assertEquals(
+            "default-src 'self'; style-src 'self' 'nonce-abc123'; script-src 'self' 'nonce-abc123'; " +
+                "img-src 'self' https://assets.example https://cdn.example; " +
+                "frame-ancestors 'self'; object-src 'none'",
+            headers["Content-Security-Policy"],
+        )
+    }
+
+    @Test
     fun newCspNonceProducesUniqueBase64UrlValues() {
         val a = newCspNonce()
         val b = newCspNonce()

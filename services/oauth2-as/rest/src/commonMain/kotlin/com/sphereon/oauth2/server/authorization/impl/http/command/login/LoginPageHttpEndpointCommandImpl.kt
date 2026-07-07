@@ -16,6 +16,12 @@
 
 package com.sphereon.oauth2.server.authorization.impl.http.command.login
 
+import com.sphereon.conf.theme.core.model.ProductType
+import com.sphereon.conf.theme.core.model.ResolvedFeature
+import com.sphereon.conf.theme.core.model.ResolvedTheme
+import com.sphereon.conf.theme.core.model.ThemeVariant
+import com.sphereon.conf.theme.core.resolve.FeatureResolver
+import com.sphereon.conf.theme.core.resolve.ThemeResolver
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
@@ -23,6 +29,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -41,10 +48,13 @@ import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.FederationLoginOption
 import com.sphereon.oauth2.server.authorization.provider.LoginPageContext
 import com.sphereon.oauth2.server.authorization.provider.LoginPageRenderer
+import com.sphereon.software.registry.SoftwareInstanceRegistry
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 
 /**
@@ -66,6 +76,13 @@ class LoginPageHttpEndpointCommandImpl(
     private val baseUrlResolver: OAuth2ServerBaseUrlResolver,
     private val csrfTokenizer: LoginCsrfTokenizer,
     private val listEnabledFederationProvidersCommand: ListEnabledFederationProvidersCommand,
+    // Theming is strictly optional: assemblies without a theme resolver (or without the
+    // software registry that maps the AS instance slug to its application party UUID) render
+    // the neutral default page. All three are Provider-wrapped optionals per the Metro
+    // optional-binding rule.
+    private val themeResolver: Provider<ThemeResolver>? = null,
+    private val featureResolver: Provider<FeatureResolver>? = null,
+    private val softwareInstanceRegistry: Provider<SoftwareInstanceRegistry>? = null,
 ) : HttpEndpointCommandAdapter(
         id = LoginPageHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -115,10 +132,19 @@ class LoginPageHttpEndpointCommandImpl(
         // local credentials). This matches the broader "login page must always reach
         // the user" principle that drives the no-store cache headers below.
         val federationOptions = loadFederationOptions()
+        // Tenant comes from the session the tenant-resolution layer established for this request
+        // (subdomain / leading path slug / JWT). No default tenant is ever substituted: when the
+        // session carries no real tenant, theming is skipped and the neutral page renders.
+        val tenantId =
+            runCatching { execution.tenantId }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() && it != IdentityConstants.ANONYMOUS_TENANT_ID }
+        val asInstanceId = asInstanceIdProvider.currentAsInstanceId() ?: DEFAULT_AS_INSTANCE_ID
+        val theming = resolveThemingOrNeutral(tenantId, asInstanceId)
         val ctx =
             LoginPageContext(
-                asInstanceId = asInstanceIdProvider.currentAsInstanceId() ?: DEFAULT_AS_INSTANCE_ID,
-                tenantId = null,
+                asInstanceId = asInstanceId,
+                tenantId = tenantId,
                 sessionId = sessionId,
                 returnUrl = returnUrl,
                 loginHint = loginHint,
@@ -129,6 +155,10 @@ class LoginPageHttpEndpointCommandImpl(
                 notice = configProvider.serverConfig.loginNotice,
                 federationOptions = federationOptions,
                 formActionBase = trustedBase,
+                resolvedThemeLight = theming.light,
+                resolvedThemeDark = theming.dark,
+                loginFeature = theming.loginFeature,
+                loginFeatureDark = theming.loginFeatureDark,
             )
         val rendered = loginPageRenderer.render(ctx)
         if (!rendered.isOk) {
@@ -151,8 +181,121 @@ class LoginPageHttpEndpointCommandImpl(
                         "Set-Cookie" to loginCsrfCookieHeader(csrf.tabId, secure),
                     ),
                 body = response.html,
-            ).withSecurityHeaders(ResponseCategory.HTML, response.cspNonce),
+            ).withSecurityHeaders(
+                ResponseCategory.HTML,
+                response.cspNonce,
+                imageOrigins = crossOriginImageOrigins(theming, trustedBase),
+            ),
         )
+    }
+
+    /**
+     * Resolved theming inputs for one render. All fields null = neutral page (today's behavior).
+     */
+    private data class LoginTheming(
+        val light: ResolvedTheme? = null,
+        val dark: ResolvedTheme? = null,
+        val loginFeature: ResolvedFeature? = null,
+        val loginFeatureDark: ResolvedFeature? = null,
+    )
+
+    /**
+     * Resolve LIGHT + DARK themes and the `login` feature for [tenantId] under the AS instance's
+     * application identity (instance slug -> software party UUID via the software registry).
+     * HIGH_CONTRAST is intentionally not resolved yet.
+     *
+     * Every step sits behind a failure guard: a missing resolver, a missing tenant, a registry
+     * miss, or ANY exception collapses to the neutral result. The login page must never fail to
+     * render because of theming.
+     */
+    @Suppress("TooGenericExceptionCaught") // theming is best-effort; any failure must fall back to the neutral page
+    private suspend fun resolveThemingOrNeutral(
+        tenantId: String?,
+        asInstanceId: String,
+    ): LoginTheming {
+        val resolverProvider = themeResolver ?: return LoginTheming()
+        if (tenantId == null) return LoginTheming()
+        return try {
+            val applicationId = softwareInstanceRegistry?.invoke()?.get(tenantId, asInstanceId)?.partyId
+            val resolver = resolverProvider.invoke()
+            val light = resolver.resolve(tenant = tenantId, variant = ThemeVariant.LIGHT, applicationId = applicationId)
+            val dark = resolver.resolve(tenant = tenantId, variant = ThemeVariant.DARK, applicationId = applicationId)
+            val loginFeature =
+                featureResolver?.invoke()?.resolve(
+                    tenant = tenantId,
+                    productType = ProductType.AUTHORIZATION_SERVER,
+                    featureId = LOGIN_FEATURE_ID,
+                    applicationId = applicationId,
+                    variant = null,
+                )
+            val loginFeatureDark =
+                featureResolver?.invoke()?.resolve(
+                    tenant = tenantId,
+                    productType = ProductType.AUTHORIZATION_SERVER,
+                    featureId = LOGIN_FEATURE_ID,
+                    applicationId = applicationId,
+                    variant = ThemeVariant.DARK,
+                )
+            LoginTheming(light = light, dark = dark, loginFeature = loginFeature, loginFeatureDark = loginFeatureDark)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            execution.log.logManager
+                .withTag("LoginPageHttpEndpointCommand")
+                .warn("Theme resolution failed for tenant '$tenantId'; rendering the neutral login page: ${e.message}")
+            LoginTheming()
+        }
+    }
+
+    /**
+     * Origins of theme-supplied image URLs (feature logo/logoDark/background/favicon assets and
+     * branding logo/favicon metadata) that are cross-origin to [trustedBase]. The HTML CSP's
+     * `img-src` is extended with exactly these origins so platform-hosted assets load on a
+     * tenant-subdomain AS. Relative and same-origin URLs need no CSP change.
+     */
+    private fun crossOriginImageOrigins(
+        theming: LoginTheming,
+        trustedBase: String,
+    ): Set<String> {
+        val candidates =
+            buildList {
+                for (feature in listOfNotNull(theming.loginFeature, theming.loginFeatureDark)) {
+                    for (elementId in THEMED_IMAGE_ELEMENT_IDS) {
+                        feature.elements[elementId]?.asset?.uri?.let(::add)
+                    }
+                }
+                for (theme in listOfNotNull(theming.light, theming.dark)) {
+                    theme.branding?.let { branding ->
+                        branding.logoUrl?.let(::add)
+                        branding.logoDarkUrl?.let(::add)
+                        branding.faviconUrl?.let(::add)
+                    }
+                }
+            }
+        if (candidates.isEmpty()) return emptySet()
+        val baseOrigin = httpOriginOrNull(trustedBase)
+        return candidates
+            .mapNotNull(::httpOriginOrNull)
+            .filterTo(mutableSetOf()) { it != baseOrigin }
+    }
+
+    /**
+     * `scheme://host[:port]` of an absolute http(s) URL, lowercased; null for anything else.
+     * The extracted host[:port] must match a strict shape (hostname or bracketed IPv6 literal,
+     * optional numeric port) because the value flows into the CSP response header: tenant-writable
+     * asset URIs must never be able to smuggle CRLF, quotes, spaces, or semicolons into it.
+     */
+    private fun httpOriginOrNull(url: String): String? {
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd <= 0) return null
+        val scheme = url.substring(0, schemeEnd).lowercase()
+        if (scheme != "http" && scheme != "https") return null
+        val hostPort =
+            url
+                .substring(schemeEnd + 3)
+                .takeWhile { it != '/' && it != '?' && it != '#' }
+        if (hostPort.isEmpty() || !HOST_PORT_PATTERN.matches(hostPort)) return null
+        return "$scheme://${hostPort.lowercase()}"
     }
 
     private fun negotiateLocale(acceptLanguage: String?): String =
@@ -173,6 +316,9 @@ class LoginPageHttpEndpointCommandImpl(
     companion object {
         private const val DEFAULT_LOCALE: String = "en"
         private const val DEFAULT_AS_INSTANCE_ID: String = "default"
+        private const val LOGIN_FEATURE_ID: String = "login"
         private val SUPPORTED_LOCALES: Set<String> = setOf("en", "nl")
+        private val THEMED_IMAGE_ELEMENT_IDS: List<String> = listOf("logo", "logoDark", "background", "favicon")
+        private val HOST_PORT_PATTERN = Regex("""(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+])(?::\d{1,5})?""")
     }
 }

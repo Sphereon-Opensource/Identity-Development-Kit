@@ -10,9 +10,6 @@
 
 package com.sphereon.openid.oid4vci.issuer.config
 
-import com.sphereon.credential.issuance.pipeline.CredentialClaimsBinding
-import com.sphereon.credential.issuance.pipeline.DeferralPolicy
-import com.sphereon.credential.issuance.pipeline.SemanticAttributeSetRef
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,11 +27,10 @@ class DeferralWalletAuthValidatorTest {
 
     private fun binding(
         id: String,
-        policy: DeferralPolicy,
-    ): CredentialClaimsBinding =
-        CredentialClaimsBinding(
+        policy: CredentialDeferralPolicy,
+    ): DeferrableCredentialBinding =
+        DeferrableCredentialBinding(
             id = id,
-            semanticAttributeSetRef = SemanticAttributeSetRef(bundleId = "test"),
             deferralPolicy = policy,
         )
 
@@ -54,7 +50,7 @@ class DeferralWalletAuthValidatorTest {
         // Deferral fits inside the original token, so no remediation needed.
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = tenMinuteDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = tenMinuteDeferral))),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = false,
             )
@@ -65,7 +61,7 @@ class DeferralWalletAuthValidatorTest {
     fun deferrablePolicyWithRefreshTokenAndSufficientLifetimeIsOk() {
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig =
                     asConfig(
                         grantTypes = setOf("authorization_code", "refresh_token"),
@@ -81,7 +77,7 @@ class DeferralWalletAuthValidatorTest {
         // Refresh token enabled but its own lifetime is shorter than the deferral window.
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig =
                     asConfig(
                         grantTypes = setOf("authorization_code", "refresh_token"),
@@ -104,7 +100,7 @@ class DeferralWalletAuthValidatorTest {
         // cover the deferral window; refresh tokens irrelevant.
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = true,
                 deferralScopedTokenTtlSeconds = twoDayDeferral,
@@ -116,7 +112,7 @@ class DeferralWalletAuthValidatorTest {
     fun deferrablePolicyWithNoRefreshAndNoFallbackErrs() {
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = false,
             )
@@ -133,7 +129,7 @@ class DeferralWalletAuthValidatorTest {
                     listOf(
                         binding(
                             "pid",
-                            DeferralPolicy(enabled = false, maxDeferralSeconds = twoDayDeferral),
+                            CredentialDeferralPolicy(enabled = false, maxDeferralSeconds = twoDayDeferral),
                         ),
                     ),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
@@ -151,7 +147,7 @@ class DeferralWalletAuthValidatorTest {
         val ttl = twoDayDeferral - 1000L
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = true,
                 deferralScopedTokenTtlSeconds = ttl,
@@ -171,7 +167,7 @@ class DeferralWalletAuthValidatorTest {
         // TTL == maxDeferralSeconds is the boundary case the §6.5 invariant explicitly allows.
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = true,
                 deferralScopedTokenTtlSeconds = twoDayDeferral,
@@ -185,7 +181,7 @@ class DeferralWalletAuthValidatorTest {
         // sufficient because the validator cannot verify what the runtime will read.
         val result =
             DeferralWalletAuthValidator.validate(
-                claimsBindings = listOf(binding("pid", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
+                claimsBindings = listOf(binding("pid", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral))),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = true,
                 deferralScopedTokenTtlSeconds = null,
@@ -205,8 +201,8 @@ class DeferralWalletAuthValidatorTest {
             DeferralWalletAuthValidator.validate(
                 claimsBindings =
                     listOf(
-                        binding("first", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral)),
-                        binding("second", DeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral)),
+                        binding("first", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral)),
+                        binding("second", CredentialDeferralPolicy(enabled = true, maxDeferralSeconds = twoDayDeferral)),
                     ),
                 asConfig = asConfig(grantTypes = setOf("authorization_code"), refreshTokenLifetimeSeconds = 0),
                 deferralScopedTokenFallbackEnabled = false,

@@ -98,10 +98,11 @@ class HttpErrorRendererTest {
 
     @Test
     fun renderServiceUnavailableRetryAfterHeader() {
-        val error = IdkError.SERVICE_UNAVAILABLE_ERROR(
-            message = "Service is temporarily overloaded; slow down and retry later",
-            retryAfter = 3.seconds,
-        )
+        val error =
+            IdkError.SERVICE_UNAVAILABLE_ERROR(
+                message = "Service is temporarily overloaded; slow down and retry later",
+                retryAfter = 3.seconds,
+            )
         val response = renderer.render(error)
         assertEquals(503, response.statusCode)
         assertEquals("3", response.headers["Retry-After"])

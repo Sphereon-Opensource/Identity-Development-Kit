@@ -77,14 +77,32 @@ enum class TransformationStepType {
 data class TransformationStep(
     @SerialName("stepType")
     val stepType: TransformationStepType,
+    /**
+     * Dot-separated object field path (optionally prefixed with `$` or `$.`) into the input document.
+     * Addresses object fields only; arrays are out of scope for v1 and descending into one is an error,
+     * not a capability.
+     */
     @SerialName("sourcePath")
     val sourcePath: String? = null,
+    /**
+     * Dot-separated object field path (optionally prefixed with `$` or `$.`) into the output document.
+     * Addresses object fields only; arrays are out of scope for v1 and descending into one is an error,
+     * not a capability.
+     */
     @SerialName("targetPath")
     val targetPath: String? = null,
     @SerialName("value")
     val value: JsonElement? = null,
     @SerialName("expression")
     val expression: String? = null,
+    /**
+     * When true, a step whose source (MAP) or target leaf (REDACT) is absent succeeds as a no-op
+     * instead of failing with a path-not-found error. Defaults to false so a mismatched path fails
+     * loudly rather than letting the affected value pass through untransformed. Only governs a genuinely
+     * absent leaf whose parent is addressable; an unaddressable path shape always fails regardless.
+     */
+    @SerialName("allowMissing")
+    val allowMissing: Boolean = false,
     @SerialName("metadata")
     val metadata: Map<String, String> = emptyMap(),
 )

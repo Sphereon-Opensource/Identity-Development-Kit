@@ -19,13 +19,6 @@ package com.sphereon.openid.oid4vci.rest.impl.describe
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ApprovePipelineSessionEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeAttributesEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeViaCallbackEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.EvaluateCompletenessEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.FailPipelineSourceEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetSessionAttributesEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.InitPipelineSessionEndpointCommand
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferEndpointCommand
 import com.sphereon.openid.oid4vci.rest.DeleteCredentialOfferEndpointCommand
 import com.sphereon.openid.oid4vci.rest.GetCredentialOfferStatusEndpointCommand
@@ -68,13 +61,6 @@ class Oid4vciRestDescriptorProvider : HttpAdapterDescriptorProvider {
                     CreateCredentialOfferEndpointCommand.ENDPOINT,
                     GetCredentialOfferStatusEndpointCommand.ENDPOINT,
                     DeleteCredentialOfferEndpointCommand.ENDPOINT,
-                    InitPipelineSessionEndpointCommand.ENDPOINT,
-                    ContributeAttributesEndpointCommand.ENDPOINT,
-                    GetSessionAttributesEndpointCommand.ENDPOINT,
-                    EvaluateCompletenessEndpointCommand.ENDPOINT,
-                    ApprovePipelineSessionEndpointCommand.ENDPOINT,
-                    FailPipelineSourceEndpointCommand.ENDPOINT,
-                    ContributeViaCallbackEndpointCommand.ENDPOINT,
                 ).map { endpoint ->
                     endpoint.copy(pathPatterns = endpoint.pathPatterns.map { basePath + it })
                 },

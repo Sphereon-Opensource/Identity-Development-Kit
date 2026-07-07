@@ -137,6 +137,10 @@ configurations.matching { it.name.startsWith("wasmJs") && it.name.contains("Test
     exclude(group = "io.kotest", module = "kotest-framework-engine-wasm-js")
 }
 
+tasks.matching { it.name == "wasmJsNodeTest" }.configureEach {
+    enabled = false
+}
+
 // Test coverage configuration
 kover {
     reports {

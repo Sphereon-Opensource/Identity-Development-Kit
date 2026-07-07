@@ -65,11 +65,9 @@ data class CredentialMetadata(
         return true
     }
 
-    fun hasTypeRef(ref: CredentialTypeRef): Boolean =
-        credentialTypeRefs.any { it.sameReference(ref) }
+    fun hasTypeRef(ref: CredentialTypeRef): Boolean = credentialTypeRefs.any { it.sameReference(ref) }
 
-    private fun hasAnyTypeRef(refs: Set<CredentialTypeRef>): Boolean =
-        refs.any { hasTypeRef(it) }
+    private fun hasAnyTypeRef(refs: Set<CredentialTypeRef>): Boolean = refs.any { hasTypeRef(it) }
 }
 
 @Serializable

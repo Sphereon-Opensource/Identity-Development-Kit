@@ -13,20 +13,12 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ApprovePipelineSessionEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeAttributesEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeViaCallbackEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.DefaultOid4vciIssuerPublicUrlResolver
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.EvaluateCompletenessEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.FailPipelineSourceEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.FakeContributeAttributesCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetIssuerMetadataEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetSessionAttributesEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEndpointCommandImpl
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.InitPipelineSessionEndpointCommandImpl
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.IssueNonceEndpointCommandImpl
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -125,19 +117,6 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             fakeConfigProvider,
         )
     private val notificationCommand = HandleNotificationEndpointCommandImpl(execution, fakeHandleNotification, fakeConfigProvider)
-    private val contributeAttributesCommand = ContributeAttributesEndpointCommandImpl(execution, FakeContributeAttributesCommand())
-    private val initPipelineSessionCommand = InitPipelineSessionEndpointCommandImpl(execution, initPipelineSessionCommand = null)
-    private val evaluateCompletenessCommand = EvaluateCompletenessEndpointCommandImpl(execution, evaluateAttributeCompletenessCommand = null)
-    private val getSessionAttributesCommand = GetSessionAttributesEndpointCommandImpl(execution, getSessionAttributesCommand = null)
-    private val contributeViaCallbackCommand =
-        ContributeViaCallbackEndpointCommandImpl(
-            execution,
-            callbackTokenService = null,
-            contributeAttributesCommand = null,
-            callbackCoordinator = null,
-        )
-    private val failPipelineSourceCommand = FailPipelineSourceEndpointCommandImpl(execution, failPipelineSourceCommand = null)
-    private val approvePipelineSessionCommand = ApprovePipelineSessionEndpointCommandImpl(execution, approvePipelineSessionCommand = null)
 
     // Adapters
     private val metadataAdapter =
@@ -158,13 +137,6 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             credentialCommand,
             deferredCommand,
             notificationCommand,
-            contributeAttributesCommand,
-            initPipelineSessionCommand,
-            evaluateCompletenessCommand,
-            getSessionAttributesCommand,
-            contributeViaCallbackCommand,
-            failPipelineSourceCommand,
-            approvePipelineSessionCommand,
         )
 
     // ========================================================================

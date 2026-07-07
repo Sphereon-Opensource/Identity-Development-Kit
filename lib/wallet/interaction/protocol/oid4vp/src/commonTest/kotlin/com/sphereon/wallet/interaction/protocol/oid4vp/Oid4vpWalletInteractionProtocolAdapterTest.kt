@@ -41,6 +41,7 @@ import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.credential.KeyRef
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.interaction.WalletClaimDescriptor
+import com.sphereon.wallet.interaction.WalletCounterpartyRole
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustRequest
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustResolver
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary
@@ -50,6 +51,7 @@ import com.sphereon.wallet.interaction.WalletCredentialSelectionRequest
 import com.sphereon.wallet.interaction.WalletDisclosureSummary
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
+import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
@@ -97,6 +99,58 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val match = adapter.canHandle(WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"))
 
             assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+        }
+
+    @Test
+    fun loginPurposeMetadataProjectsLoginActivityAndVerifierContext() =
+        runTest {
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    holder = RecordingOid4vpHolderService(resolvedRequest = resolvedRequest()),
+                )
+            val context = walletContext(attributes = mapOf("interaction_purpose" to "login"))
+
+            val session = adapter.start(context, WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"))
+
+            assertEquals(WalletInteractionActivityType.LOGIN, session.state.activity?.type)
+            assertEquals(WalletCounterpartyRole.VERIFIER, session.state.counterparty?.role)
+            assertEquals(
+                "login",
+                session.state.counterparty
+                    ?.metadata
+                    ?.get("interaction_context")
+            )
+            assertEquals(
+                "LOGIN",
+                session.state.counterparty
+                    ?.metadata
+                    ?.get("activity_type")
+            )
+            assertEquals(
+                "login",
+                session.state.activity
+                    ?.metadata
+                    ?.get("interaction_context")
+            )
+        }
+
+    @Test
+    fun genericOid4vpPresentationKeepsPresentationActivity() =
+        runTest {
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    holder = RecordingOid4vpHolderService(resolvedRequest = resolvedRequest()),
+                )
+
+            val session = adapter.start(walletContext(), WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"))
+
+            assertEquals(WalletInteractionActivityType.CREDENTIAL_PRESENTATION, session.state.activity?.type)
+            assertEquals(
+                "presentation",
+                session.state.counterparty
+                    ?.metadata
+                    ?.get("interaction_context")
+            )
         }
 
     @Test

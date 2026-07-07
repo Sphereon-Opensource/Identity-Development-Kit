@@ -79,7 +79,15 @@ class RegistryBackedOid4vpVerifierConfigProvider(
             instanceIdProvider
                 .currentInstanceId()
                 ?.takeIf { it.isNotBlank() }
-                ?.let { "$INSTANCES_NAMESPACE.$it" }
+                ?.let { instanceId ->
+                    val configService = execution.conf.conf(com.sphereon.core.api.conf.ConfigLevel.PRINCIPAL)
+                    configService
+                        .getPropertyAsString("$SERVICE_CONFIG_BINDING_BY_PARTY_PREFIX.$instanceId.config-key-prefix", null)
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "$INSTANCES_NAMESPACE.$instanceId"
+                }
                 ?: ConfigDrivenRequestObjectSigningConfig.NAMESPACE
         },
     )
+
+private const val SERVICE_CONFIG_BINDING_BY_PARTY_PREFIX = "_derived.software.config-bindings.by-party"

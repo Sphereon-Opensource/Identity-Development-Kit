@@ -31,12 +31,18 @@ private const val DEFAULT_INTERCEPTOR_ORDER = 100
  * @property commandId The hierarchical command ID (e.g., "did.manager.resolve")
  * @property parsedCommandId Parsed CommandId, or null if not a valid 3-segment ID
  * @property subsystem The event subsystem this command belongs to
+ * @property tenantId The tenant associated with the active command execution, if available
+ * @property principalId The principal associated with the active command execution, if available
+ * @property correlationId The correlation identifier associated with the active command execution, if available
  */
 @JsExportCompat
 data class CommandExecutionContext(
     val commandId: String,
     val parsedCommandId: CommandId?,
     val subsystem: String?,
+    val tenantId: String? = null,
+    val principalId: String? = null,
+    val correlationId: String? = null,
 )
 
 /**

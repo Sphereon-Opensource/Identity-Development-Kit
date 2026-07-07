@@ -35,7 +35,6 @@ import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
 import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcementRequest
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
-import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcer as PersistedKeyAttestationEvidenceEnforcer
 import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -53,6 +52,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.putJsonArray
 import kotlin.time.Clock
+import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcer as PersistedKeyAttestationEvidenceEnforcer
 
 /**
  * OID4VCI 1.0 §7.2 key-attestation JWT verifier.
@@ -220,8 +220,9 @@ class KeyAttestationVerifier(
                 .getOrElse { return Err(it) }
         val keyAttestationEvidence =
             if (policy != null && genericKeyAttestationEvidence != null) {
-                val enforcer = persistedEvidenceEnforcer
-                    ?: return invalidProof("production key attestation requires persisted Wallet Unit evidence enforcement")
+                val enforcer =
+                    persistedEvidenceEnforcer
+                        ?: return invalidProof("production key attestation requires persisted Wallet Unit evidence enforcement")
                 enforcer
                     .enforce(
                         KeyAttestationEvidenceEnforcementRequest(
@@ -353,12 +354,16 @@ class KeyAttestationVerifier(
                 ?: return invalidProof("key attestation 'attested_keys[$index]' is not a JSON object")
         val jwkObj =
             when {
-                obj["kty"] != null -> obj
-                else ->
+                obj["kty"] != null -> {
+                    obj
+                }
+
+                else -> {
                     parseEmbeddedPublicJwk(obj["publicKeyJwk"] ?: obj["public_key_jwk"] ?: obj["jwk"])
                         ?: return invalidProof(
                             "key attestation 'attested_keys[$index]' does not contain a JWK or publicKeyJwk",
                         )
+                }
             }
         val jwk =
             runCatching { Jwk.fromJsonObject(jwkObj) }.getOrElse {
@@ -369,11 +374,18 @@ class KeyAttestationVerifier(
 
     private fun parseEmbeddedPublicJwk(element: JsonElement?): JsonObject? =
         when (element) {
-            is JsonObject -> element
-            is JsonPrimitive ->
+            is JsonObject -> {
+                element
+            }
+
+            is JsonPrimitive -> {
                 element.contentOrNull
                     ?.let { value -> runCatching { Json.parseToJsonElement(value).jsonObject }.getOrNull() }
-            else -> null
+            }
+
+            else -> {
+                null
+            }
         }
 
     private fun JsonObject.audienceContains(expectedAudience: String): Boolean =

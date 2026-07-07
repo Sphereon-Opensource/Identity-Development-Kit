@@ -16,6 +16,8 @@
 
 package com.sphereon.oauth2.server.authorization.provider
 
+import com.sphereon.conf.theme.core.model.ResolvedFeature
+import com.sphereon.conf.theme.core.model.ResolvedTheme
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
@@ -97,6 +99,30 @@ data class LoginPageContext(
      * back to deriving the base from [returnUrl] when this is blank (transitional).
      */
     val formActionBase: String = "",
+    /**
+     * Tenant-resolved LIGHT theme for this render, or null when no theme resolver is assembled,
+     * no tenant is known, or resolution failed. Renderers treat null as "use built-in defaults";
+     * theming is never allowed to break the login page.
+     */
+    val resolvedThemeLight: ResolvedTheme? = null,
+    /**
+     * Tenant-resolved DARK theme for this render. Same null semantics as [resolvedThemeLight];
+     * when null, renderers fall back to their built-in dark palette.
+     */
+    val resolvedThemeDark: ResolvedTheme? = null,
+    /**
+     * The resolved `login` feature (design elements such as logo, background, favicon, tagline)
+     * for the AS application this render serves. Null when feature resolution is not assembled
+     * or failed; renderers then fall back to [resolvedThemeLight]/[resolvedThemeDark] branding
+     * metadata and their own defaults.
+     */
+    val loginFeature: ResolvedFeature? = null,
+    /**
+     * The `login` feature resolved with the DARK variant, so DARK-variant element bindings win
+     * inside dark-scheme blocks. Null with the same semantics as [loginFeature]; renderers then
+     * fall back to [loginFeature]'s dark-specific elements and branding metadata.
+     */
+    val loginFeatureDark: ResolvedFeature? = null,
 )
 
 /**

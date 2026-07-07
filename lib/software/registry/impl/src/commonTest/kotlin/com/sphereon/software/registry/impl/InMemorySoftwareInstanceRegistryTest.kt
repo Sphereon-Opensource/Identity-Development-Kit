@@ -214,14 +214,6 @@ class InMemorySoftwareInstanceRegistryTest {
         }
 
     @Test
-    fun attributeSourceCapabilityHasNoConfigNamespace() =
-        runTest {
-            val registry = registryWith(props)
-
-            assertTrue(registry.list(tenant, SoftwareCapabilityType.ATTRIBUTE_SOURCE).isEmpty())
-        }
-
-    @Test
     fun listIsEmptyWhenNamespaceUnconfigured() =
         runTest {
             val registry = registryWith(emptyMap())

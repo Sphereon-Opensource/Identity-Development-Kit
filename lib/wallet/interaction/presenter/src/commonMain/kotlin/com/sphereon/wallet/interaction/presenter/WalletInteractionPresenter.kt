@@ -8,6 +8,7 @@ package com.sphereon.wallet.interaction.presenter
 
 import androidx.compose.runtime.Composable
 import com.sphereon.wallet.interaction.WalletInteractionAction
+import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
@@ -84,7 +85,8 @@ class WalletInteractionMoleculePresenter : MoleculePresenter<WalletInteractionSt
 fun WalletInteractionState.toScreenModel(): WalletInteractionScreenModel {
     val displayMessage = message
     val displayError = error
-    val titleKey = displayMessage?.titleKey ?: status.titleKey()
+    val loginPresentation = activity?.type == WalletInteractionActivityType.LOGIN
+    val titleKey = displayMessage?.titleKey ?: status.titleKey(loginPresentation)
     val titleArguments = displayMessage?.arguments?.takeIf { displayMessage.titleKey != null } ?: titleArguments()
     val subtitleKey = displayMessage?.textKey ?: displayError?.messageKey
     val subtitleArguments =
@@ -113,7 +115,14 @@ fun WalletInteractionState.toScreenModel(): WalletInteractionScreenModel {
             }
 
             WalletInteractionStatus.DisclosureConsent -> {
-                WalletInteractionScreenAction("wallet.interaction.action.share", WalletInteractionAction.continueFlow())
+                WalletInteractionScreenAction(
+                    if (loginPresentation) {
+                        "wallet.interaction.action.sign_in"
+                    } else {
+                        "wallet.interaction.action.share"
+                    },
+                    WalletInteractionAction.continueFlow(),
+                )
             }
 
             WalletInteractionStatus.DeferredRetrievalPending -> {
@@ -164,8 +173,21 @@ fun WalletInteractionState.toScreenModel(): WalletInteractionScreenModel {
     )
 }
 
-private fun WalletInteractionStatus.titleKey(): String =
-    when (this) {
+private fun WalletInteractionStatus.titleKey(loginPresentation: Boolean): String {
+    if (loginPresentation) {
+        when (this) {
+            WalletInteractionStatus.TrustReview -> return "wallet.interaction.login.status.trust_review"
+            WalletInteractionStatus.CredentialSelection -> return "wallet.interaction.login.status.credential_selection"
+            WalletInteractionStatus.DisclosureConsent -> return "wallet.interaction.login.status.disclosure_consent"
+            WalletInteractionStatus.SecurityUnlockRequired -> return "wallet.interaction.login.status.security_unlock_required"
+            WalletInteractionStatus.AuthorizationRequired -> return "wallet.interaction.login.status.authorization_required"
+            WalletInteractionStatus.Sharing -> return "wallet.interaction.login.status.signing_in"
+            WalletInteractionStatus.Completed -> return "wallet.interaction.login.status.completed"
+            else -> Unit
+        }
+    }
+
+    return when (this) {
         WalletInteractionStatus.ResolvingEntryPoint -> "wallet.interaction.status.resolving_entry_point"
         WalletInteractionStatus.ImplementationChoiceRequired -> "wallet.interaction.status.implementation_choice_required"
         WalletInteractionStatus.UnsupportedEntryPoint -> "wallet.interaction.status.unsupported_entry_point"
@@ -185,6 +207,7 @@ private fun WalletInteractionStatus.titleKey(): String =
         WalletInteractionStatus.Cancelled -> "wallet.interaction.status.cancelled"
         WalletInteractionStatus.Failed -> "wallet.interaction.status.failed"
     }
+}
 
 private fun WalletInteractionState.titleArguments(): Map<String, String> =
     buildMap {

@@ -103,10 +103,10 @@ class CreateCredentialOfferServiceCommandImpl(
                 txCodeLength = txCodeConfig?.length,
                 txCodeInputMode = txCodeConfig?.inputMode,
                 preSeededAttributes = input.credentialSubjectData,
+                initialLifecycleFields = input.initialConnectorFields,
                 offerTtlSeconds = input.ttlSeconds ?: CredentialOfferSessionStore.DEFAULT_TTL_SECONDS,
                 scheme = input.scheme,
                 uriLifecycle = input.uriLifecycle,
-                initialLookupKeys = input.initialLookupKeys,
                 rateLimit = input.rateLimit,
             )
 
@@ -132,6 +132,7 @@ class CreateCredentialOfferServiceCommandImpl(
                 txCodeLength = createArgs.txCodeLength,
                 txCodeInputMode = createArgs.txCodeInputMode,
                 preSeededAttributes = createArgs.preSeededAttributes,
+                initialConnectorFields = createArgs.initialLifecycleFields,
                 offerTtlSeconds = createArgs.offerTtlSeconds,
                 scheme = createArgs.scheme,
             )
@@ -149,7 +150,6 @@ class CreateCredentialOfferServiceCommandImpl(
                 expiresAt = now + (ttl * 1000),
                 uriLifecycle = input.uriLifecycle,
                 rateLimit = input.rateLimit,
-                initialLookupKeys = input.initialLookupKeys,
                 offerTemplate = offerTemplate,
             )
 

@@ -82,12 +82,12 @@ class Oid4vciIssuerExternalIdentifierResolutionServiceImpl(
         applyDuring: (ExternalIdentifierOptsOrResult) -> ExternalIdentifierOptsOrResult,
     ): IdkResult<Oid4vciIssuerExternalIdentifierResult, IdkErrorType> {
         val opts = asSupportedOpts(args).value
-        val issuerUrl = opts.identifier.trimEnd('/')
+        val issuerUrl = Oid4vciUrls.buildIssuerUrl(opts.identifier)
         if (issuerUrl.isBlank()) {
             return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "OID4VCI issuer URL is blank").asErrorResult()
         }
 
-        val wellKnownUrl = Oid4vciUrls.buildWellKnownUrl(issuerUrl)
+        val wellKnownUrl = Oid4vciUrls.buildWellKnownUrl(opts.identifier)
 
         val httpClient =
             try {

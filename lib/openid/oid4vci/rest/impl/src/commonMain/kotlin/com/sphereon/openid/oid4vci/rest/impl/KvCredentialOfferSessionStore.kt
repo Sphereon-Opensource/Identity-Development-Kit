@@ -16,7 +16,6 @@
 
 package com.sphereon.openid.oid4vci.rest.impl
 
-import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -44,7 +43,6 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -202,7 +200,6 @@ class KvCredentialOfferSessionStore(
         val uriLifecycle: String = OfferUriLifecycle.SINGLE_USE.name,
         val rateLimitMaxPerWindow: Int? = null,
         val rateLimitWindowSeconds: Long? = null,
-        val initialLookupKeysJson: String? = null,
         val offerTemplate: CredentialOfferTemplate? = null,
     ) {
         fun toPublic(): CredentialOfferSession {
@@ -226,12 +223,6 @@ class KvCredentialOfferSessionStore(
                 } else {
                     null
                 }
-            val resolvedLookupKeys: List<LookupKey> =
-                initialLookupKeysJson?.let { jsonStr ->
-                    runCatching {
-                        Json.decodeFromString(ListSerializer(LookupKey.serializer()), jsonStr)
-                    }.getOrElse { emptyList() }
-                } ?: emptyList()
             return CredentialOfferSession(
                 correlationId = correlationId,
                 offerId = offerId,
@@ -246,7 +237,6 @@ class KvCredentialOfferSessionStore(
                 expiresAt = expiresAt,
                 uriLifecycle = resolvedLifecycle,
                 rateLimit = resolvedRateLimit,
-                initialLookupKeys = resolvedLookupKeys,
                 offerTemplate = offerTemplate,
             )
         }
@@ -268,14 +258,6 @@ class KvCredentialOfferSessionStore(
                     uriLifecycle = session.uriLifecycle.name,
                     rateLimitMaxPerWindow = session.rateLimit?.maxPerWindow,
                     rateLimitWindowSeconds = session.rateLimit?.windowSeconds,
-                    initialLookupKeysJson =
-                        if (session.initialLookupKeys.isEmpty()) {
-                            null
-                        } else {
-                            runCatching {
-                                Json.encodeToString(ListSerializer(LookupKey.serializer()), session.initialLookupKeys)
-                            }.getOrNull()
-                        },
                     offerTemplate = session.offerTemplate,
                 )
         }

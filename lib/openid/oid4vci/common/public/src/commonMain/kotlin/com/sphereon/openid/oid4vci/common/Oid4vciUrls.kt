@@ -29,16 +29,39 @@ object Oid4vciUrls {
      */
     fun buildWellKnownUrl(issuerUrl: String): String {
         val normalized = issuerUrl.trimEnd('/')
+        if (normalized.contains(WELL_KNOWN_PATH)) {
+            return normalized
+        }
         val schemeEnd = normalized.indexOf("://") + SCHEME_SEPARATOR_LENGTH
         val pathStart = normalized.indexOf('/', schemeEnd)
         return if (pathStart < 0) {
-            "$normalized/.well-known/openid-credential-issuer"
+            "$normalized$WELL_KNOWN_PATH"
         } else {
             val host = normalized.substring(0, pathStart)
             val path = normalized.substring(pathStart)
-            "$host/.well-known/openid-credential-issuer$path"
+            "$host$WELL_KNOWN_PATH$path"
         }
     }
+
+    /**
+     * Returns the issuer identifier represented by either an issuer URL or a full metadata URL.
+     *
+     * OID4VCI inserts `/.well-known/openid-credential-issuer` between host and issuer path, so the
+     * reverse operation removes that segment and preserves the suffix as the issuer path.
+     */
+    fun buildIssuerUrl(issuerOrWellKnownUrl: String): String {
+        val normalized = issuerOrWellKnownUrl.trimEnd('/')
+        val schemeEnd = normalized.indexOf("://") + SCHEME_SEPARATOR_LENGTH
+        val wellKnownStart = normalized.indexOf(WELL_KNOWN_PATH, schemeEnd)
+        if (wellKnownStart < 0) {
+            return normalized
+        }
+        val host = normalized.substring(0, wellKnownStart)
+        val issuerPath = normalized.substring(wellKnownStart + WELL_KNOWN_PATH.length)
+        return "$host$issuerPath".trimEnd('/')
+    }
+
+    const val WELL_KNOWN_PATH = "/.well-known/openid-credential-issuer"
 
     private const val SCHEME_SEPARATOR_LENGTH = 3
 }

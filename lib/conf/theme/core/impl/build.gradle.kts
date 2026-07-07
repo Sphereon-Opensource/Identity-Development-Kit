@@ -37,6 +37,12 @@ kotlin {
                 implementation(sphereonlib.software.amazon.app.platform.scope.public)
             }
         }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+            }
+        }
         val jvmTest by getting {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test.junit5)

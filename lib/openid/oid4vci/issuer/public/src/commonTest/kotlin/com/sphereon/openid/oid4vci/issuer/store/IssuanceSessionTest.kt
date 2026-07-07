@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 
 class IssuanceSessionTest {
     @Test
-    fun pipelineCorrelationIdDefaultsToNullAndRoundTrips() {
+    fun lifecycleCorrelationIdDefaultsToNullAndRoundTrips() {
         val s =
             IssuanceSession(
                 sessionId = "s1",
@@ -34,12 +34,12 @@ class IssuanceSessionTest {
                 createdAt = 0,
                 expiresAt = 1,
             )
-        assertNull(s.pipelineCorrelationId)
-        val linked = s.copy(pipelineCorrelationId = "corr-1")
+        assertNull(s.lifecycleCorrelationId)
+        val linked = s.copy(lifecycleCorrelationId = "corr-1")
         val json = Json.encodeToString(IssuanceSession.serializer(), linked)
-        assertTrue("pipelineCorrelationId" in json)
+        assertTrue("lifecycleCorrelationId" in json)
         assertEquals(linked, Json.decodeFromString(IssuanceSession.serializer(), json))
         val nullJson = Json.encodeToString(IssuanceSession.serializer(), s)
-        assertNull(Json.decodeFromString(IssuanceSession.serializer(), nullJson).pipelineCorrelationId)
+        assertNull(Json.decodeFromString(IssuanceSession.serializer(), nullJson).lifecycleCorrelationId)
     }
 }

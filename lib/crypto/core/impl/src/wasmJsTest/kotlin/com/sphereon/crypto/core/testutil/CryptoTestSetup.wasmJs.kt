@@ -20,3 +20,5 @@ import com.sphereon.crypto.core.createWasmJsCryptoTestAppGraph
 import com.sphereon.di.app.AppGraph
 
 actual fun createCryptoTestAppGraph(testInstance: Any): AppGraph = createWasmJsCryptoTestAppGraph(testInstance)
+
+actual fun supportsDigestSignatureRoundTrip(): Boolean = false

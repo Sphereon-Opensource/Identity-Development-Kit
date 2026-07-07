@@ -25,7 +25,6 @@ import kotlinx.serialization.Serializable
 enum class DataFlowRole {
     SOURCE,
     DESTINATION,
-    SOURCE_AND_DESTINATION,
 }
 
 /**
@@ -147,11 +146,23 @@ enum class OperationKind {
     SEARCH,
     IMPORT,
     EXPORT,
-    STREAM_READ,
-    STREAM_WRITE,
     INVOKE,
     DISCOVER,
     VALIDATE,
+}
+
+/**
+ * Transfer mode used by an operation binding.
+ *
+ * Streaming and batching are execution semantics for a logical operation. Keep the logical
+ * operation kind stable, and use this value to describe how records are transferred.
+ */
+@JsExportCompat
+@Serializable
+enum class OperationTransferMode {
+    SINGLE,
+    BATCH,
+    STREAM,
 }
 
 /**

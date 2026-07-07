@@ -18,11 +18,11 @@ package com.sphereon.wallet.cli
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.wallet.credential.CredentialMetadata
-import com.sphereon.wallet.credential.CredentialRecord
 import com.sphereon.wallet.ObtainCredentialRequest
 import com.sphereon.wallet.ObtainCredentialResult
 import com.sphereon.wallet.WalletConfig
+import com.sphereon.wallet.credential.CredentialMetadata
+import com.sphereon.wallet.credential.CredentialRecord
 import com.sphereon.wallet.impl.WalletBootstrap
 import kotlinx.coroutines.runBlocking
 

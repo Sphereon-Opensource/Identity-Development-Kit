@@ -30,8 +30,8 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ResolvedKeyInfo
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.Curve
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpDigest
 import com.sphereon.crypto.core.interop.resolveRSAKmpDigest
@@ -510,7 +510,8 @@ class VerifyJwsCommandImpl(
                 require(curve is Curve.Ed25519 || curve is Curve.Ed448) {
                     "OKP verification curve must be Ed25519 or Ed448, was $curve"
                 }
-                key.toEdDsaPublicKey(provider = cryptoProvider, curve = curve)
+                key
+                    .toEdDsaPublicKey(provider = cryptoProvider, curve = curve)
                     .signatureVerifier()
                     .tryVerifySignature(input, signature)
             }
@@ -522,7 +523,8 @@ class VerifyJwsCommandImpl(
                         ?: key.getSignatureAlgorithm()
                         ?: SignatureAlgorithm.ECDSA_SHA256
                 val digest = resolveEcdsaKmpDigest(signatureAlgorithm)
-                key.toEcdsaPublicKey(provider = cryptoProvider, curve = curve)
+                key
+                    .toEcdsaPublicKey(provider = cryptoProvider, curve = curve)
                     .signatureVerifier(digest = digest, format = ECDSA.SignatureFormat.RAW)
                     .tryVerifySignature(input, signature)
             }
@@ -534,11 +536,13 @@ class VerifyJwsCommandImpl(
                         ?: SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1
                 val digest = resolveRSAKmpDigest(signatureAlgorithm)
                 if (signatureAlgorithm.isRsaPss()) {
-                    key.toRsaPssPublicKey(provider = cryptoProvider, digest = digest)
+                    key
+                        .toRsaPssPublicKey(provider = cryptoProvider, digest = digest)
                         .signatureVerifier()
                         .tryVerifySignature(input, signature)
                 } else {
-                    key.toRsaPkcs1PublicKey(provider = cryptoProvider, digest = digest)
+                    key
+                        .toRsaPkcs1PublicKey(provider = cryptoProvider, digest = digest)
                         .signatureVerifier()
                         .tryVerifySignature(input, signature)
                 }

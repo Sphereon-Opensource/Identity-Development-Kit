@@ -92,27 +92,30 @@ class SessionContextManagerTest {
                 )
             val sessionManager = userContextInstance.sessionContextManager
             val factory = DefaultSessionContextFactory()
-            val resolution = IdentityResolutionResult(
-                tenantId = "test-tenant",
-                principalId = "transient-service",
-                principalType = PrincipalType.SERVICE,
-                metadata = IdentityMetadata(resolvedFrom = ResolutionSource.DEFAULT),
-            )
+            val resolution =
+                IdentityResolutionResult(
+                    tenantId = "test-tenant",
+                    principalId = "transient-service",
+                    principalType = PrincipalType.SERVICE,
+                    metadata = IdentityMetadata(resolvedFrom = ResolutionSource.DEFAULT),
+                )
 
-            val first = sessionManager.createOrGetFromCallbacks {
-                factory.create(
-                    sessionId = "transient-fetch",
-                    correlationId = "transient-fetch:first",
-                    resolution = resolution,
-                )
-            }
-            val second = sessionManager.createOrGetFromCallbacks {
-                factory.create(
-                    sessionId = "transient-fetch",
-                    correlationId = "transient-fetch:second",
-                    resolution = resolution,
-                )
-            }
+            val first =
+                sessionManager.createOrGetFromCallbacks {
+                    factory.create(
+                        sessionId = "transient-fetch",
+                        correlationId = "transient-fetch:first",
+                        resolution = resolution,
+                    )
+                }
+            val second =
+                sessionManager.createOrGetFromCallbacks {
+                    factory.create(
+                        sessionId = "transient-fetch",
+                        correlationId = "transient-fetch:second",
+                        resolution = resolution,
+                    )
+                }
 
             assertSame(first, second)
 

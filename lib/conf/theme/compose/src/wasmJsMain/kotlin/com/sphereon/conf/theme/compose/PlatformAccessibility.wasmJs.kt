@@ -20,5 +20,4 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 
 @Composable
-actual fun rememberPlatformAccessibilityState(): AccessibilityState =
-    remember { AccessibilityState() }
+actual fun rememberPlatformAccessibilityState(): AccessibilityState = remember { AccessibilityState() }

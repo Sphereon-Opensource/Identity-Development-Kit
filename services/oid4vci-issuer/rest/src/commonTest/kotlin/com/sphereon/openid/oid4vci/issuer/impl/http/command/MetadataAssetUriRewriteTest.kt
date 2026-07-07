@@ -118,6 +118,29 @@ class MetadataAssetUriRewriteTest {
     }
 
     @Test
+    fun rewritesPublicAssetUrisToOriginWhenIssuerBaseCarriesPath() {
+        val metadata =
+            CredentialIssuerMetadata(
+                credentialIssuer = "$ACME_BASE/oid4vci",
+                credentialEndpoint = "$ACME_BASE/oid4vci/api/oid4vci/v1/credential",
+                display =
+                    listOf(
+                        DisplayProperties(
+                            name = "Acme",
+                            logo = LogoProperties(uri = RELATIVE_LOGO),
+                            backgroundImage = ImageProperties(uri = RELATIVE_BG),
+                        ),
+                    ),
+                credentialConfigurationsSupported = emptyMap(),
+            )
+
+        val rewritten = metadata.withAbsoluteAssetUris("$ACME_BASE/oid4vci")
+
+        assertEquals("$ACME_BASE$RELATIVE_LOGO", rewritten.display!!.single().logo!!.uri)
+        assertEquals("$ACME_BASE$RELATIVE_BG", rewritten.display!!.single().backgroundImage!!.uri)
+    }
+
+    @Test
     fun issuerMetadataRewriteIsNoOpWithoutBase() {
         val metadata =
             CredentialIssuerMetadata(
@@ -164,6 +187,27 @@ class MetadataAssetUriRewriteTest {
             "https://schemas.example.com/types/External",
             rewritten.credentialConfigurationsSupported.getValue("External").vct,
         )
+    }
+
+    @Test
+    fun rewritesHostedVctUrlsToOriginWhenIssuerBaseCarriesPath() {
+        val metadata =
+            CredentialIssuerMetadata(
+                credentialIssuer = "$ACME_BASE/oid4vci",
+                credentialEndpoint = "$ACME_BASE/oid4vci/api/oid4vci/v1/credential",
+                credentialConfigurationsSupported =
+                    mapOf(
+                        "EuPid" to
+                            CredentialConfigurationSupported(
+                                format = "dc+sd-jwt",
+                                vct = "$ACME_BASE/oid4vci/public/schema/vct/EuPid",
+                            ),
+                    ),
+            )
+
+        val rewritten = metadata.withHostedVctUrls("$ACME_BASE/oid4vci")
+
+        assertEquals("$ACME_BASE/public/schema/vct/EuPid", rewritten.credentialConfigurationsSupported.getValue("EuPid").vct)
     }
 
     @Test

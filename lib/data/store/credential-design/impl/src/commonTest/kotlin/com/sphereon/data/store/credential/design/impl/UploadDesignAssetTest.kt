@@ -68,7 +68,7 @@ import kotlin.uuid.Uuid
  * Unit tests for [DefaultCredentialDesignService.uploadDesignAsset] and [getDesignAssetByHash].
  *
  * Verifies the CONTENT-ADDRESSED hosting scheme:
- * - the returned [com.sphereon.data.store.credential.design.model.AssetReference.uri] ends with
+ * - the returned [com.sphereon.data.store.asset.model.AssetReference.uri] ends with
  *   `/public/assets/design/<64-hex-sha256>` (absolute when an external base URL is configured,
  *   relative otherwise), and carries a matching `integrity = "sha256-<base64>"`.
  * - uploading the SAME bytes twice yields the SAME uri/hash (dedup) and does not re-write the blob.

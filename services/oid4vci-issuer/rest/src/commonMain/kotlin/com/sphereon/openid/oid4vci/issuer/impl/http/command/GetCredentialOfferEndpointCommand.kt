@@ -186,8 +186,8 @@ class GetCredentialOfferEndpointCommandImpl(
      * the inner protocol content is fresh per fetch.
      *
      * The reusable-URI fields ([CredentialOfferSession.uriLifecycle],
-     * [CredentialOfferSession.rateLimit], [CredentialOfferSession.initialLookupKeys]) are replayed
-     * from the session itself; the rest come from the template.
+     * [CredentialOfferSession.rateLimit]) are replayed from the session itself; the rest come
+     * from the template.
      */
     private suspend fun mintFreshOffer(offerSession: CredentialOfferSession): IdkResult<CredentialOffer, IdkError> {
         val template =
@@ -208,10 +208,10 @@ class GetCredentialOfferEndpointCommandImpl(
                 authorizationCodeGrant = template.authorizationCodeGrant,
                 txCodeRequired = template.txCodeRequired,
                 preSeededAttributes = template.preSeededAttributes,
+                initialLifecycleFields = template.initialConnectorFields,
                 offerTtlSeconds = template.offerTtlSeconds,
                 scheme = template.scheme,
                 uriLifecycle = offerSession.uriLifecycle,
-                initialLookupKeys = offerSession.initialLookupKeys,
                 rateLimit = offerSession.rateLimit,
             )
 

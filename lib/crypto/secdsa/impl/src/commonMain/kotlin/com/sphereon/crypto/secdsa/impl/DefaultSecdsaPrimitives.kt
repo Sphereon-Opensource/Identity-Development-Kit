@@ -45,8 +45,8 @@ import com.sphereon.crypto.secdsa.SecdsaCurve
 import com.sphereon.crypto.secdsa.SecdsaDigestSigner
 import com.sphereon.crypto.secdsa.SecdsaEncryptedData
 import com.sphereon.crypto.secdsa.SecdsaEncryptedInstruction
-import com.sphereon.crypto.secdsa.SecdsaEqDlogProof
 import com.sphereon.crypto.secdsa.SecdsaEqDlogPair
+import com.sphereon.crypto.secdsa.SecdsaEqDlogProof
 import com.sphereon.crypto.secdsa.SecdsaExecutedInstruction
 import com.sphereon.crypto.secdsa.SecdsaFullEcdsaSignature
 import com.sphereon.crypto.secdsa.SecdsaInstructionExecutionState
@@ -124,7 +124,10 @@ class DefaultSecdsaPrimitives : SecdsaPrimitives {
     ): ByteArray {
         val normalized = point.toSignumPoint()
         return when (format) {
-            SecdsaPointFormat.UNCOMPRESSED -> byteArrayOf(0x04) + normalized.xBytes + normalized.yBytes
+            SecdsaPointFormat.UNCOMPRESSED -> {
+                byteArrayOf(0x04) + normalized.xBytes + normalized.yBytes
+            }
+
             SecdsaPointFormat.COMPRESSED -> {
                 val prefix = if (normalized.y.residue.bitAt(0)) 0x03.toByte() else 0x02.toByte()
                 byteArrayOf(prefix) + normalized.xBytes
@@ -150,7 +153,9 @@ class DefaultSecdsaPrimitives : SecdsaPrimitives {
                     .toSecdsaPoint()
             }
 
-            else -> throw IllegalArgumentException("Unsupported EC point prefix: ${encoded.first()}")
+            else -> {
+                throw IllegalArgumentException("Unsupported EC point prefix: ${encoded.first()}")
+            }
         }
     }
 
@@ -171,8 +176,7 @@ class DefaultSecdsaPrimitives : SecdsaPrimitives {
         point: SecdsaPoint,
     ): SecdsaPoint = (scalar.toBigInteger().requireNonZero("scalar") * point.toSignumPoint()).toSecdsaPoint()
 
-    override fun inverse(scalar: SecdsaScalar): SecdsaScalar =
-        SecdsaScalar(toScalarBytes(scalar.toBigInteger().requireNonZero("scalar").modInverse(order)))
+    override fun inverse(scalar: SecdsaScalar): SecdsaScalar = SecdsaScalar(toScalarBytes(scalar.toBigInteger().requireNonZero("scalar").modInverse(order)))
 
     override fun multiplyScalars(
         left: SecdsaScalar,
@@ -655,8 +659,7 @@ class DefaultSecdsaPrimitives : SecdsaPrimitives {
         }
     }
 
-    private fun trustedChallengePrimaryHash(derivedScalars: List<BigInteger>): ByteArray =
-        hash(derivedScalars.fold(ByteArray(0)) { acc, scalar -> acc + toScalarBytes(scalar) }, DigestAlg.SHA256)
+    private fun trustedChallengePrimaryHash(derivedScalars: List<BigInteger>): ByteArray = hash(derivedScalars.fold(ByteArray(0)) { acc, scalar -> acc + toScalarBytes(scalar) }, DigestAlg.SHA256)
 
     private fun sumScalarPointProducts(
         scalars: List<BigInteger>,
@@ -875,25 +878,27 @@ class DefaultSecdsaPrimitives : SecdsaPrimitives {
         private var bytes = ByteArray(0)
 
         fun appendInt(value: Int) {
-            bytes += byteArrayOf(
-                ((value ushr 24) and 0xFF).toByte(),
-                ((value ushr 16) and 0xFF).toByte(),
-                ((value ushr 8) and 0xFF).toByte(),
-                (value and 0xFF).toByte(),
-            )
+            bytes +=
+                byteArrayOf(
+                    ((value ushr 24) and 0xFF).toByte(),
+                    ((value ushr 16) and 0xFF).toByte(),
+                    ((value ushr 8) and 0xFF).toByte(),
+                    (value and 0xFF).toByte(),
+                )
         }
 
         fun appendLong(value: Long) {
-            bytes += byteArrayOf(
-                ((value ushr 56) and 0xFF).toByte(),
-                ((value ushr 48) and 0xFF).toByte(),
-                ((value ushr 40) and 0xFF).toByte(),
-                ((value ushr 32) and 0xFF).toByte(),
-                ((value ushr 24) and 0xFF).toByte(),
-                ((value ushr 16) and 0xFF).toByte(),
-                ((value ushr 8) and 0xFF).toByte(),
-                (value and 0xFF).toByte(),
-            )
+            bytes +=
+                byteArrayOf(
+                    ((value ushr 56) and 0xFF).toByte(),
+                    ((value ushr 48) and 0xFF).toByte(),
+                    ((value ushr 40) and 0xFF).toByte(),
+                    ((value ushr 32) and 0xFF).toByte(),
+                    ((value ushr 24) and 0xFF).toByte(),
+                    ((value ushr 16) and 0xFF).toByte(),
+                    ((value ushr 8) and 0xFF).toByte(),
+                    (value and 0xFF).toByte(),
+                )
         }
 
         fun appendBytes(value: ByteArray) {
@@ -917,25 +922,27 @@ class DefaultSecdsaPrimitives : SecdsaPrimitives {
         private var bytes = ByteArray(0)
 
         fun appendInt(value: Int) {
-            bytes += byteArrayOf(
-                ((value ushr 24) and 0xFF).toByte(),
-                ((value ushr 16) and 0xFF).toByte(),
-                ((value ushr 8) and 0xFF).toByte(),
-                (value and 0xFF).toByte(),
-            )
+            bytes +=
+                byteArrayOf(
+                    ((value ushr 24) and 0xFF).toByte(),
+                    ((value ushr 16) and 0xFF).toByte(),
+                    ((value ushr 8) and 0xFF).toByte(),
+                    (value and 0xFF).toByte(),
+                )
         }
 
         fun appendLong(value: Long) {
-            bytes += byteArrayOf(
-                ((value ushr 56) and 0xFF).toByte(),
-                ((value ushr 48) and 0xFF).toByte(),
-                ((value ushr 40) and 0xFF).toByte(),
-                ((value ushr 32) and 0xFF).toByte(),
-                ((value ushr 24) and 0xFF).toByte(),
-                ((value ushr 16) and 0xFF).toByte(),
-                ((value ushr 8) and 0xFF).toByte(),
-                (value and 0xFF).toByte(),
-            )
+            bytes +=
+                byteArrayOf(
+                    ((value ushr 56) and 0xFF).toByte(),
+                    ((value ushr 48) and 0xFF).toByte(),
+                    ((value ushr 40) and 0xFF).toByte(),
+                    ((value ushr 32) and 0xFF).toByte(),
+                    ((value ushr 24) and 0xFF).toByte(),
+                    ((value ushr 16) and 0xFF).toByte(),
+                    ((value ushr 8) and 0xFF).toByte(),
+                    (value and 0xFF).toByte(),
+                )
         }
 
         fun appendBytes(value: ByteArray) {

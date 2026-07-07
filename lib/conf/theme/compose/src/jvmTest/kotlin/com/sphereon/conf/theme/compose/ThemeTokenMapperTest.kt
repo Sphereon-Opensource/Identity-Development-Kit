@@ -49,8 +49,8 @@ class ThemeTokenMapperTest {
         assertNotEquals(Color.Unspecified, colorScheme.primary)
         assertNotEquals(Color.Unspecified, colorScheme.secondary)
         assertNotEquals(Color.Unspecified, colorScheme.surface)
-        // Primary parsed from hex #6750A4
-        assertEquals(Color(red = 103, green = 80, blue = 164), colorScheme.primary)
+        // Primary parsed from the wallet default brand token #7C40E8
+        assertEquals(Color(red = 124, green = 64, blue = 232), colorScheme.primary)
     }
 
     @Test

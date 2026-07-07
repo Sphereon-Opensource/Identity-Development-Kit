@@ -32,10 +32,10 @@ data class AttributeRecord(
     val path: AttributePath,
     /** The typed value. */
     val value: AttributeValue,
-    /** Which source produced this record (opaque producer id — an IDV node, a pipeline source, ...). */
-    val sourceId: AttributeProvenanceRef,
-    /** Source-specific detail (e.g. IDV node id, OIDC issuer, HR-API endpoint). */
-    val sourceDetail: String? = null,
+    /** Which producer contributed this record (opaque producer id — an IDV node, a pipeline source, ...). */
+    val producerId: AttributeProvenanceRef,
+    /** Producer-specific detail (e.g. IDV node id, OIDC issuer, HR-API endpoint). */
+    val producerDetail: String? = null,
     /** The phase during which this record was contributed. */
     val phase: PipelinePhase,
     /** When this record was contributed. */

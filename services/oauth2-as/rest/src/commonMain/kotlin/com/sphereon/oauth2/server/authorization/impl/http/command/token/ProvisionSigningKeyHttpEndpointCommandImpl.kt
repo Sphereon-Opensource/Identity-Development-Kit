@@ -231,12 +231,13 @@ class ProvisionSigningKeyHttpEndpointCommandImpl(
             signingKeyStore.register(
                 OAuth2SigningKey(
                     tenantId = tenantId,
-                    keyInfo = KeyInfo<KeyType>(
-                        kid = req.kid,
-                        alias = req.kid,
-                        providerId = req.providerId,
-                        signatureAlgorithm = algorithm,
-                    ),
+                    keyInfo =
+                        KeyInfo<KeyType>(
+                            kid = req.kid,
+                            alias = req.kid,
+                            providerId = req.providerId,
+                            signatureAlgorithm = algorithm,
+                        ),
                     state = OAuth2SigningKeyState.ACTIVE,
                     priority = 1,
                     createdAt = now,

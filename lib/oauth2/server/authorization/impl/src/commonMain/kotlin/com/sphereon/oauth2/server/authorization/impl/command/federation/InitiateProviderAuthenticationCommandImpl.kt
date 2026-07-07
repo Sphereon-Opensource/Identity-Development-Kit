@@ -145,6 +145,7 @@ class InitiateProviderAuthenticationCommandImpl(
                         buildMap {
                             put("nonce", nonce)
                             applied.hint?.loginHint?.let { put("login_hint", it) }
+                            applied.acrValues.takeIf { it.isNotEmpty() }?.let { put("acr_values", it.joinToString(" ")) }
                         },
                 ).getOrElse {
                     return Err(

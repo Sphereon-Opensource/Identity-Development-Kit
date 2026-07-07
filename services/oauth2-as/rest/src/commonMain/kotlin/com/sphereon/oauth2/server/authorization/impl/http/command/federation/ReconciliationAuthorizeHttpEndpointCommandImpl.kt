@@ -86,6 +86,7 @@ class ReconciliationAuthorizeHttpEndpointCommandImpl(
                             flow = "reconciliation",
                             oid4vpSessionId = oid4vpSessionId,
                         ),
+                    acrValues = request.queryParameters["acr_values"]?.splitToNonEmpty().orEmpty(),
                 ),
             )
         return if (result.isOk) {
@@ -101,3 +102,5 @@ class ReconciliationAuthorizeHttpEndpointCommandImpl(
         }
     }
 }
+
+private fun String.splitToNonEmpty(): List<String> = split(" ").map { it.trim() }.filter { it.isNotEmpty() }

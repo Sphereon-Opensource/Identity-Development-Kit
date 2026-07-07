@@ -40,9 +40,6 @@ kotlin {
                 implementation(projects.libStatuslistImpl)
                 implementation(projects.servicesStatuslistRest)
 
-                // Issuance pipeline (ContributeAttributesCommand, AttributeRecord, LookupKey)
-                implementation(projects.libCredentialIssuancePipelinePublic)
-                implementation(projects.libAttributePipelinePublic)
                 implementation(projects.libOpenidOid4vciCommonPublic)
 
                 // Public design-asset path constants + per-tenant URI resolver (PublicDesignAssetPaths):

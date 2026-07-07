@@ -42,7 +42,7 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
-import com.sphereon.openid.oid4vci.issuer.impl.pipeline.OfferPipelineInitializer
+import com.sphereon.openid.oid4vci.issuer.impl.lifecycle.OfferLifecycleInitializer
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
@@ -76,7 +76,7 @@ class CreateCredentialOfferCommandImpl(
      * deployment) is a graceful no-op: grant validation accepts everything, no pipeline is
      * resolved, and the wallet-auth invariant is skipped, matching the prior inlined behaviour.
      */
-    private val pipelineInitializer: OfferPipelineInitializer,
+    private val lifecycleInitializer: OfferLifecycleInitializer,
 ) : TypedServiceCommandAdapter<CreateCredentialOfferArgs, CreatedCredentialOffer, IdkError>(
         commandId = CreateCredentialOfferCommand.COMMAND_ID,
         execution = execution,
@@ -133,7 +133,7 @@ class CreateCredentialOfferCommandImpl(
         val applied = applyDuring(args)
 
         validateRequestShape(applied).getOrElse { return Err(it) }
-        pipelineInitializer.validateGrants(applied).getOrElse { return Err(it) }
+        lifecycleInitializer.validateGrants(applied).getOrElse { return Err(it) }
 
         val now = Clock.System.now()
         val offerId = Uuid.random().toString()
@@ -142,9 +142,9 @@ class CreateCredentialOfferCommandImpl(
         // Resolve a pipeline configuration and initialise a pipeline session when one is
         // configured. A failure here does not block offer creation; the session is
         // created without a pipeline link instead.
-        val pipelineCorrelationId = pipelineInitializer.initializePipeline(applied)
+        val lifecycleCorrelationId = lifecycleInitializer.initializeLifecycle(applied)
 
-        val session = buildSession(applied, sessionId, pipelineCorrelationId, now.epochSeconds)
+        val session = buildSession(applied, sessionId, lifecycleCorrelationId, now.epochSeconds)
         sessionStore.create(session).getOrElse { return Err(it) }
 
         val grantsAndTxCode = buildGrants(applied, sessionId, session).getOrElse { return Err(it) }
@@ -188,7 +188,7 @@ class CreateCredentialOfferCommandImpl(
     private fun buildSession(
         args: CreateCredentialOfferArgs,
         sessionId: String,
-        pipelineCorrelationId: String?,
+        lifecycleCorrelationId: String?,
         nowEpochSeconds: Long,
     ): IssuanceSession =
         IssuanceSession(
@@ -205,7 +205,7 @@ class CreateCredentialOfferCommandImpl(
             preSeededAttributes = args.preSeededAttributes,
             boundUsageToken = args.boundUsageToken,
             postIssuanceHookAllowList = args.postIssuanceHookAllowList,
-            pipelineCorrelationId = pipelineCorrelationId,
+            lifecycleCorrelationId = lifecycleCorrelationId,
             createdAt = nowEpochSeconds,
             expiresAt = nowEpochSeconds + args.offerTtlSeconds,
         )

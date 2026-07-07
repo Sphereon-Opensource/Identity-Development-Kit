@@ -16,7 +16,6 @@
 
 package com.sphereon.openid.oid4vci.rest
 
-import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
@@ -69,13 +68,6 @@ data class CredentialOfferSession(
     @SerialName("rate_limit")
     val rateLimit: OfferRateLimit? = null,
     /**
-     * Lookup keys seeded at offer-creation time. Stored so the GET handler can forward them
-     * to a fresh pipeline session when a new issuance is minted on each fetch.
-     */
-    @SerialName("initial_lookup_keys")
-    @JsExportIgnoreCompat
-    val initialLookupKeys: List<LookupKey> = emptyList(),
-    /**
      * Replayable offer-creation inputs. Present so the GET handler can rebuild a
      * [com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs] and mint a fresh
      * inner offer on each fetch of a [OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH] URI, while the
@@ -92,7 +84,7 @@ data class CredentialOfferSession(
  *
  * Holds exactly the fields a fresh mint needs to rebuild
  * [com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs]. The reusable-URI fields
- * ([OfferUriLifecycle], [OfferRateLimit], lookup keys) already live on [CredentialOfferSession],
+ * ([OfferUriLifecycle], [OfferRateLimit]) already live on [CredentialOfferSession],
  * so they are not duplicated here.
  */
 @OptIn(ExperimentalObjCName::class)
@@ -117,6 +109,9 @@ data class CredentialOfferTemplate(
     @SerialName("pre_seeded_attributes")
     @JsExportIgnoreCompat
     val preSeededAttributes: Map<String, JsonElement>? = null,
+    @SerialName("initial_connector_fields")
+    @JsExportIgnoreCompat
+    val initialConnectorFields: Map<String, JsonElement> = emptyMap(),
     @SerialName("offer_ttl_seconds")
     val offerTtlSeconds: Long = 600,
     val scheme: String? = null,

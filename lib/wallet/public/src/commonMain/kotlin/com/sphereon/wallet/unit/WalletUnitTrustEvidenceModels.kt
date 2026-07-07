@@ -84,5 +84,6 @@ data class WalletAttestationStatusEvidence(
 
 interface EudiWalletTrustService {
     suspend fun resolveWalletProviderTrust(request: ResolveWalletProviderTrustRequest): EudiWalletTrustEvidence
+
     suspend fun resolveWalletSolutionTrust(request: ResolveWalletSolutionTrustRequest): EudiWalletTrustEvidence
 }

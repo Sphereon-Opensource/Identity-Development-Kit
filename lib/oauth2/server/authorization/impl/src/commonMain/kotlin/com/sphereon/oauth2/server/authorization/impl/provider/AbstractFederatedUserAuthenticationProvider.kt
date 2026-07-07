@@ -86,6 +86,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
             returnUrl = returnUrl,
             providerId = providerId,
             hint = hint,
+            acrValues = context?.acrValues.orEmpty(),
             applicationId = context?.applicationId,
         )
     }
@@ -97,6 +98,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
         callbackPath: String? = null,
         flowContext: FlowContext? = null,
         hint: AuthenticationHint? = null,
+        acrValues: List<String> = emptyList(),
         applicationId: String? = null,
     ): IdkResult<String, AuthenticationError> =
         initiateProviderAuthenticationCommand
@@ -108,6 +110,7 @@ abstract class AbstractFederatedUserAuthenticationProvider(
                     callbackPath = callbackPath,
                     flowContext = flowContext,
                     hint = hint,
+                    acrValues = acrValues,
                     applicationId = applicationId,
                 ),
             ).map { it.value }

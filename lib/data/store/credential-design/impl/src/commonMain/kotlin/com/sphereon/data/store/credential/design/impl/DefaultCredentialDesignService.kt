@@ -45,16 +45,16 @@ import com.sphereon.data.store.credential.design.impl.resolution.SchemaInference
 import com.sphereon.data.store.credential.design.impl.resolution.SdJwtVctDesignProvider
 import com.sphereon.data.store.credential.design.impl.resolution.W3cRenderMethodDesignProvider
 import com.sphereon.data.store.credential.design.model.AssetFilter
-import com.sphereon.data.store.credential.design.model.AssetInfo
-import com.sphereon.data.store.credential.design.model.AssetReference
+import com.sphereon.data.store.asset.model.AssetInfo
+import com.sphereon.data.store.asset.model.AssetReference
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
-import com.sphereon.data.store.credential.design.model.DesignAssetType
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
 import com.sphereon.data.store.credential.design.model.CreateVerifierDesignInput
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
 import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
+import com.sphereon.data.store.credential.design.model.DesignAssetType
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.DesignFilter
@@ -1144,7 +1144,11 @@ class DefaultCredentialDesignService(
         asset: AssetInfo,
         filter: AssetFilter,
     ): Boolean {
-        val mediaType = asset.contentType.substringBefore(';').trim().lowercase()
+        val mediaType =
+            asset.contentType
+                .substringBefore(';')
+                .trim()
+                .lowercase()
         val contentTypeOk =
             filter.contentType?.let { mediaType.startsWith(it.substringBefore(';').trim().lowercase()) } ?: true
         val assetTypeOk =
@@ -1269,13 +1273,21 @@ class DefaultCredentialDesignService(
         val discriminatorCount = listOf(binding.vct, binding.docType, binding.type).count { !it.isNullOrBlank() }
         if (discriminatorCount != 1) return null
         return when {
-            !binding.vct.isNullOrBlank() ->
+            !binding.vct.isNullOrBlank() -> {
                 CredentialTypeDescriptor(format = CredentialTypeFormat.SD_JWT_VC, vct = binding.vct)
-            !binding.docType.isNullOrBlank() ->
+            }
+
+            !binding.docType.isNullOrBlank() -> {
                 CredentialTypeDescriptor(format = CredentialTypeFormat.MSO_MDOC, docType = binding.docType)
-            !binding.type.isNullOrBlank() ->
+            }
+
+            !binding.type.isNullOrBlank() -> {
                 CredentialTypeDescriptor(format = CredentialTypeFormat.W3C_VC, type = binding.type, context = binding.context)
-            else -> null
+            }
+
+            else -> {
+                null
+            }
         }
     }
 

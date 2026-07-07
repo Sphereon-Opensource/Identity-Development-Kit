@@ -17,7 +17,7 @@
 package com.sphereon.data.store.credential.design.impl.mapper
 
 import com.sphereon.data.store.credential.design.model.AppliedDesignLayer
-import com.sphereon.data.store.credential.design.model.AssetReference
+import com.sphereon.data.store.asset.model.AssetReference
 import com.sphereon.data.store.credential.design.model.ClaimLabel
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
@@ -265,7 +265,7 @@ class Oid4vciDesignMapperTest {
                 tenantId = "tenant-1",
                 kind = RenderVariantKind.SIMPLE_CARD,
                 logo =
-                    com.sphereon.data.store.credential.design.model.AssetReference(
+                    com.sphereon.data.store.asset.model.AssetReference(
                         uri = "https://example.com/logo.png",
                         altText = "Example Corp Logo",
                     ),

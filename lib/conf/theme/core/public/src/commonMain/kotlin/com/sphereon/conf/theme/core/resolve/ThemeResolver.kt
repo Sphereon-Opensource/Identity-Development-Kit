@@ -22,21 +22,27 @@ import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Resolves a fully flattened theme by merging definition layers
- * in precedence order: SYSTEM < APP < TENANT < PRINCIPAL.
+ * in precedence order: SYSTEM < PRODUCT < TENANT < APPLICATION < PRINCIPAL.
  */
 @JsExportCompat
 interface ThemeResolver {
     /**
      * Resolve the effective theme for a tenant.
      *
+     * The PRODUCT and APPLICATION layers apply only when [applicationId] is supplied:
+     * the application's product type selects the PRODUCT layer and the application id
+     * selects the APPLICATION layer.
+     *
      * @param tenant The tenant identifier
      * @param variant Optional variant to resolve (LIGHT, DARK, HIGH_CONTRAST)
+     * @param applicationId Optional registered application to resolve for
      * @param principalId Optional principal for per-user overrides
-     * @return The resolved theme or an error
+     * @return The resolved theme
      */
     suspend fun resolve(
         tenant: String,
         variant: ThemeVariant? = null,
+        applicationId: String? = null,
         principalId: String? = null,
     ): ResolvedTheme
 }

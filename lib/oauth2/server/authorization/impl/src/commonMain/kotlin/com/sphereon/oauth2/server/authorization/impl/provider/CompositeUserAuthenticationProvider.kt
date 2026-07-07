@@ -116,6 +116,20 @@ class CompositeUserAuthenticationProvider(
         return federationProvider.authenticateWithCredentials(credentials, context)
     }
 
+    override suspend fun authenticateUserWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<AuthenticatedUser?, AuthenticationError> {
+        // Try wallet provider first for custom credentials
+        if (walletProvider != null && credentials is UserCredentials.Custom) {
+            val result = walletProvider.authenticateUserWithCredentials(credentials, context)
+            if (result.isOk && result.value != null) {
+                return result
+            }
+        }
+        return federationProvider.authenticateUserWithCredentials(credentials, context)
+    }
+
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> {
         // Logout from all providers
         walletProvider?.logout(userId)

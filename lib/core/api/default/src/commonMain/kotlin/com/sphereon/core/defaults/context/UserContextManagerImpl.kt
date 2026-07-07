@@ -17,17 +17,17 @@
 
 package com.sphereon.core.defaults.context
 
+import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
-import com.sphereon.core.api.conf.AppConfigService
-import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.PropertySourceBootstrap
 import com.sphereon.core.api.conf.SecretProviderBootstrap
-import com.sphereon.core.api.context.ContextScopedResourceInvalidator
-import com.sphereon.core.api.session.currentTimeMillis
 import com.sphereon.core.api.conf.TenantConfigService
+import com.sphereon.core.api.context.ContextScopedResourceInvalidator
 import com.sphereon.core.api.log.AppLogManager
+import com.sphereon.core.api.session.currentTimeMillis
 import com.sphereon.di.app.App
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.context.AnonymousUserGraphManager
@@ -613,8 +613,7 @@ class UserContextManagerImpl(
                             "retainedContexts=${remainingInstancesAfterDestroy.size} " +
                             "rootChildrenAfter=${rootChildrenCount() ?: "unknown"} idleTimeoutMs=$timeoutMs",
                     )
-                }
-                .onFailure { error ->
+                }.onFailure { error ->
                     log.warn(
                         "VDX_USER_CONTEXT_IDLE_DESTROY_FAILED contextId=${instance.contextId.sanitizeLogToken()} " +
                             "idleTimeoutMs=$timeoutMs error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
@@ -730,18 +729,21 @@ class UserContextManagerImpl(
     }
 
     private fun idleCleanupEnabled(): Boolean =
-        appConfigService.getPropertyAsString(USER_CONTEXT_IDLE_CLEANUP_ENABLED, "true")
+        appConfigService
+            .getPropertyAsString(USER_CONTEXT_IDLE_CLEANUP_ENABLED, "true")
             ?.toBooleanStrictOrNull()
             ?: true
 
     private fun idleTimeoutMs(): Long =
-        appConfigService.getPropertyAsString(USER_CONTEXT_IDLE_TIMEOUT_MS, DEFAULT_USER_CONTEXT_IDLE_TIMEOUT_MS.toString())
+        appConfigService
+            .getPropertyAsString(USER_CONTEXT_IDLE_TIMEOUT_MS, DEFAULT_USER_CONTEXT_IDLE_TIMEOUT_MS.toString())
             ?.toLongOrNull()
             ?.coerceAtLeast(0L)
             ?: DEFAULT_USER_CONTEXT_IDLE_TIMEOUT_MS
 
     private fun cleanupIntervalMs(): Long =
-        appConfigService.getPropertyAsString(USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS, DEFAULT_USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS.toString())
+        appConfigService
+            .getPropertyAsString(USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS, DEFAULT_USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS.toString())
             ?.toLongOrNull()
             ?.coerceAtLeast(1_000L)
             ?: DEFAULT_USER_CONTEXT_IDLE_CLEANUP_INTERVAL_MS
@@ -795,8 +797,6 @@ private fun String.sanitizeLogToken(): String =
         .replace(Regex("[^A-Za-z0-9._:@-]"), "_")
         .take(160)
 
-private fun PrincipalAware.principalLogToken(): String =
-    (principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID).sanitizeLogToken()
+private fun PrincipalAware.principalLogToken(): String = (principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID).sanitizeLogToken()
 
-private fun UserContextInstance.principalLogToken(): String =
-    (context.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID).sanitizeLogToken()
+private fun UserContextInstance.principalLogToken(): String = (context.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID).sanitizeLogToken()

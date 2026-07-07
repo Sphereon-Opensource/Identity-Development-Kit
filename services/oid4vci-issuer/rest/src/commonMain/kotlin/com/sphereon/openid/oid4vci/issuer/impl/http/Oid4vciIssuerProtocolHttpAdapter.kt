@@ -26,20 +26,13 @@ import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ApprovePipelineSessionEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeAttributesEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.ContributeViaCallbackEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.EvaluateCompletenessEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.FailPipelineSourceEndpointCommand
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetSessionAttributesEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleNotificationEndpointCommand
-import com.sphereon.openid.oid4vci.issuer.impl.http.command.InitPipelineSessionEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.IssueNonceEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.Oid4vciErrorRenderer
-import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -54,13 +47,6 @@ import dev.zacsweers.metro.binding
  * - **POST /credential** — Handle credential request
  * - **POST /deferredCredential** — Handle deferred credential request
  * - **POST /notification** — Handle credential notification
- * - **POST /sessions/{correlationId}/attributes** — Contribute attributes to a pipeline session
- * - **POST /sessions** — Initialise a new issuance pipeline session
- * - **GET /sessions/{correlationId}/completeness** — Evaluate attribute completeness for a pipeline session
- * - **GET /sessions/{correlationId}/attributes** — Read accumulated attributes for a pipeline session
- * - **POST /sessions/{correlationId}/callbacks/{callbackToken}** — Async-callback contribution by capability token
- * - **POST /sessions/{correlationId}/fail** — Mark a pipeline source's contribution as failed
- * - **POST /sessions/{correlationId}/approve** — Apply an approval-gate decision to a pipeline session
  *
  * Framework-agnostic. Authentication is delegated to the platform server.
  */
@@ -77,13 +63,6 @@ class Oid4vciIssuerProtocolHttpAdapter(
     private val credentialCommand: HandleCredentialEndpointCommand,
     private val deferredCredentialCommand: HandleDeferredCredentialEndpointCommand,
     private val notificationCommand: HandleNotificationEndpointCommand,
-    private val contributeAttributesCommand: ContributeAttributesEndpointCommand,
-    private val initPipelineSessionCommand: InitPipelineSessionEndpointCommand,
-    private val evaluateCompletenessCommand: EvaluateCompletenessEndpointCommand,
-    private val getSessionAttributesCommand: GetSessionAttributesEndpointCommand,
-    private val contributeViaCallbackCommand: ContributeViaCallbackEndpointCommand,
-    private val failPipelineSourceCommand: FailPipelineSourceEndpointCommand,
-    private val approvePipelineSessionCommand: ApprovePipelineSessionEndpointCommand,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
@@ -114,13 +93,6 @@ class Oid4vciIssuerProtocolHttpAdapter(
             credentialCommand,
             deferredCredentialCommand,
             notificationCommand,
-            contributeAttributesCommand,
-            initPipelineSessionCommand,
-            evaluateCompletenessCommand,
-            getSessionAttributesCommand,
-            contributeViaCallbackCommand,
-            failPipelineSourceCommand,
-            approvePipelineSessionCommand,
         )
 
     @ContributesTo(SessionScope::class)

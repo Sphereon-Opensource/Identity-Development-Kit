@@ -96,6 +96,21 @@ class InstanceNamespaceOid4vpVerifierConfigProviderTest {
     }
 
     @Test
+    fun registryProviderResolvesPartyIdThroughProjectedConfigBindingAlias() {
+        val partyId = "e58b34ca-30b2-4fd0-8e85-cbac4d49f359"
+        val properties =
+            mapOf<String, Any>(
+                "_derived.software.config-bindings.by-party.$partyId.config-key-prefix" to "oid4vp.verifiers.test",
+                "oid4vp.verifiers.$partyId.request-object.signing.audience" to "https://uuid.example.com",
+                "oid4vp.verifiers.test.request-object.signing.audience" to "https://test.saas.localtest.me",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId(partyId)
+
+        assertEquals("https://test.saas.localtest.me", provider.audience)
+    }
+
+    @Test
     fun registryProviderFallsBackToSingularNamespaceWhenHolderEmpty() {
         val properties =
             mapOf<String, Any>(

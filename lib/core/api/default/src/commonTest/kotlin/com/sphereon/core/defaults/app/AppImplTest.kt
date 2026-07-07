@@ -272,18 +272,16 @@ class AppImplTest {
         val appGraph = createAppGraph()
         appGraph.destroy()
 
-        // Can reinitialize
-        (appGraph as AbstractAppGraph).initRootScopeProvider()
-        assertFalse(appGraph.rootScopeProvider.isDestroyed())
-
-        // Can create contexts again
-        appGraph.userContextManager.createOrGetFromInputs(
-            DefaultTenantInputString("test-tenant"),
-            DefaultPrincipalInputString("test-user"),
-        )
-        assertTrue(appGraph.userContextManager.hasActive())
-
-        appGraph.destroy()
+        val newAppGraph = createAppGraph()
+        try {
+            newAppGraph.userContextManager.createOrGetFromInputs(
+                DefaultTenantInputString("test-tenant"),
+                DefaultPrincipalInputString("test-user"),
+            )
+            assertTrue(newAppGraph.userContextManager.hasActive())
+        } finally {
+            newAppGraph.destroy()
+        }
     }
 
     // ========== Multiple AppGraph Tests ==========

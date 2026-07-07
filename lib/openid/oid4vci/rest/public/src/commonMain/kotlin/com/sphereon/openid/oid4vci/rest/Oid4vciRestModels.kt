@@ -16,13 +16,13 @@
 
 package com.sphereon.openid.oid4vci.rest
 
-import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vc.common.SessionError
 import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -52,6 +52,13 @@ data class CreateCredentialOfferInput(
     @SerialName("credential_subject_data")
     @JsExportIgnoreCompat
     val credentialSubjectData: Map<String, JsonElement>? = null,
+    /**
+     * Opaque initial connector fields for lifecycle extensions. IDK does not interpret these
+     * fields as credential subject data; EDK connector pipelines consume them as start-phase input.
+     */
+    @SerialName("initial_connector_fields")
+    @JsExportIgnoreCompat
+    val initialConnectorFields: Map<String, JsonElement> = emptyMap(),
     /**
      * Business key for later status queries.
      * If omitted, the server generates one.
@@ -95,13 +102,6 @@ data class CreateCredentialOfferInput(
      */
     @SerialName("uri_lifecycle")
     val uriLifecycle: OfferUriLifecycle = OfferUriLifecycle.SINGLE_USE,
-    /**
-     * Lookup keys seeded into the pipeline session at offer-creation time so attribute
-     * sources can start resolving subject data before the wallet presents a proof.
-     */
-    @SerialName("initial_lookup_keys")
-    @JsExportIgnoreCompat
-    val initialLookupKeys: List<LookupKey> = emptyList(),
     /**
      * Rate-limit applied to a reusable offer URI. Mandatory when
      * [uriLifecycle] is [OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH].
@@ -227,16 +227,19 @@ data class CreateCredentialOfferOutput(
     /**
      * Endpoint URL for checking session status.
      */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     @SerialName("status_uri")
     val statusUri: String? = null,
     /**
      * QR code as data URI. Only provided when qr_code options were included.
      */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     @SerialName("qr_uri")
     val qrUri: String? = null,
     /**
      * Transaction code (PIN) if tx_code was requested.
      */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     @SerialName("tx_code")
     val txCode: String? = null,
 )

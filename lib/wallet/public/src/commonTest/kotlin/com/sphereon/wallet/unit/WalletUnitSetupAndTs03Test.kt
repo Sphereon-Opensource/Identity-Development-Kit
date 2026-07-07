@@ -83,37 +83,39 @@ class WalletUnitSetupAndTs03Test {
     }
 
     @Test
-    fun ts03EncoderCreatesCompactJwtArtifact() = runTest {
-        val now = Clock.System.now()
-        val result =
-            Ts03WalletAttestationEncoder().encodeWalletInstanceAttestation(
-                claims =
-                    Ts03WalletInstanceAttestationClaims(
-                        iss = "https://wallet-provider.example",
-                        sub = "wallet-instance-a",
-                        aud = "audience-a",
-                        iat = now.epochSeconds,
-                        exp = (now + 5.minutes).epochSeconds,
-                        jti = "wia-jti-a",
-                        walletName = "wallet-a",
-                        walletVersion = "1.0",
-                        walletSolutionCertificationInformation = mapOf("certification_id" to "cert-a"),
-                        clientStatus = Ts03StatusClaim(status = "https://status.example/list#1", exp = (now + 5.minutes).epochSeconds),
-                    ),
-                signer = SoftwareTestWalletAttestationSigner(signerId = "signer-a"),
-                signingRequest =
-                    WalletAttestationSigningRequest(
-                        algorithm = WalletAttestationSigningAlgorithm.ES256,
-                        signerProfile = WalletAttestationSignerProfile.SOFTWARE_TEST,
-                        signerId = "signer-a",
-                        signingInput = ByteArray(0),
-                        x5c = listOf("cert-chain-a"),
-                        keyId = "kid-a",
-                    ),
-            ).value
+    fun ts03EncoderCreatesCompactJwtArtifact() =
+        runTest {
+            val now = Clock.System.now()
+            val result =
+                Ts03WalletAttestationEncoder()
+                    .encodeWalletInstanceAttestation(
+                        claims =
+                            Ts03WalletInstanceAttestationClaims(
+                                iss = "https://wallet-provider.example",
+                                sub = "wallet-instance-a",
+                                aud = "audience-a",
+                                iat = now.epochSeconds,
+                                exp = (now + 5.minutes).epochSeconds,
+                                jti = "wia-jti-a",
+                                walletName = "wallet-a",
+                                walletVersion = "1.0",
+                                walletSolutionCertificationInformation = mapOf("certification_id" to "cert-a"),
+                                clientStatus = Ts03StatusClaim(status = "https://status.example/list#1", exp = (now + 5.minutes).epochSeconds),
+                            ),
+                        signer = SoftwareTestWalletAttestationSigner(signerId = "signer-a"),
+                        signingRequest =
+                            WalletAttestationSigningRequest(
+                                algorithm = WalletAttestationSigningAlgorithm.ES256,
+                                signerProfile = WalletAttestationSignerProfile.SOFTWARE_TEST,
+                                signerId = "signer-a",
+                                signingInput = ByteArray(0),
+                                x5c = listOf("cert-chain-a"),
+                                keyId = "kid-a",
+                            ),
+                    ).value
 
-        assertEquals(3, result.compact.split('.').size)
-        assertTrue(result.artifactHash.startsWith("sha256:"))
-        assertEquals("ES256", result.signingEvidence["alg"])
-    }
+            assertEquals(3, result.compact.split('.').size)
+            assertTrue(result.artifactHash.startsWith("sha256:"))
+            assertEquals("ES256", result.signingEvidence["alg"])
+        }
 }

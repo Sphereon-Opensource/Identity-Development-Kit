@@ -34,10 +34,10 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.wallet.credential.CredentialLifecycleState
 import com.sphereon.wallet.credential.CredentialRecord
 import com.sphereon.wallet.credential.WalletCredentialStore
-import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletCredentialSelection
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
+import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
@@ -51,12 +51,12 @@ import com.sphereon.wallet.interaction.WalletSecurityOperation
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.KeyManagerWalletKmsCapabilityResolver
 import com.sphereon.wallet.interaction.impl.KmsAwareWalletProtocolExecutor
-import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpPresentationSecurityAttributes
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceOptions
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.protocol.oid4vci.WalletStoreOid4vciCredentialResponseReceiver
+import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpPresentationSecurityAttributes
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletConfigProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletInteractionProtocolAdapter
 import dev.zacsweers.metro.ContributesBinding
@@ -216,7 +216,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                             },
                     )
                 val securityGate = RecordingSecurityGate()
-                val keyManagerService = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+                val keyManagerService =
+                    ctx.session.graph
+                        .asKeyManagerServiceGraph()
+                        .keyManagerService
                 val engine =
                     DefaultWalletInteractionEngine(
                         adapters = listOf(adapter),
@@ -247,7 +250,12 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 assertEquals(WalletInteractionExecutionMode.SPLIT, input.executionMode)
                 assertEquals(WalletProtocol.OID4VP, session.state.protocol)
                 assertEquals(WalletInteractionStatus.CredentialSelection, session.state.status)
-                val requirement = assertNotNull(session.state.credentialSelection?.requirements?.singleOrNull())
+                val requirement =
+                    assertNotNull(
+                        session.state.credentialSelection
+                            ?.requirements
+                            ?.singleOrNull()
+                    )
                 assertEquals(SD_JWT_CONFIG_ID, requirement.id)
                 assertEquals(listOf(sdJwtRecord.id), requirement.candidateCredentialIds)
 
@@ -424,7 +432,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
     }
 
     private suspend fun ensureIssuerSigningKey() {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val result =
             kms.generateKeyResult(
                 alias = ISSUER_SIGNING_KEY_ALIAS,
@@ -438,7 +449,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
     }
 
     private suspend fun ensureVerifierSigningKey() {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val result =
             kms.generateKeyResult(
                 alias = VERIFIER_SIGNING_KEY_ALIAS,
@@ -452,7 +466,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
     }
 
     private suspend fun ensureHolderSigningKey() {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val result =
             kms.generateKeyResult(
                 alias = HOLDER_SIGNING_KEY_ALIAS,

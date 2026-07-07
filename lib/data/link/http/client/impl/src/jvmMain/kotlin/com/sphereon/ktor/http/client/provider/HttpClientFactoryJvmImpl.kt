@@ -40,7 +40,6 @@ import io.ktor.client.plugins.cache.HttpCache
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.runBlocking
 import java.security.KeyStore
@@ -48,6 +47,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509KeyManager
 import javax.net.ssl.X509TrustManager
+import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
 
 @Inject
 @SingleIn(SessionScope::class)

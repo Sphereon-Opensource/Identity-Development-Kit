@@ -25,22 +25,22 @@ import com.sphereon.data.store.credential.design.model.ClaimPresentation
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
+import com.sphereon.data.store.credential.design.model.CredentialDesignModuleConfig
+import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
+import com.sphereon.data.store.credential.design.model.CredentialDesignValidationConfig
 import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
 import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
-import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
-import com.sphereon.data.store.credential.design.model.CredentialDesignModuleConfig
-import com.sphereon.data.store.credential.design.model.CredentialDesignValidationConfig
-import com.sphereon.data.store.credential.design.model.DesignHostingMode
 import com.sphereon.data.store.credential.design.model.DesignBinding
+import com.sphereon.data.store.credential.design.model.DesignHostingMode
 import com.sphereon.data.store.credential.design.model.EntityLocaleDesign
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
 import com.sphereon.data.store.credential.design.model.RenderVariantKind
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.VctHostingMode
-import com.sphereon.data.store.credential.design.validation.credentialDesignRecordValidator
 import com.sphereon.data.store.credential.design.validation.createCredentialDesignValidator
 import com.sphereon.data.store.credential.design.validation.createIssuerDesignValidator
 import com.sphereon.data.store.credential.design.validation.createRenderVariantValidator
+import com.sphereon.data.store.credential.design.validation.credentialDesignRecordValidator
 import com.sphereon.data.store.credential.design.validation.moduleConfigValidator
 import com.sphereon.data.store.credential.design.validation.resolveCredentialDesignValidator
 import io.konform.validation.Invalid
@@ -54,9 +54,7 @@ class CredentialDesignValidatorTest {
 
     private fun sdJwtType(vct: String) = CredentialTypeDescriptor(CredentialTypeFormat.SD_JWT_VC, vct = vct)
 
-    private fun credentialDesignRecord(
-        credentialType: CredentialTypeDescriptor? = sdJwtType("urn:example:pid"),
-    ): CredentialDesignRecord {
+    private fun credentialDesignRecord(credentialType: CredentialTypeDescriptor? = sdJwtType("urn:example:pid"),): CredentialDesignRecord {
         val now = Clock.System.now()
         return CredentialDesignRecord(
             id = kotlin.uuid.Uuid.random(),
@@ -294,6 +292,22 @@ class CredentialDesignValidatorTest {
                     ),
             )
         assertTrue(validator(args) is Invalid)
+    }
+
+    @Test
+    fun registeredVctAcceptsUrnIdentifier() {
+        val validator = createCredentialDesignValidator(defaultConfig)
+        val args =
+            CreateCredentialDesignArgs(
+                tenantId = "t1",
+                input =
+                    CreateCredentialDesignInput(
+                        bindings = listOf(DesignBinding(vct = "urn:eudi:pid:1", vctHostingMode = VctHostingMode.REGISTERED)),
+                        credentialType = sdJwtType("urn:eudi:pid:1"),
+                        displays = listOf(LocalizedCredentialDisplay(locale = "en", name = "EU PID")),
+                    ),
+            )
+        assertTrue(validator(args) is Valid)
     }
 
     @Test

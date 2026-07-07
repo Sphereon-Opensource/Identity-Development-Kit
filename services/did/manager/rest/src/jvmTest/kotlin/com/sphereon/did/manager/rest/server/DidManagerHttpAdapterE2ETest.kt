@@ -358,7 +358,8 @@ class DidManagerHttpAdapterE2ETest {
                 "managed did:web resolve must use the persisted DID document, not an outbound HTTPS fetch; body=${resolveResponse.body}",
             )
             val resolvedDocument =
-                json.parseToJsonElement(resolveResponse.body ?: error("resolve response body must not be empty"))
+                json
+                    .parseToJsonElement(resolveResponse.body ?: error("resolve response body must not be empty"))
                     .jsonObject["didDocument"]
                     ?.jsonObject
             assertNotNull(resolvedDocument, "resolve response must include didDocument for a managed DID")

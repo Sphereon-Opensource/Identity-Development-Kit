@@ -1,7 +1,7 @@
 package com.sphereon.data.store.credential.type.binding
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.credential.issuance.pipeline.SemanticAttributeSetRef
+import com.sphereon.data.store.credential.design.model.SemanticAttributeSetRef
 import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
 

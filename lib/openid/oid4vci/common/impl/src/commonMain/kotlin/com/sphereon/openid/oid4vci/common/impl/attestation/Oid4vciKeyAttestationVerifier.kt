@@ -265,8 +265,7 @@ class Oid4vciKeyAttestationVerifier(
         runCatching { element.jsonArray.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } }
             .getOrDefault(emptyList())
 
-    private fun invalidProof(message: String): IdkResult<Nothing, IdkError> =
-        Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = message))
+    private fun invalidProof(message: String): IdkResult<Nothing, IdkError> = Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = message))
 
     companion object {
         const val KEY_ATTESTATION_TYP: String = "key-attestation+jwt"

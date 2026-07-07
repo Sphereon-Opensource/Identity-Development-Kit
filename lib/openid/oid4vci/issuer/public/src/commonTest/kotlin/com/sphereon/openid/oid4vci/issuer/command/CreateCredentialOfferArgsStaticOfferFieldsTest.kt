@@ -33,13 +33,13 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
     }
 
     @Test
-    fun initialLookupKeysDefaultsToEmptyList() {
+    fun initialLifecycleFieldsDefaultsToEmptyMap() {
         val args =
             CreateCredentialOfferArgs(
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
             )
-        assertTrue(args.initialLookupKeys.isEmpty())
+        assertTrue(args.initialLifecycleFields.isEmpty())
     }
 
     @Test

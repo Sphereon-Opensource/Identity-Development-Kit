@@ -16,9 +16,9 @@
 
 package com.sphereon.data.store.credential.design
 
-import com.sphereon.credential.issuance.pipeline.SemanticAttributeSetRef
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.DesignHostingMode
+import com.sphereon.data.store.credential.design.model.SemanticAttributeSetRef
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertContains

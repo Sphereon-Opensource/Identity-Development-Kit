@@ -11,7 +11,7 @@ The service exposes two distinct HTTP surfaces:
 - Wallet-facing OID4VCI protocol endpoints such as issuer metadata, nonce, credential, deferred credential, and credential-offer retrieval.
 - Backend issuer-session endpoints under `/api/oid4vci/v1/backend/credential/offers`. These create a tracked offer session, report status by `correlation_id`, and delete session state.
 
-The backend create-offer request accepts `credential_configuration_ids`, optional `credential_subject_data`, optional `initial_lookup_keys`, grant selection, QR-code options, callback configuration, and offer URI lifecycle controls. `initial_lookup_keys` are passed into the EDK issuance pipeline when a pipeline is resolved for the offered credential configurations.
+The backend create-offer request accepts `credential_configuration_ids`, optional `credential_subject_data`, optional `initial_connector_fields`, grant selection, QR-code options, callback configuration, and offer URI lifecycle controls. `initial_connector_fields` are passed only to the IDK lifecycle extension hook; EDK binds that hook to the connector-backed issuance pipeline.
 
 ## Credential designs and channels
 
@@ -24,10 +24,10 @@ Deployments can choose between:
 
 Both paths feed the same OID4VCI runtime and backend offer/session API.
 
-## Attribute-source integration
+## Connector invocation pipeline
 
-The EDK issuance pipeline is optional. If no `PipelineConfigurationResolver` returns a pipeline, offer creation and credential issuance continue through the pure-IDK path.
+The EDK issuance pipeline is outside IDK. The simple IDK issuer exposes lifecycle hook points; EDK supplies the connector pipeline implementation and VDX supplies durable registration/runtime concerns.
 
-When a pipeline is present, `CreateCredentialOfferCommand` initializes a pipeline session and stores the resulting pipeline correlation id on the OID4VCI issuance session. Later credential and deferred-credential handling uses that correlation id to run bound sources, evaluate completeness, assemble claims for the requested `credential_configuration_id`, and defer issuance when required async sources are still pending.
+When a pipeline is present, `CreateCredentialOfferCommand` initializes a pipeline session and stores the resulting pipeline correlation id on the OID4VCI issuance session. Later token, credential, deferred-credential, pre-issue, post-issuance, and notification handling uses that correlation id to run connector invocation bindings, evaluate completeness, assemble claims for the requested `credential_configuration_id`, and defer issuance when required async connector work is still pending.
 
-Commercial VDX deployments manage persisted attribute-source definitions through the VDX REST facade at `/api/attribute-source/v1/sources`. The persisted model is owned by EDK (`CreateAttributeSourceArgs`, `UpdateAttributeSourceArgs`, `ListAttributeSourcesArgs`, `SemanticBindingInput`). A pipeline binding connects to that registry through `AttributeSourceBinding.sourceInstanceId`, while `AttributeSourceBinding.sourceId` selects the runtime source implementation.
+Commercial VDX deployments manage persisted connector invocation bindings through the Connector API under `/api/connector/v1/invocation/bindings`. A `PipelineConfiguration` carries those bindings in `invocationBindings`; each binding declares its OID4VCI stage, role, target route or operation, execution policy, subset mapping, governance context, and lineage policy. The attribute-source registry remains a source-catalog and semantic documentation surface, not the automatic OID4VCI pipeline binding contract.

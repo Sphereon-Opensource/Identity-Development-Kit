@@ -16,20 +16,18 @@
 
 package com.sphereon.openid.oid4vci.rest.impl
 
-import com.sphereon.attribute.flow.AttributeProvenanceRef
-import com.sphereon.attribute.flow.PipelinePhase
-import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSession
 import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus
+import com.sphereon.openid.oid4vci.rest.CredentialOfferTemplate
 import com.sphereon.openid.oid4vci.rest.IssuanceCallbackConfig
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.time.Instant
 
 class SessionEntryConversionTest {
     @Test
@@ -152,14 +150,6 @@ class SessionEntryConversionTest {
 
     @Test
     fun staticOfferFieldsRoundTripWithReusableLifecycleAndRateLimit() {
-        val lookupKey =
-            LookupKey(
-                name = "email",
-                value = "user@example.com",
-                producedBy = AttributeProvenanceRef("test-source"),
-                phase = PipelinePhase.SESSION_INIT,
-                timestamp = Instant.fromEpochSeconds(1000),
-            )
         val rateLimit = OfferRateLimit(maxPerWindow = 10, windowSeconds = 60)
         val session =
             CredentialOfferSession(
@@ -170,7 +160,12 @@ class SessionEntryConversionTest {
                 lastUpdatedAt = 3000000L,
                 uriLifecycle = OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,
                 rateLimit = rateLimit,
-                initialLookupKeys = listOf(lookupKey),
+                offerTemplate =
+                    CredentialOfferTemplate(
+                        issuerId = "issuer",
+                        credentialConfigurationIds = listOf("PID"),
+                        initialConnectorFields = mapOf("email" to JsonPrimitive("user@example.com")),
+                    ),
             )
 
         val entry = KvCredentialOfferSessionStore.CredentialOfferSessionEntry.fromPublic(session)
@@ -180,9 +175,7 @@ class SessionEntryConversionTest {
         assertNotNull(restored.rateLimit)
         assertEquals(10, restored.rateLimit!!.maxPerWindow)
         assertEquals(60L, restored.rateLimit!!.windowSeconds)
-        assertEquals(1, restored.initialLookupKeys.size)
-        assertEquals("email", restored.initialLookupKeys[0].name)
-        assertEquals("user@example.com", restored.initialLookupKeys[0].value)
+        assertEquals(JsonPrimitive("user@example.com"), restored.offerTemplate?.initialConnectorFields?.get("email"))
     }
 
     @Test
@@ -196,7 +189,6 @@ class SessionEntryConversionTest {
                 lastUpdatedAt = 4000000L,
                 uriLifecycle = OfferUriLifecycle.SINGLE_USE,
                 rateLimit = null,
-                initialLookupKeys = emptyList(),
             )
 
         val entry = KvCredentialOfferSessionStore.CredentialOfferSessionEntry.fromPublic(session)
@@ -204,6 +196,6 @@ class SessionEntryConversionTest {
 
         assertEquals(OfferUriLifecycle.SINGLE_USE, restored.uriLifecycle)
         assertNull(restored.rateLimit)
-        assertTrue(restored.initialLookupKeys.isEmpty())
+        assertNull(restored.offerTemplate)
     }
 }

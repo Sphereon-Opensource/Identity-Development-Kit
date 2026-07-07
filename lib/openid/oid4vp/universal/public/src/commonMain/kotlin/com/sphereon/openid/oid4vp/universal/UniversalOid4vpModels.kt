@@ -25,6 +25,7 @@ import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.statuslist.CredentialStatusPolicy
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -207,21 +208,25 @@ data class CreateAuthorizationRequestOutput(
      * DCQL/PE query identifier. Required by spec.
      */
     @SerialName("query_id")
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val queryId: String? = null,
     /**
      * Deeplink URI initiating the authentication flow (e.g., openid4vp://...). Required by spec.
      */
     @SerialName("request_uri")
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val requestUri: String? = null,
     /**
      * Endpoint URL for checking authentication status. Required by spec.
      */
     @SerialName("status_uri")
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val statusUri: String? = null,
     /**
      * QR code as data URI. Only provided when qr_code options were included in the request.
      */
     @SerialName("qr_uri")
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val qrUri: String? = null,
 )
 

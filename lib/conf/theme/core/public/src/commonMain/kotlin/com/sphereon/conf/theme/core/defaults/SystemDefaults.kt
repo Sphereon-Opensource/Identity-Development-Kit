@@ -1307,6 +1307,9 @@ object SystemDefaults {
 
                     // ── Dark override layer — generated from tokens.json (Block C) ────────
                     shadow(TokenKeyConstants.SHADOW_FOCUS_RING, "0 0 0 1.5px {color.primary}, 0 0 0 4px color-mix(in srgb, {color.primary} 40%, transparent)")
+                    shadow(TokenKeyConstants.SHADOW_ERROR_RING, "0 0 0 3px color-mix(in srgb, {color.error} 70%, transparent)")
+                    shadow(TokenKeyConstants.COMP_FOCUS_RING, "{shadow.focusRing}")
+                    shadow(TokenKeyConstants.COMP_ERROR_RING, "{shadow.errorRing}")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "color-mix(in srgb, {palette.brand.500} 18%, transparent)")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "#E0D2FA")
@@ -1371,6 +1374,13 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_BORDER_SUBTLE, "#22262F")
                     color(TokenKeyConstants.COLOR_BORDER_DISABLED, "#22262F")
                     string(TokenKeyConstants.COLOR_GRADIENT_BRAND, "linear-gradient(180deg, {palette.brand.500} 0%, {palette.brand.700} 100%)")
+                    string(TokenKeyConstants.COLOR_GRADIENT_BRAND_SUBTLE, "linear-gradient(180deg, color-mix(in srgb, {color.primary} 18%, {color.surface}) 0%, {color.surface} 100%)")
+                    string(
+                        TokenKeyConstants.COLOR_GRADIENT_BRAND_HOVER,
+                        "linear-gradient(180deg, color-mix(in srgb, {color.primary} 90%, #000) 0%, color-mix(in srgb, {color.primary} 75%, #000) 100%)"
+                    )
+                    string(TokenKeyConstants.COLOR_GRADIENT_SURFACE, "linear-gradient(180deg, {color.surface} 0%, color-mix(in srgb, {color.onSurface} 4%, {color.surface}) 100%)")
+                    string(TokenKeyConstants.COLOR_GRADIENT_OVERLAY, "radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, {color.primary} 10%, transparent), transparent 60%)")
 
                     addVariantIndependentExtensions()
 
@@ -1398,6 +1408,10 @@ object SystemDefaults {
             tokens =
                 buildTokens {
                     // Primary — darker stops for max contrast on white
+                    shadow(TokenKeyConstants.SHADOW_FOCUS_RING, "0 0 0 2px {color.primary}, 0 0 0 5px color-mix(in srgb, {color.primary} 35%, transparent)")
+                    shadow(TokenKeyConstants.SHADOW_ERROR_RING, "0 0 0 3px color-mix(in srgb, {color.error} 75%, transparent)")
+                    shadow(TokenKeyConstants.COMP_FOCUS_RING, "{shadow.focusRing}")
+                    shadow(TokenKeyConstants.COMP_ERROR_RING, "{shadow.errorRing}")
                     color(TokenKeyConstants.COLOR_PRIMARY, "{palette.brand.700}")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "{palette.brand.50}")
@@ -1484,6 +1498,14 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_BORDER_STRONG, "#000000")
                     color(TokenKeyConstants.COLOR_BORDER_SUBTLE, "{palette.gray.500}")
                     color(TokenKeyConstants.COLOR_BORDER_DISABLED, "{palette.gray.400}")
+                    string(TokenKeyConstants.COLOR_GRADIENT_BRAND, "linear-gradient(180deg, {palette.brand.600} 0%, {palette.brand.800} 100%)")
+                    string(TokenKeyConstants.COLOR_GRADIENT_BRAND_SUBTLE, "linear-gradient(180deg, color-mix(in srgb, {color.primary} 16%, {color.surface}) 0%, {color.surface} 100%)")
+                    string(
+                        TokenKeyConstants.COLOR_GRADIENT_BRAND_HOVER,
+                        "linear-gradient(180deg, color-mix(in srgb, {color.primary} 92%, #000) 0%, color-mix(in srgb, {color.primary} 78%, #000) 100%)"
+                    )
+                    string(TokenKeyConstants.COLOR_GRADIENT_SURFACE, "linear-gradient(180deg, {color.surface} 0%, color-mix(in srgb, {color.onSurface} 6%, {color.surface}) 100%)")
+                    string(TokenKeyConstants.COLOR_GRADIENT_OVERLAY, "radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, {color.primary} 10%, transparent), transparent 60%)")
 
                     addVariantIndependentExtensions()
                 },

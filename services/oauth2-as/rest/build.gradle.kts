@@ -43,6 +43,10 @@ kotlin {
                 // OAuth2 client (for introspection/metadata)
                 implementation(projects.libOauth2ClientImpl)
 
+                // Software instance registry: the login page resolves the AS instance's
+                // application identity (instance slug -> software party UUID) for theming.
+                implementation(projects.libSoftwareRegistryPublic)
+
                 // JWT validation: the internal signing-key provisioning endpoint authenticates the
                 // platform's east-west bearer (signature vs the platform JWKS + per-tenant audience)
                 // via the IDK JwtValidationService + IdpRegistry, mirroring the operator bearer path.

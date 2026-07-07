@@ -15,8 +15,22 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.credential.issuance.pipeline.CredentialClaimsBinding
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import kotlinx.serialization.Serializable
+
+@JsExportCompat
+@Serializable
+data class DeferrableCredentialBinding(
+    val id: String,
+    val deferralPolicy: CredentialDeferralPolicy = CredentialDeferralPolicy(),
+)
+
+@JsExportCompat
+@Serializable
+data class CredentialDeferralPolicy(
+    val enabled: Boolean = false,
+    val maxDeferralSeconds: Long = 7L * 24 * 3600,
+)
 
 /**
  * §6.5 wallet-auth invariant for deferral policies.
@@ -84,7 +98,7 @@ object DeferralWalletAuthValidator {
      *   the operator did not override the key, so the validator sees what the runtime sees.
      */
     fun validate(
-        claimsBindings: Iterable<CredentialClaimsBinding>,
+        claimsBindings: Iterable<DeferrableCredentialBinding>,
         asConfig: OAuth2ServerInstanceConfig,
         deferralScopedTokenFallbackEnabled: Boolean,
         deferralScopedTokenTtlSeconds: Long? = null,
@@ -114,7 +128,7 @@ object DeferralWalletAuthValidator {
     }
 
     private fun violatesInvariant(
-        binding: CredentialClaimsBinding,
+        binding: DeferrableCredentialBinding,
         asConfig: OAuth2ServerInstanceConfig,
         deferralScopedTokenFallbackEnabled: Boolean,
         deferralScopedTokenTtlSeconds: Long?,

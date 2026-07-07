@@ -17,11 +17,11 @@ import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.KmsProviderCapabilities
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.OperationCapability
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.TestKmsMock
 import com.sphereon.crypto.core.kms.TestKmsProviderMock
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyArgs

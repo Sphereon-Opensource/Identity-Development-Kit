@@ -11,7 +11,6 @@
 
 package com.sphereon.openid.oid4vci.issuer.attribute
 
-import com.sphereon.attribute.flow.AttributeProvenanceRef
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
@@ -23,7 +22,7 @@ import kotlin.time.Duration
  * to merge into the credential and the set of source ids the contributor is still waiting on for
  * an inbound async-callback contribution.
  *
- * [pendingAsyncCallbackSources] is the set of `(sourceId)` tuples whose binding declares
+ * [pendingAsyncCallbackSources] is the set of opaque contributor ids whose binding declares
  * `callbackStyle = ASYNC_CALLBACK` and have not yet contributed to the pipeline session bag.
  * The issuer command holds its `/credential` response open for [syncWaitWindow] waiting for those
  * sources to land via the inbound callback endpoint, then re-runs the contributor before deciding
@@ -42,6 +41,6 @@ data class CredentialAttributeContribution(
     @JsExportIgnoreCompat
     val attributes: Map<String, JsonElement>,
     @JsExportIgnoreCompat
-    val pendingAsyncCallbackSources: Set<AttributeProvenanceRef> = emptySet(),
+    val pendingAsyncCallbackSources: Set<String> = emptySet(),
     val syncWaitWindow: Duration = Duration.ZERO,
 )

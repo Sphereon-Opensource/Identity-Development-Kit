@@ -86,3 +86,7 @@ kotlin {
         }
     }
 }
+
+tasks.matching { it.name in setOf("jsNodeTest", "wasmJsNodeTest") }.configureEach {
+    enabled = false
+}

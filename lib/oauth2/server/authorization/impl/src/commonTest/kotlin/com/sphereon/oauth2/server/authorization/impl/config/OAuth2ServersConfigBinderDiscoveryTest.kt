@@ -131,10 +131,11 @@ class OAuth2ServersConfigBinderDiscoveryTest {
                 "$prefix.phase168830.issuer" to "https://phase168830.saas.localtest.me",
                 "$prefix.phase168830.oidc" to "SUPPORTED",
             )
-        val binder = newBinder(
-            properties,
-            subPropertiesOverride = { _, _, _ -> emptyMap() },
-        )
+        val binder =
+            newBinder(
+                properties,
+                subPropertiesOverride = { _, _, _ -> emptyMap() },
+            )
 
         val config = binder.getConfig()
         assertEquals(setOf("phase168830"), config.servers.keys)

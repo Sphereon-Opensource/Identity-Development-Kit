@@ -24,7 +24,7 @@ import kotlin.time.Instant
 /**
  * A theme definition containing a set of design tokens at a given scope.
  *
- * Definitions are layered during resolution: SYSTEM < APP < TENANT < PRINCIPAL,
+ * Definitions are layered during resolution: SYSTEM < PRODUCT < TENANT < APPLICATION < PRINCIPAL,
  * with variant-specific definitions overriding common (null-variant) ones at the same scope.
  *
  * @property id Unique identifier for this definition
@@ -32,6 +32,8 @@ import kotlin.time.Instant
  * @property variant Optional variant (LIGHT/DARK/HIGH_CONTRAST). Null = common baseline for this scope.
  * @property parentId Optional parent definition to inherit from
  * @property scope The hierarchical scope at which this definition applies
+ * @property productType Required when [scope] is PRODUCT; absent otherwise
+ * @property applicationId Required when [scope] is APPLICATION; absent otherwise
  * @property tokens The design tokens defined at this level
  * @property createdAt When this definition was created
  * @property updatedAt When this definition was last updated
@@ -45,8 +47,9 @@ data class ThemeDefinition
         val name: String,
         val variant: ThemeVariant? = null,
         val parentId: String? = null,
-        val scope: ThemeScope = ThemeScope.APP,
-        val appId: String? = null,
+        val scope: ThemeScope = ThemeScope.TENANT,
+        val productType: ProductType? = null,
+        val applicationId: String? = null,
         val tokens: List<ThemeToken> = emptyList(),
         val version: Long = 1,
         val createdAt: Instant? = null,

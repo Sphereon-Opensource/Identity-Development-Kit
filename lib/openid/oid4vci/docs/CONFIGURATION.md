@@ -10,7 +10,7 @@ Configuration follows three tiers:
 |---|---|---|---|
 | **Issuer config** | `Oid4vciIssuerConfigProvider` | Per issuer | Metadata, credential configurations, signing key |
 | **Issuance policy** | `CredentialIssuancePolicyConfig` | Per credential configuration | IAE requirements, allowed grants, nonce TTL, encryption, deferred retry |
-| **Issuance pipeline** | `PipelineConfigurationResolver` | Per issuer / credential set | Attribute-source bindings, lookup keys, credential-claim bindings |
+| **Issuance lifecycle hook** | `Oid4vciIssuanceLifecycleHook` | Per issuer / credential set | Protocol lifecycle phases and opaque connector fields owned by EDK/VDX |
 | **Client config** | `Oid4vciClientConfig` | Per client/wallet | Client ID, nonce behavior, polling settings |
 
 All properties use the IDK `ConfigService` with hierarchical resolution (App → Tenant → Principal). Properties can be set via YAML, environment variables, or the settings store.
@@ -193,7 +193,7 @@ for a credential are grouped together in configuration.
 
 ---
 
-## Credential Designs, Credential Channels, and Attribute Sources
+## Credential Designs, Credential Channels, and Connector Invocations
 
 OID4VCI does not introduce a separate semantic channel. The semantic model binds
 claims to one or more **credential channels**: for example an SD-JWT credential
@@ -205,101 +205,165 @@ That keeps the layers separate:
 
 - **IDK** can run the simple config-driven issuer shown above. It advertises the
   configured credential ids and can issue credentials without a credential-design
-  store or attribute-source registry.
+  store or connector registry.
 - **EDK** adds credential design, semantic authoring, the issuance pipeline, and
-  the persisted attribute-source repository. EDK code uses
-  `CreateAttributeSourceArgs`, `UpdateAttributeSourceArgs`,
-  `ListAttributeSourcesArgs`, and `SemanticBindingInput` for the registry.
-- **VDX** exposes the product REST facade for managing persisted sources at
-  `/api/attribute-source/v1`. The API name is singular; resource paths are
-  plural, for example `/sources` and `/sources/{sourceId}/semantic-bindings`.
+  connector invocation execution. EDK owns the neutral runtime model and does
+  not import VDX product packages.
+- **VDX** exposes the product REST facade for managing persisted connector
+  instances, resources, semantic bindings, routes, and invocation bindings at
+  `/api/connector/v1`.
 
-An attribute source describes an integration target that can contribute data to
-the issuance pipeline: an HR REST endpoint, an employee directory table, a vault
-lookup, an IAM source, or a managed tabular source. The source registry does not
-store connector secrets inline. `connectionRef.configKeyPrefix` points at the
-configuration or secret material used by the actual connector.
+A connector invocation binding describes a durable action that can run at a
+named OID4VCI lifecycle stage. The binding points at a connector target or route,
+declares whether it enriches fields, exports data, writes to a vault, or sends a
+notification, and carries subset mapping plus execution policy. The same
+`PipelineConfiguration.invocationBindings` list is used for all OID4VCI phases;
+there is no separate OID4VCI compatibility pipeline.
 
-### Registering a source through VDX
+### Registering an invocation binding through VDX
 
-The REST layer is hosted by VDX, while persistence and command handling live in
-EDK. A VDX-hosted issuer or monolith registers sources through:
+The REST layer is hosted by VDX. A VDX-hosted issuer or monolith registers
+connector invocation bindings through:
 
 ```http
-POST /api/attribute-source/v1/sources
+POST /api/connector/v1/invocation/bindings
 Authorization: Bearer <operator access token>
 Content-Type: application/json
 ```
 
 ```json
 {
-  "sourceId": "hr-workday-profile",
-  "displayName": "Workday profile lookup",
-  "description": "Resolves employee credential claims from the HR profile API by employee_id.",
-  "kind": "REST_API",
-  "managementMode": "EXTERNAL",
-  "runtimeMode": "THIRD_PARTY",
-  "consumedLookupKeys": ["employee_id"],
-  "producedAttributes": [
-    { "path": "employee.givenName", "nativeName": "first_name", "nativeType": "string", "label": "Given name" },
-    { "path": "employee.familyName", "nativeName": "last_name", "nativeType": "string", "label": "Family name" },
-    { "path": "employment.department", "nativeName": "department_code", "nativeType": "string", "label": "Department" }
-  ],
-  "connectionRef": {
-    "endpointUrl": "https://hr.example.com/api/employees",
-    "configKeyPrefix": "attribute-source.hr-workday"
+  "binding": {
+    "invocationBindingId": "issuer-config-1:credential-request:hr-profile",
+    "ownerSurface": "OID4VCI",
+    "ownerReference": "issuer-config-1",
+    "stage": "OID4VCI_CREDENTIAL_REQUEST",
+    "role": "ENRICHMENT_SOURCE",
+    "target": {
+      "routeId": "hr-profile-route"
+    },
+    "exchangeMode": "PLATFORM_INITIATED_PULL",
+    "subsetMapping": {
+      "inputFields": [
+        { "connectorField": "employee_id" }
+      ],
+      "producedFields": [
+        { "canonicalFieldPath": "employee.givenName" },
+        { "canonicalFieldPath": "employee.familyName" },
+        { "canonicalFieldPath": "employment.department" }
+      ]
+    },
+    "logicalContext": {
+      "tenantId": "tenant-1"
+    },
+    "executionPolicy": {
+      "timing": "INLINE_REQUIRED",
+      "failureEffect": "FAIL_PROTOCOL"
+    }
   }
 }
 ```
 
-Semantic bindings are optional. When present, they describe which semantic
-catalog/profile/set attribute a native source field contributes:
+Semantic bindings are optional and still live on the connector surface. When
+present, they describe which semantic catalog/profile/set attribute a connector
+resource or field contributes:
 
 ```http
-PUT /api/attribute-source/v1/sources/hr-workday-profile/semantic-bindings
+POST /api/connector/v1/semantic/bindings
 Authorization: Bearer <operator access token>
 Content-Type: application/json
 ```
 
 ```json
 {
-  "bindings": [
-    {
-      "catalogId": "acme-employee-catalog",
-      "profileId": "acme-employee-profile",
-      "setId": "acme-employee-badge-set",
-      "attributePath": "employee.given_name",
-      "nativeField": "first_name"
-    },
-    {
-      "catalogId": "acme-employee-catalog",
-      "profileId": "acme-employee-profile",
-      "setId": "acme-employee-badge-set",
-      "attributePath": "employment.department",
-      "nativeField": "department_code"
-    }
-  ]
+  "semanticBindingId": "hr-profile:first-name",
+  "resourceDescriptorId": "hr-profile-response",
+  "fieldDescriptorId": "first_name",
+  "bindingKind": "ATTRIBUTE_FIELD",
+  "connectorId": "hr-workday-profile",
+  "semanticReference": {
+    "referenceType": "SEMANTIC_ATTRIBUTE",
+    "referenceId": "acme-employee-profile:employee.given_name"
+  },
+  "validationMode": "WARN"
 }
 ```
 
-### Binding sources into an OID4VCI pipeline
+### Binding connector invocations into an OID4VCI pipeline
 
-The OID4VCI issuer resolves a `PipelineConfiguration` through
-`PipelineConfigurationResolver.resolve(issuerId, credentialConfigurationIds)`.
-The IDK default resolves no pipeline. EDK deployments provide a resolver, for
-example a ConfigService-backed resolver reading `oid4vci.issuer.{issuerId}.pipeline.*`.
+The OID4VCI issuer calls `Oid4vciIssuanceLifecycleHook.initializeOffer(...)`.
+The IDK default hook is a no-op. EDK deployments bind a connector-backed hook
+that resolves `PipelineConfiguration` and VDX deployments make those connector
+bindings durable and registrable.
 
 The resolved model is the important contract:
 
 ```kotlin
 PipelineConfiguration(
     pipelineId = "acme-employee-issuance",
-    sourceBindings = listOf(
-        AttributeSourceBinding(
-            sourceId = AttributeProvenanceRef("external-http"),
-            sourceInstanceId = "hr-workday-profile",
-            phases = setOf(Oid4vciPipelinePhase.CREDENTIAL_REQUEST),
-            required = true,
+    invocationBindings = listOf(
+        ConnectorInvocationBinding(
+            invocationBindingId = ConnectorInvocationBindingId("issuer-config-1:start:audit"),
+            ownerSurface = ConnectorOwnerSurface.OID4VCI,
+            ownerReference = "issuer-config-1",
+            stage = ConnectorInvocationStage.OID4VCI_START,
+            role = ConnectorInvocationRole.NOTIFICATION,
+            target = ConnectorInvocationTarget(routeId = ConnectorRouteId("issuance-audit-route")),
+            exchangeMode = ConnectorExchangeMode.PLATFORM_INITIATED_PUSH,
+            logicalContext = ConnectorLogicalContext(tenantId = "tenant-1"),
+        ),
+        ConnectorInvocationBinding(
+            invocationBindingId = ConnectorInvocationBindingId("issuer-config-1:token:risk"),
+            ownerSurface = ConnectorOwnerSurface.OID4VCI,
+            ownerReference = "issuer-config-1",
+            stage = ConnectorInvocationStage.OID4VCI_TOKEN,
+            role = ConnectorInvocationRole.ENRICHMENT_SOURCE,
+            target = ConnectorInvocationTarget(routeId = ConnectorRouteId("risk-score-route")),
+            exchangeMode = ConnectorExchangeMode.PLATFORM_INITIATED_PULL,
+            subsetMapping = ConnectorSubsetMapping(
+                inputFields = listOf(ConnectorFieldSelector(protocolClaimPath = "subject")),
+                producedFields = listOf(ConnectorFieldSelector(canonicalFieldPath = "risk.score")),
+            ),
+            logicalContext = ConnectorLogicalContext(tenantId = "tenant-1"),
+        ),
+        ConnectorInvocationBinding(
+            invocationBindingId = ConnectorInvocationBindingId("issuer-config-1:credential-request:hr-profile"),
+            ownerSurface = ConnectorOwnerSurface.OID4VCI,
+            ownerReference = "issuer-config-1",
+            stage = ConnectorInvocationStage.OID4VCI_CREDENTIAL_REQUEST,
+            role = ConnectorInvocationRole.ENRICHMENT_SOURCE,
+            target = ConnectorInvocationTarget(routeId = ConnectorRouteId("hr-profile-route")),
+            exchangeMode = ConnectorExchangeMode.PLATFORM_INITIATED_PULL,
+            subsetMapping = ConnectorSubsetMapping(
+                inputFields = listOf(ConnectorFieldSelector(connectorField = "employee_id")),
+                producedFields = listOf(
+                    ConnectorFieldSelector(canonicalFieldPath = "employee.givenName"),
+                    ConnectorFieldSelector(canonicalFieldPath = "employee.familyName"),
+                    ConnectorFieldSelector(canonicalFieldPath = "employment.department"),
+                ),
+            ),
+            logicalContext = ConnectorLogicalContext(tenantId = "tenant-1"),
+        ),
+        ConnectorInvocationBinding(
+            invocationBindingId = ConnectorInvocationBindingId("issuer-config-1:deferred:refresh"),
+            ownerSurface = ConnectorOwnerSurface.OID4VCI,
+            ownerReference = "issuer-config-1",
+            stage = ConnectorInvocationStage.OID4VCI_DEFERRED,
+            role = ConnectorInvocationRole.ENRICHMENT_SOURCE,
+            target = ConnectorInvocationTarget(routeId = ConnectorRouteId("deferred-refresh-route")),
+            exchangeMode = ConnectorExchangeMode.PLATFORM_INITIATED_PULL,
+            logicalContext = ConnectorLogicalContext(tenantId = "tenant-1"),
+            executionPolicy = ConnectorInvocationExecutionPolicy(timing = ConnectorExecutionTiming.INLINE_OPTIONAL),
+        ),
+        ConnectorInvocationBinding(
+            invocationBindingId = ConnectorInvocationBindingId("issuer-config-1:post-issuance:proof-vault"),
+            ownerSurface = ConnectorOwnerSurface.OID4VCI,
+            ownerReference = "issuer-config-1",
+            stage = ConnectorInvocationStage.OID4VCI_POST_ISSUANCE,
+            role = ConnectorInvocationRole.VAULT_RETENTION,
+            target = ConnectorInvocationTarget(routeId = ConnectorRouteId("proof-vault-route")),
+            exchangeMode = ConnectorExchangeMode.PLATFORM_INITIATED_PUSH,
+            logicalContext = ConnectorLogicalContext(tenantId = "tenant-1"),
         ),
     ),
     claimsBindings = listOf(
@@ -311,16 +375,11 @@ PipelineConfiguration(
             ),
         ),
     ),
-    expectedInitialLookupKeys = setOf("employee_id"),
+    expectedInitialConnectorFields = setOf("employee_id"),
 )
 ```
 
-`sourceId` selects the source implementation registered in the pipeline engine.
-`sourceInstanceId` selects the tenant-registered source definition from the EDK
-attribute-source repository. This is the link between the VDX REST API and the
-runtime pipeline.
-
-Offer creation can seed lookup keys so sources can resolve data before or during
+Offer creation can seed connector fields so sources can resolve data before or during
 the wallet credential request:
 
 ```http
@@ -334,24 +393,21 @@ Content-Type: application/json
   "credential_configuration_ids": ["EmployeeCredential"],
   "correlation_id": "employee-2026-000931",
   "grants": { "authorization_code": {} },
-  "initial_lookup_keys": [
-    {
-      "name": "employee_id",
-      "value": "E-100042",
-      "type": { "value": "employee_id" },
-      "producedBy": "issuer-backend",
-      "phase": { "value": "session_init" },
-      "timestamp": "2026-06-10T08:30:00Z"
-    }
-  ]
+  "initial_connector_fields": {
+    "employee_id": "E-100042"
+  }
 }
 ```
 
-The resulting OID4VCI session stores the pipeline correlation id when a pipeline
-is resolved. Later `/credential` and `/deferred_credential` handling uses that
-correlation id to run the bound sources, assemble claims for the requested
-`credential_configuration_id`, and defer issuance when required async sources
-have not completed.
+The resulting OID4VCI session stores the lifecycle correlation id returned by
+the hook. Offer creation can run `OID4VCI_START`, `OID4VCI_AUTHORIZATION`,
+or `OID4VCI_PRE_AUTHORIZED`; token handling runs `OID4VCI_TOKEN`; credential
+requests run `OID4VCI_CREDENTIAL_REQUEST`, `OID4VCI_PRE_ISSUE`, and
+`OID4VCI_POST_ISSUANCE`; deferred issuance runs `OID4VCI_DEFERRED`,
+`OID4VCI_PRE_ISSUE`, and `OID4VCI_POST_ISSUANCE`; notification receipts run
+`OID4VCI_NOTIFICATION_RECEIPT`. Each phase uses the same correlation id and
+accumulated field bag, so later stages can consume fields produced by earlier
+connector invocations.
 
 ---
 
@@ -524,3 +580,4 @@ For long-lived deferred issuance (hours/days), EDK can call the command from a p
 | Nonce endpoint | 1.1 Section 8 |
 | Deferred credential | 1.1 Section 10 |
 | Credential response encryption | 1.1 Section 11 |
+

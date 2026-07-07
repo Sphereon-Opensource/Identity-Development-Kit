@@ -1002,8 +1002,7 @@ class PropertySourceBootstrapImplTest {
                 override val configLevel = ConfigLevel.TENANT
                 override val providerId = "tenant-bootstrap-only"
 
-                override fun isEnabled(resolver: PropertyResolver): Boolean =
-                    resolver.getProperty("config.providers.$providerId.enabled", Boolean::class, true) != false
+                override fun isEnabled(resolver: PropertyResolver): Boolean = resolver.getProperty("config.providers.$providerId.enabled", Boolean::class, true) != false
 
                 override fun getPropertySource(): PropertySource<*> = MapPropertySource("tenant-bootstrap-only-source", emptyMap())
 

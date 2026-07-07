@@ -28,15 +28,26 @@ import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.common.model.CredentialNotification
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
+import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.command.HandleNotificationArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleNotificationCommand
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuancePhase
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
+import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
+import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import com.sphereon.openid.oid4vci.issuer.store.NotificationStateStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -56,6 +67,8 @@ class HandleNotificationCommandImpl(
     execution: SessionExecution,
     private val asBridge: Oid4vciAuthorizationServerBridge,
     private val notificationStore: NotificationStateStore,
+    private val sessionStore: CredentialIssuanceSessionStore,
+    private val lifecycleHook: Oid4vciIssuanceLifecycleHook? = null,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<HandleNotificationArgs, Unit, IdkError>(
         commandId = HandleNotificationCommand.COMMAND_ID,
@@ -108,15 +121,16 @@ class HandleNotificationCommandImpl(
         val notification = applied.notification
 
         // 0. Validate access token
-        asBridge
-            .validateAccessToken(
-                ValidateAccessTokenArgs(
-                    accessToken = applied.accessToken,
-                    dpopProof = applied.dpopProof,
-                    httpUrl = applied.httpUrl,
-                    httpMethod = applied.httpMethod,
-                ),
-            ).getOrElse { return Err(it) }
+        val tokenContext =
+            asBridge
+                .validateAccessToken(
+                    ValidateAccessTokenArgs(
+                        accessToken = applied.accessToken,
+                        dpopProof = applied.dpopProof,
+                        httpUrl = applied.httpUrl,
+                        httpMethod = applied.httpMethod,
+                    ),
+                ).getOrElse { return Err(it) }
 
         // 1. Validate notification_id is not blank — malformed request per OID4VCI spec
         if (notification.notificationId.isBlank()) {
@@ -143,7 +157,53 @@ class HandleNotificationCommandImpl(
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_id"))
         }
 
+        contributeNotificationReceiptPhase(tokenContext, notification).getOrElse { return Err(it) }
+
         // 4. Return success
         return Ok(Unit)
     }
+
+    private suspend fun contributeNotificationReceiptPhase(
+        tokenContext: ValidatedTokenContext,
+        notification: CredentialNotification,
+    ): IdkResult<Unit, IdkError> {
+        val hook = lifecycleHook ?: return Ok(Unit)
+        val session = findPipelineSession(tokenContext).getOrElse { return Err(it) } ?: return Ok(Unit)
+        val correlationId = session.lifecycleCorrelationId ?: return Ok(Unit)
+        hook
+            .recordPhase(
+                Oid4vciPhaseLifecycleArgs(
+                    correlationId = correlationId,
+                    phase = Oid4vciIssuancePhase.NOTIFICATION_RECEIPT,
+                    fields = notificationReceiptFields(tokenContext, notification),
+                ),
+            ).getOrElse { return Err(it) }
+        return Ok(Unit)
+    }
+
+    private suspend fun findPipelineSession(tokenContext: ValidatedTokenContext): IdkResult<IssuanceSession?, IdkError> {
+        for (configId in tokenContext.credentialConfigurationIds) {
+            val session = sessionStore.findByCredentialConfigurationId(configId).getOrElse { return Err(it) }
+            if (session?.lifecycleCorrelationId != null) {
+                return Ok(session)
+            }
+        }
+        return Ok(null)
+    }
+
+    private fun notificationReceiptFields(
+        tokenContext: ValidatedTokenContext,
+        notification: CredentialNotification,
+    ): Map<String, JsonElement> =
+        buildMap {
+            put("oid4vci.notificationId", JsonPrimitive(notification.notificationId))
+            put("oid4vci.notificationEvent", JsonPrimitive(notification.event.value))
+            notification.eventDescription?.let { put("oid4vci.notificationEventDescription", JsonPrimitive(it)) }
+            put("oid4vci.subject", JsonPrimitive(tokenContext.subject))
+            put("oid4vci.clientId", JsonPrimitive(tokenContext.clientId))
+            put(
+                "oid4vci.authorizedCredentialConfigurationIds",
+                buildJsonArray { tokenContext.credentialConfigurationIds.forEach { add(it) } },
+            )
+        }
 }

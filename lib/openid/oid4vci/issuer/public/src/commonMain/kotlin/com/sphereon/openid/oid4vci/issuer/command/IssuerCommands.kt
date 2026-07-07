@@ -16,11 +16,9 @@
 
 package com.sphereon.openid.oid4vci.issuer.command
 
-import com.sphereon.attribute.pipeline.LookupKey
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtCompactResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
@@ -36,6 +34,7 @@ import com.sphereon.openid.oid4vci.common.model.DeferredCredentialRequest
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.OptionalBinding
 import kotlinx.serialization.Serializable
@@ -57,6 +56,11 @@ data class CreateCredentialOfferArgs(
     /** Optional tx_code input mode ("numeric" | "text"). Null = issuer default (numeric). */
     val txCodeInputMode: String? = null,
     val preSeededAttributes: Map<String, JsonElement>? = null,
+    /**
+     * Opaque lifecycle fields for implementation-specific extensions. IDK does not interpret
+     * these as credential subject data; they are passed only to [Oid4vciIssuanceLifecycleHook].
+     */
+    val initialLifecycleFields: Map<String, JsonElement> = emptyMap(),
     val offerTtlSeconds: Long = 600,
     /**
      * Opaque usage-token the calling flow wants bound to this issuance.
@@ -87,13 +91,6 @@ data class CreateCredentialOfferArgs(
      * wallet fetches, minting a fresh offer on each GET.
      */
     val uriLifecycle: OfferUriLifecycle = OfferUriLifecycle.SINGLE_USE,
-    /**
-     * Lookup keys seeded into the pipeline session at offer-creation time so attribute
-     * sources can start resolving subject data before the wallet presents a proof.
-     * Only meaningful when a pipeline is bound to this offer.
-     */
-    @JsExportIgnoreCompat
-    val initialLookupKeys: List<LookupKey> = emptyList(),
     /**
      * Rate-limit applied to a reusable offer URI. Mandatory when
      * [uriLifecycle] is [OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH]; must be null for

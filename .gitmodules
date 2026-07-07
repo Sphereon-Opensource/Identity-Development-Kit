@@ -5,3 +5,7 @@
 	path = openapi
 	url = https://github.com/Sphereon-Opensource/openapi.git
 	branch = develop
+[submodule "wallet"]
+	path = wallet
+	url = https://github.com/Sphereon-Opensource/wallet
+	branch = feature/wallet-interactions

@@ -35,6 +35,7 @@ import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.kmsQuery
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import com.sphereon.crypto.core.testutil.createCryptoTestAppGraph
+import com.sphereon.crypto.core.testutil.supportsDigestSignatureRoundTrip
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import dev.whyoleg.cryptography.CryptographyProvider
@@ -297,6 +298,10 @@ class KeyManagerServiceImplTest {
     @Test
     fun signDigestShouldUseDigestSignatureCapability() =
         runTest {
+            if (!supportsDigestSignatureRoundTrip()) {
+                return@runTest
+            }
+
             val keyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
             val privateKeyInfo = keyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
             val publicKeyInfo = keyPair.joseToManagedKeyInfo(KeyVisibility.PUBLIC)

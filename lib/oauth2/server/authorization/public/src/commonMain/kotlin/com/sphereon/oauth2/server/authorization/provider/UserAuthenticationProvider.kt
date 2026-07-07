@@ -16,9 +16,12 @@
 
 package com.sphereon.oauth2.server.authorization.provider
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import kotlin.time.Clock
 
 /**
  * User authentication provider abstraction
@@ -99,6 +102,35 @@ interface UserAuthenticationProvider {
     ): IdkResult<String?, AuthenticationError>
 
     /**
+     * Authenticate user with credentials and preserve the achieved authentication context.
+     *
+     * This is the context-bearing form used by login surfaces that mint OIDC sessions. The legacy
+     * [authenticateWithCredentials] method remains for existing providers and call sites; its
+     * default bridge intentionally carries only the subject and method, because older providers did
+     * not expose trustworthy ACR/AMR/auth_time values.
+     */
+    suspend fun authenticateUserWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext? = null,
+    ): IdkResult<AuthenticatedUser?, AuthenticationError> {
+        val result = authenticateWithCredentials(credentials, context)
+        return result.fold(
+            success = { userId ->
+                Ok(
+                    userId?.let {
+                        AuthenticatedUser(
+                            userId = it,
+                            authenticatedAt = Clock.System.now(),
+                            authenticationMethod = AuthenticationMethod.PASSWORD,
+                        )
+                    },
+                )
+            },
+            failure = { Err(it) },
+        )
+    }
+
+    /**
      * Logout user
      *
      * Terminates the user's authentication session.
@@ -145,6 +177,7 @@ interface UserAuthenticationProvider {
 data class AuthenticationContext(
     val sessionId: String? = null,
     val applicationId: String? = null,
+    val acrValues: List<String> = emptyList(),
 )
 
 /**

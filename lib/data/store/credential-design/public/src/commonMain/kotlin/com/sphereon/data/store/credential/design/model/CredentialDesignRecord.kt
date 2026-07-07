@@ -17,7 +17,6 @@
 package com.sphereon.data.store.credential.design.model
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.credential.issuance.pipeline.SemanticAttributeSetRef
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant

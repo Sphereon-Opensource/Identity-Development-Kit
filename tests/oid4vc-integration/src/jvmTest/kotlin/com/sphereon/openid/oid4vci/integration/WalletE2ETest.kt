@@ -39,12 +39,12 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
-import com.sphereon.wallet.impl.di.WalletGraph
 import com.sphereon.wallet.ObtainCredentialRequest
 import com.sphereon.wallet.ObtainCredentialResult
 import com.sphereon.wallet.WalletConfig
 import com.sphereon.wallet.credential.CredentialFormat
 import com.sphereon.wallet.credential.CredentialLifecycleState
+import com.sphereon.wallet.impl.di.WalletGraph
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -928,7 +928,13 @@ class WalletE2ETest {
                 val boundInstance = postPresentDoc.instances.firstOrNull { it.bindingRefs.isNotEmpty() }
                 assertNotNull(boundInstance, "At least one instance should have a presentation binding after presentation")
                 // identityIdentifierId is null because the no-op identity resolver does not enrich the ref
-                assertEquals(null, boundInstance.bindingRefs.first().verifierRef.identityIdentifierId, "no-op resolver leaves identityIdentifierId null")
+                assertEquals(
+                    null,
+                    boundInstance.bindingRefs
+                        .first()
+                        .verifierRef.identityIdentifierId,
+                    "no-op resolver leaves identityIdentifierId null"
+                )
 
                 // =====================================================================
                 // Step 8: Assert the verifier session reached the RESPONSE_VERIFIED state

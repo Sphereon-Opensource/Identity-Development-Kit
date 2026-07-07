@@ -16,13 +16,12 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.command
 
-import com.sphereon.credential.issuance.pipeline.command.ContributeAttributesCommand
-import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessCommand
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributor
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
 import dev.zacsweers.metro.Inject
@@ -51,12 +50,7 @@ class DeferredPipelineReExecutorFactory(
      * design service are valid: re-execution simply skips dispatch when no handler matches.
      */
     private val formatDispatch: FormatDispatch = FormatDispatch(),
-    /**
-     * Optional EDK pipeline commands used by [DeferredPipelineReExecutor]. Both must be wired
-     * for re-execution to fire; when either is absent (pure-IDK deployment) [create] returns
-     * `null` and the PENDING branch falls through to the legacy 202 response.
-     */
-    private val pipelineCommands: PipelineCommands = PipelineCommands(),
+    private val lifecycleHook: Oid4vciIssuanceLifecycleHook? = null,
 ) {
     /**
      * Format-handler dispatch aggregate. Grouped into a single injected type so the factory's
@@ -69,17 +63,6 @@ class DeferredPipelineReExecutorFactory(
     )
 
     /**
-     * Optional EDK pipeline commands grouped into a single injected aggregate so the factory's
-     * primary constructor stays inside the detekt `LongParameterList` threshold. Default values
-     * leave both null, which lines up with the pure-IDK no-pipeline deployment.
-     */
-    @Inject
-    data class PipelineCommands(
-        val contributeAttributesCommand: ContributeAttributesCommand? = null,
-        val evaluateAttributeCompletenessCommand: EvaluateAttributeCompletenessCommand? = null,
-    )
-
-    /**
      * Build a [DeferredPipelineReExecutor] when the EDK pipeline commands are wired in;
      * return `null` otherwise.
      *
@@ -88,14 +71,12 @@ class DeferredPipelineReExecutorFactory(
      *   of session-context coupling.
      */
     fun create(tenantIdProvider: () -> String?): DeferredPipelineReExecutor? {
-        val contribute = pipelineCommands.contributeAttributesCommand ?: return null
-        val evaluate = pipelineCommands.evaluateAttributeCompletenessCommand ?: return null
+        val hook = lifecycleHook ?: return null
         return DeferredPipelineReExecutor(
             deferredStore = deferredStore,
             sessionStore = sessionStore,
             attributeContributor = attributeContributor,
-            contributeAttributesCommand = contribute,
-            evaluateAttributeCompletenessCommand = evaluate,
+            lifecycleHook = hook,
             issuerConfigProvider = issuerConfigProvider,
             formatHandlers = formatDispatch.formatHandlers,
             credentialDesignService = formatDispatch.credentialDesignService,

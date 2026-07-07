@@ -78,10 +78,13 @@ internal class TestNoOpContextConfig : ContextConfig {
 
 internal class TestSessionExecution(
     override val sessionContext: SessionContext = NoOpSessionContext,
+    private val tenantIdOverride: String? = null,
 ) : SessionExecution {
     override val sessionContextManager: SessionContextManager get() = throw NotImplementedError("Not needed for test")
     override val log: SessionLogService = TestNoOpSessionLogService(sessionContext)
     override val conf: ContextConfig = TestNoOpContextConfig()
+    override val tenantId: String
+        get() = tenantIdOverride ?: sessionContext.context.tenant.tenantId
 }
 
 /**

@@ -133,8 +133,7 @@ data class CredentialTypeRef(
         require(value.isNotBlank()) { "CredentialTypeRef.value must not be blank" }
     }
 
-    fun sameReference(other: CredentialTypeRef): Boolean =
-        format == other.format && kind == other.kind && value == other.value
+    fun sameReference(other: CredentialTypeRef): Boolean = format == other.format && kind == other.kind && value == other.value
 }
 
 @Serializable
@@ -326,8 +325,7 @@ data class CredentialInstance(
         require(raw == null || raw.isNotBlank()) { "CredentialInstance.raw must not be blank when present" }
     }
 
-    fun requireRaw(): String =
-        raw ?: error("CredentialInstance.raw is not loaded; open the credential through WalletCredentialStore.getCredential first")
+    fun requireRaw(): String = raw ?: error("CredentialInstance.raw is not loaded; open the credential through WalletCredentialStore.getCredential first")
 
     fun withoutRaw(): CredentialInstance = copy(raw = null)
 }
@@ -361,8 +359,7 @@ data class CredentialRecord(
         }
     }
 
-    fun displayName(locale: String? = null): String? =
-        (display.credentialDisplay.firstOrNull { it.locale == locale } ?: display.credentialDisplay.firstOrNull())?.name
+    fun displayName(locale: String? = null): String? = (display.credentialDisplay.firstOrNull { it.locale == locale } ?: display.credentialDisplay.firstOrNull())?.name
 
     fun withAddedInstance(instance: CredentialInstance): CredentialRecord {
         require(instance.walletInstanceId == walletInstanceId) { "Instance walletInstanceId mismatch" }
@@ -502,8 +499,7 @@ data class CredentialRecord(
         }
     }
 
-    private fun CredentialInstance.formatTypeRef(): CredentialTypeRef? =
-        credentialTypeRefs.firstOrNull { it.format == format }
+    private fun CredentialInstance.formatTypeRef(): CredentialTypeRef? = credentialTypeRefs.firstOrNull { it.format == format }
 
     private fun refreshDiagnostics(
         actualTypeRefs: Set<CredentialTypeRef>,
@@ -522,8 +518,7 @@ data class CredentialRecord(
         )
     }
 
-    private fun Set<CredentialTypeRef>.referenceKeys(): Set<Triple<CredentialFormat, CredentialTypeRefKind, String>> =
-        map { Triple(it.format, it.kind, it.value) }.toSet()
+    private fun Set<CredentialTypeRef>.referenceKeys(): Set<Triple<CredentialFormat, CredentialTypeRefKind, String>> = map { Triple(it.format, it.kind, it.value) }.toSet()
 }
 
 @Serializable

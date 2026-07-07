@@ -22,6 +22,8 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.decodeFromBase64
 import com.sphereon.core.api.log.Log
+import com.sphereon.core.api.service.Amr
+import com.sphereon.core.api.service.AuthAssuranceLevel
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
@@ -37,6 +39,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 import kotlinx.atomicfu.atomic
+import kotlin.time.Clock
 
 /**
  * Multibinding key for [ConfigBackedUserAuthenticationProvider]. EDK's `EdkUserAuthenticationProvider`
@@ -117,6 +120,17 @@ class ConfigBackedUserAuthenticationProvider(
         credentials: UserCredentials,
         context: AuthenticationContext?,
     ): IdkResult<String?, AuthenticationError> {
+        val result = authenticateUserWithCredentials(credentials, context)
+        return result.fold(
+            success = { authenticatedUser -> Ok(authenticatedUser?.userId) },
+            failure = { Err(it) },
+        )
+    }
+
+    override suspend fun authenticateUserWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<AuthenticatedUser?, AuthenticationError> {
         val usernamePassword = credentials as? UserCredentials.UsernamePassword ?: return Ok(null)
         val username = usernamePassword.username
         val storedHash =
@@ -130,7 +144,15 @@ class ConfigBackedUserAuthenticationProvider(
             )
         if (!matched) return Ok(null)
         val sub = configService.getPropertyAsString(accountKey(username, ACCOUNT_SUB_LEAF)) ?: username
-        return Ok(sub)
+        return Ok(
+            AuthenticatedUser(
+                userId = sub,
+                authenticatedAt = Clock.System.now(),
+                authenticationMethod = AuthenticationMethod.PASSWORD,
+                acr = AuthAssuranceLevel.AAL1.acr,
+                amr = listOf(Amr.PWD),
+            ),
+        )
     }
 
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)

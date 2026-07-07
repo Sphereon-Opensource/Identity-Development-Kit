@@ -20,40 +20,6 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.data.store.blob.BlobInfo
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
-import kotlin.time.Instant
-
-@JsExportCompat
-@Serializable
-data class AssetReference
-    @JvmOverloads
-    constructor(
-        val uri: String,
-        val integrity: String? = null,
-        val altText: String? = null,
-        val contentType: String? = null,
-        val localBlob: BlobInfo? = null,
-    )
-
-/**
- * Lightweight descriptor for a CONTENT-ADDRESSED, tenant-scoped design asset blob, returned by the
- * design-agnostic asset listing surface ([com.sphereon.data.store.credential.design.CredentialDesignService.listDesignAssets]).
- *
- * The [hash] is the lowercase-hex SHA-256 of the asset bytes and the [uri] is the stable relative
- * public path under [com.sphereon.data.store.credential.design.PublicDesignAssetPaths.BASE_PATH]
- * (the per-tenant absolute host is applied at serve time). [sizeBytes]/[createdAt] are populated
- * from the underlying blob descriptor when the store reports them and are otherwise null.
- */
-@JsExportCompat
-@Serializable
-data class AssetInfo
-    @JvmOverloads
-    constructor(
-        val uri: String,
-        val contentType: String,
-        val hash: String,
-        val sizeBytes: Long? = null,
-        val createdAt: Instant? = null,
-    )
 
 @JsExportCompat
 @Serializable

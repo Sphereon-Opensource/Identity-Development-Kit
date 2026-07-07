@@ -277,6 +277,7 @@ includeProject("lib-conf-yaml", "lib/conf/yaml")
 // Theme
 includeProject("lib-conf-theme-core-public", "lib/conf/theme/core/public")
 includeProject("lib-conf-theme-core-impl", "lib/conf/theme/core/impl")
+includeProject("lib-conf-theme-client", "lib/conf/theme/client")
 includeProject("lib-conf-theme-compose", "lib/conf/theme/compose")
 includeProject("lib-conf-theme-web", "lib/conf/theme/web")
 // UI Components
@@ -431,10 +432,6 @@ includeProject("lib-attribute-flow-public", "lib/attribute/flow/public")
 // reconciliation flows, CSV-roster issuance, OIDC claim projection, etc.)
 includeProject("lib-attribute-mapping-public", "lib/attribute/mapping/public")
 
-// Attribute Pipeline (the multi-source attribute-pipeline SPI: the active AttributeSource
-// producer interface, SourceContribution, lookup keys, deferral signal, protocol phases.
-// Layers on lib-attribute-flow-public; consumed by the EDK pipeline engine.)
-includeProject("lib-attribute-pipeline-public", "lib/attribute/pipeline/public")
 
 // Invitation service — RELOCATED to VDX as vdx-service-invitation-* per
 // feedback_edk_vs_vdx_placement (invitation orchestration is a product feature,
@@ -443,6 +440,11 @@ includeProject("lib-data-store-blob-impl-memory", "lib/data/store/blob/impl-memo
 includeProject("lib-data-store-blob-impl-fs", "lib/data/store/blob/impl-fs")
 includeProject("lib-data-store-blob-impl-kv", "lib/data/store/blob/impl-kv")
 includeProject("lib-data-store-blob-client-http", "lib/data/store/blob/client-http")
+
+// Data Store - Asset (tenant asset library: content-addressed, per-tenant deduplicated
+// assets over the blob store; shared by theming/branding and credential design)
+includeProject("lib-data-store-asset-public", "lib/data/store/asset/public")
+includeProject("lib-data-store-asset-impl", "lib/data/store/asset/impl")
 
 // Data Store - OKD (Onderwijs Koppeling voor Document Management — Dutch MBO education standard)
 includeProject("lib-data-store-okd-openapi", "lib/data/store/okd-openapi")
@@ -529,11 +531,6 @@ includeProject("lib-oauth2-jwt-validation-impl", "lib/oauth2/jwt/validation/impl
 // Credential Claims Mapper
 includeProject("lib-credential-claims-mapper-public", "lib/credential/claims-mapper/public")
 includeProject("lib-credential-claims-mapper-impl", "lib/credential/claims-mapper/impl")
-
-// Credential Issuance Pipeline (the claims-assembly SPI: CredentialClaimsAssembler, the
-// per-credential binding, the assembled-claims output, deferral policy, OCA semantic refs.
-// Feeds the issuer core's existing IssuanceContext path; layers on lib-attribute-pipeline-public.)
-includeProject("lib-credential-issuance-pipeline-public", "lib/credential/issuance-pipeline/public")
 
 // OID4VP Authentication Bridge
 includeProject("lib-openid-oid4vp-auth-bridge-public", "lib/openid/oid4vp/auth-bridge/public")

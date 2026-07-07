@@ -67,11 +67,30 @@ private const val DEFAULT_FRAME_OPTIONS = "SAMEORIGIN"
 private const val DEFAULT_NOSNIFF = "nosniff"
 private const val DEFAULT_REFERRER_POLICY = "no-referrer"
 private const val DEFAULT_ROBOTS_TAG = "none"
-private const val DEFAULT_HTML_CSP_BASE = "default-src 'self'; frame-ancestors 'self'; object-src 'none'"
 
-private fun htmlCspWithNonce(nonce: String): String =
-    "default-src 'self'; style-src 'self' 'nonce-$nonce'; script-src 'self' 'nonce-$nonce'; " +
-        "frame-ancestors 'self'; object-src 'none'"
+/**
+ * Assemble the HTML Content-Security-Policy. With neither [nonce] nor [imageOrigins] this is the
+ * strict `default-src 'self'` baseline. A [nonce] expands style-src/script-src for the page's
+ * audited inline blocks. Non-empty [imageOrigins] adds an `img-src 'self' <origins...>` directive
+ * so theme-supplied images hosted cross-origin (e.g. platform-hosted brand assets served to a
+ * tenant-subdomain AS) may load; origins are emitted sorted for a deterministic header value.
+ */
+private fun htmlCsp(
+    nonce: String?,
+    imageOrigins: Set<String> = emptySet(),
+): String =
+    buildList {
+        add("default-src 'self'")
+        if (nonce != null) {
+            add("style-src 'self' 'nonce-$nonce'")
+            add("script-src 'self' 'nonce-$nonce'")
+        }
+        if (imageOrigins.isNotEmpty()) {
+            add("img-src 'self' ${imageOrigins.sorted().joinToString(" ")}")
+        }
+        add("frame-ancestors 'self'")
+        add("object-src 'none'")
+    }.joinToString("; ")
 
 /**
  * Generate a fresh CSP nonce: 16 cryptographically random bytes, base64url-without-padding.
@@ -86,7 +105,8 @@ internal fun newCspNonce(): String = CryptographyRandom.nextBytes(16).encodeToBa
 
 internal fun securityHeadersFor(
     category: ResponseCategory,
-    nonce: String? = null
+    nonce: String? = null,
+    imageOrigins: Set<String> = emptySet(),
 ): Map<String, String> =
     when (category) {
         ResponseCategory.HTML -> {
@@ -94,7 +114,7 @@ internal fun securityHeadersFor(
                 "Strict-Transport-Security" to DEFAULT_HSTS,
                 "X-Frame-Options" to DEFAULT_FRAME_OPTIONS,
                 "X-Content-Type-Options" to DEFAULT_NOSNIFF,
-                "Content-Security-Policy" to (nonce?.let(::htmlCspWithNonce) ?: DEFAULT_HTML_CSP_BASE),
+                "Content-Security-Policy" to htmlCsp(nonce, imageOrigins),
                 "Referrer-Policy" to DEFAULT_REFERRER_POLICY,
                 "X-Robots-Tag" to DEFAULT_ROBOTS_TAG,
             )
@@ -127,11 +147,15 @@ internal fun securityHeadersFor(
  * Pass [nonce] when the response body contains inline `<style>` or `<script>` — the CSP is then
  * expanded with `'nonce-X'` for those source directives so the inline blocks (which MUST carry
  * the matching `nonce="X"` attribute) execute.
+ *
+ * Pass [imageOrigins] when the HTML references theme-supplied images on other origins; the CSP
+ * `img-src` is extended with exactly those origins (see [htmlCsp]).
  */
 internal fun GenericHttpResponse.withSecurityHeaders(
     category: ResponseCategory,
     nonce: String? = null,
-): GenericHttpResponse = copy(headers = securityHeadersFor(category, nonce) + headers)
+    imageOrigins: Set<String> = emptySet(),
+): GenericHttpResponse = copy(headers = securityHeadersFor(category, nonce, imageOrigins) + headers)
 
 /**
  * Pick the [ResponseCategory] for a response by inspecting its `Content-Type`. Used by the

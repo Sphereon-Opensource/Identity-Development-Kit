@@ -20,3 +20,5 @@ import com.sphereon.crypto.secdsa.impl.createJvmSecdsaTestAppGraph
 import com.sphereon.di.app.AppGraph
 
 actual fun createSecdsaTestAppGraph(testInstance: Any): AppGraph = createJvmSecdsaTestAppGraph(testInstance)
+
+actual fun supportsSecdsaKmsInstructionRoundTrip(): Boolean = true

@@ -39,7 +39,6 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlin.time.Clock
 
 /**
  * RFC 6749 §4.3 resource-owner password-credentials grant handler.
@@ -103,9 +102,9 @@ class PasswordGrantHandlerImpl(
             return errOf(AuthorizationServerError.InvalidGrant(details = "Password authentication is not available"))
         }
 
-        val subject =
+        val authenticatedUser =
             userAuthenticationProvider
-                .authenticateWithCredentials(
+                .authenticateUserWithCredentials(
                     UserCredentials.UsernamePassword(
                         username = passwordParams.username,
                         password = passwordParams.password,
@@ -114,6 +113,7 @@ class PasswordGrantHandlerImpl(
                     return errOf(AuthorizationServerError.InvalidGrant(details = INVALID_RESOURCE_OWNER_CREDENTIALS))
                 }
                 ?: return errOf(AuthorizationServerError.InvalidGrant(details = INVALID_RESOURCE_OWNER_CREDENTIALS))
+        val subject = authenticatedUser.userId
 
         val accessToken =
             commands.createAccessToken
@@ -124,6 +124,12 @@ class PasswordGrantHandlerImpl(
                         scope = grantedScope,
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
+                        additionalClaims =
+                            buildMap {
+                                authenticatedUser.acr?.let { put("acr", it) }
+                                authenticatedUser.amr?.let { put("amr", it) }
+                                put("auth_time", authenticatedUser.authenticatedAt.epochSeconds)
+                            },
                         baseUrlOverride = applied.baseUrlOverride,
                     ),
                 ).getOrElse { error -> return Err(error) }
@@ -137,8 +143,9 @@ class PasswordGrantHandlerImpl(
                             clientId = tokenRequest.clientId,
                             scope = grantedScope,
                             dpopJkt = proofJkt,
-                            authTime = Clock.System.now().epochSeconds,
-                            amr = listOf(PASSWORD_AMR),
+                            authTime = authenticatedUser.authenticatedAt.epochSeconds,
+                            acr = authenticatedUser.acr,
+                            amr = authenticatedUser.amr ?: listOf(PASSWORD_AMR),
                         ),
                     ).getOrElse { error -> return Err(error) }
                     .value
@@ -146,7 +153,12 @@ class PasswordGrantHandlerImpl(
                 null
             }
 
-        val grantedScopes = grantedScope?.split(" ")?.filter { it.isNotBlank() }?.toSet().orEmpty()
+        val grantedScopes =
+            grantedScope
+                ?.split(" ")
+                ?.filter { it.isNotBlank() }
+                ?.toSet()
+                .orEmpty()
         val idToken =
             if (context.serverConfig.oidc.isEnabled && "openid" in grantedScopes) {
                 val userInfo =
@@ -165,8 +177,9 @@ class PasswordGrantHandlerImpl(
                         CreateIdTokenArgs(
                             subject = subject,
                             clientId = tokenRequest.clientId,
-                            authTime = Clock.System.now().epochSeconds,
-                            amr = listOf(PASSWORD_AMR),
+                            authTime = authenticatedUser.authenticatedAt.epochSeconds,
+                            acr = authenticatedUser.acr,
+                            amr = authenticatedUser.amr ?: listOf(PASSWORD_AMR),
                             accessToken = accessToken.value,
                             userClaims = userInfo.toClaimsMap(),
                             baseUrlOverride = applied.baseUrlOverride,
@@ -193,10 +206,12 @@ class PasswordGrantHandlerImpl(
         allowedScopes: List<String>?,
     ): IdkResult<String?, AuthorizationServerError> {
         if (requestedScope.isNullOrBlank()) {
-            return com.sphereon.core.api.Ok(requestedScope)
+            return com.sphereon.core.api
+                .Ok(requestedScope)
         }
         if (allowedScopes == null) {
-            return com.sphereon.core.api.Ok(requestedScope)
+            return com.sphereon.core.api
+                .Ok(requestedScope)
         }
 
         val requestedScopes = requestedScope.split(" ").map { it.trim() }.filter { it.isNotEmpty() }
@@ -209,7 +224,8 @@ class PasswordGrantHandlerImpl(
                 ),
             )
         }
-        return com.sphereon.core.api.Ok(requestedScope)
+        return com.sphereon.core.api
+            .Ok(requestedScope)
     }
 
     private companion object {

@@ -18,6 +18,7 @@ package com.sphereon.conf.theme.core.validation
 
 import com.sphereon.conf.theme.core.model.CssPolicyConfig
 import com.sphereon.conf.theme.core.model.ThemeDefinition
+import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.model.ThemeToken
 import com.sphereon.conf.theme.core.model.ThemeTokenType
 import com.sphereon.core.compat.JsExportCompat
@@ -61,12 +62,53 @@ object ThemeValidator {
             errors.add("Theme name must not be blank")
         }
 
+        errors.addAll(validateScopeKeys(definition))
+
         for (token in definition.tokens) {
             val tokenErrors = validateToken(token)
             errors.addAll(tokenErrors.errors)
         }
 
         return ValidationResult(valid = errors.isEmpty(), errors = errors)
+    }
+
+    /**
+     * Enforce the key rules per scope: PRODUCT definitions require a productType,
+     * APPLICATION definitions require an applicationId, and no other scope carries either key.
+     */
+    private fun validateScopeKeys(definition: ThemeDefinition): List<String> {
+        val errors = mutableListOf<String>()
+
+        when (definition.scope) {
+            ThemeScope.PRODUCT -> {
+                if (definition.productType == null) {
+                    errors.add("PRODUCT-scoped definitions require a productType")
+                }
+                if (definition.applicationId != null) {
+                    errors.add("PRODUCT-scoped definitions must not carry an applicationId")
+                }
+            }
+
+            ThemeScope.APPLICATION -> {
+                if (definition.applicationId == null) {
+                    errors.add("APPLICATION-scoped definitions require an applicationId")
+                }
+                if (definition.productType != null) {
+                    errors.add("APPLICATION-scoped definitions must not carry a productType")
+                }
+            }
+
+            ThemeScope.SYSTEM, ThemeScope.TENANT, ThemeScope.PRINCIPAL -> {
+                if (definition.productType != null) {
+                    errors.add("${definition.scope}-scoped definitions must not carry a productType")
+                }
+                if (definition.applicationId != null) {
+                    errors.add("${definition.scope}-scoped definitions must not carry an applicationId")
+                }
+            }
+        }
+
+        return errors
     }
 
     /**

@@ -19,8 +19,8 @@ package com.sphereon.data.store.credential.design.command
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.data.store.credential.design.model.AssetInfo
-import com.sphereon.data.store.credential.design.model.AssetReference
+import com.sphereon.data.store.asset.model.AssetInfo
+import com.sphereon.data.store.asset.model.AssetReference
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.IssuerDesignRecord
 import com.sphereon.data.store.credential.design.model.RenderVariantRecord

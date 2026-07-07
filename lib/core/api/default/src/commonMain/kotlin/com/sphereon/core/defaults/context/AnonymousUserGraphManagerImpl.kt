@@ -17,10 +17,10 @@
 
 package com.sphereon.core.defaults.context
 
+import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
-import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.PropertySourceBootstrap
 import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.core.api.conf.TenantConfigService

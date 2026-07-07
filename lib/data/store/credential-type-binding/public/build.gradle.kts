@@ -14,7 +14,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(projects.libCoreApiPublic)
-                api(projects.libCredentialIssuancePipelinePublic)
+                api(projects.libDataStoreCredentialDesignPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.core)
             }

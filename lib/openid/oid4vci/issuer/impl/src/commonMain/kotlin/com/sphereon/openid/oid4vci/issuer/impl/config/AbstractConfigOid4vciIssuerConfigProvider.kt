@@ -89,6 +89,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     // aborting issuance instead of silently issuing credentials that could never be revoked.
     private val statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
     private val namespaceProvider: () -> String,
+    private val fallbackToSingularNamespace: Boolean = true,
 ) : Oid4vciIssuerConfigProvider,
     VctTypeMetadataProvider {
     private val configService: PrincipalConfigService
@@ -103,11 +104,11 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     private fun namespaceProperty(relativeKey: String): String? =
         propertyInNamespace(namespace, relativeKey)
-            ?: if (namespace != singularNamespace) propertyInNamespace(singularNamespace, relativeKey) else null
+            ?: if (fallbackToSingularNamespace && namespace != singularNamespace) propertyInNamespace(singularNamespace, relativeKey) else null
 
     private fun namespaceSubProperties(relativePrefix: String): Map<String, String> {
         val active = subPropertiesInNamespace(namespace, relativePrefix)
-        if (namespace == singularNamespace) return active
+        if (!fallbackToSingularNamespace || namespace == singularNamespace) return active
         val fallback = subPropertiesInNamespace(singularNamespace, relativePrefix)
         return fallback + active
     }
@@ -120,8 +121,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     private fun subPropertiesInNamespace(
         ns: String,
         relativePrefix: String,
-    ): Map<String, String> =
-        configService.getSubPropertiesAsString(setOf("$ns.$relativePrefix"), stripPrefix = true, redact = false)
+    ): Map<String, String> = configService.getSubPropertiesAsString(setOf("$ns.$relativePrefix"), stripPrefix = true, redact = false)
 
     private fun credentialConfigIds(): List<String>? = namespaceProperty("credentialConfigurationIds")?.splitComma()
 
@@ -129,6 +129,15 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         configId: String,
         relativeKey: String,
     ): String? = namespaceProperty("credentials.[$configId].$relativeKey")
+
+    private fun credentialDefaultProperty(relativeKey: String): String? = namespaceProperty("credentialDefaults.$relativeKey")
+
+    private fun credentialOrDefaultProperty(
+        configId: String,
+        relativeKey: String,
+    ): String? =
+        credentialProperty(configId, relativeKey)
+            ?: credentialDefaultProperty(relativeKey)
 
     private fun credentialClaimProperty(
         configId: String,
@@ -369,13 +378,13 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         val doctype = credentialProperty(configId, "doctype")?.takeIf { it.isNotEmpty() }
 
         val signingAlgorithms =
-            credentialProperty(configId, "signingAlgorithms")
+            credentialOrDefaultProperty(configId, "signingAlgorithms")
                 ?.splitComma()
                 ?.mapNotNull { JwaAlgorithm.fromValue(it) }
                 ?: emptyList()
 
         val bindingMethods =
-            credentialProperty(configId, "bindingMethods")
+            credentialOrDefaultProperty(configId, "bindingMethods")
                 ?.splitComma()
                 ?: emptyList()
 
@@ -656,15 +665,16 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         // Credentials sign with the issuer's key by default, so deployments that provision a
         // single tenant signing key need not repeat it on every credential configuration.
         val signingKeyAlias =
-            credentialProperty(configId, "signingKeyAlias")
+            credentialOrDefaultProperty(configId, "signingKeyAlias")
                 ?: metadataSigningKeyAlias
         val signingKeyMode =
             SigningKeyMode.fromConfig(
-                credentialProperty(configId, "signingKeyMode"),
+                credentialOrDefaultProperty(configId, "signingKeyMode"),
             )
-        val signingCertChainPath = credentialProperty(configId, "signingCertChainPath")
+        val signingCertChainPath = credentialOrDefaultProperty(configId, "signingCertChainPath")
         val expirationInDays =
-            credentialProperty(configId, "expirationInDays")?.toIntOrNull()?.takeIf { it > 0 }
+            credentialOrDefaultProperty(configId, "validityPeriod")?.toValidityDays()
+                ?: credentialOrDefaultProperty(configId, "expirationInDays")?.toPositiveIntOrNull()
 
         return CredentialSigningConfig(
             signingKeyAlias = signingKeyAlias,
@@ -680,7 +690,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     // credentials AND tokens) and live at the root `statuslists` namespace, resolved through the
     // injected [StatusListDefinitionsProvider] and hosted at their own root path (`/statuslists/{id}`).
     // The issuer only declares which list each credential type binds to:
-    //   <namespace>.credentials.[<configId>].statusListId: revocation
+    //   <namespace>.credentials.[<configId>].status.statusListId: revocation
 
     override val statusListBindings: Map<String, StatusListBinding>
         get() {
@@ -700,7 +710,10 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     override fun statusListBindingFor(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> {
         val listId =
-            credentialProperty(credentialConfigId, "statusListId")?.takeIf { it.isNotBlank() }
+            (
+                credentialOrDefaultProperty(credentialConfigId, "status.statusListId")
+                    ?: credentialOrDefaultProperty(credentialConfigId, "statusListId")
+            )?.takeIf { it.isNotBlank() }
                 ?: return Ok(null)
         val definitions =
             statusListDefinitionsProvider?.invoke()
@@ -751,14 +764,14 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         proofTypeKeys
             .associateWith { proofTypeKey ->
                 val enabled =
-                    credentialProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.enabled")?.toBoolean() ?: false
+                    credentialOrDefaultProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.enabled")?.toBoolean() ?: false
                 if (!enabled) return@associateWith null
                 val keyStorage =
-                    credentialProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.keyStorage")
+                    credentialOrDefaultProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.keyStorage")
                         ?.splitComma()
                         ?.takeIf { it.isNotEmpty() }
                 val userAuth =
-                    credentialProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.userAuthentication")
+                    credentialOrDefaultProperty(configId, "proofTypes.$proofTypeKey.keyAttestations.userAuthentication")
                         ?.splitComma()
                         ?.takeIf { it.isNotEmpty() }
                 if (keyStorage == null && userAuth == null) return@associateWith null
@@ -833,13 +846,12 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     private fun buildProofTypes(configId: String): Map<String, List<String>> {
         // Strategy 1: explicit comma-separated list of proof type names
-        val explicitTypes = credentialProperty(configId, "proofTypes")?.splitComma()
+        val explicitTypes = credentialOrDefaultProperty(configId, "proofTypes")?.splitComma()
 
         // Strategy 2: discover from sub-property keys (e.g. proofTypes.jwt.signingAlgorithms -> "jwt")
         val discoveredTypes =
             if (explicitTypes.isNullOrEmpty()) {
-                namespaceSubProperties("credentials.[$configId].proofTypes")
-                    .keys
+                (namespaceSubProperties("credentialDefaults.proofTypes").keys + namespaceSubProperties("credentials.[$configId].proofTypes").keys)
                     .mapNotNull { key -> key.split(".").firstOrNull() }
                     .distinct()
             } else {
@@ -849,7 +861,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         val result = mutableMapOf<String, List<String>>()
         for (proofTypeKey in discoveredTypes) {
             val algorithms =
-                credentialProperty(configId, "proofTypes.$proofTypeKey.signingAlgorithms")
+                credentialOrDefaultProperty(configId, "proofTypes.$proofTypeKey.signingAlgorithms")
                     ?.splitComma()
             if (!algorithms.isNullOrEmpty()) {
                 result[proofTypeKey] = algorithms
@@ -886,6 +898,24 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             EncryptionMode.DISABLED
         }
     }
+
+    private fun String.toValidityDays(): Int? {
+        val match = Regex("""P(\d+)([DMY])""").matchEntire(trim().uppercase()) ?: return null
+        val amount = match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        val days =
+            when (match.groupValues[2]) {
+                "D" -> amount
+                "M" -> amount * 30L
+                "Y" -> amount * 365L
+                else -> return null
+            }
+        return days.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
+    }
+
+    private fun String.toPositiveIntOrNull(): Int? =
+        trim()
+            .toIntOrNull()
+            ?.takeIf { it > 0 }
 
     private fun String.splitComma(): List<String> = split(",").map { it.trim() }.filter { it.isNotEmpty() }
 }

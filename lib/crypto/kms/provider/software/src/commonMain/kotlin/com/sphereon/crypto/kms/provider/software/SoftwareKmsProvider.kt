@@ -87,10 +87,10 @@ import com.sphereon.crypto.core.kms.KmsProviderCapabilities
 import com.sphereon.crypto.core.kms.KmsProviderConfigBase
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.OperationCapability
-import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
-import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.model.KeyProviderSettings
 import com.sphereon.crypto.core.sign.model.SignInput
@@ -327,7 +327,7 @@ class SoftwareKmsProviderImpl(
                                 KeyAgreementAlgorithm.ECDH_ES_A128KW,
                                 KeyAgreementAlgorithm.ECDH_ES_A192KW,
                                 KeyAgreementAlgorithm.ECDH_ES_A256KW,
-                        ),
+                            ),
                         notes = "Supports ECDH key agreement with P-256, P-384, and P-521 curves",
                     ),
                     OperationCapability(
@@ -1132,7 +1132,10 @@ class SoftwareKmsProviderImpl(
         val rawSharedSecret = performKeyAgreementWithNativeKey(resolvedPrivateKeyInfo, resolvedPublicKeyInfo, algorithm.identifier)
 
         return when (mode) {
-            EcdhDeriveMode.RAW_X -> EcdhDeriveResult(derivedSecret = rawSharedSecret)
+            EcdhDeriveMode.RAW_X -> {
+                EcdhDeriveResult(derivedSecret = rawSharedSecret)
+            }
+
             EcdhDeriveMode.CONCAT_KDF -> {
                 val derived =
                     ConcatKdf.deriveKey(
@@ -1217,7 +1220,7 @@ class SoftwareKmsProviderImpl(
                 else -> throw IllegalArgumentException(
                     "KeyInfo has no key material and no alias/kid to resolve from keystore",
                 )
-        }
+            }
         return keyStore.getKey(lookup)
     }
 

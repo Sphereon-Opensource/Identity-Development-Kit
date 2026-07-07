@@ -90,6 +90,19 @@ class PublicDesignAssetPathsTest {
         assertEquals("/public/assets/design/$hash", path)
     }
 
+    // ---- toAbsolute ----
+
+    @Test
+    fun toAbsolute_usesOriginWhenBaseCarriesIssuerPath() {
+        assertEquals(
+            "https://acme.saas.localtest.me/public/assets/design/$hash.png",
+            PublicDesignAssetPaths.toAbsolute(
+                "/public/assets/design/$hash.png",
+                "https://acme.saas.localtest.me/oid4vci",
+            ),
+        )
+    }
+
     // ---- hashFromLeaf ----
 
     @Test

@@ -27,12 +27,12 @@ import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInp
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
 import com.sphereon.data.store.credential.design.model.CreateRenderVariantInput
 import com.sphereon.data.store.credential.design.model.CreateVerifierDesignInput
-import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
-import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
 import com.sphereon.data.store.credential.design.model.CredentialDesignModuleConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.CredentialDesignRefreshConfig
 import com.sphereon.data.store.credential.design.model.CredentialDesignValidationConfig
+import com.sphereon.data.store.credential.design.model.CredentialTypeDescriptor
+import com.sphereon.data.store.credential.design.model.CredentialTypeFormat
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.ImportExternalDesignInput
 import com.sphereon.data.store.credential.design.model.LocalizedCredentialDisplay
@@ -67,6 +67,9 @@ fun createCredentialDesignValidator(config: CredentialDesignValidationConfig) =
                 constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
                     input.bindings.all(::hasValidExternalVct)
                 }
+                constrain("REGISTERED VCT bindings require vct") { input ->
+                    input.bindings.all(::hasRegisteredVct)
+                }
             }
             CreateCredentialDesignInput::displays {
                 minItems(1) hint "at least one locale display is required"
@@ -98,6 +101,9 @@ fun createIssuerDesignValidator(config: CredentialDesignValidationConfig) =
                 constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
                     input.bindings.all(::hasValidExternalVct)
                 }
+                constrain("REGISTERED VCT bindings require vct") { input ->
+                    input.bindings.all(::hasRegisteredVct)
+                }
             }
             CreateIssuerDesignInput::displays { minItems(1) hint "at least one locale display is required" }
         }
@@ -114,6 +120,9 @@ fun createVerifierDesignValidator(config: CredentialDesignValidationConfig) =
                 }
                 constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
                     input.bindings.all(::hasValidExternalVct)
+                }
+                constrain("REGISTERED VCT bindings require vct") { input ->
+                    input.bindings.all(::hasRegisteredVct)
                 }
             }
             CreateVerifierDesignInput::displays { minItems(1) hint "at least one locale display is required" }
@@ -150,6 +159,9 @@ val importExternalDesignValidator =
                 }
                 constrain("EXTERNAL VCT bindings require absolute URI vct") { input ->
                     input.bindings.all(::hasValidExternalVct)
+                }
+                constrain("REGISTERED VCT bindings require vct") { input ->
+                    input.bindings.all(::hasRegisteredVct)
                 }
             }
             ImportExternalDesignInput::sourceUrl { minLength(1) hint "sourceUrl is required" }
@@ -227,18 +239,24 @@ private fun hasValidExternalVct(binding: DesignBinding): Boolean =
     binding.vctHostingMode != VctHostingMode.EXTERNAL ||
         binding.vct?.contains("://") == true
 
+private fun hasRegisteredVct(binding: DesignBinding): Boolean =
+    binding.vctHostingMode != VctHostingMode.REGISTERED ||
+        !binding.vct.isNullOrBlank()
+
 private fun hasRequiredCredentialTypeValue(type: CredentialTypeDescriptor): Boolean =
     credentialTypeDiscriminatorCount(type) == 1 &&
         when (type.format) {
-        CredentialTypeFormat.SD_JWT_VC -> !type.vct.isNullOrBlank()
-        CredentialTypeFormat.MSO_MDOC -> !type.docType.isNullOrBlank()
-        CredentialTypeFormat.W3C_VC -> !type.type.isNullOrBlank()
-    }
+            CredentialTypeFormat.SD_JWT_VC -> !type.vct.isNullOrBlank()
+            CredentialTypeFormat.MSO_MDOC -> !type.docType.isNullOrBlank()
+            CredentialTypeFormat.W3C_VC -> !type.type.isNullOrBlank()
+        }
 
-private fun credentialTypeDiscriminatorCount(type: CredentialTypeDescriptor): Int =
-    listOf(type.vct, type.docType, type.type).count { !it.isNullOrBlank() }
+private fun credentialTypeDiscriminatorCount(type: CredentialTypeDescriptor): Int = listOf(type.vct, type.docType, type.type).count { !it.isNullOrBlank() }
 
-private fun bindingMatchesCredentialType(binding: DesignBinding, type: CredentialTypeDescriptor): Boolean {
+private fun bindingMatchesCredentialType(
+    binding: DesignBinding,
+    type: CredentialTypeDescriptor
+): Boolean {
     val bindingType = binding.credentialType
     if (bindingType != null && bindingType != type) return false
     if (!binding.vct.isNullOrBlank() && binding.vct != type.vct) return false

@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.rest
 import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -41,12 +42,12 @@ class CreateCredentialOfferInputStaticOfferFieldsTest {
     }
 
     @Test
-    fun initialLookupKeysDefaultsToEmptyList() {
+    fun initialConnectorFieldsDefaultsToEmptyMap() {
         val input =
             CreateCredentialOfferInput(
                 credentialConfigurationIds = listOf("PID"),
             )
-        assertTrue(input.initialLookupKeys.isEmpty())
+        assertTrue(input.initialConnectorFields.isEmpty())
     }
 
     @Test
@@ -87,14 +88,14 @@ class CreateCredentialOfferInputStaticOfferFieldsTest {
     }
 
     @Test
-    fun initialLookupKeysRoundTripsJsonWithSnakeCaseWireKey() {
+    fun initialConnectorFieldsRoundTripsJsonWithSnakeCaseWireKey() {
         val inputJson =
-            """{"credential_configuration_ids":["PID"],"initial_lookup_keys":[]}"""
+            """{"credential_configuration_ids":["PID"],"initial_connector_fields":{"email":"alice@example.com"}}"""
         val input = json.decodeFromString(CreateCredentialOfferInput.serializer(), inputJson)
-        assertTrue(input.initialLookupKeys.isEmpty(), "expected empty initial_lookup_keys list")
+        assertEquals(JsonPrimitive("alice@example.com"), input.initialConnectorFields["email"])
 
         val encoded = json.encodeToString(CreateCredentialOfferInput.serializer(), input)
-        assertTrue(encoded.contains("\"initial_lookup_keys\""), "expected initial_lookup_keys key in JSON: $encoded")
+        assertTrue(encoded.contains("\"initial_connector_fields\""), "expected initial_connector_fields key in JSON: $encoded")
     }
 
     @Test
@@ -105,7 +106,7 @@ class CreateCredentialOfferInputStaticOfferFieldsTest {
                 """{"credential_configuration_ids":["PID"]}""",
             )
         assertEquals(OfferUriLifecycle.SINGLE_USE, input.uriLifecycle)
-        assertTrue(input.initialLookupKeys.isEmpty())
+        assertTrue(input.initialConnectorFields.isEmpty())
         assertNull(input.rateLimit)
     }
 }

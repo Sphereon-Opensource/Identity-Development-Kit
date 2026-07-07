@@ -158,6 +158,7 @@ data class Ts1194723ValidationResult(
 
 interface WalletUnitAttestationMaterialValidator {
     suspend fun validateWalletInstanceAttestation(request: WalletInstanceAttestationValidationRequest): com.sphereon.core.api.IdkResult<Ts1194723ValidationResult, com.sphereon.core.api.error.IdkError>
+
     suspend fun validateKeyAttestation(request: KeyAttestationValidationRequest): com.sphereon.core.api.IdkResult<Ts1194723ValidationResult, com.sphereon.core.api.error.IdkError>
 }
 
@@ -259,17 +260,23 @@ data class WalletUnitAttestationTombstoneResult(
 
 interface WalletUnitAttestationStore {
     suspend fun saveWalletInstanceAttestation(record: WalletInstanceAttestationRecord): com.sphereon.core.api.IdkResult<WalletInstanceAttestationRecord, com.sphereon.core.api.error.IdkError>
+
     suspend fun findWalletInstanceAttestation(attestationRef: String): com.sphereon.core.api.IdkResult<WalletInstanceAttestationRecord?, com.sphereon.core.api.error.IdkError>
+
     suspend fun listWalletInstanceAttestations(
         walletUnitId: String,
         walletAccountId: String? = null,
     ): com.sphereon.core.api.IdkResult<List<WalletInstanceAttestationRecord>, com.sphereon.core.api.error.IdkError>
+
     suspend fun saveKeyAttestation(record: KeyAttestationRecord): com.sphereon.core.api.IdkResult<KeyAttestationRecord, com.sphereon.core.api.error.IdkError>
+
     suspend fun findKeyAttestation(attestationRef: String): com.sphereon.core.api.IdkResult<KeyAttestationRecord?, com.sphereon.core.api.error.IdkError>
+
     suspend fun listKeyAttestations(
         walletUnitId: String,
         walletAccountId: String? = null,
     ): com.sphereon.core.api.IdkResult<List<KeyAttestationRecord>, com.sphereon.core.api.error.IdkError>
+
     suspend fun tombstoneWalletUnitAttestations(
         walletUnitId: String,
         walletAccountId: String? = null,
@@ -287,8 +294,18 @@ interface KeyAttestationIssuer {
 }
 
 interface Ts1194723ServerValidationService {
-    suspend fun validateWalletInstanceAttestation(attestationRef: String, expectedAudience: String): com.sphereon.core.api.IdkResult<Boolean, com.sphereon.core.api.error.IdkError>
-    suspend fun validateKeyAttestation(attestationRef: String, expectedAudience: String, expectedNonce: String): com.sphereon.core.api.IdkResult<Boolean, com.sphereon.core.api.error.IdkError>
+    suspend fun validateWalletInstanceAttestation(
+        attestationRef: String,
+        expectedAudience: String
+    ): com.sphereon.core.api.IdkResult<Boolean, com.sphereon.core.api.error.IdkError>
+
+    suspend fun validateKeyAttestation(
+        attestationRef: String,
+        expectedAudience: String,
+        expectedNonce: String
+    ): com.sphereon.core.api.IdkResult<Boolean, com.sphereon.core.api.error.IdkError>
+
     suspend fun validateWalletInstanceAttestation(request: WalletInstanceAttestationValidationRequest): com.sphereon.core.api.IdkResult<Ts1194723ValidationResult, com.sphereon.core.api.error.IdkError>
+
     suspend fun validateKeyAttestation(request: KeyAttestationValidationRequest): com.sphereon.core.api.IdkResult<Ts1194723ValidationResult, com.sphereon.core.api.error.IdkError>
 }

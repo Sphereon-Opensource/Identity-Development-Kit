@@ -201,6 +201,7 @@ data class WalletInteractionState(
     val status: WalletInteractionStatus,
     val revision: Long = 0,
     val flowKind: WalletInteractionFlowKind? = null,
+    val activity: WalletInteractionActivitySummary? = null,
     val protocol: WalletProtocol? = null,
     val adapterId: String? = null,
     val entryPoint: WalletEntryPointSummary? = null,
@@ -243,6 +244,21 @@ data class WalletInteractionState(
                 entryPoint = input.entryPoint.summary(),
             )
     }
+}
+
+@Serializable
+data class WalletInteractionActivitySummary(
+    val type: WalletInteractionActivityType,
+    val counterparty: WalletCounterpartySummary? = null,
+    val metadata: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+enum class WalletInteractionActivityType {
+    CREDENTIAL_RECEIVE,
+    CREDENTIAL_PRESENTATION,
+    LOGIN,
+    ATTENDED_PRESENTATION,
 }
 
 @Serializable

@@ -33,6 +33,7 @@ import com.sphereon.crypto.secdsa.SecdsaRawEcdsaSignature
 import com.sphereon.crypto.secdsa.SecdsaScalar
 import com.sphereon.crypto.secdsa.SecdsaTrustedChallengeResponse
 import com.sphereon.crypto.secdsa.impl.testutil.SecdsaTestContext
+import com.sphereon.crypto.secdsa.impl.testutil.supportsSecdsaKmsInstructionRoundTrip
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -150,8 +151,7 @@ class DefaultSecdsaPrimitivesTest {
             val iv = ByteArray(12) { (0xA0 + it).toByte() }
             val signer =
                 object : SecdsaDigestSigner {
-                    override suspend fun signDigest(digest: ByteArray): SecdsaRawEcdsaSignature =
-                        deterministicEcdsaSignature(digest, signerPrivateScalar, scalar(19))
+                    override suspend fun signDigest(digest: ByteArray): SecdsaRawEcdsaSignature = deterministicEcdsaSignature(digest, signerPrivateScalar, scalar(19))
                 }
 
             val bundle =
@@ -251,6 +251,8 @@ class DefaultSecdsaPrimitivesTest {
     @Test
     fun testEncryptedSignedInstructionRoundTripUsesKmsForNchAndBlindingKeys() =
         runTest {
+            if (!supportsSecdsaKmsInstructionRoundTrip()) return@runTest
+
             val kmsProvider = SecdsaTestContext("secdsa-instruction", this@DefaultSecdsaPrimitivesTest).softwareKmsProvider
             val nchKey = generateKmsP256Key(kmsProvider, "instruction-nch")
             val blindingKey = generateKmsP256Key(kmsProvider, "instruction-blinding")

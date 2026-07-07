@@ -74,7 +74,7 @@ object InputFieldIdSerializer : KSerializer<InputFieldId> {
 
 /**
  * Opaque identifier for the producer of an attribute value, carried on every
- * [AttributeRecord] as its `sourceId`. The string payload is producer-defined (e.g. an IDV
+ * [AttributeRecord] as its `producerId`. The string payload is producer-defined (e.g. an IDV
  * node id, an OID4VCI credential request id, a tabular row id, a backend service id). Keeping
  * provenance generic avoids coupling the attribute-flow primitives to any particular
  * consumer's identifier type.

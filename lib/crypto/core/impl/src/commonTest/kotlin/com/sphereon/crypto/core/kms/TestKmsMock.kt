@@ -352,8 +352,7 @@ class TestKmsMock : KeyManagerService {
         signatureAlgorithm: SignatureAlgorithm,
         signatureEncoding: SignatureEncoding,
         requireX5Chain: Boolean,
-    ): IdkResult<SignDigestResult, IdkError> =
-        Ok(SignDigestResult(signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)))
+    ): IdkResult<SignDigestResult, IdkError> = Ok(SignDigestResult(signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)))
 
     override suspend fun verifyDigestResult(
         keyInfo: KeyInfoType<*>,
@@ -361,8 +360,7 @@ class TestKmsMock : KeyManagerService {
         signature: ByteArray,
         signatureAlgorithm: SignatureAlgorithm,
         signatureEncoding: SignatureEncoding,
-    ): IdkResult<VerifyDigestResult, IdkError> =
-        Ok(VerifyDigestResult(verifyDigest(keyInfo, digest, signature, signatureAlgorithm, signatureEncoding)))
+    ): IdkResult<VerifyDigestResult, IdkError> = Ok(VerifyDigestResult(verifyDigest(keyInfo, digest, signature, signatureAlgorithm, signatureEncoding)))
 
     override suspend fun encryptResult(
         keyInfo: KeyInfoType<*>,

@@ -35,7 +35,7 @@ data class PipelinePhase(
         /**
          * Generic, channel-neutral attribute resolution — the phase a non-credential caller (a form,
          * portal page, PDF/API render, or a standalone semantic-enrichment lookup) uses to resolve
-         * attributes from bound sources without any issuance flow. Lets the pipeline drive every
+         * attributes from connector invocations without any issuance flow. Lets the pipeline drive every
          * channel, not only credential issuance.
          */
         val RESOLUTION = PipelinePhase("resolution")

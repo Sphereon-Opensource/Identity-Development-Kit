@@ -33,14 +33,12 @@ interface WalletDeferredAccessTokenRemoteMirrorPolicy {
     companion object {
         val deny: WalletDeferredAccessTokenRemoteMirrorPolicy =
             object : WalletDeferredAccessTokenRemoteMirrorPolicy {
-                override suspend fun allowRemoteMirror(request: WalletDeferredAccessTokenRemoteMirrorRequest): Boolean =
-                    false
+                override suspend fun allowRemoteMirror(request: WalletDeferredAccessTokenRemoteMirrorRequest): Boolean = false
             }
 
         val allow: WalletDeferredAccessTokenRemoteMirrorPolicy =
             object : WalletDeferredAccessTokenRemoteMirrorPolicy {
-                override suspend fun allowRemoteMirror(request: WalletDeferredAccessTokenRemoteMirrorRequest): Boolean =
-                    true
+                override suspend fun allowRemoteMirror(request: WalletDeferredAccessTokenRemoteMirrorRequest): Boolean = true
             }
     }
 }

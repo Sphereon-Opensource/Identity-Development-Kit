@@ -79,10 +79,11 @@ class BinaryErrorRoundTripTest {
 
     @Test
     fun serviceUnavailablePreservesRetrySemantics() {
-        val original = IdkError.SERVICE_UNAVAILABLE_ERROR(
-            message = "Service is temporarily overloaded; slow down and retry later",
-            retryAfter = 3.seconds,
-        )
+        val original =
+            IdkError.SERVICE_UNAVAILABLE_ERROR(
+                message = "Service is temporarily overloaded; slow down and retry later",
+                retryAfter = 3.seconds,
+            )
 
         val roundTripped = BinaryError.fromIdkError(original).toIdkError()
 
@@ -94,10 +95,11 @@ class BinaryErrorRoundTripTest {
 
     @Test
     fun quotaExceededPreservesRetrySemantics() {
-        val original = IdkError.QUOTA_EXCEEDED_ERROR(
-            message = "gRPC command receiver is temporarily overloaded; slow down and retry later",
-            retryAfter = 4.seconds,
-        )
+        val original =
+            IdkError.QUOTA_EXCEEDED_ERROR(
+                message = "gRPC command receiver is temporarily overloaded; slow down and retry later",
+                retryAfter = 4.seconds,
+            )
 
         val roundTripped = BinaryError.fromIdkError(original).toIdkError()
 

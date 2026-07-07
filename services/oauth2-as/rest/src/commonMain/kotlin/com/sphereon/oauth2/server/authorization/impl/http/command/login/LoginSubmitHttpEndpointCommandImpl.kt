@@ -26,8 +26,6 @@ import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.query.percentEncodeQueryComponent
 import com.sphereon.core.api.random.SecureRandom
-import com.sphereon.core.api.service.Amr
-import com.sphereon.core.api.service.AuthAssuranceLevel
 import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -43,7 +41,6 @@ import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
-import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.ClientApplicationResolver
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
@@ -61,7 +58,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * HTTP shell over the AS login form's `POST /login`. Parses `username` / `password` /
  * `session_id` / `return_url` from an `application/x-www-form-urlencoded` body, calls
- * [UserAuthenticationProvider.authenticateWithCredentials], and on success mints an
+ * [UserAuthenticationProvider.authenticateUserWithCredentials], and on success mints an
  * [OidcLoginSession] keyed by a CSPRNG-generated id, persists it through [OidcLoginSessionStore],
  * sets the `oidc_login_sid` cookie, and 302-redirects to the supplied `return_url` (typically
  * `/authorize/callback?session_id=<original-pending-session>`). On invalid credentials it
@@ -197,7 +194,7 @@ class LoginSubmitHttpEndpointCommandImpl(
                         return Ok(oauth2ErrorResponse(400, "invalid_request", "Could not resolve login application", json))
                     }
         val authResult =
-            userAuthProvider.authenticateWithCredentials(
+            userAuthProvider.authenticateUserWithCredentials(
                 UserCredentials.UsernamePassword(username = username, password = password),
                 AuthenticationContext(
                     sessionId = sessionId,
@@ -217,7 +214,7 @@ class LoginSubmitHttpEndpointCommandImpl(
             )
             return Ok(redirectBackToLoginWithError(sessionId, returnUrl))
         }
-        val sub =
+        val authenticatedUser =
             authResult.value
                 ?: run {
                     auditEmitter.emit(
@@ -227,6 +224,7 @@ class LoginSubmitHttpEndpointCommandImpl(
                     )
                     return Ok(redirectBackToLoginWithError(sessionId, returnUrl))
                 }
+        val sub = authenticatedUser.userId
 
         val now = clock.now()
         val session = configProvider.serverConfig.session
@@ -235,13 +233,13 @@ class LoginSubmitHttpEndpointCommandImpl(
             OidcLoginSession(
                 sessionId = loginSessionId,
                 sub = sub,
-                authTime = now,
-                authMethod = AuthenticationMethod.PASSWORD,
+                authTime = authenticatedUser.authenticatedAt,
+                authMethod = authenticatedUser.authenticationMethod,
                 createdAt = now,
                 absoluteExpiresAt = now + session.absoluteTtlSeconds.seconds,
                 idleExpiresAt = now + session.idleTtlSeconds.seconds,
-                acr = AuthAssuranceLevel.AAL1.acr,
-                amr = listOf(Amr.PWD),
+                acr = authenticatedUser.acr,
+                amr = authenticatedUser.amr,
             )
         val stored = loginSessionStore.create(record)
         if (!stored.isOk) {
@@ -257,17 +255,15 @@ class LoginSubmitHttpEndpointCommandImpl(
             return Ok(oauth2ErrorResponse(500, "server_error", stored.error.message.defaultMessage, json))
         }
         // Successful login: subject is known, login-session id is the cookie-bound identifier
-        // used downstream for OIDC `sid` claim emission. AMR is fixed to PWD here because this
-        // endpoint is the password-credential entry point; step-up authenticators and IDV-bound
-        // login emit their own LOGIN events with their actual AMR / ACR.
+        // used downstream for OIDC `sid` claim emission.
         auditEmitter.emit(
             type = OAuth2AuditEventType.LOGIN,
             subject = sub,
             metadata =
                 mapOf(
-                    "amr" to "pwd",
-                    "acr" to AuthAssuranceLevel.AAL1.acr,
-                    "auth_method" to "PASSWORD",
+                    "amr" to authenticatedUser.amr.orEmpty().joinToString(" "),
+                    "acr" to (authenticatedUser.acr ?: ""),
+                    "auth_method" to authenticatedUser.authenticationMethod.name,
                     "login_session_id" to loginSessionId,
                 ),
         )

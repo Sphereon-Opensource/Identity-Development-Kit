@@ -21,8 +21,8 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.DecryptCommand
 import com.sphereon.crypto.core.kms.command.DeleteKeyCommand
-import com.sphereon.crypto.core.kms.command.EcdhDeriveCommand
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyCommand
+import com.sphereon.crypto.core.kms.command.EcdhDeriveCommand
 import com.sphereon.crypto.core.kms.command.EncryptCommand
 import com.sphereon.crypto.core.kms.command.GenerateKeyCommand
 import com.sphereon.crypto.core.kms.command.GenerateMacCommand
@@ -33,8 +33,8 @@ import com.sphereon.crypto.core.kms.command.ResolvePublicKeyCommand
 import com.sphereon.crypto.core.kms.command.SignDigestCommand
 import com.sphereon.crypto.core.kms.command.StoreKeyCommand
 import com.sphereon.crypto.core.kms.command.UnwrapKeyCommand
-import com.sphereon.crypto.core.kms.command.VerifyMacCommand
 import com.sphereon.crypto.core.kms.command.VerifyDigestCommand
+import com.sphereon.crypto.core.kms.command.VerifyMacCommand
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.WrapKeyCommand
 import com.sphereon.crypto.jose.jwe.CreateJweCompactCommand
@@ -60,8 +60,8 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsCommandImpl
 import com.sphereon.crypto.kms.command.CreateRawSignatureCommandImpl
 import com.sphereon.crypto.kms.command.DecryptCommandImpl
 import com.sphereon.crypto.kms.command.DeleteKeyCommandImpl
-import com.sphereon.crypto.kms.command.EcdhDeriveCommandImpl
 import com.sphereon.crypto.kms.command.EcPointMultiplyCommandImpl
+import com.sphereon.crypto.kms.command.EcdhDeriveCommandImpl
 import com.sphereon.crypto.kms.command.EncryptCommandImpl
 import com.sphereon.crypto.kms.command.GenerateKeyCommandImpl
 import com.sphereon.crypto.kms.command.GenerateMacCommandImpl
@@ -72,8 +72,8 @@ import com.sphereon.crypto.kms.command.ResolvePublicKeyCommandImpl
 import com.sphereon.crypto.kms.command.SignDigestCommandImpl
 import com.sphereon.crypto.kms.command.StoreKeyCommandImpl
 import com.sphereon.crypto.kms.command.UnwrapKeyCommandImpl
-import com.sphereon.crypto.kms.command.VerifyMacCommandImpl
 import com.sphereon.crypto.kms.command.VerifyDigestCommandImpl
+import com.sphereon.crypto.kms.command.VerifyMacCommandImpl
 import com.sphereon.crypto.kms.command.VerifyRawSignatureCommandImpl
 import com.sphereon.crypto.kms.command.WrapKeyCommandImpl
 import com.sphereon.di.session.SessionScope

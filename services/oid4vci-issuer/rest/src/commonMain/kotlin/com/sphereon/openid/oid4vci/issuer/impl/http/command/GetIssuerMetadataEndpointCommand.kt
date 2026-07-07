@@ -389,10 +389,18 @@ internal fun CredentialIssuerMetadata.withHostedVctUrls(externalBaseUrl: String?
     )
 
 internal fun String.toHostedVctUrl(externalBaseUrl: String?): String {
-    val base = externalBaseUrl?.trimEnd('/')?.takeIf { it.isNotBlank() } ?: return this
+    val base = externalBaseUrl?.publicOrigin()?.takeIf { it.isNotBlank() } ?: return this
     val marker = "/public/schema/vct/"
     val markerIndex = indexOf(marker)
     if (markerIndex < 0) return this
     val suffix = substring(markerIndex + marker.length).takeIf { it.isNotBlank() } ?: return this
     return "$base$marker$suffix"
+}
+
+private fun String.publicOrigin(): String {
+    val base = trimEnd('/')
+    val schemeEnd = base.indexOf("://").takeIf { it >= 0 } ?: return base
+    val authorityStart = schemeEnd + 3
+    val pathStart = base.indexOf('/', authorityStart)
+    return if (pathStart < 0) base else base.substring(0, pathStart)
 }

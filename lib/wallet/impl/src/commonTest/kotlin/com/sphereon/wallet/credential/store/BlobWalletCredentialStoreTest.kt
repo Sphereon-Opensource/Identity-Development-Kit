@@ -68,9 +68,12 @@ import com.sphereon.wallet.credential.RemoteWalletIssuanceSessionStore
 import com.sphereon.wallet.credential.SecretRef
 import com.sphereon.wallet.credential.StorageProfile
 import com.sphereon.wallet.credential.StoreRef
+import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorOperation
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorPolicy
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorRequest
+import com.sphereon.wallet.credential.WalletInstance
+import com.sphereon.wallet.credential.WalletInstancePurpose
 import com.sphereon.wallet.credential.WalletOperation
 import com.sphereon.wallet.credential.WalletOperationType
 import com.sphereon.wallet.credential.WalletStorageMode
@@ -171,17 +174,19 @@ private class TestSessionEventService : com.sphereon.core.events.SessionEventSer
             .DefaultEventBuilder(com.sphereon.core.api.context.IdkScope.SESSION)
 }
 
-private fun createTestBlobService(): DefaultBlobService {
-    val blobBackingStorage = InMemoryBlobBackingStorageImpl()
+private fun createTestBlobService(
+    blobBackingStorage: InMemoryBlobBackingStorageImpl = InMemoryBlobBackingStorageImpl(),
+    kvBackingStorage: InMemoryKvBackingStorageImpl = InMemoryKvBackingStorageImpl(),
+    storeId: String = "memory",
+): DefaultBlobService {
     val blobFactory = InMemoryBlobStoreFactoryImpl(blobBackingStorage)
-    val memoryStore = blobFactory.create(InMemoryBlobStoreConfig(id = "memory"))
+    val memoryStore = blobFactory.create(InMemoryBlobStoreConfig(id = storeId))
 
-    val kvBackingStorage = InMemoryKvBackingStorageImpl()
     val kvFactory = InMemoryKvStoreFactoryImpl(kvBackingStorage)
     val kvStore = kvFactory.create(InMemoryKvStoreConfig(id = KvBlobMetadataIndex.STORE_ID, scopeBinding = KvStoreScopeBinding.APP))
 
     return DefaultBlobService(
-        blobStoreService = TestBlobStoreService(memoryStore),
+        blobStoreService = TestBlobStoreService(memoryStore, storeId),
         metadataIndex = KvBlobMetadataIndex(TestKvStoreService(kvStore)),
         retentionPolicyService = DefaultRetentionPolicyService(),
         tempUrlPolicy =
@@ -927,6 +932,86 @@ class BlobWalletCredentialStoreTest {
         }
 
     @Test
+    fun managedHybridProfileAndCredentialSurviveStoreRecreation() =
+        runTest {
+            val walletInstanceId = "wallet-profile-employee"
+            val localBlobBacking = InMemoryBlobBackingStorageImpl()
+            val localKvBacking = InMemoryKvBackingStorageImpl()
+            val remoteBlobBacking = InMemoryBlobBackingStorageImpl()
+            val remoteKvBacking = InMemoryKvBackingStorageImpl()
+
+            fun localBlobService() = createTestBlobService(localBlobBacking, localKvBacking, "local")
+
+            fun remoteBlobService() = createTestBlobService(remoteBlobBacking, remoteKvBacking, "remote")
+
+            val instanceStore = BlobWalletInstanceStore(localBlobService())
+            val profile =
+                StorageProfile(
+                    id = "$walletInstanceId:managed-hybrid",
+                    walletInstanceId = walletInstanceId,
+                    mode = WalletStorageMode.HYBRID,
+                    localStoreRef = StoreRef(id = "local", type = "blob"),
+                    remoteVaultRef = StoreRef(id = "remote", type = "vault"),
+                    encryptionPolicyId = "wallet-managed-hybrid",
+                    syncPolicyId = "wallet-managed-hybrid-sync",
+                )
+            val instance =
+                WalletInstance(
+                    id = walletInstanceId,
+                    ownerSubjectRef = IdentifierRef(type = IdentifierType("party"), value = "party-employee"),
+                    label = "Employee",
+                    purpose = WalletInstancePurpose.WORK,
+                    storageProfileId = profile.id,
+                    defaultHolderKeyPolicyId = "wallet-holder-key-managed",
+                    trustDomainId = "tenant-a",
+                    createdAt = NOW,
+                    updatedAt = NOW,
+                )
+            assertTrue(instanceStore.putWalletInstance(instance, profile).isOk)
+
+            val localStore = BlobWalletCredentialStore(localBlobService(), TestWalletCredentialBodyProtector)
+            val remoteStore = RemoteBlobWalletCredentialStore(BlobWalletCredentialStore(remoteBlobService(), TestWalletCredentialBodyProtector))
+            val queue = BlobWalletOperationQueue(localBlobService())
+            val router =
+                StorageProfileRoutingWalletCredentialStore(
+                    storageProfileResolver = instanceStore,
+                    localStore = localStore,
+                    remoteStore = remoteStore,
+                    hybridStore = HybridWalletCredentialStore(localStore, remoteStore, queue, "device-1"),
+                )
+            assertTrue(router.putCredential(walletInstanceId, makeRecord("record-managed", walletInstanceId)).isOk)
+
+            val recreatedInstanceStore = BlobWalletInstanceStore(localBlobService())
+            val recreatedLocalStore = BlobWalletCredentialStore(localBlobService(), TestWalletCredentialBodyProtector)
+            val recreatedRemoteStore = RemoteBlobWalletCredentialStore(BlobWalletCredentialStore(remoteBlobService(), TestWalletCredentialBodyProtector))
+            val recreatedRouter =
+                StorageProfileRoutingWalletCredentialStore(
+                    storageProfileResolver = recreatedInstanceStore,
+                    localStore = recreatedLocalStore,
+                    remoteStore = recreatedRemoteStore,
+                    hybridStore =
+                        HybridWalletCredentialStore(
+                            recreatedLocalStore,
+                            recreatedRemoteStore,
+                            BlobWalletOperationQueue(localBlobService()),
+                            "device-1",
+                        ),
+                )
+
+            assertEquals(profile, recreatedInstanceStore.resolveStorageProfile(walletInstanceId).value)
+            val restored = recreatedRouter.getCredential(walletInstanceId, "record-managed")
+            assertTrue(restored.isOk)
+            assertEquals(
+                "raw-record-managed",
+                restored.value
+                    ?.instances
+                    ?.single()
+                    ?.raw
+            )
+            assertEquals(WalletStorageMode.HYBRID, recreatedInstanceStore.getStorageProfile(walletInstanceId).value?.mode)
+        }
+
+    @Test
     fun storageProfileRouterRejectsInvalidProfilesBeforeCallingDelegates() =
         runTest {
             val local = RecordingWalletCredentialStore()
@@ -1162,6 +1247,11 @@ private class TestStorageProfileResolver(
         profiles[walletInstanceId]?.let { Ok(it) }
             ?: Err(IdkError.NOT_FOUND_ERROR(message = "Storage profile for wallet '$walletInstanceId' was not found"))
 }
+
+private class RemoteBlobWalletCredentialStore(
+    private val delegate: BlobWalletCredentialStore,
+) : RemoteWalletCredentialStore,
+    WalletCredentialStore by delegate
 
 private class RecordingWalletIssuanceSessionStore :
     LocalWalletIssuanceSessionStore,

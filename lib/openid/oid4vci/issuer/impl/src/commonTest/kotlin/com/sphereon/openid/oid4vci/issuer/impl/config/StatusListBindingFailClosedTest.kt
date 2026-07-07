@@ -44,7 +44,7 @@ class StatusListBindingFailClosedTest {
             "oid4vci.issuer.identifier" to "https://issuer.example.com",
             "oid4vci.issuer.credentialConfigurationIds" to "EuPid",
             "oid4vci.issuer.credentials.[EuPid].format" to "dc+sd-jwt",
-            "oid4vci.issuer.credentials.[EuPid].statusListId" to "eupid-revocation",
+            "oid4vci.issuer.credentials.[EuPid].status.statusListId" to "eupid-revocation",
         )
 
     private val statusListProperties =

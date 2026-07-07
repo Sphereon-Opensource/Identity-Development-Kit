@@ -72,6 +72,29 @@ class ResolveIssuerMetadataTest {
         assertEquals("https://issuer.example.com:8443/.well-known/openid-credential-issuer/tenant1", result)
     }
 
+    @Test
+    fun fullWellKnownUrlIsUsedAsMetadataUrl() {
+        val metadataUrl = "https://issuer.example.com/.well-known/openid-credential-issuer/tenant1"
+        val result = Oid4vciUrls.buildWellKnownUrl(metadataUrl)
+        assertEquals(metadataUrl, result)
+    }
+
+    @Test
+    fun issuerUrlCanBeDerivedFromFullWellKnownUrl() {
+        val result = Oid4vciUrls.buildIssuerUrl("https://issuer.example.com/.well-known/openid-credential-issuer/org/tenant1")
+        assertEquals("https://issuer.example.com/org/tenant1", result)
+    }
+
+    @Test
+    fun franceIdentiteWellKnownUrlRoundTripsToIssuerAndBack() {
+        val wellKnownUrl = "https://api.playground.france-identite.gouv.fr/.well-known/openid-credential-issuer/igrantio/issuer-backend"
+        val issuerUrl = "https://api.playground.france-identite.gouv.fr/igrantio/issuer-backend"
+
+        assertEquals(wellKnownUrl, Oid4vciUrls.buildWellKnownUrl(wellKnownUrl))
+        assertEquals(wellKnownUrl, Oid4vciUrls.buildWellKnownUrl(issuerUrl))
+        assertEquals(issuerUrl, Oid4vciUrls.buildIssuerUrl(wellKnownUrl))
+    }
+
     // ── Metadata deserialization tests ─────────────────────────────────────────
 
     /**

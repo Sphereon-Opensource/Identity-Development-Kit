@@ -16,14 +16,9 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.command
 
-import com.sphereon.attribute.pipeline.Oid4vciPipelinePhase
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.credential.issuance.pipeline.command.ContributeAttributesArgs
-import com.sphereon.credential.issuance.pipeline.command.ContributeAttributesCommand
-import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessArgs
-import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessCommand
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.data.store.credential.design.impl.mapper.Oid4vciDesignMapper
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
@@ -39,13 +34,17 @@ import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SdPolicy
-import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciCompletenessLifecycleArgs
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuancePhase
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
 
 /**
@@ -54,16 +53,14 @@ import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolic
  * command class stays at a single concern (status routing + access-token validation + entry
  * lifecycle) while the multi-step re-execution machinery sits in its own testable unit.
  *
- * Instantiated only when the EDK pipeline commands ([ContributeAttributesCommand] +
- * [EvaluateAttributeCompletenessCommand]) are wired in; the command's `buildReExecutor`
- * gates that decision and passes `null` in pure-IDK deployments.
+ * Instantiated only when an OID4VCI lifecycle hook is wired in; EDK binds the connector-backed
+ * implementation while pure-IDK sessions without a lifecycle correlation id fall through.
  */
 class DeferredPipelineReExecutor(
     private val deferredStore: DeferredCredentialStore,
     private val sessionStore: CredentialIssuanceSessionStore,
     private val attributeContributor: CredentialAttributeContributor,
-    private val contributeAttributesCommand: ContributeAttributesCommand,
-    private val evaluateAttributeCompletenessCommand: EvaluateAttributeCompletenessCommand,
+    private val lifecycleHook: Oid4vciIssuanceLifecycleHook,
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
     private val formatHandlers: Set<CredentialFormatHandler>,
     private val credentialDesignService: CredentialDesignService?,
@@ -85,7 +82,7 @@ class DeferredPipelineReExecutor(
         tokenContext: ValidatedTokenContext,
     ): IdkResult<CredentialResponse, IdkError>? {
         val session = sessionStore.get(entry.issuanceSessionId).getOrElse { null }
-        val correlationId = session?.pipelineCorrelationId
+        val correlationId = session?.lifecycleCorrelationId
         return when {
             session == null || correlationId == null -> null
             !runDeferredPhaseAndPipelineIsReady(correlationId) -> null
@@ -95,23 +92,24 @@ class DeferredPipelineReExecutor(
 
     private suspend fun runDeferredPhaseAndPipelineIsReady(correlationId: String): Boolean {
         val contributeResult =
-            contributeAttributesCommand.execute(
-                ContributeAttributesArgs(
+            lifecycleHook.recordPhase(
+                Oid4vciPhaseLifecycleArgs(
                     correlationId = correlationId,
-                    phase = Oid4vciPipelinePhase.DEFERRED,
+                    phase = Oid4vciIssuancePhase.DEFERRED,
                 ),
             )
         if (contributeResult.isErr) {
             return false
         }
         val verdictsResult =
-            evaluateAttributeCompletenessCommand.execute(
-                EvaluateAttributeCompletenessArgs(correlationId = correlationId),
+            lifecycleHook.evaluateCompleteness(
+                Oid4vciCompletenessLifecycleArgs(correlationId = correlationId),
             )
         if (verdictsResult.isErr) {
             return false
         }
-        return verdictsResult.value.verdicts.none { !it.complete || it.awaitingApproval }
+        val verdict = verdictsResult.value
+        return !verdict.shouldDefer && !verdict.awaitingApproval && verdict.missingRequiredClaims.isEmpty()
     }
 
     private suspend fun issueCredential(
@@ -119,9 +117,25 @@ class DeferredPipelineReExecutor(
         tokenContext: ValidatedTokenContext,
         session: IssuanceSession,
     ): IdkResult<CredentialResponse, IdkError>? {
+        val correlationId = session.lifecycleCorrelationId ?: return null
+        issuerConfigProvider.prepare()
         val inputs = prepareDispatchInputs(entry, tokenContext, session) ?: return null
-        val issuanceContext = buildIssuanceContext(inputs, tokenContext)
-        return runDispatch(entry, inputs, issuanceContext)
+        val issuanceContext = buildIssuanceContext(inputs, tokenContext) ?: return null
+        val preIssueRan =
+            contributeOid4vciPhase(
+                correlationId = correlationId,
+                phase = Oid4vciIssuancePhase.PRE_ISSUE,
+                fields = preIssuePhaseFields(inputs, issuanceContext),
+            )
+        if (!preIssueRan) return null
+        val response = runDispatch(entry, inputs, issuanceContext) ?: return null
+        val postIssuanceRan =
+            contributeOid4vciPhase(
+                correlationId = correlationId,
+                phase = Oid4vciIssuancePhase.POST_ISSUANCE,
+                fields = response.value.toPostIssuancePhaseFields(inputs.configId),
+            )
+        return if (postIssuanceRan) response else null
     }
 
     private suspend fun prepareDispatchInputs(
@@ -137,7 +151,7 @@ class DeferredPipelineReExecutor(
         }
         val request = CredentialRequest(credentialConfigurationId = configId, format = configuration.format)
         val handler = formatHandlers.firstOrNull { it.canHandle(request, configuration) } ?: return null
-        return DispatchInputs(configId, configuration, mergedAttributes, request, handler)
+        return DispatchInputs(configId, configuration, mergedAttributes, request, handler, entry.transactionId)
     }
 
     /**
@@ -200,11 +214,26 @@ class DeferredPipelineReExecutor(
         return merged
     }
 
+    private suspend fun contributeOid4vciPhase(
+        correlationId: String,
+        phase: Oid4vciIssuancePhase,
+        fields: Map<String, JsonElement>,
+    ): Boolean =
+        lifecycleHook
+            .recordPhase(
+                Oid4vciPhaseLifecycleArgs(
+                    correlationId = correlationId,
+                    phase = phase,
+                    fields = fields,
+                ),
+            ).isOk
+
     private suspend fun buildIssuanceContext(
         inputs: DispatchInputs,
         tokenContext: ValidatedTokenContext,
-    ): IssuanceContext {
-        val signingConfig = issuerConfigProvider.credentialSigningConfigs[inputs.configId]
+    ): IssuanceContext? {
+        val signingConfig = issuerConfigProvider.credentialSigningConfigs[inputs.configId] ?: return null
+        val expirationInDays = signingConfig.expirationInDays ?: return null
         val designContext = resolveDesignContext(inputs.configId)
         return IssuanceContext(
             subject = tokenContext.subject,
@@ -219,13 +248,34 @@ class DeferredPipelineReExecutor(
             attributes = inputs.attributes,
             sdPolicies = designContext.sdPolicies,
             mandatoryClaims = designContext.mandatoryClaims,
-            signingKeyAlias = signingConfig?.signingKeyAlias,
-            signingKeyMode = signingConfig?.signingKeyMode ?: SigningKeyMode.None,
-            signingCertChainPath = signingConfig?.signingCertChainPath,
+            signingKeyAlias = signingConfig.signingKeyAlias,
+            signingKeyMode = signingConfig.signingKeyMode,
+            signingCertChainPath = signingConfig.signingCertChainPath,
             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
-            expirationInDays = signingConfig?.expirationInDays,
+            expirationInDays = expirationInDays,
         )
     }
+
+    private fun preIssuePhaseFields(
+        inputs: DispatchInputs,
+        issuanceContext: IssuanceContext,
+    ): Map<String, JsonElement> =
+        mapOf(
+            "oid4vci.credentialConfigurationId" to JsonPrimitive(inputs.configId),
+            "oid4vci.credentialFormat" to JsonPrimitive(inputs.configuration.format.toString()),
+            "oid4vci.subject" to JsonPrimitive(issuanceContext.subject),
+            "oid4vci.clientId" to JsonPrimitive(issuanceContext.clientId),
+            "oid4vci.issuerIdentifier" to JsonPrimitive(issuanceContext.issuerIdentifier),
+            "oid4vci.deferredTransactionId" to JsonPrimitive(inputs.deferredTransactionId),
+        )
+
+    private fun CredentialResponse.toPostIssuancePhaseFields(configId: String): Map<String, JsonElement> =
+        buildMap {
+            put("oid4vci.credentialConfigurationId", JsonPrimitive(configId))
+            put("oid4vci.credentialCount", JsonPrimitive(credentials?.size ?: 0))
+            notificationId?.let { put("oid4vci.notificationId", JsonPrimitive(it)) }
+            transactionId?.let { put("oid4vci.transactionId", JsonPrimitive(it)) }
+        }
 
     /**
      * Resolve `sdPolicies` + `mandatoryClaims` from the credential-design store. When no design
@@ -287,6 +337,7 @@ class DeferredPipelineReExecutor(
         val attributes: Map<String, JsonElement>,
         val request: CredentialRequest,
         val handler: CredentialFormatHandler,
+        val deferredTransactionId: String,
     )
 
     private data class DesignContext(

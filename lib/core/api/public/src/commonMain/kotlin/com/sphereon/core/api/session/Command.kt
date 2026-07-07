@@ -462,6 +462,13 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
         applyDuring: (Arg) -> Arg,
     ): IdkResult<SuccessResult, ErrorResult>
 
+    protected open fun commandExecutionContext(): CommandExecutionContext =
+        CommandExecutionContext(
+            commandId = id,
+            parsedCommandId = CommandId.tryParse(id),
+            subsystem = subsystem?.value,
+        )
+
     @Suppress("UNCHECKED_CAST")
     override suspend fun execute(args: Arg): IdkResult<SuccessResult, ErrorResult> {
         // Return errors instead of throwing exceptions (IdkResult-based error handling)
@@ -499,12 +506,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
         }
 
         val interceptors = interceptorChain.interceptors
-        val context =
-            CommandExecutionContext(
-                commandId = id,
-                parsedCommandId = CommandId.tryParse(id),
-                subsystem = subsystem?.value,
-            )
+        val context = commandExecutionContext()
 
         val startTimeMs = currentTimeMillis()
         var commandResult: IdkResult<SuccessResult, ErrorResult>? = null
@@ -646,6 +648,16 @@ abstract class ExecutionScopedCommandAdapter<Arg : Any, SuccessResult : Any, Err
     ),
     Scoped {
     override suspend fun execute(args: Arg): IdkResult<SuccessResult, ErrorResult> = super.execute(args)
+
+    override fun commandExecutionContext(): CommandExecutionContext =
+        CommandExecutionContext(
+            commandId = id,
+            parsedCommandId = CommandId.tryParse(id),
+            subsystem = subsystem?.value,
+            tenantId = execution.tenantId,
+            principalId = execution.principalId,
+            correlationId = execution.correlationId,
+        )
 
     /**
      * This is a little trick to have any subclasses that implement scoped use this function. This class also implements scoped, but

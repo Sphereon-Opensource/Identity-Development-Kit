@@ -47,7 +47,7 @@ data class AttributeBag(
          */
         fun of(
             values: Map<AttributePath, JsonElement>,
-            sourceId: AttributeProvenanceRef,
+            producerId: AttributeProvenanceRef,
             timestamp: Instant,
             phase: PipelinePhase = PipelinePhase.SESSION_INIT,
         ): AttributeBag =
@@ -56,7 +56,7 @@ data class AttributeBag(
                     AttributeRecord(
                         path = path,
                         value = AttributeData(value),
-                        sourceId = sourceId,
+                        producerId = producerId,
                         phase = phase,
                         timestamp = timestamp,
                     )

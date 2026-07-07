@@ -59,9 +59,6 @@ import dev.zacsweers.metro.binding
  * EDK / VDX contribute richer registries (durable rows, public-endpoint routing) that REPLACE this
  * binding; endpoint enrichment is out of scope here, so every derived instance carries an empty
  * endpoint list.
- *
- * The [SoftwareCapabilityType.ATTRIBUTE_SOURCE] capability has no config-driven namespace in the
- * open core, so it is never derived here ([list] returns empty for it).
  */
 @Inject
 @SingleIn(SessionScope::class)

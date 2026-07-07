@@ -153,6 +153,12 @@ class CreateAuthRequestServiceCommandImpl(
             } else {
                 null
             }
+        val configuredVerifierBaseUrl =
+            configProvider
+                .getConfig()
+                .externalBaseUrl
+                ?.trimEnd('/')
+                ?.takeIf { base -> base.startsWith("https://") || base.startsWith("http://") }
         // Source of truth for the verifier's client_id, in priority order:
         //   1. Explicit `input.clientId` from the request body.
         //   2. Stored ClientMetadataConfig.
@@ -164,9 +170,10 @@ class CreateAuthRequestServiceCommandImpl(
             input.clientId
                 ?: clientMetadataConfig?.clientId
                 ?: derivedFromSigner
+                ?: configuredVerifierBaseUrl
                 ?: return Err(
                     IdkError.ILLEGAL_ARGUMENT_ERROR(
-                        message = "client_id must be provided or configured",
+                        message = "client_id must be provided or configured via verifier external-base-url or request-object signing",
                     ),
                 )
 

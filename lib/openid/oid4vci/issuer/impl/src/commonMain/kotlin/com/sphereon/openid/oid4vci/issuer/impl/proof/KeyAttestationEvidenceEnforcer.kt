@@ -29,9 +29,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
 
 /**
@@ -335,12 +335,19 @@ internal class KeyAttestationEvidenceEnforcer(
         out: MutableMap<String, String>,
     ) {
         when (element) {
-            is JsonObject -> element.forEach { (key, value) -> flattenEvidence("$prefix.$key", value, out) }
-            is JsonArray ->
+            is JsonObject -> {
+                element.forEach { (key, value) -> flattenEvidence("$prefix.$key", value, out) }
+            }
+
+            is JsonArray -> {
                 element.forEachIndexed { index, value ->
                     if (value is JsonPrimitive) flattenEvidence("$prefix[$index]", value, out)
                 }
-            is JsonPrimitive -> primitiveString(element)?.let { out[prefix] = it }
+            }
+
+            is JsonPrimitive -> {
+                primitiveString(element)?.let { out[prefix] = it }
+            }
         }
     }
 
@@ -391,8 +398,8 @@ internal class KeyAttestationEvidenceEnforcer(
             canonical(stateValue).let { it in REVOKED_STATUS_VALUES } ||
             (statusValue?.let(::parseStatusReference) == null && canonical(statusValue).let { it in REVOKED_STATUS_VALUES }) ||
             evidence.any { (key, value) ->
-                canonical(key).contains("revoked") && canonical(value) == "true" ||
-                    canonical(key).contains("status") && canonical(value) in REVOKED_STATUS_VALUES
+                (canonical(key).contains("revoked") && canonical(value) == "true") ||
+                    (canonical(key).contains("status") && canonical(value) in REVOKED_STATUS_VALUES)
             }
     }
 
@@ -428,10 +435,11 @@ internal class KeyAttestationEvidenceEnforcer(
     }
 
     private fun Map<String, String>.firstMatchingValue(keys: Set<String>): String? =
-        entries.firstOrNull { (key, value) ->
-            val normalized = canonical(key)
-            value.isNotBlank() && keys.any { expected -> normalized == expected || normalized.endsWith("_$expected") }
-        }?.value
+        entries
+            .firstOrNull { (key, value) ->
+                val normalized = canonical(key)
+                value.isNotBlank() && keys.any { expected -> normalized == expected || normalized.endsWith("_$expected") }
+            }?.value
 
     private fun JsonObject.primitiveString(key: String): String? = primitiveString(this[key])
 
@@ -452,8 +460,7 @@ internal class KeyAttestationEvidenceEnforcer(
             ?.replace(' ', '_')
             .orEmpty()
 
-    private fun invalid(message: String): IdkResult<Nothing, IdkError> =
-        Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = message))
+    private fun invalid(message: String): IdkResult<Nothing, IdkError> = Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = message))
 
     private data class KeyStorageEvidence(
         val values: List<String> = emptyList(),

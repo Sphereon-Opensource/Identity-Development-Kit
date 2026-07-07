@@ -81,6 +81,11 @@ class UserAuthenticationProviderDelegate(
         context: AuthenticationContext?,
     ): IdkResult<String?, AuthenticationError> = selected.authenticateWithCredentials(credentials, context)
 
+    override suspend fun authenticateUserWithCredentials(
+        credentials: UserCredentials,
+        context: AuthenticationContext?,
+    ): IdkResult<AuthenticatedUser?, AuthenticationError> = selected.authenticateUserWithCredentials(credentials, context)
+
     override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = selected.logout(userId)
 
     override suspend fun getUserInfo(userId: String): IdkResult<UserInfo, AuthenticationError> = selected.getUserInfo(userId)

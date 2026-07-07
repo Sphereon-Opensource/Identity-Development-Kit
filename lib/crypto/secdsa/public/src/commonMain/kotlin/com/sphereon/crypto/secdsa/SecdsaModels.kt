@@ -21,6 +21,7 @@ import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KmsProvider
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmOverloads
 
 @JsExportCompat
 @Serializable

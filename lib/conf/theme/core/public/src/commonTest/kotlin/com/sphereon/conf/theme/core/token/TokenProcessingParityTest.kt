@@ -18,6 +18,7 @@ package com.sphereon.conf.theme.core.token
 
 import com.sphereon.conf.theme.core.defaults.SystemDefaults
 import com.sphereon.conf.theme.core.model.CssPolicyConfig
+import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ThemeDefinition
 import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.validation.ThemeValidator
@@ -134,7 +135,8 @@ class TokenProcessingParityTest {
             ThemeDefinition(
                 id = "l2",
                 name = "L2",
-                scope = ThemeScope.APP,
+                scope = ThemeScope.PRODUCT,
+                productType = ProductType.WEB_WALLET,
                 tokens = buildTokens { color("b", "#222") },
             )
         val layer3 =

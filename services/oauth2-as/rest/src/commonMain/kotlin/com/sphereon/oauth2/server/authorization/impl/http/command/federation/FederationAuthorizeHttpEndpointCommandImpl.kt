@@ -86,6 +86,7 @@ class FederationAuthorizeHttpEndpointCommandImpl(
                     returnUrl = baseUrl,
                     providerId = providerId,
                     hint = hint,
+                    acrValues = request.queryParameters["acr_values"]?.splitToNonEmpty().orEmpty(),
                 ),
             )
         return if (result.isOk) {
@@ -101,3 +102,5 @@ class FederationAuthorizeHttpEndpointCommandImpl(
         }
     }
 }
+
+private fun String.splitToNonEmpty(): List<String> = split(" ").map { it.trim() }.filter { it.isNotEmpty() }

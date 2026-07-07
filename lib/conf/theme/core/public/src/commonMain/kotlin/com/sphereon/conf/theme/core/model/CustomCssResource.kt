@@ -22,7 +22,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
 
 /**
- * A managed custom CSS resource for per-tenant/per-app custom styling.
+ * A managed custom stylesheet resource for per-tenant/per-application custom styling.
  */
 @JsExportCompat
 @Serializable
@@ -31,7 +31,7 @@ data class CustomCssResource
     constructor(
         val id: String,
         val tenantId: String,
-        val appId: String? = null,
+        val applicationId: String? = null,
         val css: String,
         val version: Long = 1,
         val contentHash: String,

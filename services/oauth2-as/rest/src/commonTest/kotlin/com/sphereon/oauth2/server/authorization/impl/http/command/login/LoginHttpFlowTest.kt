@@ -16,6 +16,15 @@
 
 package com.sphereon.oauth2.server.authorization.impl.http.command.login
 
+import com.sphereon.conf.theme.core.model.ElementOrigin
+import com.sphereon.conf.theme.core.model.ProductType
+import com.sphereon.conf.theme.core.model.ResolvedElement
+import com.sphereon.conf.theme.core.model.ResolvedFeature
+import com.sphereon.conf.theme.core.model.ResolvedTheme
+import com.sphereon.conf.theme.core.model.ThemeVariant
+import com.sphereon.data.store.asset.model.AssetReference
+import com.sphereon.conf.theme.core.resolve.FeatureResolver
+import com.sphereon.conf.theme.core.resolve.ThemeResolver
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
@@ -52,6 +61,12 @@ import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvi
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
+import com.sphereon.software.registry.SoftwareInstanceRegistry
+import com.sphereon.software.registry.model.SoftwareCapabilityType
+import com.sphereon.software.registry.model.SoftwareInstance
+import com.sphereon.software.registry.model.SoftwareLifecycleStatus
+import com.sphereon.software.registry.model.SoftwareManagementMode
+import dev.zacsweers.metro.Provider
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStore
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStoreError
 import kotlinx.coroutines.test.runTest
@@ -300,6 +315,39 @@ class LoginHttpFlowTest {
             assertEquals(AuthenticationMethod.PASSWORD, stored.authMethod)
             assertEquals(AuthAssuranceLevel.AAL1.acr, stored.acr)
             assertEquals(listOf(Amr.PWD), stored.amr)
+        }
+
+    @Test
+    fun loginPostPersistsProviderAuthenticationContext() =
+        runTest {
+            val provider =
+                StubUserAuthProvider(
+                    validPair = "alice" to "wonderland",
+                    acr = AuthAssuranceLevel.AAL2.acr,
+                    amr = listOf(Amr.PWD, "otp"),
+                )
+            val (command, store) = newSubmitCommand(userAuthProvider = provider)
+            val (body, csrfCookie) = csrfFormAndCookie("sess-1", "alice", "wonderland")
+            val request =
+                GenericHttpRequest(
+                    method = "POST",
+                    path = "/login",
+                    headers =
+                        mapOf(
+                            "Content-Type" to "application/x-www-form-urlencoded",
+                            "Cookie" to csrfCookie,
+                        ),
+                    bodySupplier = { body },
+                )
+            val response = command.execute(request)
+            assertTrue(response.isOk)
+            assertEquals(302, response.value.statusCode)
+            val stored = store.loaded("login-sid-1")
+            assertNotNull(stored, "OidcLoginSession must be persisted")
+            assertEquals("alice", stored.sub)
+            assertEquals(AuthenticationMethod.PASSWORD, stored.authMethod)
+            assertEquals(AuthAssuranceLevel.AAL2.acr, stored.acr)
+            assertEquals(listOf(Amr.PWD, "otp"), stored.amr)
         }
 
     @Test
@@ -665,6 +713,166 @@ class LoginHttpFlowTest {
         }
 
     @Test
+    fun loginPageThreadsTenantAndResolvedThemingIntoContext() =
+        runTest {
+            // The tenant established for the request session must reach LoginPageContext, and
+            // with resolvers + registry present the command must resolve LIGHT + DARK themes and
+            // the login feature under the AS instance's application party UUID.
+            val capturing = CapturingLoginPageRenderer()
+            val light = resolvedTheme(variant = ThemeVariant.LIGHT, primary = "#112233")
+            val dark = resolvedTheme(variant = ThemeVariant.DARK, primary = "#eeddcc")
+            val feature =
+                ResolvedFeature(
+                    productType = ProductType.AUTHORIZATION_SERVER,
+                    featureId = "login",
+                    tenantId = "acme",
+                    applicationId = "app-party-1",
+                )
+            val themeResolver = RecordingThemeResolver(light = light, dark = dark)
+            val featureResolver = RecordingFeatureResolver(feature)
+            val registry = StubSoftwareInstanceRegistry(partyId = "app-party-1")
+            val command = newThemedLoginPageCommand(capturing, themeResolver, featureResolver, registry)
+            val response = command.execute(loginPageRequest("sess-1"))
+            assertTrue(response.isOk)
+            assertEquals(200, response.value.statusCode)
+            val ctx = capturing.lastContext
+            assertNotNull(ctx, "Renderer must have been invoked")
+            assertEquals("acme", ctx.tenantId, "execution.tenantId must reach the LoginPageContext")
+            assertEquals(light, ctx.resolvedThemeLight)
+            assertEquals(dark, ctx.resolvedThemeDark)
+            assertEquals(feature, ctx.loginFeature)
+            assertEquals(feature, ctx.loginFeatureDark, "DARK-variant feature resolution must reach the context")
+            assertEquals(
+                setOf(null, ThemeVariant.DARK),
+                featureResolver.variants.toSet(),
+                "The login feature must be resolved for both the base and DARK variants",
+            )
+            assertEquals("acme" to "default", registry.lastGet, "Registry lookup must use (tenant, AS instance slug)")
+            assertTrue(
+                themeResolver.calls.all { it.applicationId == "app-party-1" },
+                "Theme resolution must carry the software party UUID as applicationId",
+            )
+            assertEquals(
+                setOf(ThemeVariant.LIGHT, ThemeVariant.DARK),
+                themeResolver.calls.map { it.variant }.toSet(),
+                "Exactly LIGHT and DARK must be resolved (no HIGH_CONTRAST yet)",
+            )
+            assertEquals("app-party-1", featureResolver.lastApplicationId)
+        }
+
+    @Test
+    fun cspDropsThemeAssetOriginsWithHeaderInjectionCharacters() =
+        runTest {
+            // Tenant-writable asset URIs flow into the CSP header. Hostile origins carrying
+            // CRLF, quotes, spaces, or semicolons must be dropped entirely: the CSP stays the
+            // clean nonce-bearing baseline with no img-src extension and no injected content.
+            val hostileUris =
+                listOf(
+                    "https://evil.example\r\nSet-Cookie: pwned=1/logo.png",
+                    "https://evil.example\" onload=\"alert(1)/logo.png",
+                    "https://evil.example;script-src *_/logo.png",
+                    "https://evil.example img-src.example/logo.png",
+                    "https://evil.example'x/logo.png",
+                )
+            for (uri in hostileUris) {
+                val feature = loginFeatureWithLogo(uri)
+                val command =
+                    newThemedLoginPageCommand(
+                        renderer = CapturingLoginPageRenderer(),
+                        themeResolver = RecordingThemeResolver(
+                            light = resolvedTheme(ThemeVariant.LIGHT, "#112233"),
+                            dark = resolvedTheme(ThemeVariant.DARK, "#eeddcc"),
+                        ),
+                        featureResolver = RecordingFeatureResolver(feature),
+                        registry = StubSoftwareInstanceRegistry(partyId = "app-party-1"),
+                    )
+                val response = command.execute(loginPageRequest("sess-1"))
+                assertTrue(response.isOk)
+                val csp = response.value.headers["Content-Security-Policy"] ?: error("CSP header missing")
+                assertTrue(!csp.contains("evil.example"), "hostile origin must be dropped from the CSP, got: $csp")
+                assertTrue(!csp.contains("img-src"), "no img-src extension may be emitted for a dropped origin, got: $csp")
+                assertTrue(!csp.contains('\r') && !csp.contains('\n'), "CSP must never carry CR/LF")
+                assertTrue(!csp.contains('"'), "CSP must never carry injected quotes")
+            }
+        }
+
+    @Test
+    fun cspExtendsImgSrcForValidCrossOriginThemeAsset() =
+        runTest {
+            val feature = loginFeatureWithLogo("https://cdn.example:8443/tenant/logo.png")
+            val command =
+                newThemedLoginPageCommand(
+                    renderer = CapturingLoginPageRenderer(),
+                    themeResolver = RecordingThemeResolver(
+                        light = resolvedTheme(ThemeVariant.LIGHT, "#112233"),
+                        dark = resolvedTheme(ThemeVariant.DARK, "#eeddcc"),
+                    ),
+                    featureResolver = RecordingFeatureResolver(feature),
+                    registry = StubSoftwareInstanceRegistry(partyId = "app-party-1"),
+                )
+            val response = command.execute(loginPageRequest("sess-1"))
+            assertTrue(response.isOk)
+            val csp = response.value.headers["Content-Security-Policy"] ?: error("CSP header missing")
+            assertTrue(
+                csp.contains("img-src 'self' https://cdn.example:8443"),
+                "a well-formed cross-origin https asset must extend img-src, got: $csp",
+            )
+        }
+
+    @Test
+    fun loginPageRendersNeutralWhenThemeResolverThrows() =
+        runTest {
+            // Theming must never break the login page: a throwing resolver leaves all three
+            // context fields null and the page still renders 200.
+            val capturing = CapturingLoginPageRenderer()
+            val command =
+                newThemedLoginPageCommand(
+                    renderer = capturing,
+                    themeResolver = ThrowingThemeResolver,
+                    featureResolver = RecordingFeatureResolver(feature = null),
+                    registry = StubSoftwareInstanceRegistry(partyId = "app-party-1"),
+                )
+            val response = command.execute(loginPageRequest("sess-1"))
+            assertTrue(response.isOk, "Login page must render despite the resolver failure")
+            assertEquals(200, response.value.statusCode, "Theming failure must not surface as an error status")
+            val ctx = capturing.lastContext
+            assertNotNull(ctx)
+            assertEquals("acme", ctx.tenantId, "Tenant threading is independent of theming failures")
+            assertNull(ctx.resolvedThemeLight)
+            assertNull(ctx.resolvedThemeDark)
+            assertNull(ctx.loginFeature)
+        }
+
+    @Test
+    fun loginPageSkipsThemingWithoutRealTenant() =
+        runTest {
+            // The anonymous session tenant is never treated as a real tenant: no default tenant
+            // fallback, no theming lookups, context tenant stays null.
+            val capturing = CapturingLoginPageRenderer()
+            val themeResolver = RecordingThemeResolver(light = resolvedTheme(ThemeVariant.LIGHT, "#112233"), dark = resolvedTheme(ThemeVariant.DARK, "#eeddcc"))
+            val command =
+                LoginPageHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    loginPageRenderer = capturing,
+                    asInstanceIdProvider = StubAsInstanceIdProvider(),
+                    configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+                    csrfTokenizer = csrfTokenizer,
+                    listEnabledFederationProvidersCommand = NoopListEnabledFederationProvidersCommand,
+                    themeResolver = Provider { themeResolver },
+                )
+            val response = command.execute(loginPageRequest("sess-1"))
+            assertTrue(response.isOk)
+            assertEquals(200, response.value.statusCode)
+            val ctx = capturing.lastContext
+            assertNotNull(ctx)
+            assertNull(ctx.tenantId, "Anonymous session must not produce a tenant")
+            assertNull(ctx.resolvedThemeLight)
+            assertNull(ctx.resolvedThemeDark)
+            assertTrue(themeResolver.calls.isEmpty(), "No theming lookup may run without a real tenant")
+        }
+
+    @Test
     fun loginPostWithoutFormContentTypeReturns400() =
         runTest {
             val (command, _) = newSubmitCommand()
@@ -679,6 +887,148 @@ class LoginHttpFlowTest {
             assertTrue(response.isOk)
             assertEquals(400, response.value.statusCode)
         }
+
+    private fun newThemedLoginPageCommand(
+        renderer: LoginPageRenderer,
+        themeResolver: ThemeResolver,
+        featureResolver: FeatureResolver,
+        registry: SoftwareInstanceRegistry,
+    ): LoginPageHttpEndpointCommandImpl =
+        LoginPageHttpEndpointCommandImpl(
+            execution = TestSessionExecution(tenantIdOverride = "acme"),
+            loginPageRenderer = renderer,
+            asInstanceIdProvider = StubAsInstanceIdProvider(),
+            configProvider = TestOAuth2ServersConfigProvider(),
+            baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+            csrfTokenizer = csrfTokenizer,
+            listEnabledFederationProvidersCommand = NoopListEnabledFederationProvidersCommand,
+            themeResolver = Provider { themeResolver },
+            featureResolver = Provider { featureResolver },
+            softwareInstanceRegistry = Provider { registry },
+        )
+
+    private fun loginPageRequest(sessionId: String): GenericHttpRequest =
+        GenericHttpRequest(
+            method = "GET",
+            path = "/login",
+            queryParameters = mapOf("session_id" to sessionId),
+            headers = mapOf("Host" to "as.example"),
+        )
+
+    private fun loginFeatureWithLogo(logoUri: String): ResolvedFeature =
+        ResolvedFeature(
+            productType = ProductType.AUTHORIZATION_SERVER,
+            featureId = "login",
+            tenantId = "acme",
+            applicationId = "app-party-1",
+            elements =
+                mapOf(
+                    "logo" to
+                        ResolvedElement(
+                            asset = AssetReference(uri = logoUri),
+                            origin = ElementOrigin.TENANT,
+                        ),
+                ),
+        )
+
+    private fun resolvedTheme(
+        variant: ThemeVariant,
+        primary: String,
+    ): ResolvedTheme =
+        ResolvedTheme(
+            tokens = mapOf("color.primary" to primary),
+            resolvedAt = kotlin.time.Instant.fromEpochSeconds(1_700_000_000),
+            variant = variant,
+            tenantId = "acme",
+            applicationId = "app-party-1",
+        )
+
+    private class CapturingLoginPageRenderer : LoginPageRenderer {
+        var lastContext: LoginPageContext? = null
+
+        override suspend fun render(ctx: LoginPageContext): IdkResult<LoginPageResponse, IdkError> {
+            lastContext = ctx
+            return Ok(LoginPageResponse(html = "<html><body>ok</body></html>"))
+        }
+    }
+
+    private class RecordingThemeResolver(
+        private val light: ResolvedTheme,
+        private val dark: ResolvedTheme,
+    ) : ThemeResolver {
+        data class Call(
+            val tenant: String,
+            val variant: ThemeVariant?,
+            val applicationId: String?,
+        )
+
+        val calls = mutableListOf<Call>()
+
+        override suspend fun resolve(
+            tenant: String,
+            variant: ThemeVariant?,
+            applicationId: String?,
+            principalId: String?,
+        ): ResolvedTheme {
+            calls.add(Call(tenant, variant, applicationId))
+            return if (variant == ThemeVariant.DARK) dark else light
+        }
+    }
+
+    private object ThrowingThemeResolver : ThemeResolver {
+        override suspend fun resolve(
+            tenant: String,
+            variant: ThemeVariant?,
+            applicationId: String?,
+            principalId: String?,
+        ): ResolvedTheme = throw IllegalStateException("theme store unavailable")
+    }
+
+    private class RecordingFeatureResolver(
+        private val feature: ResolvedFeature?,
+    ) : FeatureResolver {
+        var lastApplicationId: String? = null
+        val variants = mutableListOf<ThemeVariant?>()
+
+        override suspend fun resolve(
+            tenant: String,
+            productType: ProductType,
+            featureId: String,
+            applicationId: String?,
+            variant: ThemeVariant?,
+        ): ResolvedFeature? {
+            lastApplicationId = applicationId
+            variants.add(variant)
+            return feature
+        }
+    }
+
+    private class StubSoftwareInstanceRegistry(
+        private val partyId: String?,
+    ) : SoftwareInstanceRegistry {
+        var lastGet: Pair<String, String>? = null
+
+        override suspend fun list(
+            tenantId: String,
+            capabilityType: SoftwareCapabilityType,
+        ): List<SoftwareInstance> = emptyList()
+
+        override suspend fun get(
+            tenantId: String,
+            instanceId: String,
+        ): SoftwareInstance? {
+            lastGet = tenantId to instanceId
+            return SoftwareInstance(
+                instanceId = instanceId,
+                tenantId = tenantId,
+                capabilityType = SoftwareCapabilityType.OAUTH2_AUTHORIZATION_SERVER,
+                displayName = "Authorization server",
+                lifecycleStatus = SoftwareLifecycleStatus.ACTIVE,
+                managementMode = SoftwareManagementMode.MANAGED,
+                partyId = partyId,
+            )
+        }
+    }
 
     private class StubLoginPageRenderer(
         private val staticAssets: List<LoginPageAsset>,
@@ -719,6 +1069,8 @@ class LoginHttpFlowTest {
 
     private class StubUserAuthProvider(
         private val validPair: Pair<String, String>,
+        private val acr: String? = AuthAssuranceLevel.AAL1.acr,
+        private val amr: List<String>? = listOf(Amr.PWD),
     ) : UserAuthenticationProvider {
         override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = Ok(null)
 
@@ -735,6 +1087,26 @@ class LoginHttpFlowTest {
         ): IdkResult<String?, AuthenticationError> {
             val up = credentials as? UserCredentials.UsernamePassword ?: return Ok(null)
             return if (up.username == validPair.first && up.password == validPair.second) Ok(up.username) else Ok(null)
+        }
+
+        override suspend fun authenticateUserWithCredentials(
+            credentials: UserCredentials,
+            context: AuthenticationContext?,
+        ): IdkResult<AuthenticatedUser?, AuthenticationError> {
+            val up = credentials as? UserCredentials.UsernamePassword ?: return Ok(null)
+            return if (up.username == validPair.first && up.password == validPair.second) {
+                Ok(
+                    AuthenticatedUser(
+                        userId = up.username,
+                        authenticatedAt = Clock.System.now(),
+                        authenticationMethod = AuthenticationMethod.PASSWORD,
+                        acr = acr,
+                        amr = amr,
+                    ),
+                )
+            } else {
+                Ok(null)
+            }
         }
 
         override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = Ok(Unit)

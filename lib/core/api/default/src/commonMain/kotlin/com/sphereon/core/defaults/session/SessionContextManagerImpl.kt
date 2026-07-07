@@ -165,49 +165,49 @@ class SessionContextManagerImpl(
     override fun destroyById(sessionId: String) {
         val destroyed =
             synchronized(this) {
-            // Read the atomic value once
-            val currentInstances = instances.value
-            val instance = currentInstances[sessionId]
-            if (instance != null) {
-                val parentScope = runCatching { instance.scope.parent }.getOrNull()
-                val parentChildrenBefore = parentScope?.let { parent -> runCatching { parent.children().size }.getOrNull() }
+                // Read the atomic value once
+                val currentInstances = instances.value
+                val instance = currentInstances[sessionId]
+                if (instance != null) {
+                    val parentScope = runCatching { instance.scope.parent }.getOrNull()
+                    val parentChildrenBefore = parentScope?.let { parent -> runCatching { parent.children().size }.getOrNull() }
 
-                // Remove from map first
-                instances.value = currentInstances - sessionId
+                    // Remove from map first
+                    instances.value = currentInstances - sessionId
 
-                // Clear active if this was the active session
-                val currentActive = activeInstanceRef.value
-                if (currentActive?.sessionId == sessionId) {
-                    setActiveInstance(null)
-                }
-
-                // Destroy scope last
-                log.debug(
-                    "VDX_SESSION_SCOPE_DESTROY_START sessionId=${sessionId.sanitizeLogToken()} " +
-                        "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
-                        "remainingSessions=${instances.value.size} parentChildrenBefore=${parentChildrenBefore ?: "unknown"}",
-                )
-                runCatching { instance.scope.destroy() }
-                    .onSuccess {
-                        val parentChildrenAfter = parentScope?.let { parent -> runCatching { parent.children().size }.getOrNull() }
-                        log.debug(
-                            "VDX_SESSION_SCOPE_DESTROYED sessionId=${sessionId.sanitizeLogToken()} " +
-                                "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
-                                "remainingSessions=${instances.value.size} parentChildrenAfter=${parentChildrenAfter ?: "unknown"}",
-                        )
-                    }.onFailure { error ->
-                        log.warn(
-                            "VDX_SESSION_SCOPE_DESTROY_FAILED sessionId=${sessionId.sanitizeLogToken()} " +
-                                "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
-                                "remainingSessions=${instances.value.size} error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
-                        )
-                        throw error
+                    // Clear active if this was the active session
+                    val currentActive = activeInstanceRef.value
+                    if (currentActive?.sessionId == sessionId) {
+                        setActiveInstance(null)
                     }
-                true
-            } else {
-                false
+
+                    // Destroy scope last
+                    log.debug(
+                        "VDX_SESSION_SCOPE_DESTROY_START sessionId=${sessionId.sanitizeLogToken()} " +
+                            "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
+                            "remainingSessions=${instances.value.size} parentChildrenBefore=${parentChildrenBefore ?: "unknown"}",
+                    )
+                    runCatching { instance.scope.destroy() }
+                        .onSuccess {
+                            val parentChildrenAfter = parentScope?.let { parent -> runCatching { parent.children().size }.getOrNull() }
+                            log.debug(
+                                "VDX_SESSION_SCOPE_DESTROYED sessionId=${sessionId.sanitizeLogToken()} " +
+                                    "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
+                                    "remainingSessions=${instances.value.size} parentChildrenAfter=${parentChildrenAfter ?: "unknown"}",
+                            )
+                        }.onFailure { error ->
+                            log.warn(
+                                "VDX_SESSION_SCOPE_DESTROY_FAILED sessionId=${sessionId.sanitizeLogToken()} " +
+                                    "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
+                                    "remainingSessions=${instances.value.size} error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                            )
+                            throw error
+                        }
+                    true
+                } else {
+                    false
+                }
             }
-        }
         if (!destroyed) {
             log.debug(
                 "VDX_SESSION_SCOPE_DESTROY_SKIPPED sessionId=${sessionId.sanitizeLogToken()} " +
@@ -263,17 +263,17 @@ class SessionContextManagerImpl(
         val backgroundSessionManager = backgroundGraph.sessionContextManager
 
         // First check if it's already created (fast path)
-            val existingInstance = backgroundSessionManager.getById(ANONYMOUS_SESSION_ID)
-            if (existingInstance != null) {
-                logSessionReused(
-                    sessionId = ANONYMOUS_SESSION_ID,
-                    source = "background",
-                    makeActive = false,
-                    secureDetailsPresent = false,
-                )
-                // Background service can never be made active
-                return existingInstance
-            }
+        val existingInstance = backgroundSessionManager.getById(ANONYMOUS_SESSION_ID)
+        if (existingInstance != null) {
+            logSessionReused(
+                sessionId = ANONYMOUS_SESSION_ID,
+                source = "background",
+                makeActive = false,
+                secureDetailsPresent = false,
+            )
+            // Background service can never be made active
+            return existingInstance
+        }
 
         // Only create if we ARE the background session manager (prevent other managers from creating it)
         if (this !== backgroundSessionManager) {
@@ -348,17 +348,17 @@ class SessionContextManagerImpl(
         val anonymousSessionManager = anonymousUserGraph.sessionContextManager
 
         // First check if it's already created (fast path)
-            val existingInstance = anonymousSessionManager.getById(ANONYMOUS_SESSION_ID)
-            if (existingInstance != null) {
-                logSessionReused(
-                    sessionId = ANONYMOUS_SESSION_ID,
-                    source = "anonymous",
-                    makeActive = makeActive,
-                    secureDetailsPresent = false,
-                )
-                if (makeActive && this === anonymousSessionManager) {
-                    setActiveInstance(existingInstance)
-                }
+        val existingInstance = anonymousSessionManager.getById(ANONYMOUS_SESSION_ID)
+        if (existingInstance != null) {
+            logSessionReused(
+                sessionId = ANONYMOUS_SESSION_ID,
+                source = "anonymous",
+                makeActive = makeActive,
+                secureDetailsPresent = false,
+            )
+            if (makeActive && this === anonymousSessionManager) {
+                setActiveInstance(existingInstance)
+            }
             return existingInstance
         }
 

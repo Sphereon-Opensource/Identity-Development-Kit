@@ -17,7 +17,7 @@
 package com.sphereon.data.store.credential.design.impl
 
 import com.sphereon.data.store.credential.design.model.AppliedDesignLayer
-import com.sphereon.data.store.credential.design.model.AssetReference
+import com.sphereon.data.store.asset.model.AssetReference
 import com.sphereon.data.store.credential.design.model.ClaimCardinality
 import com.sphereon.data.store.credential.design.model.ClaimLabel
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment

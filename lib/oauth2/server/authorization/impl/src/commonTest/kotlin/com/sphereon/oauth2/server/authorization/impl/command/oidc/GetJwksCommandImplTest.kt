@@ -164,7 +164,13 @@ class GetJwksCommandImplTest {
 
             assertTrue(result.isOk, "GetJwks must resolve keys by the stored provider binding")
             assertEquals(listOf(kid), result.value.keys.map { it.kid })
-            assertEquals("ES256", result.value.keys.single().alg?.toString())
+            assertEquals(
+                "ES256",
+                result.value.keys
+                    .single()
+                    .alg
+                    ?.toString()
+            )
         }
 
     /**

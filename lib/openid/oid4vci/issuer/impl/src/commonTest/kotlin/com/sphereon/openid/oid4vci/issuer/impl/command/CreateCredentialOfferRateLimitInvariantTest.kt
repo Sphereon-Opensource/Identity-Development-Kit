@@ -19,7 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.command
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
-import com.sphereon.openid.oid4vci.issuer.impl.pipeline.OfferPipelineInitializer
+import com.sphereon.openid.oid4vci.issuer.impl.lifecycle.OfferLifecycleInitializer
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -33,7 +33,7 @@ class CreateCredentialOfferRateLimitInvariantTest {
             asBridge = NoOpAsBridge(),
             offerStore = NoOpOfferStore(),
             sessionStore = RecordingSessionStore(),
-            pipelineInitializer = OfferPipelineInitializer(),
+            lifecycleInitializer = OfferLifecycleInitializer(),
         )
 
     @Test

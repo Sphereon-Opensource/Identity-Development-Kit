@@ -21,8 +21,11 @@ import kotlinx.serialization.Serializable
 
 /**
  * The hierarchical scope at which a theme definition applies.
- * Lower scopes override higher ones during resolution:
- * SYSTEM < APP < TENANT < PRINCIPAL
+ * Later scopes override earlier ones during resolution:
+ * SYSTEM < PRODUCT < TENANT < APPLICATION < PRINCIPAL
+ *
+ * PRODUCT definitions require a [ThemeDefinition.productType]; APPLICATION definitions
+ * require a [ThemeDefinition.applicationId]; the other scopes carry neither.
  */
 @JsExportCompat
 @Serializable
@@ -30,11 +33,14 @@ enum class ThemeScope {
     /** Built-in system defaults (lowest priority) */
     SYSTEM,
 
-    /** Application-wide theme */
-    APP,
+    /** Defaults shipped with a product (authorization server, web wallet, portal, ...), keyed by product type, tenant agnostic */
+    PRODUCT,
 
-    /** Tenant-specific overrides */
+    /** The tenant default, applying to every application the tenant runs */
     TENANT,
+
+    /** The tenant's override for one deployed application instance, keyed by application id */
+    APPLICATION,
 
     /** Per-principal (user) overrides (highest priority) */
     PRINCIPAL,

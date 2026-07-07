@@ -125,7 +125,10 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                 offerResult.isOk,
                 "Offer creation should succeed: ${if (offerResult.isErr) offerResult.error.message.defaultMessage else ""}",
             )
-            val preAuthorizedCode = offerResult.value.offer.grants!!.preAuthorizedCode!!.preAuthorizedCode
+            val preAuthorizedCode =
+                offerResult.value.offer.grants!!
+                    .preAuthorizedCode!!
+                    .preAuthorizedCode
 
             val adapter =
                 Oid4vciWalletInteractionProtocolAdapter(
@@ -196,7 +199,13 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                 "Stored credential should be readable: ${if (recordResult.isErr) recordResult.error.message.defaultMessage else ""}",
             )
             val storedRecord = assertNotNull(recordResult.value)
-            assertEquals(HOLDER_SIGNING_KEY_ALIAS, storedRecord.instances.single().holderKeyRef?.alias)
+            assertEquals(
+                HOLDER_SIGNING_KEY_ALIAS,
+                storedRecord.instances
+                    .single()
+                    .holderKeyRef
+                    ?.alias
+            )
         }
 
     private fun wireInProcessAdapters() {
@@ -206,7 +215,10 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
     }
 
     private suspend fun ensureIssuerSigningKey() {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val result =
             kms.generateKeyResult(
                 alias = ISSUER_SIGNING_KEY_ALIAS,
@@ -220,7 +232,10 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
     }
 
     private suspend fun ensureHolderSigningKey() {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val result =
             kms.generateKeyResult(
                 alias = HOLDER_SIGNING_KEY_ALIAS,

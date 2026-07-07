@@ -16,6 +16,10 @@
 
 package com.sphereon.conf.theme.core.store
 
+import com.sphereon.conf.theme.core.model.Application
+import com.sphereon.conf.theme.core.model.ElementBinding
+import com.sphereon.conf.theme.core.model.FeatureDefinition
+import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ThemeDefinition
 import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.model.ThemeVariant
@@ -40,6 +44,33 @@ class InMemoryThemeStore : ThemeStore {
 
     // Outer key: tenant, inner key: themeId
     private val store = mutableMapOf<String, MutableMap<String, ThemeDefinition>>()
+
+    private val features = mutableMapOf<String, MutableMap<FeatureKey, FeatureDefinition>>()
+    private val bindings = mutableMapOf<String, MutableMap<BindingKey, ElementBinding>>()
+    private val applications = mutableMapOf<String, MutableMap<String, Application>>()
+    private val stylesheets = mutableMapOf<String, MutableMap<String?, StylesheetData>>()
+
+    private data class FeatureKey(
+        val productType: ProductType,
+        val featureId: String,
+    )
+
+    private data class BindingKey(
+        val productType: ProductType,
+        val featureId: String,
+        val elementId: String,
+        val applicationId: String?,
+        val variant: ThemeVariant?,
+    )
+
+    private fun ElementBinding.key(): BindingKey =
+        BindingKey(
+            productType = productType,
+            featureId = featureId,
+            elementId = elementId,
+            applicationId = applicationId,
+            variant = variant,
+        )
 
     private fun tenantStore(tenant: String): MutableMap<String, ThemeDefinition> = store.getOrPut(tenant) { mutableMapOf() }
 
@@ -77,16 +108,144 @@ class InMemoryThemeStore : ThemeStore {
         tenant: String,
         scope: ThemeScope,
         variant: ThemeVariant?,
-        appId: String?,
+        productType: ProductType?,
+        applicationId: String?,
     ): List<ThemeDefinition> {
         return mutex.withLock {
             val defs = store[tenant]?.values ?: return@withLock emptyList()
             defs
                 .filter { it.scope == scope }
-                .filter { variant == null || it.variant == variant }
-                .filter { it.appId == appId }
+                .filter { it.variant == variant }
+                .filter { it.productType == productType }
+                .filter { it.applicationId == applicationId }
         }
     }
 
     override suspend fun countDefinitions(tenant: String): Int = mutex.withLock { store[tenant]?.size ?: 0 }
+
+    // ========== Custom Features ==========
+
+    override suspend fun saveFeature(
+        tenant: String,
+        feature: FeatureDefinition,
+    ): FeatureDefinition {
+        mutex.withLock {
+            features.getOrPut(tenant) { mutableMapOf() }[FeatureKey(feature.productType, feature.featureId)] = feature
+        }
+        return feature
+    }
+
+    override suspend fun getFeature(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+    ): FeatureDefinition? = mutex.withLock { features[tenant]?.get(FeatureKey(productType, featureId)) }
+
+    override suspend fun listFeatures(
+        tenant: String,
+        productType: ProductType,
+    ): List<FeatureDefinition> =
+        mutex.withLock {
+            features[tenant]?.values?.filter { it.productType == productType } ?: emptyList()
+        }
+
+    override suspend fun deleteFeature(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+    ): Boolean = mutex.withLock { features[tenant]?.remove(FeatureKey(productType, featureId)) != null }
+
+    // ========== Design Element Bindings ==========
+
+    override suspend fun setElementBinding(
+        tenant: String,
+        binding: ElementBinding,
+    ): ElementBinding {
+        mutex.withLock {
+            bindings.getOrPut(tenant) { mutableMapOf() }[binding.key()] = binding
+        }
+        return binding
+    }
+
+    override suspend fun getElementBinding(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+        elementId: String,
+        applicationId: String?,
+        variant: ThemeVariant?,
+    ): ElementBinding? =
+        mutex.withLock {
+            bindings[tenant]?.get(BindingKey(productType, featureId, elementId, applicationId, variant))
+        }
+
+    override suspend fun listElementBindings(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+    ): List<ElementBinding> =
+        mutex.withLock {
+            bindings[tenant]?.values?.filter { it.productType == productType && it.featureId == featureId } ?: emptyList()
+        }
+
+    override suspend fun deleteElementBinding(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+        elementId: String,
+        applicationId: String?,
+        variant: ThemeVariant?,
+    ): Boolean =
+        mutex.withLock {
+            bindings[tenant]?.remove(BindingKey(productType, featureId, elementId, applicationId, variant)) != null
+        }
+
+    // ========== Application Registry ==========
+
+    override suspend fun saveApplication(
+        tenant: String,
+        application: Application,
+    ): Application {
+        mutex.withLock {
+            applications.getOrPut(tenant) { mutableMapOf() }[application.applicationId] = application
+        }
+        return application
+    }
+
+    override suspend fun getApplication(
+        tenant: String,
+        applicationId: String,
+    ): Application? = mutex.withLock { applications[tenant]?.get(applicationId) }
+
+    override suspend fun listApplications(tenant: String): List<Application> = mutex.withLock { applications[tenant]?.values?.toList() ?: emptyList() }
+
+    override suspend fun deleteApplication(
+        tenant: String,
+        applicationId: String,
+    ): Boolean = mutex.withLock { applications[tenant]?.remove(applicationId) != null }
+
+    // ========== Custom Stylesheets ==========
+
+    override suspend fun saveStylesheet(
+        tenant: String,
+        applicationId: String?,
+        css: String,
+        contentHash: String,
+    ) {
+        mutex.withLock {
+            val tenantSheets = stylesheets.getOrPut(tenant) { mutableMapOf() }
+            val previousVersion = tenantSheets[applicationId]?.version ?: 0
+            tenantSheets[applicationId] = StylesheetData(css = css, contentHash = contentHash, version = previousVersion + 1)
+        }
+    }
+
+    override suspend fun getStylesheet(
+        tenant: String,
+        applicationId: String?,
+    ): StylesheetData? = mutex.withLock { stylesheets[tenant]?.get(applicationId) }
+
+    override suspend fun deleteStylesheet(
+        tenant: String,
+        applicationId: String?,
+    ): Boolean = mutex.withLock { stylesheets[tenant]?.remove(applicationId) != null }
 }

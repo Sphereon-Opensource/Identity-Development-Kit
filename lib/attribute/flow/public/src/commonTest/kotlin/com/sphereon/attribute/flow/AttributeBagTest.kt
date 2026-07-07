@@ -31,7 +31,7 @@ class AttributeBagTest {
         AttributeRecord(
             path = AttributePath(path),
             value = AttributeData(JsonPrimitive(value)),
-            sourceId = AttributeProvenanceRef("src"),
+            producerId = AttributeProvenanceRef("src"),
             phase = PipelinePhase.SESSION_INIT,
             timestamp = timestamp,
             priority = priority,
@@ -83,7 +83,7 @@ class AttributeBagTest {
         val bag =
             AttributeBag.of(
                 values = mapOf(AttributePath("a") to JsonPrimitive("1")),
-                sourceId = AttributeProvenanceRef("src"),
+                producerId = AttributeProvenanceRef("src"),
                 timestamp = t0,
             )
         assertEquals(JsonPrimitive("1"), bag.getValue(AttributePath("a")))
@@ -109,7 +109,7 @@ class AttributeBagTest {
                                 evidenceId = "ev-1",
                                 evidenceType = "document_scan",
                             ),
-                        sourceId = AttributeProvenanceRef("idv"),
+                        producerId = AttributeProvenanceRef("idv"),
                         phase = PipelinePhase.IDV_COMPLETED,
                         timestamp = t1,
                         retention = RetainedRetention(retentionDays = 30, legalBasis = LegalBasis.GDPR_ART6_1C_LEGAL_OBLIGATION),

@@ -8,6 +8,8 @@ package com.sphereon.wallet.interaction.presenter
 
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
+import com.sphereon.wallet.interaction.WalletInteractionActivitySummary
+import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
 import com.sphereon.wallet.interaction.WalletInteractionInput
@@ -71,6 +73,29 @@ class WalletInteractionPresenterTest {
         assertEquals("wallet.interaction.action.share", disclosure.primaryAction?.labelKey)
         assertEquals(WalletInteractionActionType.CONTINUE, disclosure.primaryAction?.action?.type)
         assertEquals(null, selection.primaryAction)
+    }
+
+    @Test
+    fun loginPresentationUsesLoginTitlesAndSignInAction() {
+        val disclosure =
+            WalletInteractionState(
+                sessionId = WalletInteractionSessionId("s1"),
+                walletInstanceId = "wallet",
+                status = WalletInteractionStatus.DisclosureConsent,
+                activity = WalletInteractionActivitySummary(WalletInteractionActivityType.LOGIN),
+            ).toScreenModel()
+        val selection =
+            WalletInteractionState(
+                sessionId = WalletInteractionSessionId("s2"),
+                walletInstanceId = "wallet",
+                status = WalletInteractionStatus.CredentialSelection,
+                activity = WalletInteractionActivitySummary(WalletInteractionActivityType.LOGIN),
+            ).toScreenModel()
+
+        assertEquals("wallet.interaction.login.status.disclosure_consent", disclosure.titleKey)
+        assertEquals("wallet.interaction.action.sign_in", disclosure.primaryAction?.labelKey)
+        assertEquals(WalletInteractionActionType.CONTINUE, disclosure.primaryAction?.action?.type)
+        assertEquals("wallet.interaction.login.status.credential_selection", selection.titleKey)
     }
 
     @Test

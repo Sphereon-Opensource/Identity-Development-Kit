@@ -17,6 +17,7 @@
 package com.sphereon.conf.theme.core
 
 import com.sphereon.conf.theme.core.defaults.SystemDefaults
+import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ThemeDefinition
 import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.model.ThemeTokenType
@@ -49,7 +50,8 @@ class TokenFlattenerTest {
             ThemeDefinition(
                 id = "overlay",
                 name = "Overlay",
-                scope = ThemeScope.APP,
+                scope = ThemeScope.PRODUCT,
+                productType = ProductType.WEB_WALLET,
                 tokens =
                     buildTokens {
                         color("color.primary", "#AAAAAA")

@@ -53,6 +53,7 @@ class ModelSerializationTest {
             {
                 "credential_configuration_ids": ["PensionSdJwt", "DriverLicenseMdoc"],
                 "credential_subject_data": {"givenName": "John", "age": 30},
+                "initial_connector_fields": {"employee_id": "E1042"},
                 "correlation_id": "corr-123",
                 "issuer_id": "issuer-abc",
                 "grants": {
@@ -107,6 +108,7 @@ class ModelSerializationTest {
         val subjectData = input.credentialSubjectData
         assertNotNull(subjectData)
         assertEquals(JsonPrimitive("John"), subjectData["givenName"])
+        assertEquals(JsonPrimitive("E1042"), input.initialConnectorFields["employee_id"])
     }
 
     @Test

@@ -30,10 +30,6 @@ import com.sphereon.core.api.service.ServiceCommandRegistry
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
-import com.sphereon.credential.issuance.pipeline.callback.CallbackCoordinator
-import com.sphereon.credential.issuance.pipeline.command.BindingCompletenessVerdict
-import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessArgs
-import com.sphereon.credential.issuance.pipeline.command.EvaluateAttributeCompletenessCommand
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.data.store.credential.design.impl.mapper.Oid4vciDesignMapper
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
@@ -41,8 +37,6 @@ import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
-import com.sphereon.openid.oid4vc.common.CredentialFormat
-import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribution
@@ -59,12 +53,15 @@ import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SdPolicy
-import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.openid.oid4vci.issuer.hook.PostIssuanceHookArgs
 import com.sphereon.openid.oid4vci.issuer.impl.encryption.CredentialResponseEncryptor
 import com.sphereon.openid.oid4vci.issuer.impl.hook.PostIssuanceHookDispatcher
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.impl.proof.ProofVerifier
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciCompletenessLifecycleArgs
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuancePhase
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
@@ -77,17 +74,18 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import kotlin.time.Clock
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.uuid.Uuid
 import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
@@ -143,15 +141,15 @@ class HandleCredentialRequestCommandImpl(
      */
     private val propertyResolver: PropertyResolver? = null,
     /**
-     * Optional completeness-evaluation command. When present (EDK pipeline on the
-     * classpath) and the resolved [IssuanceSession] carries a
-     * [IssuanceSession.pipelineCorrelationId], the §6.1 deferral decision tree runs
+     * Optional lifecycle hook. When present (EDK pipeline on the classpath) and the
+     * resolved [IssuanceSession] carries a lifecycle correlation id, the §6.1
+     * deferral decision tree runs
      * after the attribute contributor and before the format handler: incomplete bindings
      * are either deferred or rejected, and a binding still awaiting approval is deferred.
      * Null in pure-IDK deployments: the decision tree is skipped and issuance behaves
      * exactly as without a pipeline.
      */
-    private val evaluateAttributeCompletenessCommand: EvaluateAttributeCompletenessCommand? = null,
+    private val lifecycleHook: Oid4vciIssuanceLifecycleHook? = null,
     /**
      * Optional OAuth2 server config provider. When present the deferred-response helper
      * checks whether the issuing AS has `refresh_token` enabled — when it doesn't and a
@@ -177,7 +175,6 @@ class HandleCredentialRequestCommandImpl(
      * deployments leave this null and the wait block is a degenerate no-op (the NoOp contributor
      * never reports pending sources).
      */
-    private val callbackCoordinator: CallbackCoordinator? = null,
     private val clock: Clock,
 ) : TypedServiceCommandAdapter<HandleCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleCredentialRequestCommand.COMMAND_ID,
@@ -324,6 +321,8 @@ class HandleCredentialRequestCommandImpl(
     ): IdkResult<CredentialResponse, IdkError> {
         val applied = applyDuring(args)
         val request = applied.credentialRequest
+        issuerConfigProvider.prepare()
+        val credentialConfigurations = issuerConfigProvider.credentialConfigurations
 
         // 1. Validate access token
         val tokenContext =
@@ -406,12 +405,18 @@ class HandleCredentialRequestCommandImpl(
                 )
         }
 
+        contributeOid4vciPhase(
+            session = session,
+            phase = Oid4vciIssuancePhase.TOKEN,
+            fields = tokenContext.toTokenPhaseFields(configId),
+        ).getOrElse { return Err(it) }
+
         // OID4VCI 1.0 §8.3.1: when the request carries `credential_configuration_id` and the AS
         // doesn't recognise it, the response error MUST be `unknown_credential_configuration`.
         // Falling through to a minimal-config heuristic would emit `invalid_credential_request`
         // about a missing `vct`/`doctype` which masks the real cause.
         val explicitConfigId = request.credentialConfigurationId
-        if (explicitConfigId != null && !applied.credentialConfigurations.containsKey(explicitConfigId)) {
+        if (explicitConfigId != null && !credentialConfigurations.containsKey(explicitConfigId)) {
             return Err(
                 IdkError.fromString(
                     code = "unknown_credential_configuration",
@@ -420,8 +425,15 @@ class HandleCredentialRequestCommandImpl(
             )
         }
         val configuration =
-            applied.credentialConfigurations[configId]
-                ?: resolveMinimalConfiguration(request.format ?: CredentialFormat.SD_JWT_DC.value, request.vct, request.doctype)
+            credentialConfigurations[configId]
+                ?: return Err(
+                    IdkError.fromString(
+                        code = "unknown_credential_configuration",
+                        message =
+                            "Credential configuration '$configId' is not available from prepared issuer config; " +
+                                "refusing request-derived fallback",
+                    ),
+                )
 
         // 5. Verify proof of possession
         val expectedAudience = applied.issuerIdentifier ?: tokenContext.subject
@@ -475,6 +487,11 @@ class HandleCredentialRequestCommandImpl(
             pendingHookContext?.copy(
                 keyAttestations = batchVerifiedProofs?.mapNotNull { it.keyAttestation }.orEmpty(),
             )
+        contributeOid4vciPhase(
+            session = session,
+            phase = Oid4vciIssuancePhase.CREDENTIAL_REQUEST,
+            fields = request.toCredentialRequestPhaseFields(configId, batchVerifiedProofs.orEmpty()),
+        ).getOrElse { return Err(it) }
         val initialContribution =
             if (session != null) {
                 attributeContributor
@@ -489,17 +506,7 @@ class HandleCredentialRequestCommandImpl(
         // the contributor-reported `syncWaitWindow` for ALL of them to land. On success, re-run
         // the contributor so the freshly-contributed attributes flow into the merge. On timeout
         // (TimeoutCancellationException) fall through to the §6.1 deferral decision.
-        val resumed =
-            session != null &&
-                awaitPendingAsyncContributions(callbackCoordinator, session.pipelineCorrelationId, initialContribution)
-        val effectiveContribution =
-            if (resumed && session != null) {
-                attributeContributor
-                    .contribute(session, tokenContext, configId)
-                    .getOrElse { return Err(it) }
-            } else {
-                initialContribution
-            }
+        val effectiveContribution = initialContribution
 
         // 6. Merge attributes (priority: preSeeded → accumulated → contributed)
         val mergedAttributes = mutableMapOf<String, JsonElement>()
@@ -558,13 +565,43 @@ class HandleCredentialRequestCommandImpl(
                 ?.toSet() ?: emptySet()
 
         // 7. Resolve signing configuration for this credential type
-        val signingConfig = issuerConfigProvider.credentialSigningConfigs[configId]
+        val signingConfig =
+            issuerConfigProvider.credentialSigningConfigs[configId]
+                ?: return Err(
+                    IdkError.fromString(
+                        code = "invalid_credential_configuration",
+                        message =
+                            "Credential configuration '$configId' has no issuance signing configuration; " +
+                                "refusing to issue without platform config",
+                    ),
+                )
+        val expirationInDays =
+            signingConfig.expirationInDays
+                ?: return Err(
+                    IdkError.fromString(
+                        code = "invalid_credential_configuration",
+                        message =
+                            "Credential configuration '$configId' has no validity period; " +
+                                "refusing to issue without platform config",
+                    ),
+                )
 
         // 7b. Resolve the status-list binding, failing closed: a configuration that declares a
         // status list whose binding cannot be resolved must abort the request — issuing without
         // the status claim would produce a credential that can never be revoked.
         val statusListBinding =
             issuerConfigProvider.statusListBindingFor(configId).getOrElse { return Err(it) }
+
+        contributeOid4vciPhase(
+            session = session,
+            phase = Oid4vciIssuancePhase.PRE_ISSUE,
+            fields =
+                preIssuePhaseFields(
+                    configId = configId,
+                    expectedAudience = expectedAudience,
+                    tokenContext = tokenContext,
+                ),
+        ).getOrElse { return Err(it) }
 
         // 8. Dispatch to format handler
         val handler =
@@ -594,11 +631,11 @@ class HandleCredentialRequestCommandImpl(
                                             attributes = mergedAttributes,
                                             sdPolicies = sdPolicies,
                                             mandatoryClaims = mandatoryClaims,
-                                            signingKeyAlias = signingConfig?.signingKeyAlias,
-                                            signingKeyMode = signingConfig?.signingKeyMode ?: SigningKeyMode.None,
-                                            signingCertChainPath = signingConfig?.signingCertChainPath,
+                                            signingKeyAlias = signingConfig.signingKeyAlias,
+                                            signingKeyMode = signingConfig.signingKeyMode,
+                                            signingCertChainPath = signingConfig.signingCertChainPath,
                                             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
-                                            expirationInDays = signingConfig?.expirationInDays,
+                                            expirationInDays = expirationInDays,
                                             statusListBinding = statusListBinding,
                                         )
                                     handler.issueCredential(request, issuanceContext)
@@ -648,10 +685,10 @@ class HandleCredentialRequestCommandImpl(
                         attributes = mergedAttributes,
                         sdPolicies = sdPolicies,
                         mandatoryClaims = mandatoryClaims,
-                        signingKeyAlias = signingConfig?.signingKeyAlias,
-                        signingKeyMode = signingConfig?.signingKeyMode ?: SigningKeyMode.None,
-                        signingCertChainPath = signingConfig?.signingCertChainPath,
-                        expirationInDays = signingConfig?.expirationInDays,
+                        signingKeyAlias = signingConfig.signingKeyAlias,
+                        signingKeyMode = signingConfig.signingKeyMode,
+                        signingCertChainPath = signingConfig.signingCertChainPath,
+                        expirationInDays = expirationInDays,
                         statusListBinding = statusListBinding,
                     )
 
@@ -675,22 +712,111 @@ class HandleCredentialRequestCommandImpl(
             sessionStore.update(session.copy(status = IssuanceSessionStatus.CREDENTIAL_ISSUED))
         }
 
+        contributeOid4vciPhase(
+            session = session,
+            phase = Oid4vciIssuancePhase.POST_ISSUANCE,
+            fields = response.toPostIssuancePhaseFields(configId),
+        ).getOrElse { return Err(it) }
+
         return Ok(response)
     }
+
+    private suspend fun contributeOid4vciPhase(
+        session: IssuanceSession?,
+        phase: Oid4vciIssuancePhase,
+        fields: Map<String, JsonElement>,
+    ): IdkResult<Unit, IdkError> {
+        val correlationId = session?.lifecycleCorrelationId ?: return Ok(Unit)
+        val hook = lifecycleHook ?: return Ok(Unit)
+        hook
+            .recordPhase(
+                Oid4vciPhaseLifecycleArgs(
+                    correlationId = correlationId,
+                    phase = phase,
+                    fields = fields,
+                ),
+            ).getOrElse { return Err(it) }
+        return Ok(Unit)
+    }
+
+    private fun ValidatedTokenContext.toTokenPhaseFields(configId: String): Map<String, JsonElement> =
+        buildMap {
+            put("oid4vci.credentialConfigurationId", JsonPrimitive(configId))
+            put("oid4vci.subject", JsonPrimitive(subject))
+            put("oid4vci.clientId", JsonPrimitive(clientId))
+            scope?.let { put("oid4vci.scope", JsonPrimitive(it)) }
+            cnfJkt?.let { put("oid4vci.cnfJkt", JsonPrimitive(it)) }
+            put(
+                "oid4vci.authorizedCredentialConfigurationIds",
+                buildJsonArray { credentialConfigurationIds.forEach { add(it) } },
+            )
+            credentialIdentifiers?.let { identifiers ->
+                put(
+                    "oid4vci.credentialIdentifiers",
+                    buildJsonArray { identifiers.forEach { add(it) } },
+                )
+            }
+            walletInstanceAttestation?.walletInstanceId?.let {
+                put("oid4vci.walletInstanceId", JsonPrimitive(it))
+            }
+            acr?.let { put("oid4vci.acr", JsonPrimitive(it)) }
+            authTime?.let { put("oid4vci.authTime", JsonPrimitive(it.toString())) }
+            upstreamSubject?.let { put("oid4vci.upstreamSubject", JsonPrimitive(it)) }
+            upstreamIssuer?.let { put("oid4vci.upstreamIssuer", JsonPrimitive(it)) }
+            userinfoClaims?.takeIf { it.isNotEmpty() }?.let { claims ->
+                put("oid4vci.userinfoClaims", Json.encodeToJsonElement(claims))
+                claims.forEach { (name, value) ->
+                    put("oid4vci.userinfoClaims.$name", value)
+                }
+            }
+        }
+
+    private fun com.sphereon.openid.oid4vci.common.model.CredentialRequest.toCredentialRequestPhaseFields(
+        configId: String,
+        proofs: List<VerifiedProof>,
+    ): Map<String, JsonElement> =
+        buildMap {
+            put("oid4vci.credentialConfigurationId", JsonPrimitive(configId))
+            credentialIdentifier?.let { put("oid4vci.credentialIdentifier", JsonPrimitive(it)) }
+            format?.let { put("oid4vci.credentialFormat", JsonPrimitive(it.toString())) }
+            put("oid4vci.proofCount", JsonPrimitive(proofs.size))
+            put("oid4vci.keyAttestationCount", JsonPrimitive(proofs.count { it.keyAttestation != null }))
+            put("oid4vci.holderBindingKeyPresent", JsonPrimitive(proofs.any { it.holderBindingKey != null }))
+        }
+
+    private fun preIssuePhaseFields(
+        configId: String,
+        expectedAudience: String,
+        tokenContext: ValidatedTokenContext,
+    ): Map<String, JsonElement> =
+        mapOf(
+            "oid4vci.credentialConfigurationId" to JsonPrimitive(configId),
+            "oid4vci.expectedAudience" to JsonPrimitive(expectedAudience),
+            "oid4vci.subject" to JsonPrimitive(tokenContext.subject),
+            "oid4vci.clientId" to JsonPrimitive(tokenContext.clientId),
+        )
+
+    private fun CredentialResponse.toPostIssuancePhaseFields(configId: String): Map<String, JsonElement> =
+        buildMap {
+            put("oid4vci.credentialConfigurationId", JsonPrimitive(configId))
+            put("oid4vci.credentialResponse", Json.encodeToJsonElement(this@toPostIssuancePhaseFields))
+            put("oid4vci.credentialCount", JsonPrimitive(credentials?.size ?: 0))
+            notificationId?.let { put("oid4vci.notificationId", JsonPrimitive(it)) }
+            transactionId?.let { put("oid4vci.transactionId", JsonPrimitive(it)) }
+        }
 
     /**
      * §6.1 completeness-driven deferral decision tree.
      *
      * Runs only when an EDK pipeline is bound to this issuance (the session carries a
-     * [IssuanceSession.pipelineCorrelationId]) and [evaluateAttributeCompletenessCommand] is on
-     * the classpath. The attribute contributor has already run the pipeline's CREDENTIAL_REQUEST
-     * phase, so the attribute bag the verdicts are computed against is fully populated at this
-     * point.
+     * lifecycle correlation id) and the lifecycle hook is on the classpath. The attribute
+     * contributor has already run the pipeline's CREDENTIAL_REQUEST phase, so the attribute bag
+     * the verdicts are computed against is fully populated at this point.
      *
      * Returns:
-     * - `null` when the gate does not fire (no `pipelineCorrelationId`, command not injected, or
-     *   all attributes complete with no approval pending): the caller falls through to the format
-     *   handler.
+     * - `null` when the gate does not fire (no lifecycle correlation id, lifecycle hook not
+     *   injected, or all attributes complete with no approval pending): the caller falls through
+     *   to the format handler.
      * - [Ok] with a deferred [CredentialResponse] when every deferral candidate is either
      *   incomplete-but-deferrable or awaiting approval. The session status is updated to
      *   [IssuanceSessionStatus.DEFERRED].
@@ -701,10 +827,10 @@ class HandleCredentialRequestCommandImpl(
         configId: String,
         cnfJkt: String?,
     ): IdkResult<CredentialResponse, IdkError>? {
-        val nonNullSession = session?.takeIf { it.pipelineCorrelationId != null }
-        val command = evaluateAttributeCompletenessCommand
-        if (nonNullSession == null || command == null) return null
-        val completenessResult = evaluateCompleteness(nonNullSession, command)
+        val nonNullSession = session?.takeIf { it.lifecycleCorrelationId != null }
+        val hook = lifecycleHook
+        if (nonNullSession == null || hook == null) return null
+        val completenessResult = evaluateCompleteness(nonNullSession, hook)
         if (completenessResult.isErr) return Err(completenessResult.error)
         return if (completenessResult.value) {
             createDeferredResponse(nonNullSession, configId, cnfJkt)
@@ -726,39 +852,23 @@ class HandleCredentialRequestCommandImpl(
      */
     private suspend fun evaluateCompleteness(
         session: IssuanceSession,
-        command: EvaluateAttributeCompletenessCommand,
+        hook: Oid4vciIssuanceLifecycleHook,
     ): IdkResult<Boolean, IdkError> {
-        val verdicts =
-            command
-                .execute(EvaluateAttributeCompletenessArgs(session.pipelineCorrelationId!!))
+        val result =
+            hook
+                .evaluateCompleteness(Oid4vciCompletenessLifecycleArgs(session.lifecycleCorrelationId!!))
                 .getOrElse { return Err(it) }
-                .verdicts
-        val deferralCandidates = verdicts.filter { !it.complete || it.awaitingApproval }
-        if (deferralCandidates.isEmpty()) return Ok(false)
-        val missingClaimsError = buildMissingClaimsError(deferralCandidates)
-        return if (missingClaimsError != null) {
-            Err(missingClaimsError)
+        if (!result.shouldDefer && !result.awaitingApproval) return Ok(false)
+        return if (result.missingRequiredClaims.isNotEmpty()) {
+            Err(
+                IdkError.fromString(
+                    code = INVALID_CREDENTIAL_REQUEST,
+                    message = "missing mandatory claims: ${result.missingRequiredClaims.joinToString()}",
+                ),
+            )
         } else {
             Ok(true)
         }
-    }
-
-    /**
-     * Returns an [IdkError] when any of the deferral candidates are incomplete but not deferrable
-     * (mandatory claims missing without a deferral recommendation), or `null` when all candidates
-     * are either deferrable or awaiting approval.
-     */
-    private fun buildMissingClaimsError(deferralCandidates: List<BindingCompletenessVerdict>): IdkError? {
-        val notDeferrable = deferralCandidates.filter { !it.complete && !it.deferralRecommended }
-        if (notDeferrable.isEmpty()) return null
-        val missing =
-            notDeferrable
-                .flatMap { verdict -> verdict.missingRequiredPaths.map { it.value } }
-                .distinct()
-        return IdkError.fromString(
-            code = INVALID_CREDENTIAL_REQUEST,
-            message = "missing mandatory claims: ${missing.joinToString()}",
-        )
     }
 
     /**
@@ -851,7 +961,7 @@ class HandleCredentialRequestCommandImpl(
             oauth2ConfigProvider
                 ?.serverConfig
                 ?.takeUnless { REFRESH_TOKEN_GRANT in it.grantTypesEnabled }
-        val correlationId = session?.pipelineCorrelationId ?: session?.sessionId
+        val correlationId = session?.lifecycleCorrelationId ?: session?.sessionId
         return if (mint == null || asConfig == null || correlationId == null) {
             null
         } else {
@@ -872,7 +982,7 @@ class HandleCredentialRequestCommandImpl(
     /**
      * Returns the TTL the deferral-scoped token should carry. Reads the operator-configured
      * value at [CONFIG_KEY_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS]; when unset, defaults to
-     * [DEFAULT_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS] (matches `DeferralPolicy.maxDeferralSeconds`'s
+     * [DEFAULT_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS] (matches `CredentialDeferralPolicy.maxDeferralSeconds`'s
      * 7-day default). The token must outlive `maxDeferralSeconds` so wallets polling near the
      * end of the deferral window still authenticate; the §6.5 invariant validator
      * ([com.sphereon.openid.oid4vci.issuer.config.DeferralWalletAuthValidator]) enforces that
@@ -903,21 +1013,6 @@ class HandleCredentialRequestCommandImpl(
         return verifier.verify(proofValue, audience, expectedClientId, credentialConfigId, proofTypeSupported)
     }
 
-    /**
-     * Minimal configuration for when no configuration store is available.
-     * Phase 8 will resolve from the credential-design store.
-     */
-    private fun resolveMinimalConfiguration(
-        format: String,
-        vct: String?,
-        doctype: String?,
-    ): CredentialConfigurationSupported =
-        CredentialConfigurationSupported(
-            format = format,
-            vct = vct,
-            doctype = doctype,
-        )
-
     private companion object {
         const val INVALID_CREDENTIAL_REQUEST = "invalid_credential_request"
 
@@ -928,19 +1023,20 @@ class HandleCredentialRequestCommandImpl(
         const val REFRESH_TOKEN_GRANT = "refresh_token"
 
         // §6.5 wallet-auth invariant — operator-configured TTL for the minted deferral-scoped
-        // access token. Must be sized to outlive the configured `DeferralPolicy.maxDeferralSeconds`;
+        // access token. Must be sized to outlive the configured `CredentialDeferralPolicy.maxDeferralSeconds`;
         // the DeferralWalletAuthValidator enforces that relationship at config-load.
         const val CONFIG_KEY_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS: String =
             "oid4vci.issuer.deferral-scoped-token.default-ttl-seconds"
 
-        // 7 days — matches `DeferralPolicy.maxDeferralSeconds`'s default so an out-of-the-box
+        // 7 days — matches `CredentialDeferralPolicy.maxDeferralSeconds`'s default so an out-of-the-box
         // deployment with the deferral-scoped-token fallback enabled covers the full deferral
         // window without further tuning.
         const val DEFAULT_DEFERRAL_SCOPED_TOKEN_TTL_SECONDS: Long = 7L * 24 * 3600
+        const val OID4VCI_PROTOCOL_SOURCE_ID: String = "oid4vci-protocol"
     }
 }
 
-/**
+/*
  * §6.5.7 sync-wait fast-path. Returns true when every pending async-callback source resolved
  * via [CallbackCoordinator.awaitContribution] within the contribution's
  * [CredentialAttributeContribution.syncWaitWindow]. Returns false when any precondition was
@@ -957,36 +1053,3 @@ class HandleCredentialRequestCommandImpl(
  * the issuer command. TODO(phase-3-followup): wire those bounds in once the issuer config
  * provider exposes them.
  */
-private suspend fun awaitPendingAsyncContributions(
-    coordinator: CallbackCoordinator?,
-    correlationId: String?,
-    contribution: CredentialAttributeContribution,
-): Boolean {
-    val pending = contribution.pendingAsyncCallbackSources.takeIf { it.isNotEmpty() }
-    val window = contribution.syncWaitWindow.takeIf { it > Duration.ZERO }
-    val ready = coordinator != null && correlationId != null && pending != null && window != null
-    if (!ready) {
-        return false
-    }
-    return runWithinSyncWaitWindow(coordinator!!, correlationId!!, pending!!, window!!)
-}
-
-private suspend fun runWithinSyncWaitWindow(
-    coordinator: CallbackCoordinator,
-    correlationId: String,
-    pending: Set<com.sphereon.attribute.flow.AttributeProvenanceRef>,
-    window: Duration,
-): Boolean =
-    try {
-        withTimeout(window) {
-            coroutineScope {
-                pending
-                    .map { sourceId ->
-                        async { coordinator.awaitContribution(correlationId, sourceId.value) }
-                    }.awaitAll()
-            }
-        }
-        true
-    } catch (expected: TimeoutCancellationException) {
-        false
-    }

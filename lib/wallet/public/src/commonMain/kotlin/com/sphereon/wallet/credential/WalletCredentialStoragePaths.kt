@@ -18,11 +18,9 @@ package com.sphereon.wallet.credential
 
 fun walletInstanceRootPrefix(): String = "wallet-instances/"
 
-fun walletInstancePath(walletInstanceId: String): String =
-    walletInstancePrefix(walletInstanceId) + "/instance"
+fun walletInstancePath(walletInstanceId: String): String = walletInstancePrefix(walletInstanceId) + "/instance"
 
-fun walletStorageProfilePath(walletInstanceId: String): String =
-    walletInstancePrefix(walletInstanceId) + "/storage-profile"
+fun walletStorageProfilePath(walletInstanceId: String): String = walletInstancePrefix(walletInstanceId) + "/storage-profile"
 
 fun walletCredentialRecordEnvelopePath(
     walletInstanceId: String,
@@ -44,11 +42,9 @@ fun walletCredentialMetadataPath(
     credentialRecordId: String,
 ): String = walletCredentialPrefix(walletInstanceId, credentialRecordId) + "/metadata"
 
-fun walletCredentialMetadataPrefix(walletInstanceId: String): String =
-    walletInstancePrefix(walletInstanceId) + "/credentials/"
+fun walletCredentialMetadataPrefix(walletInstanceId: String): String = walletInstancePrefix(walletInstanceId) + "/credentials/"
 
-fun walletIssuancePrefix(walletInstanceId: String): String =
-    walletInstancePrefix(walletInstanceId) + "/issuance/"
+fun walletIssuancePrefix(walletInstanceId: String): String = walletInstancePrefix(walletInstanceId) + "/issuance/"
 
 fun walletIssuanceSessionPath(
     walletInstanceId: String,
@@ -63,11 +59,9 @@ fun walletDeferredAccessTokenPath(
 private fun walletCredentialPrefix(
     walletInstanceId: String,
     credentialRecordId: String,
-): String =
-    walletCredentialMetadataPrefix(walletInstanceId) + walletPathSegment(credentialRecordId, "credentialRecordId")
+): String = walletCredentialMetadataPrefix(walletInstanceId) + walletPathSegment(credentialRecordId, "credentialRecordId")
 
-private fun walletInstancePrefix(walletInstanceId: String): String =
-    walletInstanceRootPrefix() + walletPathSegment(walletInstanceId, "walletInstanceId")
+private fun walletInstancePrefix(walletInstanceId: String): String = walletInstanceRootPrefix() + walletPathSegment(walletInstanceId, "walletInstanceId")
 
 fun walletPathSegment(
     value: String,

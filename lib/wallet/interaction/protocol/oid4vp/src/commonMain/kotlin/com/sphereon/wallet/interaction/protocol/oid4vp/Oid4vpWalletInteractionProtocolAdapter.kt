@@ -25,6 +25,8 @@ import com.sphereon.wallet.interaction.WalletDisplayMessage
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
+import com.sphereon.wallet.interaction.WalletInteractionActivitySummary
+import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionError
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
@@ -42,6 +44,9 @@ import com.sphereon.wallet.interaction.WalletSecurityOperation
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 class Oid4vpWalletInteractionProtocolAdapter(
     private val holder: Oid4vpHolderService? = null,
@@ -115,6 +120,13 @@ class Oid4vpWalletInteractionProtocolAdapter(
             context.storePrivate(mapOf("authorization_request" to json.encodeToString(AuthorizationRequest.serializer(), parsedRequest)))
         }
         val resolved = parsedRequest?.let { holder?.resolveAuthorizationRequest(it) }?.takeIf { it.isOk }?.value
+        val interactionPurpose = context.resolveInteractionPurpose(parsedRequest, resolved)
+        val activityType =
+            when (interactionPurpose) {
+                Oid4vpInteractionPurpose.LOGIN -> WalletInteractionActivityType.LOGIN
+                Oid4vpInteractionPurpose.PRESENTATION -> WalletInteractionActivityType.CREDENTIAL_PRESENTATION
+            }
+        val interactionContext = interactionPurpose.metadataValue
         val verifier =
             resolved?.verifierInfo?.let {
                 WalletCounterpartySummary(
@@ -122,9 +134,24 @@ class Oid4vpWalletInteractionProtocolAdapter(
                     identifier = it.clientId,
                     displayName = it.displayName ?: it.clientId,
                     logoUri = it.logoUri,
-                    metadata = mapOf("client_id_scheme" to it.clientIdScheme.name),
+                    metadata =
+                        mapOf(
+                            "client_id_scheme" to it.clientIdScheme.name,
+                            "interaction_context" to interactionContext,
+                            "activity_type" to activityType.name,
+                        ),
                 )
-            } ?: fallbackVerifier(entryPoint)
+            } ?: fallbackVerifier(entryPoint, activityType, interactionContext)
+        val activity =
+            WalletInteractionActivitySummary(
+                type = activityType,
+                counterparty = verifier,
+                metadata =
+                    mapOf(
+                        "interaction_context" to interactionContext,
+                        "protocol" to WalletProtocol.OID4VP.name,
+                    ),
+            )
 
         val candidateCredentialIds =
             resolved?.let { candidateResolver.candidateCredentialIds(context, it) }.orEmpty()
@@ -136,6 +163,8 @@ class Oid4vpWalletInteractionProtocolAdapter(
             mapOf(
                 "verifier_id" to verifier.identifier,
                 "dcql_requirement_ids" to requirements.requirements.joinToString(",") { it.id },
+                "interaction_context" to interactionContext,
+                "activity_type" to activityType.name,
             ),
         )
         val trust =
@@ -156,6 +185,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         adapterId = capability.adapterId,
                         entryPoint = entryPoint,
                     ).copy(
+                        activity = activity,
                         counterparty = verifier,
                         trust = trust,
                         credentialSelection = requirements,
@@ -188,6 +218,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                     adapterId = capability.adapterId,
                     entryPoint = entryPoint,
                 ).copy(
+                    activity = activity,
                     counterparty = verifier,
                     trust = trust,
                     credentialSelection = requirements,
@@ -534,8 +565,83 @@ fun DcqlQuery.toCredentialSelectionRequest(candidateCredentialIds: Map<String, L
     )
 }
 
-private fun fallbackVerifier(entryPoint: WalletEntryPoint): WalletCounterpartySummary =
+private fun WalletInteractionContext.resolveInteractionPurpose(
+    parsedRequest: AuthorizationRequest?,
+    resolvedRequest: ResolvedOid4vpRequest?,
+): Oid4vpInteractionPurpose =
+    if (attributes.indicateLogin() || parsedRequest.indicatesLogin() || resolvedRequest?.request.indicatesLogin()) {
+        Oid4vpInteractionPurpose.LOGIN
+    } else {
+        Oid4vpInteractionPurpose.PRESENTATION
+    }
+
+private enum class Oid4vpInteractionPurpose(
+    val metadataValue: String,
+) {
+    PRESENTATION("presentation"),
+    LOGIN("login"),
+}
+
+private fun Map<String, String>.indicateLogin(): Boolean =
+    any { (key, value) ->
+        key in loginPurposeMetadataKeys && value.indicatesLoginPurpose()
+    }
+
+private fun AuthorizationRequest?.indicatesLogin(): Boolean {
+    if (this == null) return false
+    if (prompt?.split(' ')?.any { it.equals("login", ignoreCase = true) } == true) return true
+    return additionalParameters.any { (key, value) ->
+        key in loginPurposeMetadataKeys && value.asString().indicatesLoginPurpose()
+    }
+}
+
+private fun String?.indicatesLoginPurpose(): Boolean =
+    when (this?.trim()?.lowercase()) {
+        "login",
+        "sign_in",
+        "signin",
+        "sign-in",
+        "authentication",
+        "auth",
+        "credential_login",
+        "credential-based-login",
+        "credential_based_login",
+        -> true
+
+        else -> false
+    }
+
+private fun kotlinx.serialization.json.JsonElement.asString(): String? = (this as? JsonPrimitive)?.contentOrNull ?: runCatching { jsonPrimitive.contentOrNull }.getOrNull()
+
+private val loginPurposeMetadataKeys =
+    setOf(
+        "purpose",
+        "interaction_purpose",
+        "wallet.interaction.purpose",
+        "wallet_interaction_purpose",
+        "presentation_purpose",
+        "oid4vp.purpose",
+        "activity_type",
+        "activityType",
+        "presentation_variant",
+        "variant",
+        "flow",
+        "use_case",
+        "context",
+        "client_purpose",
+    )
+
+private fun fallbackVerifier(
+    entryPoint: WalletEntryPoint,
+    activityType: WalletInteractionActivityType,
+    interactionContext: String,
+): WalletCounterpartySummary =
     WalletCounterpartySummary(
         role = WalletCounterpartyRole.VERIFIER,
         identifier = entryPoint.raw?.substringAfter("client_id=", missingDelimiterValue = "unknown-verifier")?.substringBefore("&") ?: "unknown-verifier",
+        metadata =
+            mapOf(
+                "interaction_context" to interactionContext,
+                "activity_type" to activityType.name,
+            ),
     )

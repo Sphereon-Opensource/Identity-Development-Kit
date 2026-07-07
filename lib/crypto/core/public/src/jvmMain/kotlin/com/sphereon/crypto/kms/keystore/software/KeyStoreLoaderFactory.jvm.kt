@@ -134,11 +134,9 @@ object KeyStoreLoaderFactory {
         }
     }
 
-    private fun removeKeyStoreEntries(matches: (KeyStoreCacheKey) -> Boolean): CacheInvalidationCounters =
-        removeKeyStoreCacheEntries(matches)
+    private fun removeKeyStoreEntries(matches: (KeyStoreCacheKey) -> Boolean): CacheInvalidationCounters = removeKeyStoreCacheEntries(matches)
 
-    private fun removeInFlightEntries(matches: (KeyStoreCacheKey) -> Boolean): CacheInvalidationCounters =
-        removeInFlightLoadEntries(matches)
+    private fun removeInFlightEntries(matches: (KeyStoreCacheKey) -> Boolean): CacheInvalidationCounters = removeInFlightLoadEntries(matches)
 
     private fun removeKeyStoreCacheEntries(matches: (KeyStoreCacheKey) -> Boolean): CacheInvalidationCounters {
         while (true) {
@@ -199,13 +197,17 @@ object KeyStoreLoaderFactory {
 
     private fun KeyStoreLoaderOpts.cacheKeyOrNull(): KeyStoreCacheKey? =
         when (source) {
-            is KeyStoreLoaderOpts.Source.Channel -> null
-            else ->
+            is KeyStoreLoaderOpts.Source.Channel -> {
+                null
+            }
+
+            else -> {
                 KeyStoreCacheKey(
                     source = source.canonicalCacheSource(),
                     type = type,
                     password = keyStorePassword,
                 )
+            }
         }
 
     private fun KeyStoreLoaderOpts.Source.canonicalCacheSource(): KeyStoreLoaderOpts.Source =
@@ -215,9 +217,10 @@ object KeyStoreLoaderFactory {
                 copy(path = resolvedFile.absolutePath)
             }
 
-            else -> this
+            else -> {
+                this
+            }
         }
-
 }
 
 internal fun KeyStoreCacheKey.matchesTenantSegment(tenantSegment: String): Boolean {

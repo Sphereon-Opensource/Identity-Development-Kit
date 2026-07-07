@@ -34,8 +34,8 @@ import com.sphereon.data.store.credential.design.command.UploadDesignAssetArgs
 import com.sphereon.data.store.credential.design.command.UploadDesignAssetServiceCommand
 import com.sphereon.data.store.credential.design.command.UploadTenantAssetArgs
 import com.sphereon.data.store.credential.design.command.UploadTenantAssetServiceCommand
-import com.sphereon.data.store.credential.design.model.AssetInfo
-import com.sphereon.data.store.credential.design.model.AssetReference
+import com.sphereon.data.store.asset.model.AssetInfo
+import com.sphereon.data.store.asset.model.AssetReference
 import com.sphereon.data.store.credential.design.model.ResolvedDesignAsset
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding

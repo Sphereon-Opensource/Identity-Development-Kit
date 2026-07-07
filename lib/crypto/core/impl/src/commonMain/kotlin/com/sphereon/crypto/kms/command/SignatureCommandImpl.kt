@@ -26,8 +26,8 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureResult
@@ -157,8 +157,9 @@ class SignDigestCommandImpl(
         val keyInfo =
             appliedArgs.keyInfo
                 ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "keyInfo is required").asErrorResult()
-        val signatureAlgorithm = appliedArgs.signatureAlgorithm ?: keyInfo.signatureAlgorithm
-            ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "signatureAlgorithm is required").asErrorResult()
+        val signatureAlgorithm =
+            appliedArgs.signatureAlgorithm ?: keyInfo.signatureAlgorithm
+                ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "signatureAlgorithm is required").asErrorResult()
         if (appliedArgs.digest.isEmpty()) {
             return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "digest is required").asErrorResult()
         }
@@ -228,8 +229,9 @@ class VerifyDigestCommandImpl(
         val keyInfo =
             appliedArgs.keyInfo
                 ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "keyInfo is required").asErrorResult()
-        val signatureAlgorithm = appliedArgs.signatureAlgorithm ?: keyInfo.signatureAlgorithm
-            ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "signatureAlgorithm is required").asErrorResult()
+        val signatureAlgorithm =
+            appliedArgs.signatureAlgorithm ?: keyInfo.signatureAlgorithm
+                ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "signatureAlgorithm is required").asErrorResult()
         if (appliedArgs.digest.isEmpty()) {
             return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "digest is required").asErrorResult()
         }

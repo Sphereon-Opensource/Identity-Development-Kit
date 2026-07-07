@@ -26,7 +26,7 @@ import kotlinx.serialization.Serializable
  * This is the unified, open-core projection of the richer (and extensible)
  * VDX `CapabilityType` value class: only the capability kinds the runtime
  * routes against are modelled here. EDK and VDX map their own capability
- * representations onto these four values.
+ * representations onto these values.
  */
 @Serializable
 enum class SoftwareCapabilityType {
@@ -38,17 +38,13 @@ enum class SoftwareCapabilityType {
 
     @SerialName("OAUTH2_AUTHORIZATION_SERVER")
     OAUTH2_AUTHORIZATION_SERVER,
-
-    @SerialName("ATTRIBUTE_SOURCE")
-    ATTRIBUTE_SOURCE,
     ;
 
     companion object {
         /**
          * The config/routing-backed capability types — the ones that own a per-instance
          * configuration namespace and are projected by the config-derived registries. Stable
-         * order. Excludes [ATTRIBUTE_SOURCE], which has no config-driven namespace in the open
-         * core. This is the single shared list the `get` / `configKeyPrefix` scans iterate.
+         * order. This is the single shared list the `get` / `configKeyPrefix` scans iterate.
          */
         val ROUTED: List<SoftwareCapabilityType> =
             listOf(OID4VCI_ISSUER, OID4VP_VERIFIER, OAUTH2_AUTHORIZATION_SERVER)
@@ -57,7 +53,7 @@ enum class SoftwareCapabilityType {
          * The per-instance ("plural") configuration namespace that holds a config-backed
          * instance's typed config, keyed by instance id underneath (`<namespace>.<id>`). This is
          * the single writer-side source of truth shared by the config-derived registries and the
-         * VDX create/get/update commands. Returns null for [ATTRIBUTE_SOURCE] (no config namespace).
+         * VDX create/get/update commands.
          *
          * The values mirror the canonical reader-side constants declared in the OID4VCI/OID4VP
          * issuer-public and oauth2-common-public config modules (`INSTANCES_NAMESPACE` /
@@ -69,7 +65,6 @@ enum class SoftwareCapabilityType {
                 OID4VCI_ISSUER -> INSTANCES_NAMESPACE_OID4VCI_ISSUERS
                 OID4VP_VERIFIER -> INSTANCES_NAMESPACE_OID4VP_VERIFIERS
                 OAUTH2_AUTHORIZATION_SERVER -> INSTANCES_NAMESPACE_OAUTH2_SERVERS
-                ATTRIBUTE_SOURCE -> null
             }
 
         /** Per-instance config namespace for OID4VCI issuers (`oid4vci.issuers.<id>`). */
@@ -172,8 +167,7 @@ data class SoftwareInstanceEndpoint(
 
 /**
  * Unified, open-core read model for a single software instance — an issuer,
- * verifier, authorization server, or attribute source that a tenant owns or
- * references.
+ * verifier, or authorization server that a tenant owns or references.
  *
  * This is the single source of truth for the "software instance" concept across
  * the stack. The richer VDX `SoftwareParty` / `ServerParty` / `SoftwareCapability`
@@ -194,6 +188,10 @@ data class SoftwareInstanceEndpoint(
  *   instance is not config-backed.
  * @property endpoints the externally reachable protocol surfaces of this
  *   instance.
+ * @property partyId stable party identity of the instance in the durable
+ *   catalog (the software party UUID as a string). Only registries backed by a
+ *   party-model catalog populate it; config-derived registries yield null
+ *   until the instance is reconciled into the catalog.
  */
 @Serializable
 data class SoftwareInstance(
@@ -206,4 +204,5 @@ data class SoftwareInstance(
     val runtimeMode: SoftwareRuntimeMode? = null,
     val configKeyPrefix: String? = null,
     val endpoints: List<SoftwareInstanceEndpoint> = emptyList(),
+    val partyId: String? = null,
 )

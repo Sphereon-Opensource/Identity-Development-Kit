@@ -65,8 +65,6 @@ kotlin {
                 // KV store (for session/nonce/offer persistence)
                 api(projects.libDataStoreKvPublic)
 
-                // Issuance pipeline configuration (for PipelineConfigurationResolver SPI)
-                api(projects.libCredentialIssuancePipelinePublic)
                 // StatusListBinding on IssuanceContext for OID4VCI status-list enrichment
                 api(projects.libStatuslistPublic)
 

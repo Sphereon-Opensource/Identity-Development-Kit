@@ -80,4 +80,5 @@ class RegistryBackedOid4vciIssuerConfigProvider(
                 ?.let { "$INSTANCES_NAMESPACE.$it" }
                 ?: ConfigDrivenOid4vciIssuerConfigProvider.NAMESPACE
         },
+        fallbackToSingularNamespace = false,
     )

@@ -17,13 +17,13 @@
 
 package com.sphereon.crypto.core.kms
 
-import com.sphereon.core.api.conf.CamelCaseKeyDenormalizerImpl
 import com.sphereon.core.api.conf.CachedConfigValue
+import com.sphereon.core.api.conf.CamelCaseKeyDenormalizerImpl
 import com.sphereon.core.api.conf.ConfigBootstrapGuard
 import com.sphereon.core.api.conf.ConfigEnvironment
 import com.sphereon.core.api.conf.ConfigLevel
-import com.sphereon.core.api.conf.ConfigSnapshot
 import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.ConfigSnapshot
 import com.sphereon.core.api.conf.DefaultPolymorphicConfigBinder
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.conf.ResolutionMetadata
@@ -163,7 +163,12 @@ class KmsProviderManagerImpl(
     }
 
     private fun readProviderConfigSnapshot(snapshotKey: SnapshotKey): Array<KmsProviderConfigBase>? {
-        val value = snapshotCache.getSnapshot(snapshotKey)?.values?.get(KMS_PROVIDER_CONFIGS_SNAPSHOT_VALUE)?.value as? Array<*> ?: return null
+        val value =
+            snapshotCache
+                .getSnapshot(snapshotKey)
+                ?.values
+                ?.get(KMS_PROVIDER_CONFIGS_SNAPSHOT_VALUE)
+                ?.value as? Array<*> ?: return null
         return value
             .filterIsInstance<KmsProviderConfigBase>()
             .takeIf { it.size == value.size }

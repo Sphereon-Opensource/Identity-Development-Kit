@@ -27,6 +27,8 @@ import dev.whyoleg.cryptography.CryptographyProvider
 
 expect fun createCryptoTestAppGraph(testInstance: Any): AppGraph
 
+expect fun supportsDigestSignatureRoundTrip(): Boolean
+
 class CryptoTestContext(
     sessionId: String,
     testInstance: Any,

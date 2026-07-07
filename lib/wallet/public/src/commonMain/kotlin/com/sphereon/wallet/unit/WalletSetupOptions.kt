@@ -134,11 +134,13 @@ object WalletSetupValidator {
                     errors += "backendMode=NONE cannot request production TS03 wallet-provider attestations"
                 }
             }
+
             WalletBackendMode.REMOTE -> {
                 if (options.remoteBackend == null) errors += "backendMode=REMOTE requires remoteBackend"
                 if (options.keystoreProfile !in backendOnlyKeystores) errors += "backendMode=REMOTE requires a remote keystore/WSCD profile"
                 if (options.secureComponentProfile !in backendOnlySecureComponents) errors += "backendMode=REMOTE requires a remote WSCA/WSCD profile"
             }
+
             WalletBackendMode.HYBRID -> {
                 if (options.remoteBackend == null) errors += "backendMode=HYBRID requires remoteBackend"
                 val placement = options.hybridPlacement

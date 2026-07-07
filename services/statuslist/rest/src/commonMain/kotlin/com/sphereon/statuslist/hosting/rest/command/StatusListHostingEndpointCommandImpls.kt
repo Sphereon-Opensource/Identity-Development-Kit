@@ -23,9 +23,9 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.response.ResponseBuilder
 import com.sphereon.core.api.http.util.RequestUtils
 import com.sphereon.di.session.SessionScope
-import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListErrors
 import com.sphereon.statuslist.StatusListHostingMode
+import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.command.GetStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListTokenCommand

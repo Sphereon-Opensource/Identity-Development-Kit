@@ -42,7 +42,6 @@ kotlin {
     }
     configureWasmJsTargetIfEnabled {
         browser()
-        nodejs()
     }
     configureIosTargetsIfEnabled()
 

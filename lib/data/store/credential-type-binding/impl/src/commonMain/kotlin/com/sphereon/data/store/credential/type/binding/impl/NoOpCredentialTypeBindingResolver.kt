@@ -1,6 +1,6 @@
 package com.sphereon.data.store.credential.type.binding.impl
 
-import com.sphereon.credential.issuance.pipeline.SemanticAttributeSetRef
+import com.sphereon.data.store.credential.design.model.SemanticAttributeSetRef
 import com.sphereon.data.store.credential.type.binding.CredentialTypeBinding
 import com.sphereon.data.store.credential.type.binding.CredentialTypeBindingResolver
 import com.sphereon.di.session.SessionScope

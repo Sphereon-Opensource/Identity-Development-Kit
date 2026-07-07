@@ -134,6 +134,14 @@ object PublicDesignAssetPaths {
         if (externalBaseUrl.isNullOrBlank()) return uri
         if (uri.contains("://")) return uri
         if (!uri.startsWith(BASE_PATH)) return uri
-        return externalBaseUrl.trimEnd('/') + uri
+        return publicOrigin(externalBaseUrl) + uri
+    }
+
+    private fun publicOrigin(externalBaseUrl: String): String {
+        val base = externalBaseUrl.trimEnd('/')
+        val schemeEnd = base.indexOf("://").takeIf { it >= 0 } ?: return base
+        val authorityStart = schemeEnd + 3
+        val pathStart = base.indexOf('/', authorityStart)
+        return if (pathStart < 0) base else base.substring(0, pathStart)
     }
 }

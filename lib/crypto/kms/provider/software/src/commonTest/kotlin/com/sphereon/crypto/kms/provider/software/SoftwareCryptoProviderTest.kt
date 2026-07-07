@@ -25,9 +25,9 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
-import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import com.sphereon.crypto.secdsa.impl.DefaultSecdsaPrimitives
 import dev.whyoleg.cryptography.CryptographyProvider

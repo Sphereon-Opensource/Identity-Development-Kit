@@ -34,7 +34,10 @@ class KmsProviderRegistryImplTest {
         val app = createCryptoTestAppGraph(this)
         val context = app.userContextManager.getAnonymous()
         val session = context.sessionContextManager.createOrGetFromId("kms-registry-refresh-test")
-        val principalConfig = session.asCoreApiServiceGraph().serviceExecution.conf.principal
+        val principalConfig =
+            session
+                .asCoreApiServiceGraph()
+                .serviceExecution.conf.principal
 
         principalConfig.addPropertySource(kmsProviderSource("initial-kms-provider", "snapshot-provider"))
         val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
@@ -52,7 +55,10 @@ class KmsProviderRegistryImplTest {
         val app = createCryptoTestAppGraph(this)
         val context = app.userContextManager.getAnonymous()
         val session = context.sessionContextManager.createOrGetFromId("kms-registry-refreshable-source-test")
-        val principalConfig = session.asCoreApiServiceGraph().serviceExecution.conf.principal
+        val principalConfig =
+            session
+                .asCoreApiServiceGraph()
+                .serviceExecution.conf.principal
 
         val source = RefreshableKmsProviderSource("refreshable-kms-provider", "snapshot-provider")
         principalConfig.addPropertySource(source)
@@ -71,7 +77,10 @@ class KmsProviderRegistryImplTest {
         val app = createCryptoTestAppGraph(this)
         val context = app.userContextManager.getAnonymous()
         val session = context.sessionContextManager.createOrGetFromId("kms-registry-refreshable-empty-source-test")
-        val principalConfig = session.asCoreApiServiceGraph().serviceExecution.conf.principal
+        val principalConfig =
+            session
+                .asCoreApiServiceGraph()
+                .serviceExecution.conf.principal
 
         val source = RefreshableKmsProviderSource("refreshable-empty-kms-provider")
         principalConfig.addPropertySource(source)
@@ -90,7 +99,10 @@ class KmsProviderRegistryImplTest {
         val app = createCryptoTestAppGraph(this)
         val context = app.userContextManager.getAnonymous()
         val session = context.sessionContextManager.createOrGetFromId("kms-registry-disable-refreshable-source-test")
-        val principalConfig = session.asCoreApiServiceGraph().serviceExecution.conf.principal
+        val principalConfig =
+            session
+                .asCoreApiServiceGraph()
+                .serviceExecution.conf.principal
 
         val source = RefreshableKmsProviderSource("refreshable-kms-provider", "software")
         principalConfig.addPropertySource(source)

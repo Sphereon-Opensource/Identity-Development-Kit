@@ -167,8 +167,7 @@ class OAuth2ServersConfigBinder(
                 } else {
                     key.substringBefore('.')
                 }
-            }
-            .filter { it.isNotEmpty() }
+            }.filter { it.isNotEmpty() }
             .toSet()
     }
 
@@ -542,8 +541,7 @@ class OAuth2ServersConfigBinder(
                         key.endsWith(CLIENT_SECRET_SUFFIX) -> key.removeSuffix(CLIENT_SECRET_SUFFIX)
                         else -> null
                     }?.takeIf { it.isNotBlank() }
-                }
-                .distinct()
+                }.distinct()
                 .sorted()
         for (roleKey in roleKeys) {
             val clientId = configService.getPropertyAsString("$internalClientsPrefix.$roleKey.client-id", null)

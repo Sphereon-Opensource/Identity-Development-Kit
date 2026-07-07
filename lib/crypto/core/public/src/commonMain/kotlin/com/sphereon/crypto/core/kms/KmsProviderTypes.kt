@@ -29,10 +29,10 @@ import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.ManagedKeyPair
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
-import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
-import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.sign.SimpleSignatureService
 import com.sphereon.crypto.core.sign.model.SignInput
@@ -340,9 +340,10 @@ interface KmsProvider :
         algorithmId: String? = null,
         partyUInfo: ByteArray? = null,
         partyVInfo: ByteArray? = null,
-    ): EcdhDeriveResult = throw UnsupportedOperationException(
-        "Provider $id does not support ${if (mode == EcdhDeriveMode.RAW_X) KmsProviderOperation.ECDH_DERIVE_RAW_X else KmsProviderOperation.ECDH_DERIVE_KDF}",
-    )
+    ): EcdhDeriveResult =
+        throw UnsupportedOperationException(
+            "Provider $id does not support ${if (mode == EcdhDeriveMode.RAW_X) KmsProviderOperation.ECDH_DERIVE_RAW_X else KmsProviderOperation.ECDH_DERIVE_KDF}",
+        )
 
     /**
      * Performs provider-backed EC point multiplication semantics. Phase 1 providers may expose raw-X output only.

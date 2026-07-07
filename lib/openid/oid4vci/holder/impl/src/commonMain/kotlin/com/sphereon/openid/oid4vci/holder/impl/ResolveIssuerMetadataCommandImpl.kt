@@ -65,9 +65,9 @@ class ResolveIssuerMetadataCommandImpl(
         applyDuring: (ResolveIssuerMetadataArgs) -> ResolveIssuerMetadataArgs,
     ): IdkResult<CredentialIssuerMetadata, IdkError> {
         val applied = applyDuring(args)
-        val issuerUrl = applied.issuerUrl.trimEnd('/')
+        val issuerUrl = Oid4vciUrls.buildIssuerUrl(applied.issuerUrl)
 
-        val wellKnownUrl = Oid4vciUrls.buildWellKnownUrl(issuerUrl)
+        val wellKnownUrl = Oid4vciUrls.buildWellKnownUrl(applied.issuerUrl)
 
         log.debug("Fetching issuer metadata from: $wellKnownUrl")
 
@@ -102,7 +102,7 @@ class ResolveIssuerMetadataCommandImpl(
             val metadata =
                 if (isJwt) {
                     signedMetadataVerifier
-                        .verifyAndExtract(bodyText, applied.issuerUrl)
+                        .verifyAndExtract(bodyText, issuerUrl)
                         .getOrElse { return Err(it) }
                 } else {
                     val unsignedMetadata =
@@ -120,7 +120,7 @@ class ResolveIssuerMetadataCommandImpl(
                         val signedResult =
                             signedMetadataVerifier.verifyAndExtract(
                                 unsignedMetadata.signedMetadata!!,
-                                applied.issuerUrl,
+                                issuerUrl,
                             )
                         if (signedResult.isOk) {
                             return Ok(signedResult.value)

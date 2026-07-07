@@ -2052,7 +2052,8 @@ class JwsMockedErrorPathsTest {
                     .generate()
             val jwsObject =
                 JWSObject(
-                    JWSHeader.Builder(JWSAlgorithm.ES256)
+                    JWSHeader
+                        .Builder(JWSAlgorithm.ES256)
                         .keyID("platform-key")
                         .type(JOSEObjectType.JWT)
                         .build(),

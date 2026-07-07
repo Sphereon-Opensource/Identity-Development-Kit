@@ -40,7 +40,6 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
-import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
 import kotlin.reflect.KClass
@@ -198,7 +197,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
-    fun registryProviderFallsBackToSingularCredentialMechanicsWhenInstanceOmitsThem() {
+    fun registryProviderDoesNotFallBackToSingularCredentialMechanicsWhenInstanceOmitsThem() {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.identifier" to "https://singular.example.com",
@@ -208,7 +207,8 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
                 "oid4vci.issuer.credentials.[EuPid].vct" to "https://singular.example.com/public/schema/vct/EuPid",
                 "oid4vci.issuer.credentials.[EuPid].scope" to "eu-pid",
                 "oid4vci.issuer.credentials.[EuPid].signingKeyMode" to "did:jwk",
-                "oid4vci.issuer.credentials.[EuPid].statusListId" to "eupid-revocation",
+                "oid4vci.issuer.credentials.[EuPid].validityPeriod" to "P365D",
+                "oid4vci.issuer.credentials.[EuPid].status.statusListId" to "eupid-revocation",
                 "oid4vci.issuer.credentials.[Mdl].format" to "mso_mdoc",
                 "oid4vci.issuer.credentials.[Mdl].doctype" to "org.iso.18013.5.1.mDL",
                 "oid4vci.issuer.credentials.[Mdl].signingKeyMode" to "did:jwk",
@@ -219,17 +219,9 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         holder.setCurrentInstanceId("acme")
 
         assertEquals("https://acme.example.com", provider.issuerIdentifier)
-        assertEquals(listOf("https://as.singular.example.com"), provider.authorizationServers)
-
-        val configs = provider.credentialConfigurations
-        assertEquals(setOf("EuPid", "Mdl"), configs.keys)
-        assertEquals("eu-pid", configs["EuPid"]?.scope)
-        assertEquals("https://singular.example.com/public/schema/vct/EuPid", configs["EuPid"]?.vct)
-        assertEquals("mso_mdoc", configs["Mdl"]?.format)
-
-        val signingConfig = provider.credentialSigningConfigs["EuPid"]
-        assertEquals("issuer-signing-acme", signingConfig?.signingKeyAlias)
-        assertEquals(SigningKeyMode.Did("jwk"), signingConfig?.signingKeyMode)
+        assertNull(provider.authorizationServers)
+        assertEquals(emptySet(), provider.credentialConfigurations.keys)
+        assertEquals(emptySet(), provider.credentialSigningConfigs.keys)
     }
 
     @Test
@@ -300,6 +292,31 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         assertEquals(
             "issuer-signing-tenant-default",
             provider.credentialSigningConfigs["EuPid"]?.signingKeyAlias,
+        )
+    }
+
+    @Test
+    fun credentialSigningConfigReadsDesignBoundExpirationAndFlatStatusListAlias() {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.acme.signingKeyAlias" to "issuer-signing-acme",
+                "oid4vci.issuers.acme.credentialConfigurationIds" to "EuPid",
+                "oid4vci.issuers.acme.credentials.[EuPid].format" to "dc+sd-jwt",
+                "oid4vci.issuers.acme.credentials.[EuPid].vct" to "https://acme.example.com/public/schema/vct/EuPid",
+                "oid4vci.issuers.acme.credentials.[EuPid].expirationInDays" to "365",
+                "oid4vci.issuers.acme.credentials.[EuPid].statusListId" to "eupid-revocation",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("acme")
+
+        assertEquals(365, provider.credentialSigningConfigs["EuPid"]?.expirationInDays)
+        val binding = provider.statusListBindingFor("EuPid")
+        assertTrue(binding.isErr, "flat statusListId must be treated as a configured status binding")
+        assertTrue(
+            binding.error.message.defaultMessage
+                .contains("eupid-revocation"),
+            "status binding error should include the configured list id",
         )
     }
 

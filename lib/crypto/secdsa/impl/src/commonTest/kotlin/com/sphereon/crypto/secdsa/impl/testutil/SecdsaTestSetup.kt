@@ -26,6 +26,8 @@ import dev.whyoleg.cryptography.CryptographyProvider
 
 expect fun createSecdsaTestAppGraph(testInstance: Any): AppGraph
 
+expect fun supportsSecdsaKmsInstructionRoundTrip(): Boolean
+
 class SecdsaTestContext(
     sessionId: String,
     testInstance: Any,

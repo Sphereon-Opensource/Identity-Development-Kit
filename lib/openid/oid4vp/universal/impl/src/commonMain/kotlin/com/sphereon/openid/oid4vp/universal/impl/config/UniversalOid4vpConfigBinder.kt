@@ -22,6 +22,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpConfig
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpConfigProvider
+import com.sphereon.openid.oid4vp.verifier.config.INSTANCES_NAMESPACE
+import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -30,9 +32,12 @@ import dev.zacsweers.metro.binding
 /**
  * Binds Universal OID4VP configuration from IDK's ConfigService.
  *
- * Configuration properties use the prefix "oid4vp.universal":
+ * Configuration properties use the instance prefix when a verifier instance has been resolved:
+ * `oid4vp.verifiers.<verifierId>.universal`, falling back to the legacy deployment-wide
+ * `oid4vp.universal` prefix.
  *
  * ```properties
+ * oid4vp.verifiers.default.universal.external-base-url=https://default.example.com
  * oid4vp.universal.external-base-url=https://verifier.example.com
  * ```
  */
@@ -41,16 +46,38 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<UniversalOid4vpConfigProvider>())
 class UniversalOid4vpConfigBinder(
     private val execution: SessionExecution,
+    private val instanceIdProvider: Oid4vpVerifierInstanceIdProvider,
 ) : UniversalOid4vpConfigProvider {
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
     override fun getConfig(): UniversalOid4vpConfig {
         val prefix = UniversalOid4vpConfig.CONFIG_PREFIX
+        val instancePrefix =
+            instanceIdProvider
+                .currentInstanceId()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { instanceId ->
+                    val configPrefix =
+                        configService
+                            .getPropertyAsString("$SERVICE_CONFIG_BINDING_BY_PARTY_PREFIX.$instanceId.config-key-prefix", null)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "$INSTANCES_NAMESPACE.$instanceId"
+                    "$configPrefix.universal"
+                }
 
         return UniversalOid4vpConfig(
-            externalBaseUrl = configService.getPropertyAsString("$prefix.external-base-url", null),
-            responseUri = configService.getPropertyAsString("$prefix.response-uri", null),
+            externalBaseUrl = firstConfiguredString(instancePrefix?.let { "$it.external-base-url" }, "$prefix.external-base-url"),
+            responseUri = firstConfiguredString(instancePrefix?.let { "$it.response-uri" }, "$prefix.response-uri"),
         )
+    }
+
+    private fun firstConfiguredString(vararg keys: String?): String? =
+        keys
+            .filterNotNull()
+            .firstNotNullOfOrNull { key -> configService.getPropertyAsString(key, null)?.takeIf { it.isNotBlank() } }
+
+    private companion object {
+        const val SERVICE_CONFIG_BINDING_BY_PARTY_PREFIX = "_derived.software.config-bindings.by-party"
     }
 }

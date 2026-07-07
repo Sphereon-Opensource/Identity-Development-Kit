@@ -40,6 +40,7 @@ enum class DesignHostingMode {
 enum class VctHostingMode {
     HOSTED,
     EXTERNAL,
+    REGISTERED,
     NONE,
 }
 

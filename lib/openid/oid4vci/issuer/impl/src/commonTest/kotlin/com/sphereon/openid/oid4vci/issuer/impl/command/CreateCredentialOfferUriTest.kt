@@ -9,7 +9,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.command
 
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
-import com.sphereon.openid.oid4vci.issuer.impl.pipeline.OfferPipelineInitializer
+import com.sphereon.openid.oid4vci.issuer.impl.lifecycle.OfferLifecycleInitializer
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -30,7 +30,7 @@ class CreateCredentialOfferUriTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = RecordingSessionStore(),
-                    pipelineInitializer = OfferPipelineInitializer(),
+                    lifecycleInitializer = OfferLifecycleInitializer(),
                 )
 
             val result =
@@ -64,7 +64,7 @@ class CreateCredentialOfferUriTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = RecordingSessionStore(),
-                    pipelineInitializer = OfferPipelineInitializer(),
+                    lifecycleInitializer = OfferLifecycleInitializer(),
                 )
 
             val result =

@@ -408,6 +408,7 @@ class StandardAuthorizeRequestCommandImpl(
                     AuthenticationContext(
                         sessionId = session.sessionId,
                         applicationId = session.applicationId,
+                        acrValues = session.acrValues.orEmpty(),
                     ),
             )
         if (authResult.isErr) {

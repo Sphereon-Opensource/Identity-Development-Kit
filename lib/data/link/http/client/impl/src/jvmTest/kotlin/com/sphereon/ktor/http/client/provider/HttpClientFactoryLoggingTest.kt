@@ -12,11 +12,11 @@ package com.sphereon.ktor.http.client.provider
 
 import com.sphereon.core.api.log.LogLevel
 import com.sphereon.core.api.log.LoggerConfig
-import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
 
 class HttpClientFactoryLoggingTest {
     @Test

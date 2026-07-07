@@ -95,7 +95,7 @@ class StatusListHostingHttpAdapterTest {
             val response =
                 f.adapter.handleRequest(
                     GenericHttpRequest.withTextBody(method = "GET", path = base("/corr-9"), body = null),
-            )
+                )
             assertEquals(200, response.statusCode)
             assertEquals(signedToken, response.bodyBytes?.decodeToString())
             assertEquals(StatusListRef(correlationId = "corr-9", statusListUri = "http://localhost/public/statuslists/corr-9"), f.tokenStub.captured)

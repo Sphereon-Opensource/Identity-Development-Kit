@@ -16,6 +16,10 @@
 
 package com.sphereon.conf.theme.core.store
 
+import com.sphereon.conf.theme.core.model.Application
+import com.sphereon.conf.theme.core.model.ElementBinding
+import com.sphereon.conf.theme.core.model.FeatureDefinition
+import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ThemeDefinition
 import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.model.ThemeVariant
@@ -23,11 +27,14 @@ import com.sphereon.core.compat.JsExportCompat
 import kotlin.jvm.JvmOverloads
 
 /**
- * Storage abstraction for theme definitions.
- * Implementations may be in-memory, settings-backed, or database-backed.
+ * Storage abstraction for theme definitions, custom features, design element bindings,
+ * registered applications, and custom stylesheets.
+ * Implementations may be in-memory or database-backed.
  */
 @JsExportCompat
 interface ThemeStore {
+    // ========== Theme Definitions ==========
+
     suspend fun getDefinition(
         tenant: String,
         themeId: String,
@@ -49,14 +56,16 @@ interface ThemeStore {
     ): Boolean
 
     /**
-     * Returns definitions matching a specific scope and optional variant.
-     * Used during resolution to collect layers.
+     * Returns the definitions of one resolution layer: exact [scope], exact [variant]
+     * (null selects the common, variant-null layer), exact [productType] (PRODUCT scope),
+     * and exact [applicationId] (APPLICATION scope).
      */
     suspend fun getDefinitionsByScope(
         tenant: String,
         scope: ThemeScope,
         variant: ThemeVariant? = null,
-        appId: String? = null,
+        productType: ProductType? = null,
+        applicationId: String? = null,
     ): List<ThemeDefinition>
 
     // ========== Count Methods (for quota enforcement) ==========
@@ -65,11 +74,6 @@ interface ThemeStore {
      * Count theme definitions for a tenant.
      */
     suspend fun countDefinitions(tenant: String): Int = listDefinitions(tenant).size
-
-    /**
-     * Count media assets for a tenant.
-     */
-    suspend fun countMediaAssets(tenant: String): Int = 0
 
     // ========== History Snapshot Methods ==========
 
@@ -118,82 +122,157 @@ interface ThemeStore {
         themeId: String,
     ): ThemeDefinition? = null
 
-    // ========== Media Asset Methods ==========
+    // ========== Custom Features ==========
 
     /**
-     * Save a media asset (Base64-encoded).
+     * Save a tenant custom feature. Built-in features are contributed in code and never stored.
      */
-    suspend fun saveMediaAsset(
+    suspend fun saveFeature(
         tenant: String,
-        assetId: String,
-        contentType: String,
-        base64Data: String,
-        sizeBytes: Long,
-    ) {}
+        feature: FeatureDefinition,
+    ): FeatureDefinition
 
     /**
-     * Get a media asset by ID. Returns (contentType, base64Data, sizeBytes) or null if not found.
+     * Get a tenant custom feature by product type and feature id.
      */
-    suspend fun getMediaAsset(
+    suspend fun getFeature(
         tenant: String,
-        assetId: String,
-    ): MediaAssetData? = null
+        productType: ProductType,
+        featureId: String,
+    ): FeatureDefinition?
 
     /**
-     * Delete a media asset. Returns true if deleted.
+     * List the tenant's custom features for a product type.
      */
-    suspend fun deleteMediaAsset(
+    suspend fun listFeatures(
         tenant: String,
-        assetId: String,
-    ): Boolean = false
-    // ========== Custom CSS Methods ==========
+        productType: ProductType,
+    ): List<FeatureDefinition>
 
     /**
-     * Save custom CSS for a tenant/app.
+     * Delete a tenant custom feature. Returns true if deleted.
      */
-    suspend fun saveCustomCss(
+    suspend fun deleteFeature(
         tenant: String,
-        appId: String,
+        productType: ProductType,
+        featureId: String,
+    ): Boolean
+
+    // ========== Design Element Bindings ==========
+
+    /**
+     * Upsert a design element binding. The binding slot is
+     * `(tenant, productType, featureId, elementId, applicationId?, variant?)`.
+     */
+    suspend fun setElementBinding(
+        tenant: String,
+        binding: ElementBinding,
+    ): ElementBinding
+
+    /**
+     * Get the binding at an exact slot: [applicationId] null selects the tenant-scope
+     * binding, [variant] null selects the variant-independent binding.
+     */
+    suspend fun getElementBinding(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+        elementId: String,
+        applicationId: String? = null,
+        variant: ThemeVariant? = null,
+    ): ElementBinding?
+
+    /**
+     * List all bindings stored for a feature, across all elements, applications, and variants.
+     */
+    suspend fun listElementBindings(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+    ): List<ElementBinding>
+
+    /**
+     * Delete the binding at an exact slot. Returns true if deleted.
+     */
+    suspend fun deleteElementBinding(
+        tenant: String,
+        productType: ProductType,
+        featureId: String,
+        elementId: String,
+        applicationId: String? = null,
+        variant: ThemeVariant? = null,
+    ): Boolean
+
+    // ========== Application Registry ==========
+
+    /**
+     * Save a REST-registered application record. Platform-managed instances are merged
+     * in at list time by higher layers, not stored here.
+     */
+    suspend fun saveApplication(
+        tenant: String,
+        application: Application,
+    ): Application
+
+    /**
+     * Get a registered application by id.
+     */
+    suspend fun getApplication(
+        tenant: String,
+        applicationId: String,
+    ): Application?
+
+    /**
+     * List the tenant's registered applications.
+     */
+    suspend fun listApplications(tenant: String): List<Application>
+
+    /**
+     * Delete a registered application. Returns true if deleted.
+     */
+    suspend fun deleteApplication(
+        tenant: String,
+        applicationId: String,
+    ): Boolean
+
+    // ========== Custom Stylesheets ==========
+
+    /**
+     * Save the custom stylesheet for a tenant ([applicationId] null) or one application.
+     */
+    suspend fun saveStylesheet(
+        tenant: String,
+        applicationId: String?,
         css: String,
         contentHash: String,
-    ) {}
+    )
 
     /**
-     * Get custom CSS for a tenant/app. Returns (css, contentHash, version) or null if not found.
+     * Get the custom stylesheet for a tenant ([applicationId] null) or one application.
      */
-    suspend fun getCustomCss(
+    suspend fun getStylesheet(
         tenant: String,
-        appId: String,
-    ): CustomCssData? = null
+        applicationId: String? = null,
+    ): StylesheetData?
 
     /**
-     * Delete custom CSS for a tenant/app. Returns true if deleted.
+     * Delete the custom stylesheet for a tenant ([applicationId] null) or one application.
+     * Returns true if deleted.
      */
-    suspend fun deleteCustomCss(
+    suspend fun deleteStylesheet(
         tenant: String,
-        appId: String,
-    ): Boolean = false
+        applicationId: String? = null,
+    ): Boolean
 }
 
 /**
- * Simple data holder for custom CSS content retrieved from the store.
+ * Simple data holder for custom stylesheet content retrieved from the store.
  */
 @JsExportCompat
-data class CustomCssData
+data class StylesheetData
     @JvmOverloads
     constructor(
         val css: String,
         val contentHash: String,
         val version: Long = 1,
     )
-
-/**
- * Simple data holder for media asset content retrieved from the store.
- */
-@JsExportCompat
-data class MediaAssetData(
-    val assetId: String,
-    val contentType: String,
-    val base64Data: String,
-    val sizeBytes: Long,
-)

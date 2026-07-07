@@ -121,8 +121,7 @@ object SignatureEncodingCodec {
         }
     }
 
-    private fun stripPositiveSignByte(value: ByteArray): ByteArray =
-        if (value.size > 1 && value[0] == 0.toByte()) value.copyOfRange(1, value.size) else value
+    private fun stripPositiveSignByte(value: ByteArray): ByteArray = if (value.size > 1 && value[0] == 0.toByte()) value.copyOfRange(1, value.size) else value
 
     private fun unsignedIntegerToFixed(
         value: ByteArray,

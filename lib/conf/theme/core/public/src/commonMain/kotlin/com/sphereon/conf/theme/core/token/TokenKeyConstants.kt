@@ -186,6 +186,7 @@ object TokenKeyConstants {
     const val BRANDING_APP_NAME = "branding.appName"
     const val BRANDING_PRIMARY_COLOR = "branding.primaryColor"
     const val BRANDING_SECONDARY_COLOR = "branding.secondaryColor"
+    const val BRANDING_TAGLINE = "branding.tagline"
     const val BRANDING_LOGO_URL = "branding.logoUrl"
     const val BRANDING_LOGO_DARK_URL = "branding.logoDarkUrl"
     const val BRANDING_FAVICON_URL = "branding.faviconUrl"

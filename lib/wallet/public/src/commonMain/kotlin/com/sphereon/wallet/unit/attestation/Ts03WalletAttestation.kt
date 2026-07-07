@@ -21,11 +21,11 @@ import com.sphereon.crypto.core.generic.hash
 import com.sphereon.wallet.unit.EudiWalletTrustDecision
 import com.sphereon.wallet.unit.EudiWalletTrustEvidence
 import com.sphereon.wallet.unit.EudiWalletTrustService
-import com.sphereon.wallet.unit.WalletAttestedKeyRef
-import com.sphereon.wallet.unit.WalletAttestationStatusEvidence
-import com.sphereon.wallet.unit.WalletSolutionRef
 import com.sphereon.wallet.unit.ResolveWalletProviderTrustRequest
 import com.sphereon.wallet.unit.ResolveWalletSolutionTrustRequest
+import com.sphereon.wallet.unit.WalletAttestationStatusEvidence
+import com.sphereon.wallet.unit.WalletAttestedKeyRef
+import com.sphereon.wallet.unit.WalletSolutionRef
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -35,7 +35,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.time.Clock
 
 @Serializable
-enum class WalletAttestationSigningAlgorithm(val jwtAlg: String, val digest: DigestAlg) {
+enum class WalletAttestationSigningAlgorithm(
+    val jwtAlg: String,
+    val digest: DigestAlg
+) {
     ES256("ES256", DigestAlg.SHA256),
     ES384("ES384", DigestAlg.SHA384),
     ES512("ES512", DigestAlg.SHA512),
@@ -155,12 +158,11 @@ class SoftwareTestWalletAttestationSigner(
     private val signerId: String = "software-test-wallet-attestation-signer",
     private val secret: String = "software-test-only",
 ) : WalletAttestationSigner {
-    override suspend fun sign(
-        request: WalletAttestationSigningRequest,
-    ): com.sphereon.core.api.IdkResult<WalletAttestationSigningResult, com.sphereon.core.api.error.IdkError> {
+    override suspend fun sign(request: WalletAttestationSigningRequest,): com.sphereon.core.api.IdkResult<WalletAttestationSigningResult, com.sphereon.core.api.error.IdkError> {
         if (request.signerProfile != WalletAttestationSignerProfile.SOFTWARE_TEST) {
             return com.sphereon.core.api.Err(
-                com.sphereon.core.api.error.IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Software test signer only accepts SOFTWARE_TEST profile"),
+                com.sphereon.core.api.error.IdkError
+                    .ILLEGAL_ARGUMENT_ERROR(message = "Software test signer only accepts SOFTWARE_TEST profile"),
             )
         }
         val signature = hash(request.signingInput + secret.encodeToByteArray(), request.algorithm.digest)
@@ -261,25 +263,26 @@ data class Ts03EncodedJwt(
     val signingEvidence: Map<String, String>,
 )
 
-fun compactJwtArtifactHash(compactJwt: String): String =
-    "sha256:${hash(compactJwt.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()}"
+fun compactJwtArtifactHash(compactJwt: String): String = "sha256:${hash(compactJwt.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()}"
 
 class Ts03WalletAttestationEncoder(
-    private val json: Json = Json { encodeDefaults = false; explicitNulls = false },
+    private val json: Json =
+        Json {
+            encodeDefaults = false
+            explicitNulls = false
+        },
 ) {
     suspend fun encodeWalletInstanceAttestation(
         claims: Ts03WalletInstanceAttestationClaims,
         signer: WalletAttestationSigner,
         signingRequest: WalletAttestationSigningRequest,
-    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> =
-        encodeCompactJwt(json.encodeToString(claims), signer, signingRequest)
+    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> = encodeCompactJwt(json.encodeToString(claims), signer, signingRequest)
 
     suspend fun encodeKeyAttestation(
         claims: Ts03KeyAttestationClaims,
         signer: WalletAttestationSigner,
         signingRequest: WalletAttestationSigningRequest,
-    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> =
-        encodeCompactJwt(json.encodeToString(claims), signer, signingRequest)
+    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> = encodeCompactJwt(json.encodeToString(claims), signer, signingRequest)
 
     private suspend fun encodeCompactJwt(
         claimsJson: String,
@@ -297,19 +300,25 @@ class Ts03WalletAttestationEncoder(
         val header = headerJson.encodeToByteArray().encodeToBase64Url()
         val payload = claimsJson.encodeToByteArray().encodeToBase64Url()
         val signingInput = "$header.$payload".encodeToByteArray()
-        val signed = signer.sign(signingRequest.copy(signingInput = signingInput)).getOrElse { return com.sphereon.core.api.Err(it) }
+        val signed =
+            signer.sign(signingRequest.copy(signingInput = signingInput)).getOrElse {
+                return com.sphereon.core.api
+                    .Err(it)
+            }
         val signature = signed.signature.encodeToBase64Url()
         val compact = "$header.$payload.$signature"
         return com.sphereon.core.api.Ok(
             Ts03EncodedJwt(
                 compact = compact,
                 artifactHash = compactJwtArtifactHash(compact),
-                signingEvidence = signed.evidence + mapOf(
-                    "alg" to signed.algorithm.jwtAlg,
-                    "signerId" to signed.signerId,
-                    "signerProfile" to signed.signerProfile.name,
-                    "issuedAt" to Clock.System.now().toString(),
-                ),
+                signingEvidence =
+                    signed.evidence +
+                        mapOf(
+                            "alg" to signed.algorithm.jwtAlg,
+                            "signerId" to signed.signerId,
+                            "signerProfile" to signed.signerProfile.name,
+                            "issuedAt" to Clock.System.now().toString(),
+                        ),
             ),
         )
     }
@@ -344,11 +353,14 @@ data class Ts03DecodedJwt<Claims>(
 class Ts03WalletAttestationValidator(
     private val joseVerifier: Ts03JoseVerifier? = null,
     private val trustService: EudiWalletTrustService? = null,
-    private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false },
+    private val json: Json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = false
+            explicitNulls = false
+        },
 ) : WalletUnitAttestationMaterialValidator {
-    override suspend fun validateWalletInstanceAttestation(
-        request: WalletInstanceAttestationValidationRequest,
-    ): IdkResult<Ts1194723ValidationResult, IdkError> {
+    override suspend fun validateWalletInstanceAttestation(request: WalletInstanceAttestationValidationRequest,): IdkResult<Ts1194723ValidationResult, IdkError> {
         if (request.material.format != WalletUnitAttestationFormat.JWT) {
             return Ok(
                 validationResult(
@@ -358,16 +370,17 @@ class Ts03WalletAttestationValidator(
                 ),
             )
         }
-        val decoded = decodeCompactJwt<Ts03WalletInstanceAttestationClaims>(request.material)
-            .getOrElse {
-                return Ok(
-                    validationResult(
-                        valid = false,
-                        format = request.material.format,
-                        errors = listOf(it.message.defaultMessage),
-                    ),
-                )
-            }
+        val decoded =
+            decodeCompactJwt<Ts03WalletInstanceAttestationClaims>(request.material)
+                .getOrElse {
+                    return Ok(
+                        validationResult(
+                            valid = false,
+                            format = request.material.format,
+                            errors = listOf(it.message.defaultMessage),
+                        ),
+                    )
+                }
         val errors = mutableListOf<String>()
         val evidence = mutableMapOf<String, String>()
         val now = request.validationTimeEpochSeconds ?: Clock.System.now().epochSeconds
@@ -409,19 +422,18 @@ class Ts03WalletAttestationValidator(
         val walletSolutionTrust = resolveWalletSolutionTrust(decoded.claims.walletName, decoded.claims.walletVersion, request.trust, policy, now)
         validateTrustEvidence("Wallet Solution", walletSolutionTrust, policy.requireWalletSolutionTrust, emptySet(), now, errors, evidence)
 
-        evidence += mapOf(
-            "kind" to "WIA",
-            "alg" to decoded.header.alg,
-            "issuer" to decoded.claims.iss,
-            "audience" to decoded.claims.aud,
-            "walletSolution" to "${decoded.claims.walletName}:${decoded.claims.walletVersion}",
-        )
+        evidence +=
+            mapOf(
+                "kind" to "WIA",
+                "alg" to decoded.header.alg,
+                "issuer" to decoded.claims.iss,
+                "audience" to decoded.claims.aud,
+                "walletSolution" to "${decoded.claims.walletName}:${decoded.claims.walletVersion}",
+            )
         return Ok(validationResult(valid = errors.isEmpty(), format = request.material.format, evidence = evidence, errors = errors))
     }
 
-    override suspend fun validateKeyAttestation(
-        request: KeyAttestationValidationRequest,
-    ): IdkResult<Ts1194723ValidationResult, IdkError> {
+    override suspend fun validateKeyAttestation(request: KeyAttestationValidationRequest,): IdkResult<Ts1194723ValidationResult, IdkError> {
         if (request.material.format !in setOf(WalletUnitAttestationFormat.KEY_ATTESTATION_JWT, WalletUnitAttestationFormat.JWT)) {
             return Ok(
                 validationResult(
@@ -431,16 +443,17 @@ class Ts03WalletAttestationValidator(
                 ),
             )
         }
-        val decoded = decodeCompactJwt<Ts03KeyAttestationClaims>(request.material)
-            .getOrElse {
-                return Ok(
-                    validationResult(
-                        valid = false,
-                        format = request.material.format,
-                        errors = listOf(it.message.defaultMessage),
-                    ),
-                )
-            }
+        val decoded =
+            decodeCompactJwt<Ts03KeyAttestationClaims>(request.material)
+                .getOrElse {
+                    return Ok(
+                        validationResult(
+                            valid = false,
+                            format = request.material.format,
+                            errors = listOf(it.message.defaultMessage),
+                        ),
+                    )
+                }
         val errors = mutableListOf<String>()
         val evidence = mutableMapOf<String, String>()
         val now = request.validationTimeEpochSeconds ?: Clock.System.now().epochSeconds
@@ -496,13 +509,14 @@ class Ts03WalletAttestationValidator(
         val providerTrust = resolveWalletProviderTrust(decoded.claims.iss, decoded.header.x5c, request.trust, policy, now)
         validateTrustEvidence("Wallet Provider", providerTrust, policy.requireWalletProviderTrust, policy.acceptedSignerCertificateProfiles, now, errors, evidence)
 
-        evidence += mapOf(
-            "kind" to "KA",
-            "alg" to decoded.header.alg,
-            "issuer" to decoded.claims.iss,
-            "audience" to decoded.claims.aud,
-            "keyStorageSecurityLevel" to decoded.claims.keyStorage.securityLevel,
-        )
+        evidence +=
+            mapOf(
+                "kind" to "KA",
+                "alg" to decoded.header.alg,
+                "issuer" to decoded.claims.iss,
+                "audience" to decoded.claims.aud,
+                "keyStorageSecurityLevel" to decoded.claims.keyStorage.securityLevel,
+            )
         return Ok(validationResult(valid = errors.isEmpty(), format = request.material.format, evidence = evidence, errors = errors))
     }
 
@@ -683,9 +697,7 @@ class Ts03WalletAttestationValidator(
         }
     }
 
-    private inline fun <reified Claims> decodeCompactJwt(
-        material: WalletUnitAttestationMaterial,
-    ): IdkResult<Ts03DecodedJwt<Claims>, IdkError> {
+    private inline fun <reified Claims> decodeCompactJwt(material: WalletUnitAttestationMaterial,): IdkResult<Ts03DecodedJwt<Claims>, IdkError> {
         val parts = material.value.split('.')
         if (parts.size != 3) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "TS03 JWT must use compact JWS serialization"))
@@ -725,7 +737,11 @@ class Ts03WalletAttestationValidator(
         return status.substring(0, marker) to status.substring(marker + 1)
     }
 
-    private fun requireNotBlank(value: String, label: String, errors: MutableList<String>) {
+    private fun requireNotBlank(
+        value: String,
+        label: String,
+        errors: MutableList<String>
+    ) {
         if (value.isBlank()) errors += "$label is missing"
     }
 

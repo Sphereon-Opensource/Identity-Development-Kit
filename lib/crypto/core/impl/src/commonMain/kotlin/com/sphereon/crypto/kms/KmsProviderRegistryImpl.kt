@@ -130,13 +130,13 @@ class KmsProviderRegistryImpl(
         if (!force && lastProviderConfigRevision == revision) {
             return
         }
-        if (force || lastProviderConfigRevision != null && lastProviderConfigRevision != revision) {
+        if (force || (lastProviderConfigRevision != null && lastProviderConfigRevision != revision)) {
             snapshotCache.invalidateByPrefix(KMS_PROVIDERS_PREFIX)
         }
         val configProviders =
             kmsProviderManager
-            .createFromProperties(contextConfig, execution)
-            .sortedBy { it.id }
+                .createFromProperties(contextConfig, execution)
+                .sortedBy { it.id }
         val nextConfigManagedProviderIds = configProviders.mapTo(mutableSetOf()) { it.id }
 
         (configManagedProviderIds - nextConfigManagedProviderIds).forEach { removedProviderId ->
