@@ -54,6 +54,7 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         // Not needed for current command tests; return a simple error if used unexpectedly.
         return Ok(
             AuthorizationSession(
+                instanceId = args.instanceId,
                 sessionId = correlationId ?: "test",
                 correlationId = correlationId ?: "test",
                 queryId = args.queryId,
@@ -82,6 +83,7 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         val existing =
             entries[correlationId] ?: return Ok(
                 AuthorizationSession(
+                    instanceId = "verifier-instance-test-store-missing-session",
                     sessionId = correlationId,
                     correlationId = correlationId,
                     dcqlQuery =
@@ -111,6 +113,7 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         val existing =
             entries[correlationId] ?: return Ok(
                 AuthorizationSession(
+                    instanceId = "verifier-instance-test-store-missing-session",
                     sessionId = correlationId,
                     correlationId = correlationId,
                     dcqlQuery =
@@ -145,6 +148,7 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         val existing =
             entries[correlationId] ?: return Ok(
                 AuthorizationSession(
+                    instanceId = "verifier-instance-test-store-missing-session",
                     sessionId = correlationId,
                     correlationId = correlationId,
                     dcqlQuery =

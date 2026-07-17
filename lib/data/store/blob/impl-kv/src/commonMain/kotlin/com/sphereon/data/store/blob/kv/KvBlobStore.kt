@@ -98,6 +98,9 @@ class KvBlobStore(
         data: ByteArray,
         options: PutOptions,
     ): IdkResult<BlobDescriptor, IdkError> {
+        if (options.ifMatch != null || options.expectedRevision != null) {
+            return Err(BlobStoreError.Unsupported("conditional KV write").toIdkError())
+        }
         if (maxBlobSizeBytes > 0 && data.size > maxBlobSizeBytes) {
             return Err(BlobStoreError.QuotaExceeded("Blob size ${data.size} exceeds max $maxBlobSizeBytes bytes").toIdkError())
         }

@@ -72,8 +72,8 @@ import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorOperation
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorPolicy
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorRequest
-import com.sphereon.wallet.credential.WalletInstance
-import com.sphereon.wallet.credential.WalletInstancePurpose
+import com.sphereon.wallet.credential.WalletUnitProfile
+import com.sphereon.wallet.credential.WalletProfilePurpose
 import com.sphereon.wallet.credential.WalletOperation
 import com.sphereon.wallet.credential.WalletOperationType
 import com.sphereon.wallet.credential.WalletStorageMode
@@ -209,7 +209,7 @@ private class BodyReadTrackingBlobService(
 
     override suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError> {
         val path = info.path
-        if (path != null && path.startsWith("wallet-instances/") && path.endsWith("/body")) {
+        if (path != null && path.startsWith("wallet-units/") && path.endsWith("/body")) {
             bodyReadCount++
         }
         return delegate.getBlob(info)
@@ -244,11 +244,11 @@ private fun typeRef(value: String = "https://credentials.example.com/employee") 
 
 private fun makeRecord(
     id: String,
-    walletInstanceId: String = WALLET_A,
+    walletUnitId: String = WALLET_A,
     ref: CredentialTypeRef = typeRef(),
 ) = CredentialRecord(
     id = id,
-    walletInstanceId = walletInstanceId,
+    walletUnitId = walletUnitId,
     issuerRef = IdentifierRef(type = IdentifierType.DID, value = "did:example:issuer"),
     format = CredentialFormat.SD_JWT_DC,
     credentialTypeRefs = setOf(ref),
@@ -256,14 +256,14 @@ private fun makeRecord(
         listOf(
             CredentialInstance(
                 id = "$id-instance",
-                walletInstanceId = walletInstanceId,
+                walletUnitId = walletUnitId,
                 credentialRecordId = id,
                 format = CredentialFormat.SD_JWT_DC,
                 raw = "raw-$id",
                 bodyStorageRef =
                     BodyStorageRef(
                         kind = BodyStorageKind.BLOB,
-                        path = walletCredentialInstanceBodyPath(walletInstanceId, id, "$id-instance"),
+                        path = walletCredentialInstanceBodyPath(walletUnitId, id, "$id-instance"),
                         storeRef = StoreRef(id = "memory", type = "blob"),
                     ),
                 holderKeyRef = KeyRef(alias = "holder-key"),
@@ -303,7 +303,7 @@ class BlobWalletCredentialStoreTest {
         }
 
     @Test
-    fun putCredentialRejectsMismatchedWalletInstanceId() =
+    fun putCredentialRejectsMismatchedWalletUnitId() =
         runTest {
             val store = buildStore()
 
@@ -312,12 +312,12 @@ class BlobWalletCredentialStoreTest {
             assertTrue(result.isErr)
             assertTrue(
                 result.error.message.defaultMessage
-                    ?.contains("record.walletInstanceId") == true
+                    ?.contains("record.walletUnitId") == true
             )
         }
 
     @Test
-    fun sameCredentialRecordIdIsIsolatedPerWalletInstance() =
+    fun sameCredentialRecordIdIsIsolatedPerWalletUnit() =
         runTest {
             val store = buildStore()
             val baseRecordA = makeRecord("shared-record", WALLET_A)
@@ -437,7 +437,7 @@ class BlobWalletCredentialStoreTest {
         }
 
     @Test
-    fun metadataListIsWalletInstanceIsolatedAndDoesNotReadBodies() =
+    fun metadataListIsWalletUnitIsolatedAndDoesNotReadBodies() =
         runTest {
             val (tracking, store) = createTrackingStore()
             store.putCredential(WALLET_A, makeRecord("record-a", WALLET_A))
@@ -566,6 +566,25 @@ class BlobWalletCredentialStoreTest {
             assertEquals(listOf(sessionA.id), store.listSessions(WALLET_A, setOf(IssuanceSessionStatus.DEFERRED)).value.map { it.id })
             assertEquals("access-token-a", store.getDeferredAccessToken(WALLET_A, sessionA.id).value)
             assertNull(store.getDeferredAccessToken(WALLET_B, sessionA.id).value)
+        }
+
+    @Test
+    fun refreshTokenRoundTripsAndDoesNotCollideWithDeferredAccessToken() =
+        runTest {
+            val store = BlobWalletIssuanceSessionStore(createTestBlobService())
+            val credentialRecordId = "record-refresh-a"
+
+            val deferredRef = store.storeDeferredAccessToken(WALLET_A, credentialRecordId, "access-token-shared-id")
+            assertTrue(deferredRef.isOk)
+
+            val refreshRef = store.storeRefreshToken(WALLET_A, credentialRecordId, "refresh-token-a")
+            assertTrue(refreshRef.isOk)
+            assertTrue(refreshRef.value.id.endsWith("/refresh-token"))
+            assertTrue(refreshRef.value.id != deferredRef.value.id, "Refresh token blob path must not collide with the deferred access token blob path")
+
+            assertEquals("refresh-token-a", store.getRefreshToken(WALLET_A, credentialRecordId).value)
+            assertEquals("access-token-shared-id", store.getDeferredAccessToken(WALLET_A, credentialRecordId).value)
+            assertNull(store.getRefreshToken(WALLET_B, credentialRecordId).value)
         }
 
     @Test
@@ -755,7 +774,7 @@ class BlobWalletCredentialStoreTest {
             val earlierOperation =
                 WalletOperation(
                     id = earlierOperationId,
-                    walletInstanceId = WALLET_A,
+                    walletUnitId = WALLET_A,
                     credentialRecordId = baseRecord.id,
                     operationType = WalletOperationType.PUT_CREDENTIAL,
                     baseRemoteRevision = "remote-rev-1",
@@ -934,7 +953,7 @@ class BlobWalletCredentialStoreTest {
     @Test
     fun managedHybridProfileAndCredentialSurviveStoreRecreation() =
         runTest {
-            val walletInstanceId = "wallet-profile-employee"
+            val walletUnitId = "wallet-profile-employee"
             val localBlobBacking = InMemoryBlobBackingStorageImpl()
             val localKvBacking = InMemoryKvBackingStorageImpl()
             val remoteBlobBacking = InMemoryBlobBackingStorageImpl()
@@ -944,11 +963,11 @@ class BlobWalletCredentialStoreTest {
 
             fun remoteBlobService() = createTestBlobService(remoteBlobBacking, remoteKvBacking, "remote")
 
-            val instanceStore = BlobWalletInstanceStore(localBlobService())
+            val instanceStore = BlobWalletUnitStore(localBlobService())
             val profile =
                 StorageProfile(
-                    id = "$walletInstanceId:managed-hybrid",
-                    walletInstanceId = walletInstanceId,
+                    id = "$walletUnitId:managed-hybrid",
+                    walletUnitId = walletUnitId,
                     mode = WalletStorageMode.HYBRID,
                     localStoreRef = StoreRef(id = "local", type = "blob"),
                     remoteVaultRef = StoreRef(id = "remote", type = "vault"),
@@ -956,18 +975,18 @@ class BlobWalletCredentialStoreTest {
                     syncPolicyId = "wallet-managed-hybrid-sync",
                 )
             val instance =
-                WalletInstance(
-                    id = walletInstanceId,
+                WalletUnitProfile(
+                    id = walletUnitId,
                     ownerSubjectRef = IdentifierRef(type = IdentifierType("party"), value = "party-employee"),
                     label = "Employee",
-                    purpose = WalletInstancePurpose.WORK,
+                    purpose = WalletProfilePurpose.WORK,
                     storageProfileId = profile.id,
                     defaultHolderKeyPolicyId = "wallet-holder-key-managed",
                     trustDomainId = "tenant-a",
                     createdAt = NOW,
                     updatedAt = NOW,
                 )
-            assertTrue(instanceStore.putWalletInstance(instance, profile).isOk)
+            assertTrue(instanceStore.putWalletUnit(instance, profile).isOk)
 
             val localStore = BlobWalletCredentialStore(localBlobService(), TestWalletCredentialBodyProtector)
             val remoteStore = RemoteBlobWalletCredentialStore(BlobWalletCredentialStore(remoteBlobService(), TestWalletCredentialBodyProtector))
@@ -979,9 +998,9 @@ class BlobWalletCredentialStoreTest {
                     remoteStore = remoteStore,
                     hybridStore = HybridWalletCredentialStore(localStore, remoteStore, queue, "device-1"),
                 )
-            assertTrue(router.putCredential(walletInstanceId, makeRecord("record-managed", walletInstanceId)).isOk)
+            assertTrue(router.putCredential(walletUnitId, makeRecord("record-managed", walletUnitId)).isOk)
 
-            val recreatedInstanceStore = BlobWalletInstanceStore(localBlobService())
+            val recreatedInstanceStore = BlobWalletUnitStore(localBlobService())
             val recreatedLocalStore = BlobWalletCredentialStore(localBlobService(), TestWalletCredentialBodyProtector)
             val recreatedRemoteStore = RemoteBlobWalletCredentialStore(BlobWalletCredentialStore(remoteBlobService(), TestWalletCredentialBodyProtector))
             val recreatedRouter =
@@ -998,8 +1017,8 @@ class BlobWalletCredentialStoreTest {
                         ),
                 )
 
-            assertEquals(profile, recreatedInstanceStore.resolveStorageProfile(walletInstanceId).value)
-            val restored = recreatedRouter.getCredential(walletInstanceId, "record-managed")
+            assertEquals(profile, recreatedInstanceStore.resolveStorageProfile(walletUnitId).value)
+            val restored = recreatedRouter.getCredential(walletUnitId, "record-managed")
             assertTrue(restored.isOk)
             assertEquals(
                 "raw-record-managed",
@@ -1008,7 +1027,7 @@ class BlobWalletCredentialStoreTest {
                     ?.single()
                     ?.raw
             )
-            assertEquals(WalletStorageMode.HYBRID, recreatedInstanceStore.getStorageProfile(walletInstanceId).value?.mode)
+            assertEquals(WalletStorageMode.HYBRID, recreatedInstanceStore.getStorageProfile(walletUnitId).value?.mode)
         }
 
     @Test
@@ -1025,7 +1044,7 @@ class BlobWalletCredentialStoreTest {
                                 "wallet-bad" to
                                     StorageProfile(
                                         id = "wallet-bad-profile",
-                                        walletInstanceId = "wallet-bad",
+                                        walletUnitId = "wallet-bad",
                                         mode = WalletStorageMode.HYBRID,
                                         localStoreRef = StoreRef(id = "local", type = "blob"),
                                         remoteVaultRef = null,
@@ -1088,7 +1107,7 @@ class BlobWalletCredentialStoreTest {
                                 "wallet-bad" to
                                     StorageProfile(
                                         id = "wallet-bad-profile",
-                                        walletInstanceId = "wallet-bad",
+                                        walletUnitId = "wallet-bad",
                                         mode = WalletStorageMode.HYBRID,
                                         localStoreRef = StoreRef(id = "local", type = "blob"),
                                         remoteVaultRef = null,
@@ -1191,11 +1210,11 @@ class BlobWalletCredentialStoreTest {
 
     private fun makeSession(
         id: String,
-        walletInstanceId: String,
+        walletUnitId: String,
         status: IssuanceSessionStatus,
     ) = IssuanceSession(
         id = id,
-        walletInstanceId = walletInstanceId,
+        walletUnitId = walletUnitId,
         issuerRef = IdentifierRef(type = IdentifierType.DID, value = "did:example:issuer"),
         credentialIssuerUrl = "did:example:issuer",
         credentialConfigurationId = "EmployeeCredential",
@@ -1206,11 +1225,11 @@ class BlobWalletCredentialStoreTest {
 
     private fun makeOperation(
         id: String,
-        walletInstanceId: String,
+        walletUnitId: String,
         createdAt: Instant,
     ) = WalletOperation(
         id = id,
-        walletInstanceId = walletInstanceId,
+        walletUnitId = walletUnitId,
         credentialRecordId = "record-1",
         operationType = WalletOperationType.PUT_CREDENTIAL,
         baseRemoteRevision = null,
@@ -1219,12 +1238,12 @@ class BlobWalletCredentialStoreTest {
     )
 
     private fun storageProfile(
-        walletInstanceId: String,
+        walletUnitId: String,
         mode: WalletStorageMode,
     ): StorageProfile =
         StorageProfile(
-            id = "$walletInstanceId-profile",
-            walletInstanceId = walletInstanceId,
+            id = "$walletUnitId-profile",
+            walletUnitId = walletUnitId,
             mode = mode,
             localStoreRef =
                 when (mode) {
@@ -1243,9 +1262,9 @@ class BlobWalletCredentialStoreTest {
 private class TestStorageProfileResolver(
     private val profiles: Map<String, StorageProfile>,
 ) : WalletStorageProfileResolver {
-    override suspend fun resolveStorageProfile(walletInstanceId: String): IdkResult<StorageProfile, IdkError> =
-        profiles[walletInstanceId]?.let { Ok(it) }
-            ?: Err(IdkError.NOT_FOUND_ERROR(message = "Storage profile for wallet '$walletInstanceId' was not found"))
+    override suspend fun resolveStorageProfile(walletUnitId: String): IdkResult<StorageProfile, IdkError> =
+        profiles[walletUnitId]?.let { Ok(it) }
+            ?: Err(IdkError.NOT_FOUND_ERROR(message = "Storage profile for wallet '$walletUnitId' was not found"))
 }
 
 private class RemoteBlobWalletCredentialStore(
@@ -1262,76 +1281,76 @@ private class RecordingWalletIssuanceSessionStore :
     private val secrets: MutableMap<String, String> = linkedMapOf()
 
     fun sessionFor(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
-    ): IssuanceSession? = sessions[key(walletInstanceId, issuanceSessionId)]
+    ): IssuanceSession? = sessions[key(walletUnitId, issuanceSessionId)]
 
     fun secretFor(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
-    ): String? = secrets[key(walletInstanceId, issuanceSessionId)]
+    ): String? = secrets[key(walletUnitId, issuanceSessionId)]
 
     override suspend fun putSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         session: IssuanceSession,
     ): IdkResult<IssuanceSession, IdkError> {
-        calls += "put:$walletInstanceId:${session.id}"
-        sessions[key(walletInstanceId, session.id)] = session
+        calls += "put:$walletUnitId:${session.id}"
+        sessions[key(walletUnitId, session.id)] = session
         return Ok(session)
     }
 
     override suspend fun getSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<IssuanceSession?, IdkError> {
-        calls += "get:$walletInstanceId:$issuanceSessionId"
-        return Ok(sessions[key(walletInstanceId, issuanceSessionId)]?.takeIf { it.walletInstanceId == walletInstanceId })
+        calls += "get:$walletUnitId:$issuanceSessionId"
+        return Ok(sessions[key(walletUnitId, issuanceSessionId)]?.takeIf { it.walletUnitId == walletUnitId })
     }
 
     override suspend fun listSessions(
-        walletInstanceId: String,
+        walletUnitId: String,
         statuses: Set<IssuanceSessionStatus>,
     ): IdkResult<List<IssuanceSession>, IdkError> {
-        calls += "list:$walletInstanceId"
+        calls += "list:$walletUnitId"
         return Ok(
             sessions.values.filter {
-                it.walletInstanceId == walletInstanceId && (statuses.isEmpty() || it.status in statuses)
+                it.walletUnitId == walletUnitId && (statuses.isEmpty() || it.status in statuses)
             },
         )
     }
 
     override suspend fun storeDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
         accessToken: String,
     ): IdkResult<SecretRef, IdkError> {
-        calls += "secret-put:$walletInstanceId:$issuanceSessionId"
-        secrets[key(walletInstanceId, issuanceSessionId)] = accessToken
-        return Ok(SecretRef(id = "secret:$walletInstanceId:$issuanceSessionId", storeRef = StoreRef(id = "memory", type = "test")))
+        calls += "secret-put:$walletUnitId:$issuanceSessionId"
+        secrets[key(walletUnitId, issuanceSessionId)] = accessToken
+        return Ok(SecretRef(id = "secret:$walletUnitId:$issuanceSessionId", storeRef = StoreRef(id = "memory", type = "test")))
     }
 
     override suspend fun getDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<String?, IdkError> {
-        calls += "secret-get:$walletInstanceId:$issuanceSessionId"
-        return Ok(secrets[key(walletInstanceId, issuanceSessionId)])
+        calls += "secret-get:$walletUnitId:$issuanceSessionId"
+        return Ok(secrets[key(walletUnitId, issuanceSessionId)])
     }
 
     override suspend fun deleteSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<Boolean, IdkError> {
-        calls += "delete:$walletInstanceId:$issuanceSessionId"
-        val sessionRemoved = sessions.remove(key(walletInstanceId, issuanceSessionId)) != null
-        val secretRemoved = secrets.remove(key(walletInstanceId, issuanceSessionId)) != null
+        calls += "delete:$walletUnitId:$issuanceSessionId"
+        val sessionRemoved = sessions.remove(key(walletUnitId, issuanceSessionId)) != null
+        val secretRemoved = secrets.remove(key(walletUnitId, issuanceSessionId)) != null
         return Ok(sessionRemoved || secretRemoved)
     }
 
     private fun key(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
-    ): String = "$walletInstanceId:$issuanceSessionId"
+    ): String = "$walletUnitId:$issuanceSessionId"
 }
 
 private class RecordingDeferredAccessTokenRemoteMirrorPolicy(
@@ -1353,61 +1372,61 @@ private class RecordingWalletCredentialStore :
     private val records: MutableMap<String, CredentialRecord> = linkedMapOf()
 
     override suspend fun putCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
     ): IdkResult<CredentialRecord, IdkError> {
-        calls += "put:$walletInstanceId:${record.id}"
+        calls += "put:$walletUnitId:${record.id}"
         records[record.id] = record
         return Ok(record)
     }
 
     override suspend fun getCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialRecord?, IdkError> {
-        calls += "get:$walletInstanceId:$credentialRecordId"
-        return Ok(records[credentialRecordId]?.takeIf { it.walletInstanceId == walletInstanceId })
+        calls += "get:$walletUnitId:$credentialRecordId"
+        return Ok(records[credentialRecordId]?.takeIf { it.walletUnitId == walletUnitId })
     }
 
     override suspend fun getMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialMetadata?, IdkError> {
-        calls += "metadata:$walletInstanceId:$credentialRecordId"
-        return Ok(records[credentialRecordId]?.takeIf { it.walletInstanceId == walletInstanceId }?.metadata(NOW))
+        calls += "metadata:$walletUnitId:$credentialRecordId"
+        return Ok(records[credentialRecordId]?.takeIf { it.walletUnitId == walletUnitId }?.metadata(NOW))
     }
 
     override suspend fun listMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter,
     ): IdkResult<List<CredentialMetadata>, IdkError> {
-        calls += "list:$walletInstanceId"
+        calls += "list:$walletUnitId"
         return Ok(
             records.values
-                .filter { it.walletInstanceId == walletInstanceId }
+                .filter { it.walletUnitId == walletUnitId }
                 .map { it.metadata(NOW) }
                 .filter { it.matches(filter) }
         )
     }
 
     override suspend fun findByCredentialTypeRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         ref: CredentialTypeRef,
     ): IdkResult<List<CredentialMetadata>, IdkError> {
-        calls += "find:$walletInstanceId:${ref.value}"
+        calls += "find:$walletUnitId:${ref.value}"
         return Ok(
             records.values
-                .filter { it.walletInstanceId == walletInstanceId }
+                .filter { it.walletUnitId == walletUnitId }
                 .map { it.metadata(NOW) }
                 .filter { it.hasTypeRef(ref) }
         )
     }
 
     override suspend fun deleteCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<Boolean, IdkError> {
-        calls += "delete:$walletInstanceId:$credentialRecordId"
+        calls += "delete:$walletUnitId:$credentialRecordId"
         return Ok(records.remove(credentialRecordId) != null)
     }
 }

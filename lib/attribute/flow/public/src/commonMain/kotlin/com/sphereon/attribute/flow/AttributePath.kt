@@ -85,7 +85,16 @@ object InputFieldIdSerializer : KSerializer<InputFieldId> {
 @Serializable(with = AttributeProvenanceRefSerializer::class)
 data class AttributeProvenanceRef(
     val value: String,
-)
+) {
+    companion object {
+        /**
+         * The canonical provenance ref for a connector-produced attribute: `connector:<bindingId>`.
+         * Producers writing connector provenance and consumers checking membership against it must
+         * both derive the ref through this factory so the string format exists once.
+         */
+        fun forConnector(bindingId: String): AttributeProvenanceRef = AttributeProvenanceRef("connector:$bindingId")
+    }
+}
 
 object AttributeProvenanceRefSerializer : KSerializer<AttributeProvenanceRef> {
     override val descriptor: SerialDescriptor =

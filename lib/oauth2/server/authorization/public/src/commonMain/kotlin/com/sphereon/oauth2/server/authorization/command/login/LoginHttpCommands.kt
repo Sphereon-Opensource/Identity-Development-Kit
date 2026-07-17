@@ -50,7 +50,7 @@ interface LoginPageHttpEndpointCommand : HttpEndpointCommand {
 }
 
 /**
- * `POST /login`: validate `username` / `password` form fields, mint an
+ * `POST /login`: validate `username` / `password` form fields or a WebAuthn assertion, mint an
  * [com.sphereon.oauth2.server.authorization.storage.OidcLoginSession], set the `oidc_login_sid`
  * cookie, and 302-redirect back to the pending authorization session's `return_url` (typically
  * `/authorize/callback?session_id=...`). On invalid credentials the adapter redirects back to
@@ -69,7 +69,31 @@ interface LoginSubmitHttpEndpointCommand : HttpEndpointCommand {
                 operationId = "submitLogin",
                 commandId = COMMAND_ID,
                 tags = setOf("authorization", "login"),
-                summary = "Submit username + password to the Authorization Server's login form",
+                summary = "Submit password or WebAuthn credentials to the Authorization Server's login form",
+            )
+    }
+}
+
+/**
+ * `POST /login/webauthn/assertion/begin`: mint WebAuthn assertion options for the AS login page
+ * or a wallet edge. The browser performs `navigator.credentials.get(...)`; the result is then
+ * submitted through `POST /login`.
+ */
+@JsExportCompat
+interface LoginWebAuthnAssertionBeginHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = "oauth2.authorization.login-webauthn-assertion-begin"
+
+        val ENDPOINT: HttpEndpointDescriptor =
+            HttpEndpointDescriptor(
+                method = HttpMethod.POST,
+                pathPattern = "/login/webauthn/assertion/begin",
+                consumes = setOf(MediaType.ApplicationJson),
+                produces = setOf(MediaType.ApplicationJson),
+                operationId = "beginLoginWebAuthnAssertion",
+                commandId = COMMAND_ID,
+                tags = setOf("authorization", "login", "webauthn"),
+                summary = "Begin a WebAuthn assertion ceremony for Authorization Server login",
             )
     }
 }

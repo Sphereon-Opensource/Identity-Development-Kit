@@ -65,6 +65,7 @@ import com.sphereon.openid.oid4vci.holder.SelectAuthorizationServerCommand
 import com.sphereon.openid.oid4vci.holder.SendNotificationArgs
 import com.sphereon.openid.oid4vci.holder.SendNotificationCommand
 import com.sphereon.openid.oid4vci.holder.TokenResponseWithContext
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -137,6 +138,10 @@ class Oid4vciHolderServiceImpl(
         txCode: String?,
         clientId: String?,
         redirectUri: String?,
+        dpopProofJwt: String?,
+        clientAttestationJwt: String?,
+        clientAttestationPopJwt: String?,
+        clientAuthentication: ClientAuthenticationConfig?,
     ): IdkResult<TokenResponseWithContext, IdkError> =
         exchangePreAuthorizedCodeCommand.execute(
             ExchangePreAuthorizedCodeArgs(
@@ -145,33 +150,40 @@ class Oid4vciHolderServiceImpl(
                 txCode = txCode,
                 clientId = clientId,
                 redirectUri = redirectUri,
+                dpopProofJwt = dpopProofJwt,
+                clientAttestationJwt = clientAttestationJwt,
+                clientAttestationPopJwt = clientAttestationPopJwt,
+                clientAuthentication = clientAuthentication,
             ),
         )
 
     override suspend fun createCredentialRequestProof(
         issuerUrl: String,
         cNonce: String?,
-        signingKeyId: String,
+        signingKeyIds: List<String>,
         signingAlgorithm: String,
         clientId: String?,
-        count: Int,
         keyInclusionMode: JwsIdentifierMode,
+        keyAttestationJwt: String?,
+        proofType: String,
     ): IdkResult<CreatedProof, IdkError> =
         createCredentialRequestProofCommand.execute(
             CreateCredentialRequestProofArgs(
                 issuerUrl = issuerUrl,
                 cNonce = cNonce,
-                signingKeyId = signingKeyId,
+                signingKeyIds = signingKeyIds,
                 signingAlgorithm = signingAlgorithm,
                 clientId = clientId,
-                count = count,
                 keyInclusionMode = keyInclusionMode,
+                keyAttestationJwt = keyAttestationJwt,
+                proofType = proofType,
             ),
         )
 
     override suspend fun requestCredential(
         credentialEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String?,
         credentialConfigurationId: String?,
         credentialIdentifier: String?,
         proofs: CredentialRequestProofs?,
@@ -185,6 +197,7 @@ class Oid4vciHolderServiceImpl(
             RequestCredentialArgs(
                 credentialEndpoint = credentialEndpoint,
                 accessToken = accessToken,
+                dpopProofJwt = dpopProofJwt,
                 credentialConfigurationId = credentialConfigurationId,
                 credentialIdentifier = credentialIdentifier,
                 proofs = proofs,
@@ -273,6 +286,10 @@ class Oid4vciHolderServiceImpl(
         codeVerifier: String,
         redirectUri: String,
         clientId: String?,
+        dpopProofJwt: String?,
+        clientAttestationJwt: String?,
+        clientAttestationPopJwt: String?,
+        clientAuthentication: ClientAuthenticationConfig?,
     ): IdkResult<TokenResponseWithContext, IdkError> =
         exchangeAuthorizationCodeCommand.execute(
             ExchangeAuthorizationCodeArgs(
@@ -281,6 +298,10 @@ class Oid4vciHolderServiceImpl(
                 codeVerifier = codeVerifier,
                 redirectUri = redirectUri,
                 clientId = clientId,
+                dpopProofJwt = dpopProofJwt,
+                clientAttestationJwt = clientAttestationJwt,
+                clientAttestationPopJwt = clientAttestationPopJwt,
+                clientAuthentication = clientAuthentication,
             ),
         )
 }

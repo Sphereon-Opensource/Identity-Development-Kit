@@ -16,7 +16,9 @@
 
 package com.sphereon.wallet.credential
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 
 /**
@@ -44,7 +46,7 @@ interface WalletDeferredAccessTokenRemoteMirrorPolicy {
 }
 
 data class WalletDeferredAccessTokenRemoteMirrorRequest(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val issuanceSessionId: String,
     val operation: WalletDeferredAccessTokenRemoteMirrorOperation,
 )
@@ -62,33 +64,50 @@ enum class WalletDeferredAccessTokenRemoteMirrorOperation {
  */
 interface WalletIssuanceSessionStore {
     suspend fun putSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         session: IssuanceSession,
     ): IdkResult<IssuanceSession, IdkError>
 
     suspend fun getSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<IssuanceSession?, IdkError>
 
     suspend fun listSessions(
-        walletInstanceId: String,
+        walletUnitId: String,
         statuses: Set<IssuanceSessionStatus> = emptySet(),
     ): IdkResult<List<IssuanceSession>, IdkError>
 
     suspend fun storeDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
         accessToken: String,
     ): IdkResult<SecretRef, IdkError>
 
     suspend fun getDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<String?, IdkError>
 
+    /**
+     * Persists the OAuth2 refresh token for a credential record and returns a [SecretRef] to it (for
+     * later silent replenishment, ARF ISSU_45/65). Default is a no-op-unsupported: stores that do not
+     * yet persist refresh tokens (e.g. remote/EDK stores) inherit this and the caller degrades gracefully.
+     */
+    suspend fun storeRefreshToken(
+        walletUnitId: String,
+        credentialRecordId: String,
+        refreshToken: String,
+    ): IdkResult<SecretRef, IdkError> = Err(IdkError.fromString(code = "WALLET_REFRESH_TOKEN_PERSISTENCE_UNSUPPORTED", message = "This wallet issuance session store does not persist refresh tokens"))
+
+    /** Reads back a refresh token stored by [storeRefreshToken]. Default returns null (none available). */
+    suspend fun getRefreshToken(
+        walletUnitId: String,
+        credentialRecordId: String,
+    ): IdkResult<String?, IdkError> = Ok(null)
+
     suspend fun deleteSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<Boolean, IdkError>
 }

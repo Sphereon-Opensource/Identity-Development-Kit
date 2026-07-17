@@ -52,37 +52,37 @@ class HybridWalletIssuanceSessionStore(
         WalletDeferredAccessTokenRemoteMirrorPolicy.deny,
 ) : HybridWalletIssuanceSessionStoreDelegate {
     override suspend fun putSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         session: IssuanceSession,
     ): IdkResult<IssuanceSession, IdkError> {
-        val local = localStore.putSession(walletInstanceId, session)
+        val local = localStore.putSession(walletUnitId, session)
         if (local.isErr) return Err(local.error)
-        remoteStore.putSession(walletInstanceId, session)
+        remoteStore.putSession(walletUnitId, session)
         return local
     }
 
     override suspend fun getSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<IssuanceSession?, IdkError> {
-        val local = localStore.getSession(walletInstanceId, issuanceSessionId)
+        val local = localStore.getSession(walletUnitId, issuanceSessionId)
         if (local.isOk && local.value != null) return local
 
-        val remote = remoteStore.getSession(walletInstanceId, issuanceSessionId)
+        val remote = remoteStore.getSession(walletUnitId, issuanceSessionId)
         if (remote.isErr) {
             return if (local.isErr) Err(local.error) else Err(remote.error)
         }
         val session = remote.value ?: return if (local.isErr) Err(local.error) else Ok(null)
-        val cache = localStore.putSession(walletInstanceId, session)
+        val cache = localStore.putSession(walletUnitId, session)
         return if (cache.isOk) Ok(session) else Err(cache.error)
     }
 
     override suspend fun listSessions(
-        walletInstanceId: String,
+        walletUnitId: String,
         statuses: Set<IssuanceSessionStatus>,
     ): IdkResult<List<IssuanceSession>, IdkError> {
-        val local = localStore.listSessions(walletInstanceId, statuses)
-        val remote = remoteStore.listSessions(walletInstanceId, statuses)
+        val local = localStore.listSessions(walletUnitId, statuses)
+        val remote = remoteStore.listSessions(walletUnitId, statuses)
         if (local.isErr && remote.isErr) return Err(local.error)
         if (local.isErr) return remote
         if (remote.isErr) return local
@@ -94,33 +94,33 @@ class HybridWalletIssuanceSessionStore(
     }
 
     override suspend fun storeDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
         accessToken: String,
     ): IdkResult<SecretRef, IdkError> {
-        val local = localStore.storeDeferredAccessToken(walletInstanceId, issuanceSessionId, accessToken)
+        val local = localStore.storeDeferredAccessToken(walletUnitId, issuanceSessionId, accessToken)
         if (local.isErr) return Err(local.error)
         if (
             canMirrorDeferredAccessToken(
-                walletInstanceId,
+                walletUnitId,
                 issuanceSessionId,
                 WalletDeferredAccessTokenRemoteMirrorOperation.STORE_REMOTE_COPY,
             )
         ) {
-            remoteStore.storeDeferredAccessToken(walletInstanceId, issuanceSessionId, accessToken)
+            remoteStore.storeDeferredAccessToken(walletUnitId, issuanceSessionId, accessToken)
         }
         return local
     }
 
     override suspend fun getDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<String?, IdkError> {
-        val local = localStore.getDeferredAccessToken(walletInstanceId, issuanceSessionId)
+        val local = localStore.getDeferredAccessToken(walletUnitId, issuanceSessionId)
         if (local.isOk && local.value != null) return local
         if (
             !canMirrorDeferredAccessToken(
-                walletInstanceId,
+                walletUnitId,
                 issuanceSessionId,
                 WalletDeferredAccessTokenRemoteMirrorOperation.READ_REMOTE_COPY,
             )
@@ -128,21 +128,21 @@ class HybridWalletIssuanceSessionStore(
             return if (local.isErr) Err(local.error) else Ok(null)
         }
 
-        val remote = remoteStore.getDeferredAccessToken(walletInstanceId, issuanceSessionId)
+        val remote = remoteStore.getDeferredAccessToken(walletUnitId, issuanceSessionId)
         if (remote.isErr) {
             return if (local.isErr) Err(local.error) else Err(remote.error)
         }
         val token = remote.value ?: return if (local.isErr) Err(local.error) else Ok(null)
-        val cache = localStore.storeDeferredAccessToken(walletInstanceId, issuanceSessionId, token)
+        val cache = localStore.storeDeferredAccessToken(walletUnitId, issuanceSessionId, token)
         return if (cache.isOk) Ok(token) else Err(cache.error)
     }
 
     override suspend fun deleteSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<Boolean, IdkError> {
-        val local = localStore.deleteSession(walletInstanceId, issuanceSessionId)
-        val remote = remoteStore.deleteSession(walletInstanceId, issuanceSessionId)
+        val local = localStore.deleteSession(walletUnitId, issuanceSessionId)
+        val remote = remoteStore.deleteSession(walletUnitId, issuanceSessionId)
         return when {
             local.isOk && remote.isOk -> Ok(local.value || remote.value)
             local.isOk -> local
@@ -152,13 +152,13 @@ class HybridWalletIssuanceSessionStore(
     }
 
     private suspend fun canMirrorDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
         operation: WalletDeferredAccessTokenRemoteMirrorOperation,
     ): Boolean =
         deferredAccessTokenRemoteMirrorPolicy.allowRemoteMirror(
             WalletDeferredAccessTokenRemoteMirrorRequest(
-                walletInstanceId = walletInstanceId,
+                walletUnitId = walletUnitId,
                 issuanceSessionId = issuanceSessionId,
                 operation = operation,
             ),

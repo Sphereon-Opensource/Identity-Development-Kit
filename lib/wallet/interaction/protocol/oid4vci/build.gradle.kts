@@ -41,9 +41,16 @@ kotlin {
             dependencies {
                 api(projects.libWalletInteractionPublic)
                 api(projects.libWalletPublic)
+                api(projects.libWalletWscaPublic)
                 api(projects.libOpenidOid4vciHolderPublic)
                 api(projects.libOpenidOid4vciCommonPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
+                // SD-JWT VC verification command (sdjwt.vc.verify): the receiver verifies the
+                // issuer signature of an issued SD-JWT VC on receipt before storing it.
+                api(projects.libSdjwtPublic)
+                // mDoc CBOR codecs (IssuerSignedCborCodec / MobileSecurityObjectCborCodec): the
+                // receiver derives the actual mdoc doctype from the issued payload.
+                implementation(projects.libMdocCoreImpl)
             }
         }
         val commonTest by getting {

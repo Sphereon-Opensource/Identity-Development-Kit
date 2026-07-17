@@ -20,6 +20,7 @@ import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.wallet.credential.CredentialFormat
+import com.sphereon.wallet.credential.CredentialSubjectExtractor
 import com.sphereon.wallet.credential.IdentifierRef
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -33,27 +34,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Extracts the credential subject identifier(s) from an issued credential's raw bytes.
- *
- * Returns a list because W3C VCs allow multiple credential subjects. No cryptographic
- * verification is performed — the payload is already issuer-signed and trusted at this
- * point in the issuance flow.
- */
-interface CredentialSubjectExtractor {
-    /**
-     * Extract subject [IdentifierRef]s from [raw] according to [format].
-     *
-     * Returns an empty list when the format carries no standard subject identifier
-     * (e.g. mso_mdoc) or when no subject is present in the payload. Never throws.
-     */
-    fun extractSubjects(
-        format: CredentialFormat,
-        raw: String
-    ): List<IdentifierRef>
-}
-
-/**
- * Default implementation. Uses IDK's [SdJwtCodec] for SD-JWT variants and
+ * Default implementation of [CredentialSubjectExtractor] (the interface lives in lib-wallet-public;
+ * this class stays here in lib-wallet-impl). Uses IDK's [SdJwtCodec] for SD-JWT variants and
  * [JwsUtils.decodeBase64UrlToJson] for plain-JWT variants. mdoc returns empty by design
  * (ISO 18013-5 carries no globally scoped subject URI).
  */

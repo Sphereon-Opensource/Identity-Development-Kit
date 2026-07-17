@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.holder.impl
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
+import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.ktor.http.client.getOptional
 import com.sphereon.ktor.http.client.getOrDefault
 import com.sphereon.ktor.http.client.getRequired
@@ -26,6 +27,8 @@ import io.ktor.http.Url
 import io.ktor.http.parametersOf
 import io.ktor.http.parseQueryString
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -204,4 +207,60 @@ class ParseAuthorizationRequestCommandImplTest {
 
             assertEquals("test-client", params["client_id"])
         }
+
+    @Test
+    fun `prefixed OID4VP client id remains intact for JAR issuer validation`() {
+        val clientId = "x509_hash:Wqugw4oG6VggvcQp94a-TFC7jx01I14_GM27MOXRv5A"
+
+        assertEquals(clientId, oid4vpJarIssuer(clientId))
+    }
+
+    @Test
+    fun `signed x509_san_dns declaration selects x5c verification for bare ISO client id`() {
+        assertEquals(
+            ClientIdScheme.X509_SAN_DNS,
+            jarVerificationScheme(
+                clientId = "api.playground.france-identite.gouv.fr",
+                clientIdSchemeHint = "x509_san_dns",
+            ),
+        )
+    }
+
+    @Test
+    fun `ISO mdoc presentation definition is normalized to the wallet credential query`() {
+        val presentationDefinition =
+            Json.parseToJsonElement(
+                """
+                {
+                  "id":"eu.europa.ec.eudi.pid.1",
+                  "input_descriptors":[{
+                    "id":"eu.europa.ec.eudi.pid.1",
+                    "format":{"mso_mdoc":{"alg":["ES256"]}},
+                    "constraints":{
+                      "limit_disclosure":"required",
+                      "fields":[
+                        {"path":["${'$'}['eu.europa.ec.eudi.pid.1']['family_name']"],"intent_to_retain":false},
+                        {"path":["${'$'}['eu.europa.ec.eudi.pid.1']['given_name']"],"intent_to_retain":false}
+                      ]
+                    }
+                  }]
+                }
+                """.trimIndent(),
+            )
+
+        val result = presentationDefinitionToDcql(presentationDefinition)
+
+        assertTrue(result is Ok)
+        val query = (result as Ok).value.credentials!!.single()
+        assertEquals("eu.europa.ec.eudi.pid.1", query.id)
+        assertEquals("mso_mdoc", query.format)
+        assertEquals("eu.europa.ec.eudi.pid.1", query.meta!!["doctype_value"]!!.jsonPrimitive.content)
+        assertEquals(
+            listOf(
+                listOf("eu.europa.ec.eudi.pid.1", "family_name"),
+                listOf("eu.europa.ec.eudi.pid.1", "given_name"),
+            ),
+            query.claims!!.map { it.path },
+        )
+    }
 }

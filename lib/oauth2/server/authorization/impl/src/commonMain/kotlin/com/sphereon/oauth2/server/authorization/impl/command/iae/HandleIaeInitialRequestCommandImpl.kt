@@ -27,8 +27,9 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.client.command.ParseJarArgs
 import com.sphereon.oauth2.client.command.ParseJarCommand
-import com.sphereon.oauth2.server.authorization.command.HandleIaeInitialRequestArgs
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.server.authorization.command.HandleIaeInitialRequestCommand
+import com.sphereon.oauth2.server.authorization.command.HandleIaeInitialRequestArgs
 import com.sphereon.oauth2.server.authorization.command.IaeResult
 import com.sphereon.oauth2.server.authorization.impl.store.KvIaeSessionStore
 import com.sphereon.oauth2.server.authorization.model.IaeErrorResponse
@@ -83,6 +84,7 @@ class HandleIaeInitialRequestCommandImpl(
     private val parseJarCommand: ParseJarCommand? = null,
     private val verifierService: Oid4vpVerifierService? = null,
     private val policyResolver: CredentialIssuancePolicyResolver? = null,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
 ) : TypedServiceCommandAdapter<HandleIaeInitialRequestArgs, IaeResult, IdkError>(
         commandId = HandleIaeInitialRequestCommand.COMMAND_ID,
         execution = execution,
@@ -214,19 +216,18 @@ class HandleIaeInitialRequestCommandImpl(
         // Step 3: Determine required interaction type from per-credential policy (default OPENID4VP_PRESENTATION)
         val requiredInteractionType = determineRequiredInteractionType(args)
 
-        // Step 3b: Reject VP interaction when OID4VP verifier is not wired
-        if (requiredInteractionType == IaeInteractionTypes.OPENID4VP_PRESENTATION && verifierService == null) {
-            return Ok(
-                IaeResult.Error(
-                    IaeErrorResponse(
-                        error = IaeErrors.INVALID_REQUEST,
-                        errorDescription =
-                            "IAE interaction type openid4vp_presentation requires a configured OID4VP verifier service, but none is available. " +
-                                "Either configure a verifier service or change the IAE interaction type.",
-                    ),
-                ),
-            )
-        }
+        // Step 3b: Resolve the required verifier once. There is no unverifiable fallback request.
+        val requiredVerifierService =
+            if (requiredInteractionType == IaeInteractionTypes.OPENID4VP_PRESENTATION) {
+                verifierService
+                    ?: return Err(
+                        IdkError.INVALID_STATE(
+                            message = "IAE OpenID4VP presentation is enabled without an OID4VP verifier service",
+                        ),
+                    )
+            } else {
+                null
+            }
 
         // Step 4: Check wallet supports the required type
         if (!args.interactionTypesSupported.contains(requiredInteractionType)) {
@@ -239,6 +240,23 @@ class HandleIaeInitialRequestCommandImpl(
                 ),
             )
         }
+
+        // The embedded OID4VP protocol session is owned by the active authorization-server
+        // instance. Resolve that identity once, before either the verifier session or the IAE
+        // session is created, and pass the captured value through the complete create operation.
+        // A missing routing identity is a configuration error; inventing a default would make
+        // the resulting history impossible to attribute to its owning instance.
+        val verifierInstanceId =
+            if (requiredInteractionType == IaeInteractionTypes.OPENID4VP_PRESENTATION) {
+                asInstanceIdProvider.currentAsInstanceId()?.trim()?.takeIf(String::isNotEmpty)
+                    ?: return Err(
+                        IdkError.INVALID_STATE(
+                            message = "No authorization-server instance is active for the embedded OpenID4VP session",
+                        ),
+                    )
+            } else {
+                null
+            }
 
         // Step 5: Generate unique authSession token and vpNonce
         val authSession = generateToken("iae")
@@ -262,6 +280,8 @@ class HandleIaeInitialRequestCommandImpl(
                             clientId = args.clientId,
                             responseUri = args.redirectUri,
                             dcqlQueryId = dcqlQueryId,
+                            instanceId = requireNotNull(verifierInstanceId),
+                            verifierService = requireNotNull(requiredVerifierService),
                         )
                     if (pair == null) {
                         return Ok(
@@ -393,13 +413,10 @@ class HandleIaeInitialRequestCommandImpl(
     /**
      * Builds the OpenID4VP authorization request to embed in the IAE interaction response.
      *
-     * When a [verifierService] is injected, delegates to
+     * Delegates to
      * [Oid4vpVerifierService.createAuthorizationRequest] so that the verifier creates a proper
      * session with DCQL query and stores it for later validation.  The resulting
      * [AuthorizationRequest] is serialized to a [JsonObject] so it can be sent to the wallet.
-     *
-     * When no verifier is available, falls back to a minimal hardcoded JsonObject that contains
-     * only the mandatory fields (`response_type`, `response_mode`, `nonce`).
      *
      * @param nonce The `vpNonce` bound to this IAE session — MUST appear in the VP response.
      * @param clientId The AS client_id, used as `client_id` in the VP request.
@@ -416,23 +433,25 @@ class HandleIaeInitialRequestCommandImpl(
         clientId: String,
         responseUri: String,
         dcqlQueryId: String? = null,
+        instanceId: String,
+        verifierService: Oid4vpVerifierService,
     ): Pair<JsonObject, String?>? {
-        if (verifierService != null) {
-            // Build a DCQL query for the IAE round-trip.
-            // When a dcqlQueryId is configured in policy, prefer a named credential query so that
-            // the verifier can resolve a pre-configured query definition. Otherwise, fall back to
-            // a minimal "accept any credential" query for generic IAE support.
-            val dcqlQuery =
-                DcqlQuery(
-                    credentials =
-                        listOf(
-                            DcqlCredentialQuery(id = dcqlQueryId ?: "iae_credential"),
-                        ),
-                )
+        // Build a DCQL query for the IAE round-trip.
+        // When a dcqlQueryId is configured in policy, prefer a named credential query so that
+        // the verifier can resolve a pre-configured query definition. Otherwise use the explicit
+        // generic IAE query identifier.
+        val dcqlQuery =
+            DcqlQuery(
+                credentials =
+                    listOf(
+                        DcqlCredentialQuery(id = dcqlQueryId ?: "iae_credential"),
+                    ),
+            )
 
-            val vpRequestResult =
-                verifierService.createAuthorizationRequest(
+        val vpRequestResult =
+            verifierService.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = instanceId,
                         dcqlQuery = dcqlQuery,
                         clientId = clientId,
                         responseUri = responseUri,
@@ -441,32 +460,20 @@ class HandleIaeInitialRequestCommandImpl(
                     ),
                 )
 
-            if (vpRequestResult.isErr) {
-                return null
-            }
-
-            val created = vpRequestResult.value
-            val authRequest = created.request
-
-            // Serialize AuthorizationRequest to JsonObject for the wallet.
-            val jsonObject =
-                json.encodeToJsonElement(authRequest).let {
-                    it as? JsonObject ?: JsonObject(emptyMap())
-                }
-
-            return Pair(jsonObject, created.sessionId)
+        if (vpRequestResult.isErr) {
+            return null
         }
 
-        // Fallback: minimal VP request without verifier session (no real validation will occur).
-        val fallback =
-            JsonObject(
-                mapOf(
-                    "response_type" to JsonPrimitive("vp_token"),
-                    "response_mode" to JsonPrimitive(ResponseMode.IAE_POST.value),
-                    "nonce" to JsonPrimitive(nonce),
-                ),
-            )
-        return Pair(fallback, null)
+        val created = vpRequestResult.value
+        val authRequest = created.request
+
+            // Serialize AuthorizationRequest to JsonObject for the wallet.
+        val jsonObject =
+            json.encodeToJsonElement(authRequest).let {
+                it as? JsonObject ?: JsonObject(emptyMap())
+            }
+
+        return Pair(jsonObject, created.sessionId)
     }
 
     /**

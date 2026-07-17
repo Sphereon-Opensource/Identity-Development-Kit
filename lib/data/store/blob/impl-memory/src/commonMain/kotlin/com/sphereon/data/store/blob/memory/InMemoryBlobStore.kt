@@ -20,13 +20,18 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.data.store.blob.BlobByteSource
 import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobInfo
-import com.sphereon.data.store.blob.BlobMetadata
+import com.sphereon.data.store.blob.BlobReadRange
+import com.sphereon.data.store.blob.BlobReadStream
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.BlobStoreCapabilities
 import com.sphereon.data.store.blob.BlobStoreError
 import com.sphereon.data.store.blob.BlobStoreSchemes
+import com.sphereon.data.store.blob.ByteArrayBlobSource
+import com.sphereon.data.store.blob.DEFAULT_BLOB_STREAM_CHUNK_SIZE
+import com.sphereon.data.store.blob.DeleteOptions
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.ListResult
 import com.sphereon.data.store.blob.PutOptions
@@ -43,7 +48,17 @@ internal class InMemoryBlobStore(
 ) : BlobStore {
     override val schemeId: String = BlobStoreSchemes.MEMORY
 
-    override val capabilities: BlobStoreCapabilities = BlobStoreCapabilities.SIMPLE
+    override val capabilities: BlobStoreCapabilities =
+        BlobStoreCapabilities.SIMPLE.copy(
+            supportsEtag = true,
+            supportsRevisions = true,
+            supportsConditionalWrites = true,
+            supportsConditionalDelete = true,
+            supportsStreamingRead = true,
+            supportsStreamingWrite = true,
+            supportsRangeReads = true,
+            supportsIntegrityVerification = true,
+        )
 
     @OptIn(ExperimentalUuidApi::class)
     override suspend fun put(
@@ -62,7 +77,21 @@ internal class InMemoryBlobStore(
                     return@withLock Err(BlobStoreError.AlreadyExists(path).toIdkError())
                 }
                 if (options.ifNoneMatch != null && existing != null) {
-                    return@withLock Err(BlobStoreError.PreconditionFailed("ifNoneMatch condition failed for $path").toIdkError())
+                    val currentEtag = etag(existing.revision)
+                    if (options.ifNoneMatch == "*" || options.ifNoneMatch == currentEtag) {
+                        return@withLock Err(BlobStoreError.PreconditionFailed("ifNoneMatch condition failed for $path").toIdkError())
+                    }
+                }
+                if (options.ifMatch != null) {
+                    val matches = existing != null && (options.ifMatch == "*" || options.ifMatch == etag(existing.revision))
+                    if (!matches) {
+                        return@withLock Err(BlobStoreError.PreconditionFailed("ifMatch condition failed for $path").toIdkError())
+                    }
+                }
+                if (options.expectedRevision != null && existing?.revision != options.expectedRevision) {
+                    return@withLock Err(
+                        BlobStoreError.PreconditionFailed("Expected revision ${options.expectedRevision} for $path").toIdkError(),
+                    )
                 }
 
                 val metadata = target.toBlobMetadata()
@@ -73,13 +102,50 @@ internal class InMemoryBlobStore(
                         metadata = metadata,
                         createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
                         lastModifiedAtEpochMillis = now,
+                        revision = (existing?.revision ?: 0) + 1,
                     )
 
-                Ok(toDescriptor(path, data.size.toLong(), metadata, existing?.createdAtEpochMillis ?: now, now))
+                Ok(toDescriptor(path, partition.blobs.getValue(path)))
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to put blob '${target.path}': ${expected.message}", exception = expected, code = "BLOB_PUT_FAILED"))
             }
         }
+
+    override suspend fun putStream(
+        target: BlobInfo,
+        source: BlobByteSource,
+        options: PutOptions,
+    ): IdkResult<BlobDescriptor, IdkError> {
+        val chunks = mutableListOf<ByteArray>()
+        var totalSize = 0L
+        try {
+            while (true) {
+                val readResult = source.read(DEFAULT_BLOB_STREAM_CHUNK_SIZE)
+                if (readResult.isErr) {
+                    return Err(readResult.error)
+                }
+                val chunk = readResult.value ?: break
+                if (chunk.isEmpty()) {
+                    return Err(BlobStoreError.BackendError("Blob stream returned an empty chunk before EOF").toIdkError())
+                }
+                totalSize += chunk.size
+                if (totalSize > Int.MAX_VALUE) {
+                    return Err(BlobStoreError.QuotaExceeded("In-memory blob stream exceeds the platform byte-array limit").toIdkError())
+                }
+                chunks += chunk
+            }
+        } finally {
+            source.close()
+        }
+
+        val data = ByteArray(totalSize.toInt())
+        var offset = 0
+        chunks.forEach { chunk ->
+            chunk.copyInto(data, destinationOffset = offset)
+            offset += chunk.size
+        }
+        return put(target, data, options)
+    }
 
     override suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError> =
         partition.mutex.withLock {
@@ -88,11 +154,36 @@ internal class InMemoryBlobStore(
                 val stored =
                     partition.blobs[path]
                         ?: return@withLock Err(BlobStoreError.NotFound(path).toIdkError())
-                val descriptor = toDescriptor(path, stored.data.size.toLong(), stored.metadata, stored.createdAtEpochMillis, stored.lastModifiedAtEpochMillis)
+                val descriptor = toDescriptor(path, stored)
                 Ok(ResolvedBlobInfo.fromContent(info, stored.data.copyOf(), descriptor))
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to get blob '${info.path}': ${expected.message}", exception = expected, code = "BLOB_GET_FAILED"))
             }
+        }
+
+    override suspend fun openRead(info: BlobInfo): IdkResult<BlobReadStream, IdkError> =
+        partition.mutex.withLock {
+            val path = info.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val stored = partition.blobs[path] ?: return@withLock Err(BlobStoreError.NotFound(path).toIdkError())
+            Ok(
+                BlobReadStream(
+                    descriptor = toDescriptor(path, stored),
+                    source = ByteArrayBlobSource(stored.data),
+                ),
+            )
+        }
+
+    override suspend fun openReadRange(
+        info: BlobInfo,
+        range: BlobReadRange,
+    ): IdkResult<BlobReadStream, IdkError> =
+        partition.mutex.withLock {
+            val path = info.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val stored = partition.blobs[path] ?: return@withLock Err(BlobStoreError.NotFound(path).toIdkError())
+            if (range.startInclusive > stored.data.size) {
+                return@withLock Err(BlobStoreError.PreconditionFailed("Range starts beyond end of blob: $path").toIdkError())
+            }
+            Ok(BlobReadStream(toDescriptor(path, stored), ByteArrayBlobSource(stored.data, range)))
         }
 
     override suspend fun delete(info: BlobInfo): IdkResult<Boolean, IdkError> =
@@ -103,6 +194,28 @@ internal class InMemoryBlobStore(
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to delete blob '${info.path}': ${expected.message}", exception = expected, code = "BLOB_DELETE_FAILED"))
             }
+        }
+
+    override suspend fun deleteConditional(
+        info: BlobInfo,
+        options: DeleteOptions,
+    ): IdkResult<Boolean, IdkError> =
+        partition.mutex.withLock {
+            val path = info.path ?: return@withLock Err(BlobStoreError.NotFound("null").toIdkError())
+            val existing =
+                partition.blobs[path]
+                    ?: return@withLock Err(BlobStoreError.PreconditionFailed("Blob does not exist: $path").toIdkError())
+            val currentEtag = etag(existing.revision)
+            if (options.ifMatch != null && options.ifMatch != "*" && options.ifMatch != currentEtag) {
+                return@withLock Err(BlobStoreError.PreconditionFailed("ifMatch condition failed for $path").toIdkError())
+            }
+            if (options.expectedRevision != null && options.expectedRevision != existing.revision) {
+                return@withLock Err(
+                    BlobStoreError.PreconditionFailed("Expected revision ${options.expectedRevision} for $path").toIdkError(),
+                )
+            }
+            partition.blobs.remove(path)
+            Ok(true)
         }
 
     override suspend fun exists(info: BlobInfo): IdkResult<Boolean, IdkError> =
@@ -122,7 +235,7 @@ internal class InMemoryBlobStore(
                 val stored =
                     partition.blobs[path]
                         ?: return@withLock Err(BlobStoreError.NotFound(path).toIdkError())
-                Ok(toDescriptor(path, stored.data.size.toLong(), stored.metadata, stored.createdAtEpochMillis, stored.lastModifiedAtEpochMillis))
+                Ok(toDescriptor(path, stored))
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to stat blob '${info.path}': ${expected.message}", exception = expected, code = "BLOB_STAT_FAILED"))
             }
@@ -144,7 +257,7 @@ internal class InMemoryBlobStore(
                     entries
                         .take(options.maxResults)
                         .map { (path, stored) ->
-                            toDescriptor(path, stored.data.size.toLong(), stored.metadata, stored.createdAtEpochMillis, stored.lastModifiedAtEpochMillis)
+                            toDescriptor(path, stored)
                         }
 
                 val nextPageToken =
@@ -190,9 +303,11 @@ internal class InMemoryBlobStore(
                 partition.blobs[destPath] =
                     stored.copy(
                         data = stored.data.copyOf(),
+                        createdAtEpochMillis = now,
                         lastModifiedAtEpochMillis = now,
+                        revision = 1,
                     )
-                Ok(toDescriptor(destPath, stored.data.size.toLong(), stored.metadata, now, now))
+                Ok(toDescriptor(destPath, partition.blobs.getValue(destPath)))
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to copy blob: ${expected.message}", exception = expected, code = "BLOB_COPY_FAILED"))
             }
@@ -211,7 +326,7 @@ internal class InMemoryBlobStore(
                         ?: return@withLock Err(BlobStoreError.NotFound(sourcePath).toIdkError())
                 val now = Clock.System.now().toEpochMilliseconds()
                 partition.blobs[destPath] = stored.copy(lastModifiedAtEpochMillis = now)
-                Ok(toDescriptor(destPath, stored.data.size.toLong(), stored.metadata, now, now))
+                Ok(toDescriptor(destPath, partition.blobs.getValue(destPath)))
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to move blob: ${expected.message}", exception = expected, code = "BLOB_MOVE_FAILED"))
             }
@@ -219,20 +334,21 @@ internal class InMemoryBlobStore(
 
     private fun toDescriptor(
         path: String,
-        sizeBytes: Long,
-        metadata: BlobMetadata,
-        createdAtMillis: Long,
-        lastModifiedMillis: Long,
+        stored: InMemoryStoredBlob,
     ): BlobDescriptor =
         BlobDescriptor(
             path = path,
             storeId = schemeId,
-            sizeBytes = sizeBytes,
-            contentType = metadata.contentType,
+            sizeBytes = stored.data.size.toLong(),
+            contentType = stored.metadata.contentType,
             filename = path.substringAfterLast('/'),
-            createdAt = Instant.fromEpochMilliseconds(createdAtMillis),
-            lastModified = Instant.fromEpochMilliseconds(lastModifiedMillis),
-            metadata = metadata,
-            contentHash = metadata.contentHash,
+            etag = etag(stored.revision),
+            revision = stored.revision,
+            createdAt = Instant.fromEpochMilliseconds(stored.createdAtEpochMillis),
+            lastModified = Instant.fromEpochMilliseconds(stored.lastModifiedAtEpochMillis),
+            metadata = stored.metadata,
+            contentHash = stored.metadata.contentHash,
         )
+
+    private fun etag(revision: Long): String = "\"$revision\""
 }

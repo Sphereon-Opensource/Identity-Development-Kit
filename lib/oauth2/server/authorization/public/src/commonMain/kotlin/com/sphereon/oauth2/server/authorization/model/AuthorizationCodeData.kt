@@ -50,6 +50,10 @@ data class AuthorizationCodeData(
      * Granted scope (may be subset of requested scope)
      */
     val scope: String? = null,
+    /** RFC 8707 resource indicators bound at authorization time. */
+    val resource: List<String> = emptyList(),
+    /** Exact AS-client default audience bound when the authorization request omitted resource. */
+    val defaultAccessTokenAudience: String? = null,
     /**
      * PKCE code challenge (if PKCE was used)
      */

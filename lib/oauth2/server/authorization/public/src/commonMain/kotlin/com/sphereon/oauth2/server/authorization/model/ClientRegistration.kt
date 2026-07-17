@@ -69,6 +69,18 @@ data class ClientRegistration(
      */
     val allowedScopes: List<String>? = null,
     /**
+     * Exact audience used for access tokens when an authorization request does not carry an RFC
+     * 8707 resource indicator. This is configured by the AS client registration; it is never
+     * derived from the client id or a request-local non-standard parameter.
+     */
+    val defaultAccessTokenAudience: String? = null,
+    /**
+     * Explicit additional audiences this client may request for a client_credentials access
+     * token. Each request remains single-target; this allowlist does not permit multi-audience
+     * tokens and an empty set authorizes no target beyond [defaultAccessTokenAudience].
+     */
+    val allowedAccessTokenAudiences: Set<String> = emptySet(),
+    /**
      * Client authentication method
      * RFC 7591 Section 2: token_endpoint_auth_method
      */

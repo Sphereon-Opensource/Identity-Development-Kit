@@ -47,6 +47,52 @@ data class FetchServerMetadataArgs
         val discoveryMode: DiscoveryMode = DiscoveryMode.OAUTH2_FIRST,
     )
 
+fun authorizationServerMetadataDiscoveryUrls(
+    issuer: String,
+    discoveryMode: DiscoveryMode = DiscoveryMode.OAUTH2_FIRST,
+): List<String> {
+    val normalizedIssuer = issuer.trimEnd('/')
+    val protocolEnd =
+        when {
+            normalizedIssuer.startsWith("https://") -> HTTPS_PREFIX_LENGTH
+            normalizedIssuer.startsWith("http://") -> HTTP_PREFIX_LENGTH
+            else -> 0
+        }
+    val originEnd = normalizedIssuer.indexOf('/', protocolEnd)
+    val (origin, path) =
+        if (originEnd == -1) {
+            normalizedIssuer to ""
+        } else {
+            normalizedIssuer.substring(0, originEnd) to normalizedIssuer.substring(originEnd)
+        }
+
+    val oauthServerWellKnownUrl = "$origin/.well-known/oauth-authorization-server$path"
+    val legacyOauthServerWellKnownUrl = "$normalizedIssuer/.well-known/oauth-authorization-server"
+    val openIdConfigurationUrl = "$normalizedIssuer/.well-known/openid-configuration"
+
+    return when (discoveryMode) {
+        DiscoveryMode.OAUTH2_FIRST -> {
+            buildList {
+                add(oauthServerWellKnownUrl)
+                if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
+                    add(legacyOauthServerWellKnownUrl)
+                }
+                add(openIdConfigurationUrl)
+            }
+        }
+
+        DiscoveryMode.OIDC_FIRST -> {
+            buildList {
+                add(openIdConfigurationUrl)
+                add(oauthServerWellKnownUrl)
+                if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
+                    add(legacyOauthServerWellKnownUrl)
+                }
+            }
+        }
+    }
+}
+
 @JsExportCompat
 data class FetchJwksArgs(
     val jwksUri: String,
@@ -85,3 +131,6 @@ interface FetchJwksCommand : ServiceCommand<FetchJwksArgs, JwkSet, IdkError> {
         const val COMMAND_ID = "oauth2.metadata.fetchjwks"
     }
 }
+
+private const val HTTPS_PREFIX_LENGTH = 8
+private const val HTTP_PREFIX_LENGTH = 7

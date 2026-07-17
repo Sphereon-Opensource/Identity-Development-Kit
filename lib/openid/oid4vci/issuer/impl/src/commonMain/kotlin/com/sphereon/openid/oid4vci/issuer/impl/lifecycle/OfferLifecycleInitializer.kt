@@ -44,7 +44,7 @@ class OfferLifecycleInitializer(
         return Ok(Unit)
     }
 
-    suspend fun initializeLifecycle(args: CreateCredentialOfferArgs): String? {
+    suspend fun initializeLifecycle(args: CreateCredentialOfferArgs, protocolSessionId: String): String? {
         val hook = lifecycleHook ?: return null
         val correlationId =
             hook
@@ -62,12 +62,12 @@ class OfferLifecycleInitializer(
                 ?.correlationId
                 ?: return null
 
-        recordOfferPhase(args, correlationId, Oid4vciIssuancePhase.START)
+        recordOfferPhase(args, correlationId, protocolSessionId, Oid4vciIssuancePhase.START)
         if (args.preAuthorizedCodeGrant) {
-            recordOfferPhase(args, correlationId, Oid4vciIssuancePhase.PRE_AUTHORIZED)
+            recordOfferPhase(args, correlationId, protocolSessionId, Oid4vciIssuancePhase.PRE_AUTHORIZED)
         }
         if (args.authorizationCodeGrant) {
-            recordOfferPhase(args, correlationId, Oid4vciIssuancePhase.AUTHORIZATION)
+            recordOfferPhase(args, correlationId, protocolSessionId, Oid4vciIssuancePhase.AUTHORIZATION)
         }
         return correlationId
     }
@@ -93,12 +93,14 @@ class OfferLifecycleInitializer(
     private suspend fun recordOfferPhase(
         args: CreateCredentialOfferArgs,
         correlationId: String,
+        protocolSessionId: String,
         phase: Oid4vciIssuancePhase,
     ) {
         lifecycleHook
             ?.recordPhase(
                 Oid4vciPhaseLifecycleArgs(
                     correlationId = correlationId,
+                    protocolSessionId = protocolSessionId,
                     phase = phase,
                     fields = args.toProtocolFields(),
                 ),

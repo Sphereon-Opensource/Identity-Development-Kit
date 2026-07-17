@@ -209,7 +209,6 @@ class HandleTokenRequestCommandImplTest {
     ): Set<com.sphereon.oauth2.server.authorization.command.token.GrantHandler> =
         setOf(
             com.sphereon.oauth2.server.authorization.impl.command.token.grant.AuthorizationCodeGrantHandlerImpl(
-                secureRandom = noOpSecureRandom,
                 authorizationCodeStorage = authorizationCodeStorage,
                 scopeClaimsMapper = null,
             ),
@@ -355,7 +354,7 @@ class HandleTokenRequestCommandImplTest {
         }
 
     @Test
-    fun clientCredentialsGrantPropagatesRequestedAudienceToAccessToken() =
+    fun clientCredentialsGrantPropagatesOnlyVerifiedAudienceToAccessToken() =
         runTest {
             var capturedAccessTokenArgs: CreateAccessTokenArgs? = null
             val service =
@@ -387,7 +386,15 @@ class HandleTokenRequestCommandImplTest {
                         },
                     verifyGrantStub =
                         stubVerifyClientCredentialsGrant {
-                            Ok(VerifiedClientCredentialsGrant(subject = "tenant-as-service", clientId = "tenant-as-service", scope = "internal"))
+                            assertEquals(listOf("enterprise-tenant-kms"), it.requestedAudience)
+                            Ok(
+                                VerifiedClientCredentialsGrant(
+                                    subject = "tenant-as-service",
+                                    clientId = "tenant-as-service",
+                                    scope = "internal",
+                                    audience = listOf("enterprise-tenant-kms"),
+                                ),
+                            )
                         },
                     createAccessTokenStub =
                         stubCreateAccessToken { args ->

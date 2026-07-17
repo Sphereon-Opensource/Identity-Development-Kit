@@ -267,7 +267,7 @@ class AuthServerIntrospectTokenCommandImpl(
         // clients.
         val isInternalClient =
             configProvider.serverConfig.internalClients.values
-                .any { it.first == callerClientId }
+                .any { it.clientId == callerClientId }
 
         // Handle based on token type
         return when (tokenData) {

@@ -119,6 +119,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-signed-request-success",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -180,6 +181,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-signed-dcql-request",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/callback",
@@ -217,6 +219,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-signing-failure",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -249,6 +252,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
             // Missing response_uri for direct_post mode
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-signed-request-validation",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "https://verifier.example.com",
                     responseUri = null, // Missing!
@@ -280,6 +284,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-custom-jar-expiration",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -313,6 +318,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-default-jar-expiration",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -346,6 +352,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-jar-issuer",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "did:example:verifier123",
                     responseUri = "https://verifier.example.com/response",
@@ -378,6 +385,7 @@ class CreateSignedAuthorizationRequestCommandImplTest {
 
             val requestArgs =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-signed-fragment-response",
                     dcqlQuery = createTestDcqlQuery(),
                     clientId = "https://verifier.example.com",
                     redirectUri = "https://verifier.example.com/callback",

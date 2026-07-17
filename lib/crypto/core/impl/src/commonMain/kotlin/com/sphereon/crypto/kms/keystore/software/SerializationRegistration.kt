@@ -52,16 +52,19 @@ class SoftwareKeystoreSerializationRegistration(
     override fun onEnterScope(scope: Scope) {
         CryptoJsonSupport.register("software-keystore") {
             polymorphic(KeyStoreConfig::class) {
+                subclass(EncryptedFileKeyStoreConfig::class, EncryptedFileKeyStoreConfig.serializer())
                 subclass(Pkcs12KeyStoreConfig::class, Pkcs12KeyStoreConfig.serializer())
                 subclass(JksKeyStoreConfig::class, JksKeyStoreConfig.serializer())
                 subclass(AppleKeyStoreConfig::class, AppleKeyStoreConfig.serializer())
             }
             polymorphic(SoftwareKeyStoreConfig::class) {
+                subclass(EncryptedFileKeyStoreConfig::class, EncryptedFileKeyStoreConfig.serializer())
                 subclass(Pkcs12KeyStoreConfig::class, Pkcs12KeyStoreConfig.serializer())
                 subclass(JksKeyStoreConfig::class, JksKeyStoreConfig.serializer())
                 subclass(AppleKeyStoreConfig::class, AppleKeyStoreConfig.serializer())
             }
             polymorphic(AbstractKeyStoreConfig::class) {
+                subclass(EncryptedFileKeyStoreConfig::class, EncryptedFileKeyStoreConfig.serializer())
                 subclass(Pkcs12KeyStoreConfig::class, Pkcs12KeyStoreConfig.serializer())
                 subclass(JksKeyStoreConfig::class, JksKeyStoreConfig.serializer())
                 subclass(AppleKeyStoreConfig::class, AppleKeyStoreConfig.serializer())

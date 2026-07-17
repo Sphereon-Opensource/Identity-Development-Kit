@@ -27,8 +27,9 @@ class IssuanceSessionTest {
     fun lifecycleCorrelationIdDefaultsToNullAndRoundTrips() {
         val s =
             IssuanceSession(
-                sessionId = "s1",
-                issuerId = "iss",
+                sessionId = "issuance-session-lifecycle-roundtrip",
+                instanceId = "issuer-instance-lifecycle-roundtrip",
+                issuerId = "https://issuer.example.test/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
                 status = IssuanceSessionStatus.OFFER_CREATED,
                 createdAt = 0,
@@ -38,7 +39,9 @@ class IssuanceSessionTest {
         val linked = s.copy(lifecycleCorrelationId = "corr-1")
         val json = Json.encodeToString(IssuanceSession.serializer(), linked)
         assertTrue("lifecycleCorrelationId" in json)
-        assertEquals(linked, Json.decodeFromString(IssuanceSession.serializer(), json))
+        val decoded = Json.decodeFromString(IssuanceSession.serializer(), json)
+        assertEquals(linked, decoded)
+        assertEquals("issuer-instance-lifecycle-roundtrip", decoded.instanceId)
         val nullJson = Json.encodeToString(IssuanceSession.serializer(), s)
         assertNull(Json.decodeFromString(IssuanceSession.serializer(), nullJson).lifecycleCorrelationId)
     }

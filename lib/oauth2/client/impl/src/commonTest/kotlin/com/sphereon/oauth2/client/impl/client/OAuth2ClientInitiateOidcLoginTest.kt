@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 // Access the app-scoped transaction store from the test graph so we can verify persistence
@@ -191,5 +192,52 @@ class OAuth2ClientInitiateOidcLoginTest {
             val consumed = transactionStore.consumeByState(result.value.state)
             assertTrue(consumed.isOk)
             assertEquals(OAuth2ResponseMode.FORM_POST, consumed.value.responseMode)
+        }
+
+    @Test
+    fun initiateOidcLogin_withoutResource_omitsResourceAndCustomAudienceButPersistsExpectedAudience() =
+        runTest {
+            val result = oauth2Client.initiateOidcLogin(
+                authorizationServerMetadata = metadata,
+                clientId = "selected-public-client",
+                redirectUri = "https://rp.example.com/callback",
+                tenantId = "tenant-a",
+                resource = null,
+                audience = "selected-client-default-audience",
+                ownerHandleDigest = "owner-hmac",
+                grantBinding = "issuer:issuer-one",
+                clientCorrelation = "raw-opaque-owner-handle",
+            )
+
+            assertTrue(result.isOk)
+            assertFalse(Regex("[?&]resource=").containsMatchIn(result.value.authorizationUrl))
+            assertFalse(Regex("[?&]audience=").containsMatchIn(result.value.authorizationUrl))
+            val transaction = transactionStore.consumeByState(result.value.state, "tenant-a")
+            assertTrue(transaction.isOk)
+            assertEquals(null, transaction.value.resource)
+            assertEquals("selected-client-default-audience", transaction.value.audience)
+            assertEquals("owner-hmac", transaction.value.ownerHandleDigest)
+            assertEquals("issuer:issuer-one", transaction.value.grantBinding)
+            assertEquals("raw-opaque-owner-handle", transaction.value.clientCorrelation)
+        }
+
+    @Test
+    fun initiateOidcLogin_withResource_propagatesExactResourceSemantics() =
+        runTest {
+            val result = oauth2Client.initiateOidcLogin(
+                authorizationServerMetadata = metadata,
+                clientId = "selected-public-client",
+                redirectUri = "https://rp.example.com/callback",
+                tenantId = "tenant-a",
+                resource = "https://issuer-api.example.com",
+                audience = "selected-client-default-audience",
+            )
+
+            assertTrue(result.isOk)
+            assertTrue(Regex("[?&]resource=https(%3A|:)").containsMatchIn(result.value.authorizationUrl))
+            assertTrue(Regex("[?&]audience=selected-client-default-audience").containsMatchIn(result.value.authorizationUrl))
+            val transaction = transactionStore.consumeByState(result.value.state, "tenant-a")
+            assertEquals("https://issuer-api.example.com", transaction.value.resource)
+            assertEquals("selected-client-default-audience", transaction.value.audience)
         }
 }

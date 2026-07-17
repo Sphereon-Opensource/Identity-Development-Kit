@@ -7,12 +7,12 @@
 package com.sphereon.wallet.interaction.presenter
 
 import androidx.compose.runtime.Composable
-import com.sphereon.wallet.interaction.WalletInteractionAction
-import com.sphereon.wallet.interaction.WalletInteractionActivityType
-import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
-import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.presenter.contracts.WalletInteractionScreenSource
+import com.sphereon.wallet.interaction.presenter.contracts.WalletScreenModel
+import com.sphereon.wallet.interaction.presenter.WalletScreenModelMapper
+import com.sphereon.wallet.interaction.presenter.contracts.WalletScreenIntent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -21,210 +21,45 @@ import software.amazon.app.platform.presenter.Presenter
 import software.amazon.app.platform.presenter.molecule.MoleculePresenter
 import software.amazon.app.platform.presenter.stateInPresenter
 
+/**
+ * Compose/Molecule adapter over the framework-free presenter contracts
+ * ([WalletScreenModel], [WalletScreenModelMapper], [WalletInteractionScreenSource]). This type
+ * carries no decision logic of its own - it is a thin [BaseModel] wrapper required by the
+ * app-platform [Presenter] and [MoleculePresenter] bounds, which both require their model type to
+ * implement [BaseModel].
+ */
 data class WalletInteractionScreenModel(
-    val sessionId: WalletInteractionSessionId,
-    val titleKey: String,
-    val titleArguments: Map<String, String> = emptyMap(),
-    val subtitleKey: String? = null,
-    val subtitleArguments: Map<String, String> = emptyMap(),
-    val primaryAction: WalletInteractionScreenAction? = null,
-    val secondaryAction: WalletInteractionScreenAction? = null,
-    val state: WalletInteractionState,
-) : BaseModel {
-    init {
-        requirePresenterLocalizationKey("titleKey", titleKey)
-        requirePresenterLocalizationKey("subtitleKey", subtitleKey)
-    }
-}
+    val screen: WalletScreenModel,
+) : BaseModel
 
-data class WalletInteractionScreenAction(
-    val labelKey: String,
-    val action: WalletInteractionAction,
-    val arguments: Map<String, String> = emptyMap(),
-) {
-    init {
-        requirePresenterLocalizationKey("labelKey", labelKey)
-    }
-}
-
-class WalletInteractionPresenter(
-    private val client: WalletInteractionClient,
-    private val scope: CoroutineScope,
-) {
-    fun models(sessionId: WalletInteractionSessionId): StateFlow<WalletInteractionScreenModel> = WalletInteractionSessionPresenter(client, scope, sessionId).model
-
-    suspend fun dispatch(
-        sessionId: WalletInteractionSessionId,
-        action: WalletInteractionAction,
-    ) {
-        client.dispatch(sessionId, action)
-    }
-}
-
+/**
+ * Adapts [WalletInteractionScreenSource] to the app-platform [Presenter] contract for a single
+ * session: exposes its [WalletScreenModel] stream as a [BaseModel]-wrapped [StateFlow] and
+ * forwards dispatched actions to the underlying screen source.
+ */
 class WalletInteractionSessionPresenter(
-    private val client: WalletInteractionClient,
-    private val scope: CoroutineScope,
+    private val screenSource: WalletInteractionScreenSource,
+    scope: CoroutineScope,
     private val sessionId: WalletInteractionSessionId,
 ) : Presenter<WalletInteractionScreenModel> {
-    override val model: StateFlow<WalletInteractionScreenModel> =
-        client
-            .observe(sessionId)
-            .map { it.toScreenModel() }
-            .stateInPresenter(scope) { client.observe(sessionId).value.toScreenModel() }
+    private val screenModels: StateFlow<WalletScreenModel> = screenSource.models(sessionId.value)
 
-    suspend fun dispatch(action: WalletInteractionAction) {
-        client.dispatch(sessionId, action)
+    override val model: StateFlow<WalletInteractionScreenModel> =
+        screenModels
+            .map { WalletInteractionScreenModel(it) }
+            .stateInPresenter(scope) { WalletInteractionScreenModel(screenModels.value) }
+
+    suspend fun dispatch(intent: WalletScreenIntent) {
+        screenSource.dispatch(sessionId.value, intent)
     }
 }
 
+/**
+ * Molecule presenter that projects a [WalletInteractionState] snapshot into a
+ * [WalletInteractionScreenModel] by delegating entirely to [WalletScreenModelMapper]. Suitable for
+ * embedding within a wider Molecule composition that already owns the state stream.
+ */
 class WalletInteractionMoleculePresenter : MoleculePresenter<WalletInteractionState, WalletInteractionScreenModel> {
     @Composable
-    override fun present(input: WalletInteractionState): WalletInteractionScreenModel = input.toScreenModel()
+    override fun present(input: WalletInteractionState): WalletInteractionScreenModel = WalletInteractionScreenModel(WalletScreenModelMapper.map(input))
 }
-
-fun WalletInteractionState.toScreenModel(): WalletInteractionScreenModel {
-    val displayMessage = message
-    val displayError = error
-    val loginPresentation = activity?.type == WalletInteractionActivityType.LOGIN
-    val titleKey = displayMessage?.titleKey ?: status.titleKey(loginPresentation)
-    val titleArguments = displayMessage?.arguments?.takeIf { displayMessage.titleKey != null } ?: titleArguments()
-    val subtitleKey = displayMessage?.textKey ?: displayError?.messageKey
-    val subtitleArguments =
-        when {
-            displayMessage?.textKey != null -> displayMessage.arguments
-            displayError?.messageKey != null -> displayError.arguments
-            else -> emptyMap()
-        }
-
-    val primary =
-        when (status) {
-            WalletInteractionStatus.ImplementationChoiceRequired -> {
-                null
-            }
-
-            WalletInteractionStatus.TxCodeRequired -> {
-                null
-            }
-
-            WalletInteractionStatus.CredentialSelection -> {
-                null
-            }
-
-            WalletInteractionStatus.SecurityUnlockRequired -> {
-                null
-            }
-
-            WalletInteractionStatus.DisclosureConsent -> {
-                WalletInteractionScreenAction(
-                    if (loginPresentation) {
-                        "wallet.interaction.action.sign_in"
-                    } else {
-                        "wallet.interaction.action.share"
-                    },
-                    WalletInteractionAction.continueFlow(),
-                )
-            }
-
-            WalletInteractionStatus.DeferredRetrievalPending -> {
-                WalletInteractionScreenAction("wallet.interaction.action.retry_deferred", WalletInteractionAction.retryDeferredRetrieval())
-            }
-
-            WalletInteractionStatus.ReceivedCredentialReview -> {
-                WalletInteractionScreenAction("wallet.interaction.action.accept_credential", WalletInteractionAction.acceptReceivedCredential())
-            }
-
-            WalletInteractionStatus.Completed,
-            WalletInteractionStatus.Cancelled,
-            WalletInteractionStatus.Failed,
-            WalletInteractionStatus.UnsupportedEntryPoint,
-            -> {
-                null
-            }
-
-            else -> {
-                WalletInteractionScreenAction("wallet.interaction.action.continue", WalletInteractionAction.continueFlow())
-            }
-        }
-
-    val secondary =
-        when {
-            terminal || status == WalletInteractionStatus.ResolvingEntryPoint -> {
-                null
-            }
-
-            status == WalletInteractionStatus.ReceivedCredentialReview -> {
-                WalletInteractionScreenAction("wallet.interaction.action.decline_credential", WalletInteractionAction.declineReceivedCredential())
-            }
-
-            else -> {
-                WalletInteractionScreenAction("wallet.interaction.action.decline", WalletInteractionAction.decline())
-            }
-        }
-
-    return WalletInteractionScreenModel(
-        sessionId = sessionId,
-        titleKey = titleKey,
-        titleArguments = titleArguments,
-        subtitleKey = subtitleKey,
-        subtitleArguments = subtitleArguments,
-        primaryAction = primary,
-        secondaryAction = secondary,
-        state = this,
-    )
-}
-
-private fun WalletInteractionStatus.titleKey(loginPresentation: Boolean): String {
-    if (loginPresentation) {
-        when (this) {
-            WalletInteractionStatus.TrustReview -> return "wallet.interaction.login.status.trust_review"
-            WalletInteractionStatus.CredentialSelection -> return "wallet.interaction.login.status.credential_selection"
-            WalletInteractionStatus.DisclosureConsent -> return "wallet.interaction.login.status.disclosure_consent"
-            WalletInteractionStatus.SecurityUnlockRequired -> return "wallet.interaction.login.status.security_unlock_required"
-            WalletInteractionStatus.AuthorizationRequired -> return "wallet.interaction.login.status.authorization_required"
-            WalletInteractionStatus.Sharing -> return "wallet.interaction.login.status.signing_in"
-            WalletInteractionStatus.Completed -> return "wallet.interaction.login.status.completed"
-            else -> Unit
-        }
-    }
-
-    return when (this) {
-        WalletInteractionStatus.ResolvingEntryPoint -> "wallet.interaction.status.resolving_entry_point"
-        WalletInteractionStatus.ImplementationChoiceRequired -> "wallet.interaction.status.implementation_choice_required"
-        WalletInteractionStatus.UnsupportedEntryPoint -> "wallet.interaction.status.unsupported_entry_point"
-        WalletInteractionStatus.CounterpartyNotice -> "wallet.interaction.status.counterparty_notice"
-        WalletInteractionStatus.TrustReview -> "wallet.interaction.status.trust_review"
-        WalletInteractionStatus.CredentialOfferReview -> "wallet.interaction.status.credential_offer_review"
-        WalletInteractionStatus.AuthorizationRequired -> "wallet.interaction.status.authorization_required"
-        WalletInteractionStatus.TxCodeRequired -> "wallet.interaction.status.tx_code_required"
-        WalletInteractionStatus.CredentialPreview -> "wallet.interaction.status.credential_preview"
-        WalletInteractionStatus.CredentialSelection -> "wallet.interaction.status.credential_selection"
-        WalletInteractionStatus.DisclosureConsent -> "wallet.interaction.status.disclosure_consent"
-        WalletInteractionStatus.SecurityUnlockRequired -> "wallet.interaction.status.security_unlock_required"
-        WalletInteractionStatus.DeferredRetrievalPending -> "wallet.interaction.status.deferred_retrieval_pending"
-        WalletInteractionStatus.ReceivedCredentialReview -> "wallet.interaction.status.received_credential_review"
-        WalletInteractionStatus.Sharing -> "wallet.interaction.status.sharing"
-        WalletInteractionStatus.Completed -> "wallet.interaction.status.completed"
-        WalletInteractionStatus.Cancelled -> "wallet.interaction.status.cancelled"
-        WalletInteractionStatus.Failed -> "wallet.interaction.status.failed"
-    }
-}
-
-private fun WalletInteractionState.titleArguments(): Map<String, String> =
-    buildMap {
-        counterparty?.displayName?.let { put("counterpartyDisplayName", it) }
-        credentialOffer?.issuer?.displayName?.let { put("issuerDisplayName", it) }
-        adapterId?.let { put("adapterId", it) }
-        protocol?.name?.let { put("protocol", it) }
-    }
-
-private fun requirePresenterLocalizationKey(
-    fieldName: String,
-    value: String?,
-) {
-    if (value == null) return
-    require(presenterLocalizationKeyPattern.matches(value)) {
-        "wallet_interaction_presenter_localization_key_invalid"
-    }
-}
-
-private val presenterLocalizationKeyPattern = Regex("""[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+""")

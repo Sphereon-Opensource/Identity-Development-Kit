@@ -70,9 +70,9 @@ class HandleIntrospectionRequestCommandImpl(
         val httpUrl = applied.httpUrl
 
         // Authenticate the caller before doing anything else (RFC 7662 §2.1). This mirrors the
-        // /token path: extract credentials → verify → only then act on the token. Prior revisions
-        // of this handler trusted `client_id` from the request body alone, which would let an
-        // unauthenticated caller enumerate token metadata (Task 1.13).
+        // /token path: extract credentials, verify, and only then act on the token. An
+        // unauthenticated `client_id` from the request body must never be trusted on its own,
+        // since that would let a caller enumerate token metadata.
         val extracted =
             extractClientAuthentication(requestBody, requestHeaders)
                 .getOrElse { error -> return Err(IdkError.fromDTO(error)) }

@@ -17,12 +17,19 @@
 package com.sphereon.openid.oid4vci.issuer.impl.store
 
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class KvNotificationStateStoreTest {
+    private val instanceId = "issuer-instance-notification-store"
+
     private fun createStore(): KvNotificationStateStore {
         val kvStoreManager = InMemoryTestKvStoreManager()
         return KvNotificationStateStore(
@@ -32,41 +39,65 @@ class KvNotificationStateStoreTest {
     }
 
     @Test
-    fun isProcessedReturnsFalseForUnknownNotification() =
+    fun unknownNotificationCannotBeRecorded() =
         runTest {
             val store = createStore()
 
-            val result = store.isProcessed("notification-unknown")
-            assertTrue(result.isOk, "isProcessed should succeed")
-            assertFalse(result.getOrThrow())
+            val result = store.recordNotification("notification-unknown", CredentialNotificationEvent.CREDENTIAL_ACCEPTED)
+            assertTrue(result.isOk)
+            assertNull(result.getOrThrow())
         }
 
     @Test
-    fun recordNotificationThenIsProcessedReturnsTrue() =
+    fun registeredNotificationReturnsExactProtocolSessionAndInstance() =
         runTest {
             val store = createStore()
+            store.registerNotification("notification-001", "protocol-session-002", instanceId, ttlSeconds = 300).getOrThrow()
 
             val recordResult = store.recordNotification("notification-001", CredentialNotificationEvent.CREDENTIAL_ACCEPTED)
             assertTrue(recordResult.isOk, "recordNotification should succeed")
-
-            val result = store.isProcessed("notification-001")
-            assertTrue(result.isOk, "isProcessed should succeed")
-            assertTrue(result.getOrThrow())
+            assertEquals("protocol-session-002", recordResult.getOrThrow()?.protocolSessionId)
+            assertEquals(instanceId, recordResult.getOrThrow()?.instanceId)
+            assertTrue(recordResult.getOrThrow()?.firstReceipt == true)
         }
 
     @Test
-    fun recordingSameNotificationIdTwiceIsIdempotent() =
+    fun racingReceiptsAreAtomicAndIdempotent() =
         runTest {
             val store = createStore()
+            store.registerNotification("notification-002", "protocol-session-shared-config-b", instanceId, ttlSeconds = 300).getOrThrow()
 
-            val firstResult = store.recordNotification("notification-002", CredentialNotificationEvent.CREDENTIAL_ACCEPTED)
-            assertTrue(firstResult.isOk, "first recordNotification should succeed")
+            val receipts =
+                coroutineScope {
+                    (1..8)
+                        .map {
+                            async {
+                                store.recordNotification("notification-002", CredentialNotificationEvent.CREDENTIAL_ACCEPTED).getOrThrow()
+                            }
+                        }.awaitAll()
+                }.filterNotNull()
 
-            val secondResult = store.recordNotification("notification-002", CredentialNotificationEvent.CREDENTIAL_ACCEPTED)
-            assertTrue(secondResult.isOk, "second recordNotification should succeed")
+            assertEquals(8, receipts.size)
+            assertEquals(1, receipts.count { it.firstReceipt })
+            assertTrue(receipts.all { it.protocolSessionId == "protocol-session-shared-config-b" })
+            assertTrue(receipts.all { it.instanceId == instanceId })
+        }
 
-            val processed = store.isProcessed("notification-002")
-            assertTrue(processed.isOk, "isProcessed should succeed")
-            assertTrue(processed.getOrThrow())
+    @Test
+    fun notificationIdCannotBeReboundToAnotherSession() =
+        runTest {
+            val store = createStore()
+            store.registerNotification("notification-003", "protocol-session-a", instanceId, ttlSeconds = 300).getOrThrow()
+
+            val conflict =
+                store.registerNotification(
+                    "notification-003",
+                    "protocol-session-b",
+                    "issuer-instance-conflicting-notification-binding",
+                    ttlSeconds = 300,
+                )
+
+            assertFalse(conflict.isOk)
+            assertEquals("NOTIFICATION_BINDING_CONFLICT", conflict.error.code)
         }
 }

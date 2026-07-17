@@ -92,6 +92,7 @@ class RefreshTokenGrantHandlerImpl(
                         refreshToken = rtParams.refreshToken,
                         clientId = tokenRequest.clientId,
                         requestedScope = rtParams.scope,
+                        requestedResource = rtParams.resource,
                     ),
                 )
         if (!verifyResult.isOk) {
@@ -165,6 +166,7 @@ class RefreshTokenGrantHandlerImpl(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
+                        audience = verified.resource.ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) },
                         dpopJkt = refreshBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         baseUrlOverride = applied.baseUrlOverride,
@@ -188,6 +190,8 @@ class RefreshTokenGrantHandlerImpl(
                             subject = verified.subject,
                             clientId = tokenRequest.clientId,
                             scope = verified.scope,
+                            resource = verified.resource,
+                            defaultAccessTokenAudience = verified.defaultAccessTokenAudience,
                             dpopJkt = refreshBoundJkt,
                             authTime = verified.authTime,
                             acr = verified.acr,

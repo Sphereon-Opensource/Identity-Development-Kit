@@ -17,6 +17,8 @@
 package com.sphereon.openid.oid4vci.holder
 
 import com.sphereon.openid.oid4vci.holder.impl.ExchangePreAuthorizedCodeCommandImpl
+import com.sphereon.oauth2.common.model.ClientAssertion
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -55,6 +57,7 @@ class ExchangePreAuthorizedCodeTest {
         assertNull(response.cNonce)
         assertNull(response.cNonceExpiresIn)
         assertNull(response.authorizationDetails)
+        assertNull(response.refreshToken)
     }
 
     @Test
@@ -89,7 +92,8 @@ class ExchangePreAuthorizedCodeTest {
 
     @Test
     fun deserializeTokenResponseWithExtraFields() {
-        // Extra fields should be ignored via ignoreUnknownKeys
+        // Extra fields should be ignored via ignoreUnknownKeys, except refresh_token which is
+        // now a recognized field used later to replenish batch-issued credential instances.
         val raw =
             """
             {
@@ -104,6 +108,7 @@ class ExchangePreAuthorizedCodeTest {
 
         assertEquals("tok123", response.accessToken)
         assertEquals("Bearer", response.tokenType)
+        assertEquals("refresh_xyz", response.refreshToken)
     }
 
     // ============================================================================
@@ -131,12 +136,23 @@ class ExchangePreAuthorizedCodeTest {
                 txCode = "123456",
                 clientId = "wallet-client",
                 redirectUri = "https://wallet.example.com/callback",
+                clientAuthentication =
+                    ClientAuthenticationConfig.PrivateKeyJwt(
+                        ClientAssertion(
+                            clientId = "wallet-client",
+                            assertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                            assertion = "jwt.assertion",
+                        ),
+                    ),
             )
 
         assertEquals("SplxlOBeZQQYbYS6WxSbIA", args.preAuthorizedCode)
         assertEquals("123456", args.txCode)
         assertEquals("wallet-client", args.clientId)
         assertEquals("https://wallet.example.com/callback", args.redirectUri)
+        val auth = args.clientAuthentication as ClientAuthenticationConfig.PrivateKeyJwt
+        assertEquals("urn:ietf:params:oauth:client-assertion-type:jwt-bearer", auth.assertion.assertionType)
+        assertEquals("jwt.assertion", auth.assertion.assertion)
     }
 
     @Test
@@ -151,5 +167,16 @@ class ExchangePreAuthorizedCodeTest {
         assertNull(args.txCode)
         assertNull(args.clientId)
         assertNull(args.redirectUri)
+    }
+
+    @Test
+    fun argsClientAuthenticationIsOptional() {
+        val args =
+            ExchangePreAuthorizedCodeArgs(
+                tokenEndpoint = "https://issuer.example.com/token",
+                preAuthorizedCode = "SplxlOBeZQQYbYS6WxSbIA",
+            )
+
+        assertNull(args.clientAuthentication)
     }
 }

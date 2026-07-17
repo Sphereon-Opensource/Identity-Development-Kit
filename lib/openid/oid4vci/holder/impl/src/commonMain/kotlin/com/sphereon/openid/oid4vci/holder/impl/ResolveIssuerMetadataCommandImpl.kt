@@ -48,7 +48,7 @@ class ResolveIssuerMetadataCommandImpl(
     execution: SessionExecution,
     private val httpClientFactory: HttpClientFactory,
     private val signedMetadataVerifier: SignedMetadataVerifier,
-    private val config: Oid4vciHolderConfig? = null,
+    private val config: Oid4vciHolderConfig,
 ) : TypedServiceCommandAdapter<ResolveIssuerMetadataArgs, CredentialIssuerMetadata, IdkError>(
         commandId = ResolveIssuerMetadataCommand.COMMAND_ID,
         execution = execution,
@@ -136,7 +136,7 @@ class ResolveIssuerMetadataCommandImpl(
                     }
 
                     // Issuer did not provide signed_metadata at all
-                    if (config?.requireVerifiedSignedMetadata == true) {
+                    if (config.requireVerifiedSignedMetadata) {
                         return Err(
                             IdkError.fromString(
                                 message = "Holder requires signed metadata but issuer did not provide signed_metadata",

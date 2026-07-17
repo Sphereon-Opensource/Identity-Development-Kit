@@ -25,7 +25,7 @@ class WalletInteractionActivityTaxonomyTest {
         val state =
             WalletInteractionState(
                 sessionId = WalletInteractionSessionId("s1"),
-                walletInstanceId = "wallet",
+                walletUnitId = "wallet",
                 status = WalletInteractionStatus.DisclosureConsent,
                 flowKind = WalletInteractionFlowKind.CredentialPresent,
                 protocol = WalletProtocol.OID4VP,

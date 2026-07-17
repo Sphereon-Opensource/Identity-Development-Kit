@@ -93,6 +93,7 @@ data class AuthorizationSessionError(
 @ObjCName("AuthorizationSessionCreateArgs", exact = true)
 @JsExportCompat
 data class AuthorizationSessionCreateArgs(
+    val instanceId: String,
     /**
      * Optional reference to a pre-configured query (configuration mode).
      */
@@ -109,7 +110,35 @@ data class AuthorizationSessionCreateArgs(
     val state: String? = null,
     val verifierId: String? = null,
     val callback: AuthorizationSessionCallbackConfig? = null,
-)
+) {
+    init {
+        Oid4vpSessionIdentity.requireCanonical("instanceId", instanceId)
+    }
+}
+
+/** Canonical identity constraints shared by OID4VP session producers and history events. */
+object Oid4vpSessionIdentity {
+    const val MAX_IDENTIFIER_LENGTH: Int = 190
+
+    fun normalize(
+        fieldName: String,
+        value: String,
+    ): String {
+        val normalized = value.trim()
+        require(normalized.isNotEmpty()) { "$fieldName must not be blank" }
+        require(normalized.length <= MAX_IDENTIFIER_LENGTH) {
+            "$fieldName must not exceed $MAX_IDENTIFIER_LENGTH characters"
+        }
+        return normalized
+    }
+
+    fun requireCanonical(
+        fieldName: String,
+        value: String,
+    ) {
+        require(value == normalize(fieldName, value)) { "$fieldName must not contain surrounding whitespace" }
+    }
+}
 
 /**
  * Stored authorization session state.
@@ -118,6 +147,8 @@ data class AuthorizationSessionCreateArgs(
 @ObjCName("AuthorizationSession", exact = true)
 @JsExportCompat
 data class AuthorizationSession(
+    /** Immutable verifier-instance identity captured before session creation. */
+    val instanceId: String,
     val sessionId: String,
     /**
      * Business key / correlation id.
@@ -180,4 +211,9 @@ data class AuthorizationSession(
     val createdAt: Long,
     val updatedAt: Long,
     val expiresAt: Long,
-)
+) {
+    init {
+        Oid4vpSessionIdentity.requireCanonical("instanceId", instanceId)
+        Oid4vpSessionIdentity.requireCanonical("protocolSessionId", sessionId)
+    }
+}

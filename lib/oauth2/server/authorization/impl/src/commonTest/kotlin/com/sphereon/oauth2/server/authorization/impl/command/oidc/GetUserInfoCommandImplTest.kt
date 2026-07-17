@@ -90,7 +90,7 @@ class GetUserInfoCommandImplTest {
 
     private fun emittedJson(response: UserInfoResponse): JsonObject = Json.parseToJsonElement(Json.encodeToString(UserInfoResponse.serializer(), response)) as JsonObject
 
-    // ─── Wire-shape tests (the P0 finding) ───────────────────────────────────
+    // ─── Wire-shape tests ───────────────────────────────────
 
     @Test
     fun userInfoResponseSerializesAsFlatJsonObject() {

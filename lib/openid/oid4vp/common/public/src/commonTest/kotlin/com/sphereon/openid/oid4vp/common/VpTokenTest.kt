@@ -103,8 +103,12 @@ class VpTokenTest {
     fun parseVpTokenFromDcqlJsonObjectWithSinglePresentations() {
         val json =
             buildJsonObject {
-                put("driver_license_query", "eyJhbGciOiJFUzI1NiJ9...")
-                put("age_verification_query", "eyJhbGciOiJFUzI1NiJ9_2...")
+                putJsonArray("driver_license_query") {
+                    add(JsonPrimitive("eyJhbGciOiJFUzI1NiJ9..."))
+                }
+                putJsonArray("age_verification_query") {
+                    add(JsonPrimitive("eyJhbGciOiJFUzI1NiJ9_2..."))
+                }
             }
         val token = VpToken.fromJson(json)
 
@@ -117,7 +121,9 @@ class VpTokenTest {
     fun parseVpTokenFromDcqlJsonObjectWithArrayPresentations() {
         val json =
             buildJsonObject {
-                put("driver_license_query", "eyJhbGc1...")
+                putJsonArray("driver_license_query") {
+                    add(JsonPrimitive("eyJhbGc1..."))
+                }
                 putJsonArray("employment_query") {
                     add(JsonPrimitive("eyJhbGc2..."))
                     add(JsonPrimitive("eyJhbGc3..."))
@@ -129,6 +135,18 @@ class VpTokenTest {
         assertEquals(3, token.presentationCount)
         assertEquals(1, token.getPresentation("driver_license_query")?.size)
         assertEquals(2, token.getPresentation("employment_query")?.size)
+    }
+
+    @Test
+    fun rejectScalarPresentationValues() {
+        val compactScalar = buildJsonObject { put("query1", "eyJhbGc...") }
+        val objectScalar =
+            buildJsonObject {
+                put("query1", buildJsonObject { put("type", "VerifiablePresentation") })
+            }
+
+        assertFailsWith<IllegalArgumentException> { VpToken.fromJson(compactScalar) }
+        assertFailsWith<IllegalArgumentException> { VpToken.fromJson(objectScalar) }
     }
 
     @Test
@@ -170,8 +188,10 @@ class VpTokenTest {
             }
         val json =
             buildJsonObject {
-                put("compact_query", "eyJhbGciOiJFUzI1NiJ9.payload.sig")
-                put("ldp_query", ldpPresentation)
+                putJsonArray("compact_query") {
+                    add(JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.payload.sig"))
+                }
+                putJsonArray("ldp_query") { add(ldpPresentation) }
             }
 
         val token = VpToken.fromJson(json)
@@ -192,8 +212,8 @@ class VpTokenTest {
     }
 
     /**
-     * A single (non-array) `ldp_vp` JSON object value under a query id is also a valid
-     * Presentation per §8.1 and must parse without crashing.
+     * A single `ldp_vp` remains an object Presentation, but section 8.1 still requires the
+     * credential-query value containing it to be an array.
      */
     @Test
     fun parseVpTokenWithSingleLdpObjectValue() {
@@ -203,7 +223,7 @@ class VpTokenTest {
             }
         val json =
             buildJsonObject {
-                put("ldp_query", ldpPresentation)
+                putJsonArray("ldp_query") { add(ldpPresentation) }
             }
 
         val token = VpToken.fromJson(json)
@@ -225,9 +245,10 @@ class VpTokenTest {
 
         assertTrue(json is JsonObject)
         assertEquals(2, json.size)
-        // Single presentations serialize as strings
-        assertTrue(json["query1"] is JsonPrimitive)
-        assertTrue(json["query2"] is JsonPrimitive)
+        assertIs<JsonArray>(json["query1"])
+        assertIs<JsonArray>(json["query2"])
+        assertEquals(1, (json["query1"] as JsonArray).size)
+        assertEquals(1, (json["query2"] as JsonArray).size)
     }
 
     @Test
@@ -242,9 +263,10 @@ class VpTokenTest {
         val json = VpToken.run { token.toJson() }
 
         assertTrue(json is JsonObject)
-        // Single presentation as string, multiple as array
-        assertTrue(json["query1"] is JsonPrimitive)
+        // Both singleton and multiple presentation values are arrays.
+        assertTrue(json["query1"] is JsonArray)
         assertTrue(json["query2"] is JsonArray)
+        assertEquals(1, (json["query1"] as JsonArray).size)
         assertEquals(2, (json["query2"] as JsonArray).size)
     }
 

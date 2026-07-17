@@ -18,6 +18,7 @@ package com.sphereon.oauth2.server.authorization.impl.command.token
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs
@@ -51,7 +52,7 @@ class RegisterPreAuthorizedCodeCommandImplTest {
         override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(false)
     }
 
-    private fun configProvider(internalClients: Map<String, Pair<String, String>>) =
+    private fun configProvider(internalClients: Map<String, InternalClientConfig>) =
         TestOAuth2ServersConfigProvider(
             OAuth2ServersConfig(
                 servers = mapOf("default" to OAuth2ServerInstanceConfig(issuer = "https://as.example.com", internalClients = internalClients)),
@@ -65,7 +66,16 @@ class RegisterPreAuthorizedCodeCommandImplTest {
             val command =
                 RegisterPreAuthorizedCodeCommandImpl(
                     execution = ctx.execution,
-                    configProvider = configProvider(mapOf("issuer" to ("issuer-client" to "issuer-secret"))),
+                    configProvider =
+                        configProvider(
+                            mapOf(
+                                "issuer" to
+                                    InternalClientConfig(
+                                        clientId = "issuer-client",
+                                        clientSecret = "issuer-secret",
+                                    ),
+                            ),
+                        ),
                     preAuthorizedCodeStorage = storage,
                 )
 
@@ -94,7 +104,16 @@ class RegisterPreAuthorizedCodeCommandImplTest {
             val command =
                 RegisterPreAuthorizedCodeCommandImpl(
                     execution = ctx.execution,
-                    configProvider = configProvider(mapOf("issuer" to ("issuer-client" to "issuer-secret"))),
+                    configProvider =
+                        configProvider(
+                            mapOf(
+                                "issuer" to
+                                    InternalClientConfig(
+                                        clientId = "issuer-client",
+                                        clientSecret = "issuer-secret",
+                                    ),
+                            ),
+                        ),
                     preAuthorizedCodeStorage = FakePreAuthorizedCodeStorage(),
                 )
 

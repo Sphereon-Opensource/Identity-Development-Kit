@@ -27,32 +27,32 @@ import com.sphereon.core.api.error.IdkError
  */
 interface WalletCredentialStore {
     suspend fun putCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
     ): IdkResult<CredentialRecord, IdkError>
 
     suspend fun getCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialRecord?, IdkError>
 
     suspend fun getMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialMetadata?, IdkError>
 
     suspend fun listMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter = CredentialMetadataFilter(),
     ): IdkResult<List<CredentialMetadata>, IdkError>
 
     suspend fun findByCredentialTypeRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         ref: CredentialTypeRef,
     ): IdkResult<List<CredentialMetadata>, IdkError>
 
     suspend fun deleteCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<Boolean, IdkError>
 }

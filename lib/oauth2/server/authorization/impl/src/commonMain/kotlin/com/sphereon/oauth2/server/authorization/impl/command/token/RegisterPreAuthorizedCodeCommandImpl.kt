@@ -67,8 +67,8 @@ class RegisterPreAuthorizedCodeCommandImpl(
         val applied = applyDuring(args)
 
         val config = configProvider.getDefaultServer()
-        val allowedClientId = config.internalClients["issuer"]?.first
-        val allowedClientSecret = config.internalClients["issuer"]?.second
+        val allowedClientId = config.internalClients["issuer"]?.clientId
+        val allowedClientSecret = config.internalClients["issuer"]?.clientSecret
         if (allowedClientId == null || applied.basicAuthClientId != allowedClientId || applied.basicAuthClientSecret != allowedClientSecret) {
             return Err(
                 IdkError.fromString(

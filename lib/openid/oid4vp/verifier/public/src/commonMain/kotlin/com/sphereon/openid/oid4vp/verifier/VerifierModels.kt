@@ -63,6 +63,8 @@ import kotlin.native.ObjCName
 @ObjCName("CreateAuthorizationRequestArgs", exact = true)
 @JsExportCompat
 data class CreateAuthorizationRequestArgs(
+    /** Verifier instance resolved by the routing boundary before any session state is created. */
+    val instanceId: String,
     val dcqlQuery: DcqlQuery,
     val clientId: String,
     val responseUri: String? = null,
@@ -424,10 +426,10 @@ enum class Oid4vpUriScheme(
     OID4VP("oid4vp"),
 
     /**
-     * HAIP (High Assurance Identity Profile) scheme
+     * HAIP 1.0 Final presentation scheme.
      */
-    @SerialName("haip")
-    HAIP("haip"),
+    @SerialName("haip-vp")
+    HAIP_VP("haip-vp"),
     ;
 
     companion object {

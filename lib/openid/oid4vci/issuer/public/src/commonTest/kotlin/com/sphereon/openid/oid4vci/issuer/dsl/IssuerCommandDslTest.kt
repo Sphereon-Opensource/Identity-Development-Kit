@@ -32,13 +32,14 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithPreAuthGrantAndTxCode() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant(txCodeRequired = true)
             }
 
         assertEquals("https://issuer.example.com", args.issuerId)
+        assertEquals("issuer-instance-command-dsl", args.instanceId)
         assertEquals(listOf("UniversityDegree"), args.credentialConfigurationIds)
         assertEquals(true, args.preAuthorizedCodeGrant)
         assertEquals(false, args.authorizationCodeGrant)
@@ -54,7 +55,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithPreAuthGrantWithoutTxCode() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("MembershipCard")
                 preAuthorizedCodeGrant()
@@ -71,7 +72,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithAuthCodeGrantOnly() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("EmployeeID")
                 authorizationCodeGrant()
@@ -89,7 +90,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithBothGrants() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant(txCodeRequired = false)
@@ -107,7 +108,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithPreSeededAttributes() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
@@ -133,7 +134,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithoutAttributesGivesNull() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
@@ -149,7 +150,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithMultipleCredentialConfigurations() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree", "MembershipCard", "EmployeeID")
                 preAuthorizedCodeGrant()
@@ -168,7 +169,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithSingleCredentialFunction() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credential("PID")
                 preAuthorizedCodeGrant()
@@ -184,7 +185,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMixingCredentialAndCredentials() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credential("PID")
                 credentials("UniversityDegree", "MembershipCard")
@@ -204,7 +205,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithCustomTtl() {
         val args =
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
@@ -221,7 +222,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMissingIssuerIdFails() {
         assertFailsWith<IllegalArgumentException> {
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
             }
@@ -235,7 +236,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMissingCredentialsFails() {
         assertFailsWith<IllegalArgumentException> {
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 preAuthorizedCodeGrant()
             }
@@ -249,7 +250,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMissingGrantTypeFails() {
         assertFailsWith<IllegalArgumentException> {
-            createOfferArgs {
+            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 // no preAuthorizedCodeGrant() or authorizationCodeGrant()

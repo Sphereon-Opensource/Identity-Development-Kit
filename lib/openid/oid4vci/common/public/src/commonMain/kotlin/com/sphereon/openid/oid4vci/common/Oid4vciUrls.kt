@@ -21,14 +21,14 @@ package com.sphereon.openid.oid4vci.common
  */
 object Oid4vciUrls {
     /**
-     * Builds the `.well-known/openid-credential-issuer` URL per OID4VCI 1.1 Section 13.2.
+     * Builds the `.well-known/openid-credential-issuer` URL per OID4VCI 1.0 Final Section 12.2.2.
      *
      * The `.well-known` segment is inserted between the host (including port) and any path:
      * - `https://issuer.example.com`        → `https://issuer.example.com/.well-known/openid-credential-issuer`
      * - `https://issuer.example.com/tenant1` → `https://issuer.example.com/.well-known/openid-credential-issuer/tenant1`
      */
     fun buildWellKnownUrl(issuerUrl: String): String {
-        val normalized = issuerUrl.trimEnd('/')
+        val normalized = issuerUrl.trim().trimEnd('/')
         if (normalized.contains(WELL_KNOWN_PATH)) {
             return normalized
         }
@@ -64,4 +64,5 @@ object Oid4vciUrls {
     const val WELL_KNOWN_PATH = "/.well-known/openid-credential-issuer"
 
     private const val SCHEME_SEPARATOR_LENGTH = 3
+
 }

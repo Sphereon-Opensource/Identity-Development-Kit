@@ -107,7 +107,7 @@ class ParseAuthorizationRequestCommandImplTest {
             assertTrue(result.isErr)
         }
 
-    // ─── redirect_uri is optional at parse time (Task 1.6 plumbing) ──────────
+    // ─── redirect_uri is optional at parse time ──────────
 
     @Test
     fun parseOptionalRedirectUriAbsentIsNull() =
@@ -347,5 +347,31 @@ class ParseAuthorizationRequestCommandImplTest {
             val result = command.execute(ParseAuthorizationRequestArgs(minimalParams("authorization_details" to ad)))
             assertTrue(result.isOk)
             assertEquals(ad, result.value.additionalParameters["authorization_details"])
+        }
+
+    @Test
+    fun parsesRfc8707ResourceAsAnExactBoundValue() =
+        runTest {
+            val resource = "https://issuer.example.test/api/developer/v1"
+            val result = command.execute(ParseAuthorizationRequestArgs(minimalParams("resource" to resource)))
+
+            assertTrue(result.isOk)
+            assertEquals(listOf(resource), result.value.resource)
+        }
+
+    @Test
+    fun rejectsFragmentResourceIndicator() =
+        runTest {
+            val result = command.execute(ParseAuthorizationRequestArgs(minimalParams("resource" to "https://issuer.example.test/api#fragment")))
+
+            assertTrue(result.isErr)
+        }
+
+    @Test
+    fun rejectsInsecureResourceIndicator() =
+        runTest {
+            val result = command.execute(ParseAuthorizationRequestArgs(minimalParams("resource" to "http://issuer.example.test/api")))
+
+            assertTrue(result.isErr)
         }
 }

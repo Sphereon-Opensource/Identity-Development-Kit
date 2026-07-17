@@ -38,33 +38,33 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<RemoteWalletIssuanceSessionStore>())
 class UnsupportedRemoteWalletIssuanceSessionStore : RemoteWalletIssuanceSessionStore {
     override suspend fun putSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         session: IssuanceSession,
     ): IdkResult<IssuanceSession, IdkError> = unsupported()
 
     override suspend fun getSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<IssuanceSession?, IdkError> = unsupported()
 
     override suspend fun listSessions(
-        walletInstanceId: String,
+        walletUnitId: String,
         statuses: Set<IssuanceSessionStatus>,
     ): IdkResult<List<IssuanceSession>, IdkError> = unsupported()
 
     override suspend fun storeDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
         accessToken: String,
     ): IdkResult<SecretRef, IdkError> = unsupported()
 
     override suspend fun getDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<String?, IdkError> = unsupported()
 
     override suspend fun deleteSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
     ): IdkResult<Boolean, IdkError> = unsupported()
 

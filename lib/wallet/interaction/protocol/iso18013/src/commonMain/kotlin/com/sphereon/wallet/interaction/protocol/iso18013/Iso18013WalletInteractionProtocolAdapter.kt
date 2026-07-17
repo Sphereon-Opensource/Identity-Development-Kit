@@ -24,6 +24,7 @@ import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.WalletInteractionSession
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.WalletProtocolCapability
 import com.sphereon.wallet.interaction.WalletProtocolExecutionRequest
@@ -31,7 +32,10 @@ import com.sphereon.wallet.interaction.WalletProtocolMatch
 import com.sphereon.wallet.interaction.WalletSecurityContextAttributes
 import com.sphereon.wallet.interaction.WalletSecurityGateResult
 import com.sphereon.wallet.interaction.WalletSecurityOperation
+import com.sphereon.wallet.interaction.WalletSecurityGrantValidation
+import com.sphereon.wallet.interaction.validateFor
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
+import kotlin.time.Clock
 
 class Iso18013WalletInteractionProtocolAdapter(
     private val engagementManager: MdocEngagementManager? = null,
@@ -50,7 +54,6 @@ class Iso18013WalletInteractionProtocolAdapter(
     override suspend fun canHandle(entryPoint: WalletEntryPoint): WalletProtocolMatch {
         val raw = entryPoint.raw.orEmpty().lowercase()
         return when {
-            raw.startsWith("mdoc-openid4vp://") -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.oid4vp_mdoc")
             raw.startsWith("mdoc://") -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.website_retrieval")
             raw.startsWith("mdoc:") -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.reverse_engagement")
             entryPoint.kind == WalletEntryPointKind.NFC_HANDOVER -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.nfc_handover")
@@ -173,12 +176,36 @@ class Iso18013WalletInteractionProtocolAdapter(
             }
 
             WalletInteractionActionType.APPROVE_SECURITY_CHALLENGE -> {
-                action.securityGrant?.let { grant -> context.storePrivate(mapOf("security_grant_id" to grant.grantId)) }
-                context.applyDisclosureResult(
-                    sessionState.copy(
-                        revision = sessionState.revision + 1,
-                        securityChallenge = null,
-                    ),
+                val grant = action.sensitiveInputRef?.let { context.sensitiveInputAuthority.consumeSecurityGrant(sessionState.sessionId, it) }
+                val validation =
+                    grant?.validateFor(
+                        sessionState.securityChallenge,
+                        sessionState.walletUnitId,
+                        sessionState.counterparty?.identifier,
+                        Clock.System.now().epochSeconds,
+                    )
+                if (grant == null || validation is WalletSecurityGrantValidation.Invalid) {
+                    sessionState.next(
+                        status = WalletInteractionStatus.Failed,
+                        error = WalletInteractionError("iso18013.security_grant_ref_invalid", "wallet.interaction.error.security_grant_ref_invalid", retryable = true),
+                    )
+                } else {
+                    context.storePrivate(mapOf("security_grant_id" to grant.grantId))
+                    context.applyDisclosureResult(
+                        sessionState.copy(revision = sessionState.revision + 1, securityChallenge = null),
+                    )
+                }
+            }
+
+            WalletInteractionActionType.RESOLVE_COUNTERPARTY_CONTACT -> {
+                sessionState.copy(
+                    revision = sessionState.revision + 1,
+                    error =
+                        WalletInteractionError(
+                            code = "iso18013.action_counterparty_resolution_not_allowed",
+                            messageKey = "wallet.interaction.error.action_not_allowed",
+                            retryable = true,
+                        ),
                 )
             }
 
@@ -193,7 +220,7 @@ class Iso18013WalletInteractionProtocolAdapter(
                 WalletProtocolExecutionRequest(
                     operationId = "${sessionState.sessionId.value}-mdoc-share",
                     sessionId = sessionState.sessionId,
-                    walletInstanceId = sessionState.walletInstanceId,
+                    sessionWalletUnitId = sessionState.walletUnitId,
                     protocol = WalletProtocol.ISO18013,
                     operation = WalletSecurityOperation.PRESENTATION_SHARING,
                     audience = sessionState.counterparty?.identifier,
@@ -254,9 +281,15 @@ class Iso18013WalletInteractionProtocolAdapter(
             }
 
             is Iso18013DisclosureExecutionResult.RedirectRequired -> {
+                val handoffRef =
+                    sensitiveInputAuthority.register(
+                        sessionId = sessionState.sessionId,
+                        purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_REDIRECT_HANDOFF,
+                        value = result.redirectUri,
+                    )
                 sessionState.copy(
                     status = WalletInteractionStatus.AuthorizationRequired,
-                    authorizationUrl = result.redirectUri,
+                    authorizationHandoffRef = handoffRef,
                     error = null,
                 )
             }

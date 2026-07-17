@@ -78,6 +78,9 @@ data class PartyResult
         /** Reference to the owning party (for identities, this is the person/org that owns the identity) */
         @SerialName("ownerId")
         val ownerId: Uuid? = null,
+        /** Home organization unit for this Party. */
+        @SerialName("organizationUnitId")
+        val organizationUnitId: Uuid? = null,
         /** When the party was created */
         @SerialName("createdAt")
         val createdAt: Instant,
@@ -132,6 +135,7 @@ data class PartyResult
                 uri = party.uri,
                 jurisdiction = party.jurisdiction,
                 ownerId = party.ownerId,
+                organizationUnitId = party.organizationUnitId,
                 createdAt = party.createdAt,
                 createdById = party.createdById,
                 updatedAt = party.updatedAt,
@@ -154,6 +158,7 @@ data class PartyResult
                 uri = uri,
                 jurisdiction = jurisdiction,
                 ownerId = ownerId,
+                organizationUnitId = organizationUnitId,
                 createdAt = createdAt,
                 createdById = createdById,
                 updatedAt = updatedAt,

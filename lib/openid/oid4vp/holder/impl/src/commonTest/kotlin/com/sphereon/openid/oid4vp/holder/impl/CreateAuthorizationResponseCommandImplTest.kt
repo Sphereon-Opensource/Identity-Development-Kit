@@ -41,6 +41,8 @@ import com.sphereon.sdjwt.PresentSdJwtArgs
 import com.sphereon.sdjwt.PresentSdJwtResult
 import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -121,6 +123,8 @@ class CreateAuthorizationResponseCommandImplTest {
                 "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signature",
                 vpToken.getSinglePresentation("driver_license_query"),
             )
+            val wireVpToken = assertIs<JsonObject>(response.additionalParameters["vp_token"])
+            assertEquals(1, assertIs<JsonArray>(wireVpToken["driver_license_query"]).size)
 
             // Verify state is preserved
             assertEquals("test-state", response.state)

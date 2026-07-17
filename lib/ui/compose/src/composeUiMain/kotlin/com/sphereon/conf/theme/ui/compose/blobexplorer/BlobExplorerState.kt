@@ -23,7 +23,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.sphereon.core.api.log.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -61,7 +60,6 @@ class BlobExplorerState(
         private set
 
     val capabilities: BlobExplorerCapabilities get() = dataSource.capabilities
-    private val logger = Log.app().withTag("BlobExplorerState")
 
     fun navigateTo(prefix: String?) {
         currentPrefix = prefix
@@ -95,7 +93,6 @@ class BlobExplorerState(
                 hasMore = result.hasMore
                 sortItems()
             } catch (expected: Exception) {
-                logger.error("Failed to load blob items: ${expected.message}", exception = expected)
                 error = expected.message ?: "Failed to load items"
             } finally {
                 isLoading = false
@@ -150,7 +147,6 @@ class BlobExplorerState(
                     }
                 }
             } catch (expected: Exception) {
-                logger.error("Failed to delete blob ${blob.path}: ${expected.message}", exception = expected)
                 error = expected.message ?: "Failed to delete"
             }
         }
@@ -167,7 +163,6 @@ class BlobExplorerState(
                 items.add(created)
                 sortItems()
             } catch (expected: Exception) {
-                logger.error("Failed to upload blob $path: ${expected.message}", exception = expected)
                 error = expected.message ?: "Failed to upload"
             }
         }
@@ -183,7 +178,6 @@ class BlobExplorerState(
                 items.add(copied)
                 sortItems()
             } catch (expected: Exception) {
-                logger.error("Failed to copy blob $source to $destination: ${expected.message}", exception = expected)
                 error = expected.message ?: "Failed to copy"
             }
         }
@@ -203,7 +197,6 @@ class BlobExplorerState(
                     selectedBlob = moved
                 }
             } catch (expected: Exception) {
-                logger.error("Failed to move blob $source to $destination: ${expected.message}", exception = expected)
                 error = expected.message ?: "Failed to move"
             }
         }

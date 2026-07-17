@@ -64,7 +64,13 @@ class StaticWalletSecurityGate(
                     challengeId = request.operationId,
                     kind = WalletSecurityChallengeKind.WALLET_UNIT_POLICY,
                     reasonKey = "wallet.interaction.security.wallet_unit_policy",
-                    arguments = mapOf("operation" to request.operation.name),
+                    arguments =
+                        buildMap {
+                            put("operation", request.operation.name)
+                            put("operation_binding", request.operationHash ?: "operation:${request.operationId}")
+                            request.walletUnitId?.let { put("wallet_unit_id", it) }
+                            request.audience?.let { put("audience", it) }
+                        },
                     requiredAssurance = request.requiredAssurance,
                 ),
             )

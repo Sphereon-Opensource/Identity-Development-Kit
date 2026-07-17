@@ -49,42 +49,53 @@ class StorageProfileRoutingWalletIssuanceSessionStore(
     private val hybridStore: HybridWalletIssuanceSessionStoreDelegate,
 ) : WalletIssuanceSessionStore {
     override suspend fun putSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         session: IssuanceSession,
-    ): IdkResult<IssuanceSession, IdkError> = delegateFor(walletInstanceId).flatMap { it.putSession(walletInstanceId, session) }
+    ): IdkResult<IssuanceSession, IdkError> = delegateFor(walletUnitId).flatMap { it.putSession(walletUnitId, session) }
 
     override suspend fun getSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
-    ): IdkResult<IssuanceSession?, IdkError> = delegateFor(walletInstanceId).flatMap { it.getSession(walletInstanceId, issuanceSessionId) }
+    ): IdkResult<IssuanceSession?, IdkError> = delegateFor(walletUnitId).flatMap { it.getSession(walletUnitId, issuanceSessionId) }
 
     override suspend fun listSessions(
-        walletInstanceId: String,
+        walletUnitId: String,
         statuses: Set<IssuanceSessionStatus>,
-    ): IdkResult<List<IssuanceSession>, IdkError> = delegateFor(walletInstanceId).flatMap { it.listSessions(walletInstanceId, statuses) }
+    ): IdkResult<List<IssuanceSession>, IdkError> = delegateFor(walletUnitId).flatMap { it.listSessions(walletUnitId, statuses) }
 
     override suspend fun storeDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
         accessToken: String,
-    ): IdkResult<SecretRef, IdkError> = delegateFor(walletInstanceId).flatMap { it.storeDeferredAccessToken(walletInstanceId, issuanceSessionId, accessToken) }
+    ): IdkResult<SecretRef, IdkError> = delegateFor(walletUnitId).flatMap { it.storeDeferredAccessToken(walletUnitId, issuanceSessionId, accessToken) }
 
     override suspend fun getDeferredAccessToken(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
-    ): IdkResult<String?, IdkError> = delegateFor(walletInstanceId).flatMap { it.getDeferredAccessToken(walletInstanceId, issuanceSessionId) }
+    ): IdkResult<String?, IdkError> = delegateFor(walletUnitId).flatMap { it.getDeferredAccessToken(walletUnitId, issuanceSessionId) }
+
+    override suspend fun storeRefreshToken(
+        walletUnitId: String,
+        credentialRecordId: String,
+        refreshToken: String,
+    ): IdkResult<SecretRef, IdkError> = delegateFor(walletUnitId).flatMap { it.storeRefreshToken(walletUnitId, credentialRecordId, refreshToken) }
+
+    override suspend fun getRefreshToken(
+        walletUnitId: String,
+        credentialRecordId: String,
+    ): IdkResult<String?, IdkError> = delegateFor(walletUnitId).flatMap { it.getRefreshToken(walletUnitId, credentialRecordId) }
 
     override suspend fun deleteSession(
-        walletInstanceId: String,
+        walletUnitId: String,
         issuanceSessionId: String,
-    ): IdkResult<Boolean, IdkError> = delegateFor(walletInstanceId).flatMap { it.deleteSession(walletInstanceId, issuanceSessionId) }
+    ): IdkResult<Boolean, IdkError> = delegateFor(walletUnitId).flatMap { it.deleteSession(walletUnitId, issuanceSessionId) }
 
-    private suspend fun delegateFor(walletInstanceId: String): IdkResult<WalletIssuanceSessionStore, IdkError> {
-        val profileResult = storageProfileResolver.resolveStorageProfile(walletInstanceId)
+    private suspend fun delegateFor(walletUnitId: String): IdkResult<WalletIssuanceSessionStore, IdkError> {
+        val profileResult = storageProfileResolver.resolveStorageProfile(walletUnitId)
         if (profileResult.isErr) return Err(profileResult.error)
 
         val profile = profileResult.value
-        val validationError = profile.validationError(walletInstanceId)
+        val validationError = profile.validationError(walletUnitId)
         if (validationError != null) return Err(validationError)
 
         return Ok(
@@ -96,9 +107,9 @@ class StorageProfileRoutingWalletIssuanceSessionStore(
         )
     }
 
-    private fun StorageProfile.validationError(walletInstanceId: String): IdkError? {
-        if (this.walletInstanceId != walletInstanceId) {
-            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "StorageProfile.walletInstanceId must match walletInstanceId")
+    private fun StorageProfile.validationError(walletUnitId: String): IdkError? {
+        if (this.walletUnitId != walletUnitId) {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "StorageProfile.walletUnitId must match walletUnitId")
         }
         return when (mode) {
             WalletStorageMode.LOCAL -> {

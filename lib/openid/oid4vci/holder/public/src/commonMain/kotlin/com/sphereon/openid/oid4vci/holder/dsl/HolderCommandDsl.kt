@@ -82,13 +82,15 @@ fun requestCredentialArgs(builder: RequestCredentialArgsBuilder.() -> Unit): Req
  */
 fun createProofArgs(builder: CreateCredentialRequestProofArgsBuilder.() -> Unit): CreateCredentialRequestProofArgs {
     val state = CreateCredentialRequestProofArgsBuilder().apply(builder).buildState()
+    require(state.count == 1) {
+        "createProofArgs batch proofs require one signing key per proof; construct CreateCredentialRequestProofArgs(signingKeyIds = ...) directly"
+    }
     return CreateCredentialRequestProofArgs(
         issuerUrl = state.issuerUrl,
         cNonce = state.cNonce,
-        signingKeyId = state.signingKeyId,
+        signingKeyIds = listOf(state.signingKeyId),
         signingAlgorithm = state.signingAlgorithm,
         clientId = state.clientId,
-        count = state.count,
         keyInclusionMode = state.keyInclusionMode,
     )
 }

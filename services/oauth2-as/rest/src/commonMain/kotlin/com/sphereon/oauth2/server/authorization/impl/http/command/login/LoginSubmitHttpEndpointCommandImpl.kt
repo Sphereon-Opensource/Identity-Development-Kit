@@ -56,7 +56,8 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * HTTP shell over the AS login form's `POST /login`. Parses `username` / `password` /
+ * HTTP shell over the AS login form's `POST /login`. Parses password or WebAuthn assertion
+ * credentials plus
  * `session_id` / `return_url` from an `application/x-www-form-urlencoded` body, calls
  * [UserAuthenticationProvider.authenticateUserWithCredentials], and on success mints an
  * [OidcLoginSession] keyed by a CSPRNG-generated id, persists it through [OidcLoginSessionStore],
@@ -143,10 +144,11 @@ class LoginSubmitHttpEndpointCommandImpl(
             return Ok(oauth2ErrorResponse(400, "invalid_request", "CSRF verification failed", json))
         }
 
-        if (username.isNullOrBlank() || password.isNullOrBlank()) {
+        val credentials = credentialsFromForm(form, username, password, sessionId)
+        if (credentials == null) {
             // Wire-visible message is unified to `invalid_credentials` per RFC 6749 §4.1.2.1
             // anti-enumeration; the emitted event preserves the missing-input subcode so a SIEM
-            // analyst can distinguish "user typed nothing" from "user typed a wrong password".
+            // analyst can distinguish "user typed nothing" from a provider-side credential reject.
             auditEmitter.emit(
                 type = OAuth2AuditEventType.LOGIN_ERROR,
                 metadata = mapOf("error_subcode" to "missing_credentials"),
@@ -193,12 +195,14 @@ class LoginSubmitHttpEndpointCommandImpl(
                         )
                         return Ok(oauth2ErrorResponse(400, "invalid_request", "Could not resolve login application", json))
                     }
+                ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Could not resolve login application", json))
         val authResult =
             userAuthProvider.authenticateUserWithCredentials(
-                UserCredentials.UsernamePassword(username = username, password = password),
+                credentials.withOidcBinding(sessionId = sessionId, applicationId = applicationId),
                 AuthenticationContext(
                     sessionId = sessionId,
                     applicationId = applicationId,
+                    acrValues = pendingSession.acrValues.orEmpty(),
                 ),
             )
         if (!authResult.isOk) {
@@ -286,6 +290,50 @@ class LoginSubmitHttpEndpointCommandImpl(
         )
     }
 
+    private fun credentialsFromForm(
+        form: Map<String, List<String>>,
+        username: String?,
+        password: String?,
+        sessionId: String,
+    ): UserCredentials? {
+        if (!username.isNullOrBlank() && !password.isNullOrBlank()) {
+            return UserCredentials.UsernamePassword(username = username, password = password)
+        }
+
+        val credentialId = form[WEBAUTHN_CREDENTIAL_ID]?.firstOrNull()?.takeIf(String::isNotBlank) ?: return null
+        val challengeId = form[WEBAUTHN_CHALLENGE_ID]?.firstOrNull()?.takeIf(String::isNotBlank) ?: return null
+        val authenticatorData = form[WEBAUTHN_AUTHENTICATOR_DATA]?.firstOrNull()?.takeIf(String::isNotBlank) ?: return null
+        val clientDataJson = form[WEBAUTHN_CLIENT_DATA_JSON]?.firstOrNull()?.takeIf(String::isNotBlank) ?: return null
+        val signature = form[WEBAUTHN_SIGNATURE]?.firstOrNull()?.takeIf(String::isNotBlank) ?: return null
+        return UserCredentials.WebAuthnAssertion(
+            credentialId = credentialId,
+            challengeId = challengeId,
+            authenticatorData = authenticatorData,
+            clientDataJson = clientDataJson,
+            signature = signature,
+            userHandle = form[WEBAUTHN_USER_HANDLE]?.firstOrNull()?.takeIf(String::isNotBlank),
+            userIdHint = username?.takeIf(String::isNotBlank),
+            origin = form[WEBAUTHN_ORIGIN]?.firstOrNull()?.takeIf(String::isNotBlank),
+            rpId = form[WEBAUTHN_RP_ID]?.firstOrNull()?.takeIf(String::isNotBlank),
+            userVerified = form[WEBAUTHN_USER_VERIFIED]?.firstOrNull()?.toBooleanStrictOrNull(),
+            transport = form[WEBAUTHN_TRANSPORT]?.firstOrNull()?.takeIf(String::isNotBlank),
+            backupEligible = form[WEBAUTHN_BACKUP_ELIGIBLE]?.firstOrNull()?.toBooleanStrictOrNull(),
+            backupState = form[WEBAUTHN_BACKUP_STATE]?.firstOrNull()?.toBooleanStrictOrNull(),
+            prfCapable = form[WEBAUTHN_PRF_CAPABLE]?.firstOrNull()?.toBooleanStrictOrNull() ?: false,
+            assertionEvidenceRef = form[WEBAUTHN_ASSERTION_EVIDENCE_REF]?.firstOrNull()?.takeIf(String::isNotBlank),
+            oidcSessionId = sessionId,
+        )
+    }
+
+    private fun UserCredentials.withOidcBinding(
+        sessionId: String,
+        applicationId: String,
+    ): UserCredentials =
+        when (this) {
+            is UserCredentials.WebAuthnAssertion -> copy(oidcSessionId = sessionId, oidcApplicationId = applicationId)
+            else -> this
+        }
+
     private fun redirectBackToLoginWithError(
         sessionId: String,
         returnUrl: String,
@@ -299,5 +347,22 @@ class LoginSubmitHttpEndpointCommandImpl(
             headers = mapOf("Location" to location, "Cache-Control" to "no-store"),
             body = "",
         ).withSecurityHeaders(ResponseCategory.REST)
+    }
+
+    private companion object {
+        const val WEBAUTHN_CREDENTIAL_ID = "webauthn_credential_id"
+        const val WEBAUTHN_CHALLENGE_ID = "webauthn_challenge_id"
+        const val WEBAUTHN_AUTHENTICATOR_DATA = "webauthn_authenticator_data"
+        const val WEBAUTHN_CLIENT_DATA_JSON = "webauthn_client_data_json"
+        const val WEBAUTHN_SIGNATURE = "webauthn_signature"
+        const val WEBAUTHN_USER_HANDLE = "webauthn_user_handle"
+        const val WEBAUTHN_ORIGIN = "webauthn_origin"
+        const val WEBAUTHN_RP_ID = "webauthn_rp_id"
+        const val WEBAUTHN_USER_VERIFIED = "webauthn_user_verified"
+        const val WEBAUTHN_TRANSPORT = "webauthn_transport"
+        const val WEBAUTHN_BACKUP_ELIGIBLE = "webauthn_backup_eligible"
+        const val WEBAUTHN_BACKUP_STATE = "webauthn_backup_state"
+        const val WEBAUTHN_PRF_CAPABLE = "webauthn_prf_capable"
+        const val WEBAUTHN_ASSERTION_EVIDENCE_REF = "webauthn_assertion_evidence_ref"
     }
 }

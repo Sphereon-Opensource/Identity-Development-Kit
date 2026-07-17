@@ -1,4 +1,5 @@
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import com.sphereon.gradle.plugin.configureJsTargetIfEnabled
 import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
 /*
  * Theme Compose SDK module (IDK layer).
@@ -26,19 +27,14 @@ kotlin {
     kotlin.applyDefaultHierarchyTemplate()
     jvm()
 
-    androidLibrary {
+    android {
         namespace = "com.sphereon.conf.theme.compose"
         compileSdk = 35
         minSdk = 27
     }
-    run {
-        val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
-        if ("all" in kmpTargets || "js" in kmpTargets) {
-            js {
-                browser()
-                nodejs()
-            }
-        }
+    configureJsTargetIfEnabled {
+        browser()
+        nodejs()
     }
     configureWasmJsTargetIfEnabled {
         browser()
@@ -51,7 +47,7 @@ kotlin {
                 api(projects.libConfThemeCorePublic)
 
                 // Compose runtime — available on ALL targets including JS
-                implementation(compose.runtime)
+                implementation(sphereonlib.org.jetbrains.compose.runtime.runtime)
 
                 // DateTime (for ClientPaletteResolver)
                 implementation(sphereonlib.org.jetbrains.kotlinx.datetime)
@@ -64,24 +60,23 @@ kotlin {
             }
         }
 
-        // Intermediate source set for Compose UI platforms (JVM + iOS).
-        // compose.foundation, compose.material3, and compose.ui do NOT support JS,
-        // so files that depend on them live here instead of commonMain.
+        // Shared Compose Multiplatform source set for JVM, Android, iOS, classic JS, and WasmJS.
         val composeUiMain by creating {
             dependsOn(commonMain)
             dependencies {
-                implementation(compose.foundation)
-                implementation(compose.material3)
+                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
+                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
             }
         }
         val jvmMain by getting {
             dependsOn(composeUiMain)
         }
+        findByName("jsMain")?.dependsOn(composeUiMain)
         findByName("wasmJsMain")?.dependsOn(composeUiMain)
         val jvmTest by getting {
             dependencies {
-                implementation(compose.foundation)
-                implementation(compose.material3)
+                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
+                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
             }
         }
         findByName("androidMain")?.dependsOn(composeUiMain)

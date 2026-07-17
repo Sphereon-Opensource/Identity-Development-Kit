@@ -33,8 +33,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * Extracted client authentication bound for [com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand].
  *
  * Used by the `/token`, `/introspect`, and `/revoke` handlers so all three endpoints use an
- * identical client-auth extraction path — fixing the review §2 P0 that flagged introspect/revoke
- * accepting an unauthenticated `client_id` from the request body .
+ * identical client-auth extraction path: none of them may act on an unauthenticated `client_id`
+ * taken from the request body.
  */
 public data class ExtractedClientAuthentication(
     val clientAuthentication: ClientAuthenticationConfig,

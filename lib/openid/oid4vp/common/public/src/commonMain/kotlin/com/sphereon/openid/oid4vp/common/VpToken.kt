@@ -40,9 +40,9 @@ import kotlin.native.ObjCName
  *
  * OpenID4VP 1.0 §8.1 (Response Parameters): when the Authorization Request used
  * `dcql_query`, the `vp_token` is a JSON object whose keys are the DCQL credential-query
- * `id`s and whose values are the Presentation(s) matching that query. A single query may
- * match multiple Credentials, so the value MAY be a single Presentation or an array of
- * Presentations.
+ * `id`s and whose values are arrays of one or more Presentations matching that query. When
+ * the query's `multiple` property is omitted or false, the array MUST contain exactly one
+ * Presentation. A scalar Presentation value is never valid in the DCQL VP Token object.
  *
  * Critically, the *type of each Presentation value is Credential-Format dependent* (§8.1,
  * Appendix B):
@@ -61,9 +61,9 @@ import kotlin.native.ObjCName
  *
  * DCQL vp_token wire shapes:
  * ```json
- * { "credential_query_id_1": "eyJhbGc..." }                 // single compact presentation
+ * { "credential_query_id_1": ["eyJhbGc..."] }               // single compact presentation
  * { "credential_query_id_2": ["eyJhbGc...", "eyJhbGc..."] } // multiple compact presentations
- * { "credential_query_id_3": { "@context": [...], ... } }   // single ldp_vp (JSON object)
+ * { "credential_query_id_3": [{ "@context": [...], ... }] }  // single ldp_vp (JSON object)
  * ```
  *
  * @property presentationElements Canonical map from credential query ID to the list of
@@ -170,9 +170,9 @@ data class VpToken(
         /**
          * Create a VP Token from a JSON element.
          *
-         * Parses the DCQL object format where keys are credential query IDs and values are
-         * either a single Presentation or an array of Presentations. Each Presentation is a
-         * string (compact formats) or a JSON object (`ldp_vc`/`ldp_vp`) per OID4VP §8.1.
+         * Parses the DCQL object format where keys are credential query IDs and every value is
+         * an array of one or more Presentations. Each Presentation is a string (compact formats)
+         * or a JSON object (`ldp_vc`/`ldp_vp`) per OID4VP 1.0 Final section 8.1.
          *
          * @param json JSON element representing the vp_token
          * @return Parsed VpToken
@@ -197,13 +197,10 @@ data class VpToken(
             val presentations = mutableMapOf<String, List<JsonElement>>()
 
             for ((queryId, value) in jsonObject) {
-                val presentationList: List<JsonElement> =
-                    when (value) {
-                        is JsonArray -> value.toList()
-
-                        // A single Presentation: string (compact) or object (ldp_vc/ldp_vp).
-                        else -> listOf(value)
-                    }
+                require(value is JsonArray) {
+                    "VP Token value for '$queryId' must be an array of Presentations"
+                }
+                val presentationList: List<JsonElement> = value.toList()
 
                 require(presentationList.isNotEmpty()) {
                     "VP Token presentations for '$queryId' cannot be empty"
@@ -252,21 +249,14 @@ data class VpToken(
         /**
          * Convert VP Token to JSON element.
          *
-         * Serializes to DCQL object format:
-         * - Single presentations are serialized as their element (string or object)
-         * - Multiple presentations are serialized as an array of elements
+         * Serializes to the OID4VP 1.0 Final DCQL object format. Every credential-query ID
+         * maps to an array, including queries with exactly one Presentation.
          *
          * @return JSON object with credential query IDs as keys
          */
         fun VpToken.toJson(): JsonElement {
             val entries =
-                presentationElements.mapValues { (_, presentationList) ->
-                    if (presentationList.size == 1) {
-                        presentationList.first()
-                    } else {
-                        JsonArray(presentationList)
-                    }
-                }
+                presentationElements.mapValues { (_, presentationList) -> JsonArray(presentationList) }
             return JsonObject(entries)
         }
 
@@ -291,7 +281,7 @@ object VpTokenSerializer : KSerializer<VpToken> {
     override val descriptor: SerialDescriptor =
         MapSerializer(
             String.serializer(),
-            ListSerializer(String.serializer()),
+            ListSerializer(JsonElement.serializer()),
         ).descriptor
 
     override fun serialize(

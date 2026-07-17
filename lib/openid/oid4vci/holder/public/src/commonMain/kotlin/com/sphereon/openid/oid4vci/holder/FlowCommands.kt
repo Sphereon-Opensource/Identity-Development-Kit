@@ -143,6 +143,8 @@ interface SendNotificationWithRetryCommand : ServiceCommand<SendNotificationWith
  * @param issuerUrl Issuer URL used as JWT `aud` in the proof.
  * @param signingKeyId Managed key identifier used for proof signing.
  * @param signingAlgorithm JWA signing algorithm (default "ES256").
+ * @param keyAttestationJwt Optional OID4VCI key-attestation JWT for proof JWT header or attestation proof mode.
+ * @param proofType Proof type to create. Defaults to `jwt`; `attestation` sends [keyAttestationJwt] as the proof value.
  * @param credentialConfigurationId Mutually exclusive with [credentialIdentifier].
  * @param credentialIdentifier Mutually exclusive with [credentialConfigurationId].
  * @param nonceEndpoint Optional nonce endpoint for auto-nonce and invalid_nonce retry.
@@ -158,6 +160,8 @@ data class RequestCredentialWithFlowArgs(
     val issuerUrl: String,
     val signingKeyId: String,
     val signingAlgorithm: String = "ES256",
+    val keyAttestationJwt: String? = null,
+    val proofType: String = "jwt",
     val credentialConfigurationId: String? = null,
     val credentialIdentifier: String? = null,
     val nonceEndpoint: String? = null,

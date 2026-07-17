@@ -40,6 +40,8 @@ import com.sphereon.crypto.core.kms.command.VerifyDigestResult
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureResult
+import com.sphereon.crypto.jose.jws.command.hasResolvedPublicJwkVerificationMaterial
+import com.sphereon.crypto.jose.jws.command.verifyResolvedPublicJwkSignature
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.Inject
@@ -118,8 +120,19 @@ class VerifyRawSignatureCommandImpl(
         log.debug("Verifying raw signature with key: ${keyInfo.kid ?: keyInfo.alias ?: "unknown"}")
 
         return try {
-            val provider = providerRegistry.getProvider(keyInfo.providerId, keyInfo.signatureAlgorithm)
-            val isValid = provider.isValidRawSignature(keyInfo, appliedArgs.input, appliedArgs.signature)
+            val isValid =
+                if (keyInfo.hasResolvedPublicJwkVerificationMaterial()) {
+                    verifyResolvedPublicJwkSignature(
+                        keyInfo = keyInfo,
+                        headerAlg = null,
+                        input = appliedArgs.input,
+                        signature = appliedArgs.signature,
+                    )
+                } else {
+                    providerRegistry
+                        .getProvider(keyInfo.providerId, keyInfo.signatureAlgorithm)
+                        .isValidRawSignature(keyInfo, appliedArgs.input, appliedArgs.signature)
+                }
             log.debug("Signature verification result: $isValid")
             VerifyRawSignatureResult(isValid).asOkResult()
         } catch (expected: Exception) {

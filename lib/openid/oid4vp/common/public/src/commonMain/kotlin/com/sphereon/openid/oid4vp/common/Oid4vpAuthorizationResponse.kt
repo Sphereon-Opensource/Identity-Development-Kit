@@ -37,8 +37,8 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * VP Token parameter (OpenID4VP 1.0 Section 6)
  *
- * Contains one or more Verifiable Presentations in the requested format.
- * Can be a single presentation (string) or multiple presentations (array).
+ * Contains one or more Verifiable Presentations in the requested format. The DCQL VP Token
+ * is an object in which every credential-query ID maps to an array, including singletons.
  */
 val AuthorizationResponse.vpToken: VpToken?
     get() =

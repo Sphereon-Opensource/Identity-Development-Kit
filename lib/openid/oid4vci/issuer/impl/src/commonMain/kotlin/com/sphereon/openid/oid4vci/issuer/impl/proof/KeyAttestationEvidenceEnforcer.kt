@@ -63,9 +63,9 @@ internal class KeyAttestationEvidenceEnforcer(
         if (!hasX5c(header)) {
             return invalid("production key attestation requires an x5c-bound Wallet Provider signature")
         }
-        if (hasLocalOrSoftwareTestEvidence(claims, evidence)) {
+        if (hasLocalOrTestEvidence(claims, evidence)) {
             return invalid(
-                "production key attestation cannot use local, backendless, SOFTWARE_TEST, " +
+                "production key attestation cannot use local, backendless, LOCAL_EVALUATION, WEBAUTHN_PRF_WSCD, " +
                     "or unsupported key_storage/user_authentication evidence",
             )
         }
@@ -368,7 +368,7 @@ internal class KeyAttestationEvidenceEnforcer(
             else -> false
         }
 
-    private fun hasLocalOrSoftwareTestEvidence(
+    private fun hasLocalOrTestEvidence(
         claims: JsonObject,
         evidence: Map<String, String>,
     ): Boolean {
@@ -490,14 +490,12 @@ internal class KeyAttestationEvidenceEnforcer(
         val UNSUPPORTED_KEY_STORAGE_VALUES =
             setOf(
                 "none",
-                "software",
-                "software_test",
-                "software_test_provider",
                 "local_test",
                 "local_test_reference",
-                "local_software_test",
                 "local_secure_area",
                 "local_kms",
+                "webauthn_prf",
+                "webauthn_prf_wscd",
                 "stored_reference",
                 "backendless",
                 "test",
@@ -507,7 +505,6 @@ internal class KeyAttestationEvidenceEnforcer(
                 "none",
                 "local",
                 "local_test",
-                "software_test",
                 "app_pin_test_profile",
                 "pin_test",
                 "test",
@@ -516,8 +513,8 @@ internal class KeyAttestationEvidenceEnforcer(
             setOf(
                 "local_test",
                 "local_test_reference",
-                "software_test",
-                "software_test_provider",
+                "webauthn_prf",
+                "webauthn_prf_wscd",
                 "backendless",
                 "stored_reference",
             )

@@ -23,6 +23,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
 import com.sphereon.oauth2.common.config.FeaturePolicy
+import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -182,6 +183,8 @@ class OAuth2ServersConfigBinder(
         const val NORMALIZED_DEFAULT_SERVER_KEY = "default.server"
         const val CLIENT_ID_SUFFIX = ".client.id"
         const val CLIENT_SECRET_SUFFIX = ".client.secret"
+        const val DEFAULT_ACCESS_TOKEN_AUDIENCE_SUFFIX = ".default.access.token.audience"
+        const val ALLOWED_ACCESS_TOKEN_AUDIENCES_SUFFIX = ".allowed.access.token.audiences"
         val DEFAULT_SERVER_PROBE_KEYS =
             setOf(
                 "mode",
@@ -526,8 +529,8 @@ class OAuth2ServersConfigBinder(
         )
     }
 
-    private fun loadInternalClients(serverPrefix: String): Map<String, Pair<String, String>> {
-        val clients = mutableMapOf<String, Pair<String, String>>()
+    private fun loadInternalClients(serverPrefix: String): Map<String, InternalClientConfig> {
+        val clients = mutableMapOf<String, InternalClientConfig>()
         val internalClientsPrefix = "$serverPrefix.internal-clients"
         val roleKeys =
             configService
@@ -539,6 +542,8 @@ class OAuth2ServersConfigBinder(
                     when {
                         key.endsWith(CLIENT_ID_SUFFIX) -> key.removeSuffix(CLIENT_ID_SUFFIX)
                         key.endsWith(CLIENT_SECRET_SUFFIX) -> key.removeSuffix(CLIENT_SECRET_SUFFIX)
+                        key.endsWith(DEFAULT_ACCESS_TOKEN_AUDIENCE_SUFFIX) -> key.removeSuffix(DEFAULT_ACCESS_TOKEN_AUDIENCE_SUFFIX)
+                        key.endsWith(ALLOWED_ACCESS_TOKEN_AUDIENCES_SUFFIX) -> key.removeSuffix(ALLOWED_ACCESS_TOKEN_AUDIENCES_SUFFIX)
                         else -> null
                     }?.takeIf { it.isNotBlank() }
                 }.distinct()
@@ -547,7 +552,24 @@ class OAuth2ServersConfigBinder(
             val clientId = configService.getPropertyAsString("$internalClientsPrefix.$roleKey.client-id", null)
             val clientSecret = configService.getPropertyAsString("$internalClientsPrefix.$roleKey.client-secret", null)
             if (clientId != null && clientSecret != null) {
-                clients[roleKey] = clientId to clientSecret
+                clients[roleKey] =
+                    InternalClientConfig(
+                        clientId = clientId,
+                        clientSecret = clientSecret,
+                        defaultAccessTokenAudience =
+                            configService
+                                .getPropertyAsString("$internalClientsPrefix.$roleKey.default-access-token-audience", null)
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() },
+                        allowedAccessTokenAudiences =
+                            configService
+                                .getPropertyAsString("$internalClientsPrefix.$roleKey.allowed-access-token-audiences", null)
+                                ?.split(",")
+                                ?.map(String::trim)
+                                ?.filter(String::isNotEmpty)
+                                ?.toSet()
+                                .orEmpty(),
+                    )
             }
         }
         return clients

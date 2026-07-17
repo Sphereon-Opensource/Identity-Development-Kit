@@ -44,7 +44,7 @@ import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
 import com.sphereon.conf.theme.ui.compose.tokens.LocalToastTokens
 import kotlinx.coroutines.delay
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 enum class ToastVariant { Default, Success, Error, Warning, Info }
 

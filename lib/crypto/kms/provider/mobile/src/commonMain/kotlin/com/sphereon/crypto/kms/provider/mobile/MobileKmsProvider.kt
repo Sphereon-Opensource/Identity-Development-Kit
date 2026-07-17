@@ -22,7 +22,9 @@ import at.asitplus.signum.indispensable.CryptoSignature
 import at.asitplus.signum.indispensable.Digest
 import at.asitplus.signum.indispensable.ECCurve
 import at.asitplus.signum.indispensable.RSAPadding
+import at.asitplus.signum.supreme.dsl.FeaturePreference
 import at.asitplus.signum.supreme.dsl.PREFERRED
+import at.asitplus.signum.supreme.dsl.REQUIRED
 import at.asitplus.signum.supreme.os.SigningProvider
 import at.asitplus.signum.supreme.sign.SignatureInput
 import at.asitplus.signum.supreme.sign.Signer
@@ -357,13 +359,32 @@ class MobileKmsProviderImpl(
     override fun supportedDigests(): Array<DigestAlg> = getCapabilities().supportedDigestAlgorithms
 
     /**
+     * Resolves the hardware-backing preference passed to signum-supreme's `hardware { backing = ... }`
+     * DSL for key generation. Defaults to [PREFERRED] (this provider's original, unconditional
+     * behavior: hardware is used when available, with a silent fallback otherwise) unless [config]'s
+     * [KmsProviderConfigBase.defaultConfigValues] carries [MOBILE_KMS_HARDWARE_BACKING_KEY] =
+     * [MOBILE_KMS_HARDWARE_BACKING_REQUIRED], in which case [REQUIRED] is requested: signum-supreme's
+     * platform actuals then refuse to create the key at all when hardware-backed storage cannot be
+     * provided (the JVM `JKSProvider` actual throws `UnsupportedCryptoException("Hardware storage is
+     * unsupported on the JVM")`; Android/iOS actuals fail analogously against Keymaster/Secure
+     * Enclave). This gives WSCD callers (`LocalNativeWscd`, wallet-v4 P2 Task 5) a real fail-closed
+     * generation path for `WscdConfig.LocalNative.requireStrongBox` without this provider needing to
+     * inspect or report per-key achieved backing after the fact.
+     */
+    private fun hardwareBackingPreference(): FeaturePreference =
+        if (config.defaultConfigValues[MOBILE_KMS_HARDWARE_BACKING_KEY]?.lowercase() == MOBILE_KMS_HARDWARE_BACKING_REQUIRED) {
+            REQUIRED
+        } else {
+            PREFERRED
+        }
+
+    /**
      * Generates a cryptographic key pair based on the provided elliptic curve.
      *
      * @param curve The elliptic curve mapping used to generate the key pair.
      * @return A `CryptoProviderKeyPair` object containing the generated key pair
      *         with their respective JWK and COSE representations.
      */
-
     override suspend fun generateKeyAsync(
         alias: String?,
         use: JwkUse?,
@@ -399,7 +420,7 @@ class MobileKmsProviderImpl(
                             }
                         }
                         hardware {
-                            backing = PREFERRED
+                            backing = hardwareBackingPreference()
                         }
                     }.getOrThrow()
         } else {
@@ -417,7 +438,7 @@ class MobileKmsProviderImpl(
                             digests = setOf(digest)
                         }
                         hardware {
-                            backing = PREFERRED
+                            backing = hardwareBackingPreference()
                         }
                     }.getOrThrow()
         }

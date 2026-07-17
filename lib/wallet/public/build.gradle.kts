@@ -42,6 +42,8 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(projects.libWalletUnitPublic)
+                api(projects.libWalletWscaPublic)
                 api(projects.libCoreApiPublic)
                 api(projects.libCryptoCorePublic)
                 api(projects.libOauth2ClientPublic)

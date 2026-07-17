@@ -61,6 +61,7 @@ kotlin {
 
                 // OAuth2 client (for token exchange)
                 api(projects.libOauth2ClientPublic)
+                api(projects.libOauth2ClientImpl)
 
                 api(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)

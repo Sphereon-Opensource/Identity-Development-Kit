@@ -26,6 +26,7 @@ import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.CborString
 import com.sphereon.cbor.CborUInt
 import com.sphereon.cbor.StringLabel
+import com.sphereon.core.api.decodeFromHex
 import com.sphereon.crypto.core.cose.CoseKey
 import com.sphereon.crypto.core.cose.CoseKeyCborCodecImpl
 import com.sphereon.mdoc.data.device.DataElementIdentifier
@@ -38,6 +39,7 @@ import com.sphereon.mdoc.data.device.IntentToRetain
 import com.sphereon.mdoc.data.device.NameSpace
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.NfcHandover
+import com.sphereon.mdoc.transfer.reader.OID4VPHandover
 import com.sphereon.mdoc.transfer.reader.QrHandover
 import com.sphereon.mdoc.transfer.reader.ReaderAuthentication
 import com.sphereon.mdoc.transfer.reader.RestApiHandover
@@ -246,6 +248,27 @@ class SessionCborCodecsImplTest {
         val encodedRestApi = handoverCodec.encode(restApiHandover).getOrThrow()
         val decodedRestApi = handoverCodec.decode(encodedRestApi).getOrThrow()
         assertEquals(restApiHandover, decodedRestApi)
+    }
+
+    @Test
+    fun oid4vpFinalHandover_matchesPublishedB_2_6Vector() {
+        val handover =
+            OID4VPHandover(
+                clientId = "x509_san_dns:example.com",
+                nonce = "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA",
+                jwkThumbprint =
+                    "4283ec927ae0f208daaa2d026a814f2b22dca52cf85ffa8f3f8626c6bd669047"
+                        .decodeFromHex(),
+                responseUri = "https://example.com/response",
+            )
+
+        val encoded = handoverCodec.encode(handover).getOrThrow()
+
+        assertContentEquals(
+            "82714f70656e494434565048616e646f7665725820048bc053c00442af9b8eed494cefdd9d95240d254b046b11b68013722aad38ac"
+                .decodeFromHex(),
+            encoded,
+        )
     }
 
     @Test

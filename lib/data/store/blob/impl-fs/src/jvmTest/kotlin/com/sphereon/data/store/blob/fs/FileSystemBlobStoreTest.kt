@@ -17,8 +17,11 @@
 package com.sphereon.data.store.blob.fs
 
 import com.sphereon.data.store.blob.BlobInfo
+import com.sphereon.data.store.blob.BlobStore
+import com.sphereon.data.store.blob.ByteArrayBlobSource
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.PutOptions
+import com.sphereon.data.store.blob.testing.BlobStoreContract
 import kotlinx.coroutines.test.runTest
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
@@ -64,6 +67,70 @@ class FileSystemBlobStoreTest {
             val getResult = store.get(r)
             assertTrue(getResult.isOk, "get should succeed")
             assertTrue(data.contentEquals(getResult.value.data))
+        }
+
+    @Test
+    fun capabilitiesAdvertiseOnlyImplementedStreamingFeatures() {
+        assertTrue(store.capabilities.supportsStreamingRead)
+        assertTrue(store.capabilities.supportsStreamingWrite)
+        assertFalse(store.capabilities.supportsEtag)
+        assertFalse(store.capabilities.supportsRevisions)
+        assertFalse(store.capabilities.supportsConditionalWrites)
+        assertFalse(store.capabilities.supportsConditionalDelete)
+    }
+
+    @Test
+    fun streamWriteAndBoundedReadRoundtrip() =
+        runTest {
+            val target = info("stream/large.bin").copy(contentType = "application/octet-stream")
+            val data = ByteArray(300_000) { (it % 251).toByte() }
+
+            val stored = store.putStream(target, ByteArrayBlobSource(data))
+            assertTrue(stored.isOk)
+            assertEquals(data.size.toLong(), stored.value.sizeBytes)
+
+            val opened = store.openRead(target)
+            assertTrue(opened.isOk)
+            val chunks = mutableListOf<ByteArray>()
+            try {
+                while (true) {
+                    val chunk =
+                        opened.value.source
+                            .read(11_000)
+                            .value ?: break
+                    assertTrue(chunk.size <= 11_000)
+                    chunks += chunk
+                }
+            } finally {
+                opened.value.source.close()
+            }
+            assertTrue(chunks.size > 1)
+            val roundtrip = ByteArray(data.size)
+            var offset = 0
+            chunks.forEach { chunk ->
+                chunk.copyInto(roundtrip, offset)
+                offset += chunk.size
+            }
+            assertTrue(data.contentEquals(roundtrip))
+        }
+
+    @Test
+    fun unsupportedConditionalWriteIsRejectedWithoutChangingContent() =
+        runTest {
+            val target = info("conditional.txt")
+            store.put(target, "original".encodeToByteArray())
+
+            val result = store.put(target, "changed".encodeToByteArray(), PutOptions(ifMatch = "\"1\""))
+
+            assertTrue(result.isErr)
+            assertEquals("BLOB_UNSUPPORTED", result.error.code)
+            assertEquals(
+                "original",
+                store
+                    .get(target)
+                    .value.data
+                    .decodeToString(),
+            )
         }
 
     @Test
@@ -377,4 +444,12 @@ class FileSystemBlobStoreTest {
             assertTrue(getResult.isOk)
             assertEquals(0, getResult.value.data.size)
         }
+}
+
+class FileSystemBlobStoreContractTest : BlobStoreContract() {
+    override fun createStore(): BlobStore {
+        val fs = FakeFileSystem()
+        fs.createDirectories("/contract".toPath())
+        return FileSystemBlobStore("/contract", fileSystem = fs)
+    }
 }

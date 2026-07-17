@@ -36,6 +36,7 @@ import com.sphereon.openid.oid4vci.rest.GetCredentialOfferStatusOutput
 import com.sphereon.openid.oid4vci.rest.GetCredentialOfferStatusServiceCommand
 import com.sphereon.openid.oid4vci.rest.IssuanceData
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestEventTypes
+import com.sphereon.openid.oid4vci.rest.impl.event.putSessionEventIdentity
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -98,13 +99,18 @@ class GetCredentialOfferStatusServiceCommandImpl(
                 null
             }
 
-        emitStatusPolledEvent(input.correlationId, currentStatus)
+        emitStatusPolledEvent(session, currentStatus)
 
         return Ok(
             GetCredentialOfferStatusOutput(
                 correlationId = input.correlationId,
                 status = currentStatus,
                 lastUpdated = now,
+                sessionId = session.issuanceSessionId,
+                offerId = session.offerId,
+                issuanceSessionId = session.issuanceSessionId,
+                createdAt = session.createdAt,
+                expiresAt = session.expiresAt,
                 error = error,
                 issuanceData = issuanceData,
             ),
@@ -112,7 +118,7 @@ class GetCredentialOfferStatusServiceCommandImpl(
     }
 
     private suspend fun resolveCurrentStatus(session: CredentialOfferSession): CredentialOfferSessionStatus {
-        val internalSessionId = session.issuanceSessionId ?: return session.status
+        val internalSessionId = session.issuanceSessionId
 
         val internalSession =
             issuanceSessionStore.get(internalSessionId).getOrElse {
@@ -123,7 +129,7 @@ class GetCredentialOfferStatusServiceCommandImpl(
     }
 
     private suspend fun buildIssuanceData(session: CredentialOfferSession): IssuanceData? {
-        val internalSessionId = session.issuanceSessionId ?: return null
+        val internalSessionId = session.issuanceSessionId
 
         val internalSession =
             issuanceSessionStore.get(internalSessionId).getOrElse {
@@ -137,25 +143,36 @@ class GetCredentialOfferStatusServiceCommandImpl(
     }
 
     private suspend fun emitStatusPolledEvent(
-        correlationId: String,
+        session: CredentialOfferSession,
         status: CredentialOfferSessionStatus,
     ) {
-        try {
-            sessionEventService.emit(
+        sessionEventService.emit(
                 sessionEventService
                     .eventBuilder()
                     .type(Oid4vciRestEventTypes.STATUS_POLLED)
                     .origin(GetCredentialOfferStatusServiceCommand.COMMAND_ID)
                     .payload(
                         buildJsonObject {
-                            put("correlationId", correlationId)
+                            put("correlationId", session.correlationId)
                             put("status", status.name)
+                            putSessionEventIdentity(
+                                protocolSessionId = session.issuanceSessionId,
+                                instanceId = session.instanceId,
+                                oldState = session.status.name,
+                                newState = status.name,
+                                currentResult = buildJsonObject {
+                                    put("correlationId", session.correlationId)
+                                    put("status", status.name)
+                                    put("sessionId", session.issuanceSessionId)
+                                    put("offerId", session.offerId)
+                                    put("createdAt", session.createdAt)
+                                    put("expiresAt", session.expiresAt)
+                                    put("lastUpdated", Clock.System.now().toEpochMilliseconds())
+                                },
+                            )
                         },
                     ).build(),
             )
-        } catch (expected: Exception) {
-            log.debug("Failed to emit STATUS_POLLED event: ${expected.message}")
-        }
     }
 
     companion object {

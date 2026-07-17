@@ -241,6 +241,95 @@ class ExchangeTokenCommandClientAuthShapeTest {
             assertFalse(body.containsKey("client_secret"), "client_secret must not appear for NONE")
         }
 
+    @Test
+    fun badRequestUseDpopNonceReturnsDpopNonceRequired() =
+        runTest {
+            val dpopNonce = "nonce-from-as"
+            val mockEngine =
+                MockEngine {
+                    respond(
+                        content =
+                            """
+                            {
+                              "error": "use_dpop_nonce",
+                              "error_description": "Authorization server requires nonce in DPoP proof"
+                            }
+                            """.trimIndent(),
+                        status = HttpStatusCode.BadRequest,
+                        headers =
+                            headersOf(
+                                HttpHeaders.ContentType to listOf(ContentType.Application.Json.toString()),
+                                "DPoP-Nonce" to listOf(dpopNonce),
+                            ),
+                    )
+                }
+            val command =
+                ExchangeTokenCommandImpl(
+                    execution = execution,
+                    httpClientFactory =
+                        object : HttpClientFactory {
+                            override fun createClient(options: HttpClientOptions): HttpClient =
+                                HttpClient(mockEngine) {
+                                    install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+                                }
+
+                            override fun isSupportedOptions(options: HttpClientOptions): Boolean = true
+
+                            override fun getEngineTypesSupported(): List<HttpClientEngineType> = emptyList()
+
+                            override fun getEngineTypeDefault(): HttpClientEngineType = HttpClientEngineType.CIO
+                        },
+                )
+
+            val result =
+                command.execute(
+                    ExchangeTokenArgs(
+                        tokenEndpoint = tokenEndpoint,
+                        request =
+                            TokenRequest(
+                                grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+                                preAuthorizedCode = "pre-auth-code",
+                                dpop = "dpop-proof",
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isErr, "nonce challenge must be returned as an error")
+            assertEquals("use_dpop_nonce", result.error.code)
+            assertEquals(dpopNonce, result.error.meta["dpop_nonce"])
+        }
+
+    @Test
+    fun additionalHeadersAndParametersAreSent() =
+        runTest {
+            val captured = mutableListOf<HttpRequestData>()
+            val command =
+                ExchangeTokenCommandImpl(
+                    execution = execution,
+                    httpClientFactory = captureRequest(captured),
+                )
+
+            val result =
+                command.execute(
+                    ExchangeTokenArgs(
+                        tokenEndpoint = tokenEndpoint,
+                        request =
+                            TokenRequest(
+                                grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+                                preAuthorizedCode = "pre-auth-code",
+                                additionalHeaders = mapOf("OAuth-Client-Attestation" to "attestation-jwt"),
+                                additionalParameters = mapOf("custom_auth_param" to kotlinx.serialization.json.JsonPrimitive("custom-value")),
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isOk, "exchange should succeed against mock; got ${if (result.isErr) result.error else ""}")
+            val request = captured.single()
+            assertEquals("attestation-jwt", request.headers["OAuth-Client-Attestation"])
+            val body = parseFormBody(bodyText(request))
+            assertEquals("custom-value", body["custom_auth_param"]?.single())
+        }
+
     companion object {
         private const val HEX_RADIX = 16
     }

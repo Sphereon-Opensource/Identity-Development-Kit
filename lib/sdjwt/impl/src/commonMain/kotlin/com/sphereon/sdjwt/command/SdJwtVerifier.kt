@@ -251,7 +251,7 @@ internal class SdJwtVerifier(
                 // Check if calculated digest matches the key
                 if (calculatedDigest != digest) {
                     errorMessages.add(
-                        "Disclosure digest mismatch for claim '${disclosure.key}': " +
+                        "Disclosure digest mismatch for claim '${disclosure.key ?: "<array element>"}': " +
                             "expected $digest but calculated $calculatedDigest",
                     )
                     return false

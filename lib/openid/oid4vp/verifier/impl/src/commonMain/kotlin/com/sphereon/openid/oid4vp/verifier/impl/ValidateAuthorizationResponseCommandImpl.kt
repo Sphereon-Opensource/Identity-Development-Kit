@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.verifier.impl
 
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
@@ -52,6 +53,8 @@ import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommandS
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
+import com.sphereon.openid.oid4vp.verifier.impl.event.emitOid4vpSessionHistoryEvent
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.statuslist.CredentialStatusDecision
@@ -116,6 +119,7 @@ class ValidateAuthorizationResponseCommandImpl(
     ValidateAuthorizationResponseCommand,
     ValidateAuthorizationResponseCommandService {
     override val commandId: String get() = ValidateAuthorizationResponseCommand.COMMAND_ID
+    private var pendingHistorySession: AuthorizationSession? = null
 
     override suspend fun supports(args: Any): Boolean = args is ValidateAuthorizationResponseArgs
 
@@ -125,8 +129,24 @@ class ValidateAuthorizationResponseCommandImpl(
         args: ValidateAuthorizationResponseArgs,
         applyDuring: (ValidateAuthorizationResponseArgs) -> ValidateAuthorizationResponseArgs,
     ): IdkResult<ValidationResult, IdkError> {
+        val correlationId =
+            args.originalRequest.state?.takeIf(String::isNotBlank)
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "OID4VP authorization response has no session correlation state",
+                    ),
+                )
+        pendingHistorySession =
+            authorizationSessionStore.get(correlationId).getOrElse { return Err(it) }
+                ?: return Err(
+                    IdkError.NOT_FOUND_ERROR(
+                        resource = "authorizationSession:$correlationId",
+                        message = "OID4VP authorization session not found",
+                    ),
+                )
         val result = doExecuteInternal(args, applyDuring)
         emitOutcome(result)
+        pendingHistorySession = null
         return result
     }
 
@@ -165,17 +185,16 @@ class ValidateAuthorizationResponseCommandImpl(
     private suspend fun emitOutcome(result: IdkResult<ValidationResult, IdkError>,) {
         val isValid = result.getOrNull()?.valid == true
         val type = if (isValid) EventTypes.OID4VP_RESPONSE_VERIFIED else EventTypes.OID4VP_RESPONSE_FAILED
-        val category = if (isValid) EventCategories.SECURITY else EventCategories.ERROR
         val es = eventService ?: return
-        es.emit(
-            es
-                .eventBuilder()
-                .type(type)
-                .subsystem(EventSubsystems.OID4VP)
-                .category(category)
-                .origin(ValidateAuthorizationResponseCommand.COMMAND_ID)
-                .payload(buildJsonObject { put("isValid", isValid) })
-                .build(),
+        es.emitOid4vpSessionHistoryEvent(
+            type = type,
+            origin = ValidateAuthorizationResponseCommand.COMMAND_ID,
+            session = requireNotNull(pendingHistorySession) {
+                "OID4VP validation outcome has no persisted authorization session"
+            },
+            stage = "RESPONSE_VALIDATION",
+            outcome = if (isValid) "VERIFIED" else "FAILED",
+            errorCode = if (isValid) null else "validation_failed",
         )
     }
 
@@ -484,7 +503,7 @@ class ValidateAuthorizationResponseCommandImpl(
         val correlationId = originalRequest.state
         if (!correlationId.isNullOrBlank()) {
             authorizationSessionStore.storeValidationResult(correlationId = correlationId, validationResult = result).fold(
-                success = { },
+                success = { pendingHistorySession = it },
                 failure = { e -> log.warn("Failed to update authorization session with validation result: ${e.message.defaultMessage}") },
             )
         }

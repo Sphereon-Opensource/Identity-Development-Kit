@@ -25,6 +25,7 @@ import com.sphereon.core.api.log.Logger
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.data.store.blob.BlobByteSource
 import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobEventCategories
 import com.sphereon.data.store.blob.BlobEventSubsystem
@@ -32,9 +33,13 @@ import com.sphereon.data.store.blob.BlobEventTypes
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobInfoType
 import com.sphereon.data.store.blob.BlobMetadataIndex
+import com.sphereon.data.store.blob.BlobReadRange
+import com.sphereon.data.store.blob.BlobReadStream
 import com.sphereon.data.store.blob.BlobService
 import com.sphereon.data.store.blob.BlobStore
+import com.sphereon.data.store.blob.BlobStoreCapabilities
 import com.sphereon.data.store.blob.BlobStoreError
+import com.sphereon.data.store.blob.DeleteOptions
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.ListResult
 import com.sphereon.data.store.blob.MetadataSearchQuery
@@ -137,6 +142,8 @@ class DefaultBlobService(
         require(ids.isNotEmpty()) { "No blob stores configured. Add at least one blob store in properties (blob.stores.<id>.type=...)" }
         return ids.first()
     }
+
+    override fun getCapabilities(storeId: String?): BlobStoreCapabilities = resolveStore(storeId).capabilities
 
     private fun resolveStoreId(storeId: String?): String = storeId ?: defaultStoreId()
 
@@ -322,6 +329,39 @@ class DefaultBlobService(
         return Ok(unscopeForCaller(descriptor, tenantId, configuredStoreId = configuredStoreId))
     }
 
+    override suspend fun storeBlobStream(
+        target: BlobInfo,
+        source: BlobByteSource,
+        options: PutOptions,
+    ): IdkResult<BlobDescriptor, IdkError> {
+        if (options.digestAlgorithm != null) {
+            return Err(BlobStoreError.Unsupported("digestAlgorithm with storeBlobStream").toIdkError())
+        }
+        val tenantId = target.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(target.storeId)
+        val store = resolveStore(target.storeId)
+        if (!store.capabilities.supportsStreamingWrite) {
+            return Err(BlobStoreError.Unsupported("storeBlobStream").toIdkError())
+        }
+        val scopedInfo = tenantScopedInfo(target, tenantId, configuredStoreId)
+        val putResult = store.putStream(scopedInfo, source, options)
+        if (putResult.isErr) {
+            return putResult
+        }
+
+        var descriptor = putResult.value
+        val retentionResult = retentionPolicyService.applyRetention(descriptor)
+        if (retentionResult.isOk) {
+            descriptor = retentionResult.value
+        }
+        val indexResult = metadataIndex.index(descriptor.copy(storeId = configuredStoreId))
+        if (indexResult.isErr) {
+            log.warn("Failed to index metadata for ${emitInfoString(scopedInfo)}: ${indexResult.error}")
+        }
+        emitBlobEvent(BlobEventTypes.BLOB_CREATED, scopedInfo, sizeBytes = descriptor.sizeBytes, contentType = descriptor.contentType)
+        return Ok(unscopeForCaller(descriptor, tenantId, configuredStoreId))
+    }
+
     override suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError> {
         if (info is ResolvedBlobInfo) {
             return Ok(info)
@@ -340,6 +380,60 @@ class DefaultBlobService(
             return getResult
         }
         return Ok(unscopeResolvedForCaller(getResult.value, tenantId, configuredStoreId))
+    }
+
+    override suspend fun openBlobRead(info: BlobInfoType): IdkResult<BlobReadStream, IdkError> {
+        val blobInfo = info.toBlobInfo()
+        val tenantId = blobInfo.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
+        val store = resolveStore(blobInfo.storeId)
+        if (!store.capabilities.supportsStreamingRead) {
+            return Err(BlobStoreError.Unsupported("openBlobRead").toIdkError())
+        }
+        if (blobInfo.path == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for openBlobRead"))
+        }
+        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, configuredStoreId)
+        val streamResult = store.openRead(scopedInfo)
+        if (streamResult.isErr) {
+            return streamResult
+        }
+        return Ok(
+            streamResult.value.copy(
+                descriptor = unscopeForCaller(streamResult.value.descriptor, tenantId, configuredStoreId),
+            ),
+        )
+    }
+
+    override suspend fun openBlobReadRange(
+        info: BlobInfoType,
+        range: BlobReadRange,
+    ): IdkResult<BlobReadStream, IdkError> {
+        val blobInfo = info.toBlobInfo()
+        val tenantId = blobInfo.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
+        val store = resolveStore(blobInfo.storeId)
+        if (!store.capabilities.supportsRangeReads) return Err(BlobStoreError.Unsupported("openBlobReadRange").toIdkError())
+        if (blobInfo.path == null) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for openBlobReadRange"))
+        val result = store.openReadRange(tenantScopedInfo(blobInfo, tenantId, configuredStoreId), range)
+        return if (result.isErr) {
+            result
+        } else {
+            Ok(result.value.copy(descriptor = unscopeForCaller(result.value.descriptor, tenantId, configuredStoreId)))
+        }
+    }
+
+    override suspend fun verifyBlobIntegrity(
+        info: BlobInfoType,
+        expected: ContentAddress,
+    ): IdkResult<Boolean, IdkError> {
+        val blobInfo = info.toBlobInfo()
+        val tenantId = blobInfo.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
+        val store = resolveStore(blobInfo.storeId)
+        if (!store.capabilities.supportsIntegrityVerification) return Err(BlobStoreError.Unsupported("verifyBlobIntegrity").toIdkError())
+        if (blobInfo.path == null) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for verifyBlobIntegrity"))
+        return store.verifyIntegrity(tenantScopedInfo(blobInfo, tenantId, configuredStoreId), expected)
     }
 
     override suspend fun getBlobInfo(info: BlobInfoType): IdkResult<BlobDescriptor, IdkError> {
@@ -412,6 +506,45 @@ class DefaultBlobService(
             return deleteResult
         }
 
+        val deindexResult = metadataIndex.deindex(scopedInfo)
+        if (deindexResult.isErr) {
+            log.warn("Failed to deindex metadata for ${emitInfoString(scopedInfo)}: ${deindexResult.error}")
+        }
+        if (deleteResult.value) {
+            emitBlobEvent(BlobEventTypes.BLOB_DELETED, scopedInfo)
+        }
+        return deleteResult
+    }
+
+    override suspend fun deleteBlobConditional(
+        info: BlobInfoType,
+        options: DeleteOptions,
+    ): IdkResult<Boolean, IdkError> {
+        val blobInfo = info.toBlobInfo()
+        val tenantId = blobInfo.tenantId ?: "default"
+        val configuredStoreId = resolveStoreId(blobInfo.storeId)
+        val store = resolveStore(blobInfo.storeId)
+        if (!store.capabilities.supportsConditionalDelete) {
+            return Err(BlobStoreError.Unsupported("deleteBlobConditional").toIdkError())
+        }
+        if (blobInfo.path == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for deleteBlobConditional"))
+        }
+        val scopedInfo = tenantScopedInfo(blobInfo, tenantId, configuredStoreId)
+        val statResult = store.stat(scopedInfo)
+        if (statResult.isOk) {
+            val canDeleteResult = retentionPolicyService.canDelete(scopedInfo, statResult.value.metadata)
+            if (canDeleteResult.isErr) {
+                return Err(canDeleteResult.error)
+            }
+            if (!canDeleteResult.value) {
+                return Err(BlobStoreError.PermissionDenied("Blob is under retention and cannot be deleted: ${scopedInfo.path}").toIdkError())
+            }
+        }
+        val deleteResult = store.deleteConditional(scopedInfo, options)
+        if (deleteResult.isErr) {
+            return deleteResult
+        }
         val deindexResult = metadataIndex.deindex(scopedInfo)
         if (deindexResult.isErr) {
             log.warn("Failed to deindex metadata for ${emitInfoString(scopedInfo)}: ${deindexResult.error}")

@@ -644,8 +644,8 @@ class VerifyAttestationClientAuthCommandImplTest {
                     walletInstanceAttestationEnforcer =
                         StubWalletInstanceAttestationEnforcer(
                             trustedWalletInstanceEvidence(
-                                profile = "LOCAL_TEST_REFERENCE",
-                                signerCertificateProfile = "SOFTWARE_TEST",
+                                profile = "LOCAL_EVALUATION_REFERENCE",
+                                signerCertificateProfile = "LOCAL_EVALUATION",
                             ),
                         ),
                 ).execute(args(pop = popJwt(popPayload)))

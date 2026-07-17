@@ -21,10 +21,35 @@ import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
+/** Canonical identity constraints shared by OID4VCI session producers and history events. */
+object Oid4vciSessionIdentity {
+    const val MAX_IDENTIFIER_LENGTH: Int = 190
+
+    fun normalize(
+        fieldName: String,
+        value: String,
+    ): String {
+        val normalized = value.trim()
+        require(normalized.isNotEmpty()) { "$fieldName must not be blank" }
+        require(normalized.length <= MAX_IDENTIFIER_LENGTH) {
+            "$fieldName must not exceed $MAX_IDENTIFIER_LENGTH characters"
+        }
+        return normalized
+    }
+
+    fun requireCanonical(
+        fieldName: String,
+        value: String,
+    ) {
+        require(value == normalize(fieldName, value)) { "$fieldName must not contain surrounding whitespace" }
+    }
+}
+
 @JsExportCompat
 @Serializable
 data class IssuanceSession(
     val sessionId: String,
+    val instanceId: String,
     val issuerId: String,
     val credentialConfigurationIds: List<String>,
     val issuerState: String? = null,
@@ -55,10 +80,27 @@ data class IssuanceSession(
      * audit-only batch skipping webhooks, etc.).
      */
     val postIssuanceHookAllowList: List<String>? = null,
+    /** Webhook requested by the offer creator for issuance status notifications. */
+    val callback: IssuanceSessionCallbackConfig? = null,
+    /** Caller-controlled opaque correlation state. Never interpreted by the issuer. */
+    val state: String? = null,
     /** Opaque join key returned by an issuer lifecycle extension. Null in the simple IDK issuer path. */
     val lifecycleCorrelationId: String? = null,
     val createdAt: Long,
     val expiresAt: Long,
+) {
+    init {
+        Oid4vciSessionIdentity.requireCanonical("protocolSessionId", sessionId)
+        Oid4vciSessionIdentity.requireCanonical("instanceId", instanceId)
+    }
+}
+
+@JsExportCompat
+@Serializable
+data class IssuanceSessionCallbackConfig(
+    val url: String,
+    val statuses: List<IssuanceSessionStatus> = emptyList(),
+    val includeIssuanceData: Boolean = false,
 )
 
 @JsExportCompat
@@ -80,6 +122,7 @@ enum class IssuanceSessionStatus {
 data class DeferredCredentialEntry(
     val transactionId: String,
     val issuanceSessionId: String,
+    val instanceId: String,
     val credentialConfigurationId: String,
     val status: DeferredCredentialStatus,
     val credentialResponse: JsonElement? = null,
@@ -88,7 +131,12 @@ data class DeferredCredentialEntry(
     val retryAfterSeconds: Int = 5,
     val createdAt: Long,
     val expiresAt: Long,
-)
+) {
+    init {
+        Oid4vciSessionIdentity.requireCanonical("protocolSessionId", issuanceSessionId)
+        Oid4vciSessionIdentity.requireCanonical("instanceId", instanceId)
+    }
+}
 
 @JsExportCompat
 @Serializable

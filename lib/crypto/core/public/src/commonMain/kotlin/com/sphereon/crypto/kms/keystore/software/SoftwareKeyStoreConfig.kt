@@ -70,6 +70,7 @@ object SoftwareKeyStoreConfigSerializer : JsonContentPolymorphicSerializer<KeySt
     override fun selectDeserializer(element: JsonElement): DeserializationStrategy<KeyStoreConfig> {
         val type = element.jsonObject["type"]?.jsonPrimitive?.content
         return when (type) {
+            PredefinedKeyStoreTypes.FILE.keyStoreType -> EncryptedFileKeyStoreConfig.serializer()
             PredefinedKeyStoreTypes.PKCS12.keyStoreType -> Pkcs12KeyStoreConfig.serializer()
             PredefinedKeyStoreTypes.JKS.keyStoreType -> JksKeyStoreConfig.serializer()
             PredefinedKeyStoreTypes.APPLE.keyStoreType -> AppleKeyStoreConfig.serializer()
@@ -77,6 +78,51 @@ object SoftwareKeyStoreConfigSerializer : JsonContentPolymorphicSerializer<KeySt
         }
     }
 }
+
+/** Encrypted JSON keystore used by JS/Node and WasmJS persistence backends. */
+@JsExportCompat
+@Serializable
+@SerialName("file")
+data class EncryptedFileKeyStoreConfig
+    @JvmOverloads
+    constructor(
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val id: String = "file",
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val enabled: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val order: Int = Order.MEDIUM.orderValue,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        @SerialName("defaultConfigValues")
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val password: String,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val path: String,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val keystoreRoot: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val bytes: ByteArray? = null,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("accessMode")
+        override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("keyVisibility")
+        override val keyVisibility: String = KeyVisibility.PRIVATE.keyVisibility,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val persist: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("overwriteAlias")
+        override val overwriteAlias: Boolean = false,
+    ) : AbstractSoftwareKeyStoreConfig() {
+        init {
+            require(path.isNotBlank()) { "Encrypted file keystore path must not be blank" }
+            require(password.isNotBlank()) { "Encrypted file keystore password must not be blank" }
+        }
+
+        @Transient
+        override val keyStoreType: String = PredefinedKeyStoreTypes.FILE.keyStoreType
+    }
 
 @Serializable
 @JsExportCompat

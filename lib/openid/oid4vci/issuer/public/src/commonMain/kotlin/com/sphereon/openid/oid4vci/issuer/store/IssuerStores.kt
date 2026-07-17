@@ -82,6 +82,32 @@ interface CredentialIssuanceSessionStore {
 }
 
 /**
+ * Durable ownership for wallet-initiated credential requests that have no credential-offer
+ * session. The first routed issuer instance atomically binds the token-derived protocol session;
+ * retries and deferred continuations must reuse that immutable binding.
+ */
+@JsExportCompat
+interface CredentialRequestIdentityStore {
+    suspend fun resolveOrCreate(
+        protocolSessionId: String,
+        instanceId: String,
+        ttlSeconds: Long,
+    ): IdkResult<CredentialRequestIdentity, IdkError>
+}
+
+@JsExportCompat
+@Serializable
+data class CredentialRequestIdentity(
+    val protocolSessionId: String,
+    val instanceId: String,
+) {
+    init {
+        Oid4vciSessionIdentity.requireCanonical("protocolSessionId", protocolSessionId)
+        Oid4vciSessionIdentity.requireCanonical("instanceId", instanceId)
+    }
+}
+
+/**
  * Store for deferred credential entries, keyed by transaction ID.
  */
 @JsExportCompat
@@ -98,10 +124,44 @@ interface DeferredCredentialStore {
  */
 @JsExportCompat
 interface NotificationStateStore {
+    /**
+     * Registers an issuer-generated notification identifier against the exact protocol session
+     * that produced it. Registration is idempotent for the same pair and must reject attempts to
+     * bind an existing identifier to a different session.
+     */
+    suspend fun registerNotification(
+        notificationId: String,
+        protocolSessionId: String,
+        instanceId: String,
+        ttlSeconds: Long,
+    ): IdkResult<Unit, IdkError>
+
+    /** Resolves durable history identity without recording receipt state. */
+    suspend fun getNotificationIdentity(notificationId: String): IdkResult<NotificationSessionIdentity?, IdkError>
+
+    /**
+     * Atomically records the first receipt for a registered notification identifier.
+     *
+     * Returns `null` when the identifier was never registered. Repeated or racing receipts return
+     * the same exact [protocolSessionId] with [NotificationReceipt.firstReceipt] set to `false`.
+     */
     suspend fun recordNotification(
         notificationId: String,
         event: CredentialNotificationEvent,
-    ): IdkResult<Unit, IdkError>
-
-    suspend fun isProcessed(notificationId: String): IdkResult<Boolean, IdkError>
+    ): IdkResult<NotificationReceipt?, IdkError>
 }
+
+@JsExportCompat
+@Serializable
+data class NotificationReceipt(
+    val protocolSessionId: String,
+    val instanceId: String,
+    val firstReceipt: Boolean,
+)
+
+@JsExportCompat
+@Serializable
+data class NotificationSessionIdentity(
+    val protocolSessionId: String,
+    val instanceId: String,
+)

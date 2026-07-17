@@ -1,9 +1,11 @@
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
 import com.sphereon.gradle.plugin.configureLinuxTargetIfEnabled
 import org.jetbrains.kotlin.gradle.dsl.JsModuleKind
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.com.android.kotlin.multiplatform.library)
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.dev.zacsweers.metro)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
@@ -15,6 +17,14 @@ metro {
 
 kotlin {
     jvm()
+    androidLibrary {
+        namespace = "com.sphereon.data.store.blob.fs"
+        compileSdk = 36
+        minSdk = 27
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     run {
         val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
         if ("all" in kmpTargets || "js" in kmpTargets) {
@@ -51,6 +61,7 @@ kotlin {
             implementation("com.squareup.okio:okio-nodefilesystem:3.17.0")
         }
         val commonTest by getting {
+            kotlin.srcDir("../test-fixtures/src/commonTest/kotlin")
             dependencies {
                 implementation(kotlin("test"))
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)

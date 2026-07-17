@@ -137,6 +137,11 @@ class ModelSerializationTest {
                 correlationId = "corr-123",
                 status = CredentialOfferSessionStatus.CREDENTIAL_ISSUED,
                 lastUpdated = 1700000000000L,
+                sessionId = "issuance-123",
+                offerId = "offer-123",
+                issuanceSessionId = "issuance-123",
+                createdAt = 1699999900000L,
+                expiresAt = 1700003600000L,
                 issuanceData =
                     IssuanceData(
                         credentialConfigurationIds = listOf("PensionSdJwt"),
@@ -150,6 +155,9 @@ class ModelSerializationTest {
         assertTrue(serialized.contains("\"last_updated\":1700000000000"))
         assertTrue(serialized.contains("\"issuance_data\""))
         assertTrue(serialized.contains("\"credential_configuration_ids\""))
+        assertTrue(serialized.contains("\"session_id\":\"issuance-123\""))
+        assertTrue(serialized.contains("\"offer_id\":\"offer-123\""))
+        assertTrue(serialized.contains("\"expires_at\":1700003600000"))
     }
 
     @Test

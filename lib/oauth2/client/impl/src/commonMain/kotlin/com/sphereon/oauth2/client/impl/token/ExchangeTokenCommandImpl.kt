@@ -55,6 +55,8 @@ import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -163,6 +165,7 @@ class ExchangeTokenCommandImpl(
                     HttpClientOptions(
                         engine = null,
                         enableContentNegotiation = true,
+                        additionalConfig = { followRedirects = false },
                     ),
                 )
 
@@ -177,6 +180,9 @@ class ExchangeTokenCommandImpl(
                         // Add DPoP header if DPoP proof is provided
                         request.dpop?.let { dpopProof ->
                             append("DPoP", dpopProof)
+                        }
+                        request.additionalHeaders.forEach { (key, value) ->
+                            append(key, value)
                         }
                     }
 
@@ -200,15 +206,16 @@ class ExchangeTokenCommandImpl(
                     Ok(tokenResponse)
                 }
 
-                response.status == HttpStatusCode.Unauthorized -> {
-                    // 401 Unauthorized - check for DPoP nonce error
+                response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.BadRequest -> {
+                    // RFC 9449 section 8 uses HTTP 400 for authorization-server DPoP nonce
+                    // challenges. Resource-server challenges use 401, so accept both here.
                     val responseBody = response.body<String>()
                     val errorResponse =
                         try {
                             json.decodeFromString<TokenErrorResponse>(responseBody)
                         } catch (e: Exception) {
                             TokenErrorResponse(
-                                error = "invalid_token",
+                                error = if (response.status == HttpStatusCode.Unauthorized) "invalid_token" else "invalid_request",
                                 errorDescription = "Failed to parse error response: ${e.message}",
                             )
                         }
@@ -328,6 +335,14 @@ class ExchangeTokenCommandImpl(
         // OpenID4VCI extensions
         request.authorizationDetails?.let {
             parameters.add("authorization_details" to it.toString())
+        }
+        request.additionalParameters.forEach { (key, value) ->
+            val stringValue =
+                when (value) {
+                    is JsonPrimitive -> value.contentOrNull ?: value.toString()
+                    else -> value.toString()
+                }
+            parameters.add(key to stringValue)
         }
 
         return parameters

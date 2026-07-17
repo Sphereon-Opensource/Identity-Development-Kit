@@ -30,6 +30,7 @@ import com.sphereon.oauth2.server.authorization.command.login.LoginAssetHttpEndp
 import com.sphereon.oauth2.server.authorization.command.login.LoginCancelHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.command.login.LoginPageHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.command.login.LoginSubmitHttpEndpointCommand
+import com.sphereon.oauth2.server.authorization.command.login.LoginWebAuthnAssertionBeginHttpEndpointCommand
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -57,6 +58,7 @@ class OAuth2LoginHttpAdapter(
     slugLookup: RoutableSlugLookup,
     tenantIdProvider: MutableResolvedTenantIdProvider,
     private val loginPageEndpointCommand: LoginPageHttpEndpointCommand,
+    private val loginWebAuthnAssertionBeginEndpointCommand: LoginWebAuthnAssertionBeginHttpEndpointCommand,
     private val loginSubmitEndpointCommand: LoginSubmitHttpEndpointCommand,
     private val loginCancelEndpointCommand: LoginCancelHttpEndpointCommand,
     private val loginAssetEndpointCommand: LoginAssetHttpEndpointCommand,
@@ -77,6 +79,7 @@ class OAuth2LoginHttpAdapter(
     override val endpointCommands: List<HttpEndpointCommand> =
         listOf(
             loginPageEndpointCommand,
+            loginWebAuthnAssertionBeginEndpointCommand,
             loginSubmitEndpointCommand,
             loginCancelEndpointCommand,
             loginAssetEndpointCommand,

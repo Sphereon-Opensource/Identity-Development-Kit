@@ -17,8 +17,12 @@
 package com.sphereon.data.store.blob.memory
 
 import com.sphereon.data.store.blob.BlobInfo
+import com.sphereon.data.store.blob.BlobStore
+import com.sphereon.data.store.blob.ByteArrayBlobSource
+import com.sphereon.data.store.blob.DeleteOptions
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.PutOptions
+import com.sphereon.data.store.blob.testing.BlobStoreContract
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -273,6 +277,92 @@ class InMemoryBlobStoreTest {
         }
 
     @Test
+    fun capabilitiesDescribeConditionalAndStreamingSupport() {
+        assertTrue(store.capabilities.supportsEtag)
+        assertTrue(store.capabilities.supportsRevisions)
+        assertTrue(store.capabilities.supportsConditionalWrites)
+        assertTrue(store.capabilities.supportsConditionalDelete)
+        assertTrue(store.capabilities.supportsStreamingRead)
+        assertTrue(store.capabilities.supportsStreamingWrite)
+        assertFalse(store.capabilities.supportsTempUrls)
+    }
+
+    @Test
+    fun conditionalUpdateRejectsStaleEtagAndRevision() =
+        runTest {
+            val target = info("conditional-update.txt")
+            val initial = store.put(target, "one".encodeToByteArray())
+            assertTrue(initial.isOk)
+            assertEquals(1L, initial.value.revision)
+
+            val updated =
+                store.put(
+                    target,
+                    "two".encodeToByteArray(),
+                    PutOptions(ifMatch = initial.value.etag, expectedRevision = initial.value.revision),
+                )
+            assertTrue(updated.isOk)
+            assertEquals(2L, updated.value.revision)
+
+            val stale = store.put(target, "three".encodeToByteArray(), PutOptions(ifMatch = initial.value.etag))
+            assertTrue(stale.isErr)
+            assertEquals("BLOB_PRECONDITION_FAILED", stale.error.code)
+            assertEquals(
+                "two",
+                store
+                    .get(target)
+                    .value.data
+                    .decodeToString(),
+            )
+        }
+
+    @Test
+    fun conditionalDeleteIsAtomicAgainstRevision() =
+        runTest {
+            val target = info("conditional-delete.txt")
+            val initial = store.put(target, "one".encodeToByteArray()).value
+            val current = store.put(target, "two".encodeToByteArray()).value
+
+            val stale = store.deleteConditional(target, DeleteOptions(expectedRevision = initial.revision))
+            assertTrue(stale.isErr)
+            assertTrue(store.exists(target).value)
+
+            val deleted = store.deleteConditional(target, DeleteOptions(ifMatch = current.etag))
+            assertTrue(deleted.isOk && deleted.value)
+            assertFalse(store.exists(target).value)
+        }
+
+    @Test
+    fun streamWriteAndChunkedReadRoundtrip() =
+        runTest {
+            val target = info("stream.bin")
+            val data = ByteArray(200_000) { (it % 251).toByte() }
+
+            val put = store.putStream(target, ByteArrayBlobSource(data))
+            assertTrue(put.isOk)
+            assertEquals(data.size.toLong(), put.value.sizeBytes)
+
+            val opened = store.openRead(target)
+            assertTrue(opened.isOk)
+            val chunks = mutableListOf<ByteArray>()
+            while (true) {
+                val chunk =
+                    opened.value.source
+                        .read(17_000)
+                        .value ?: break
+                chunks += chunk
+            }
+            assertTrue(chunks.size > 1)
+            val roundtrip = ByteArray(data.size)
+            var offset = 0
+            chunks.forEach { chunk ->
+                chunk.copyInto(roundtrip, offset)
+                offset += chunk.size
+            }
+            assertTrue(data.contentEquals(roundtrip))
+        }
+
+    @Test
     fun emptyDataPutAndGetRoundtrip() =
         runTest {
             val r = info("empty.txt")
@@ -509,4 +599,11 @@ class InMemoryBlobStoreTest {
             assertTrue(secondStat.isOk)
             assertEquals(originalCreatedAt, secondStat.value.createdAt, "createdAt should not change on overwrite")
         }
+}
+
+class InMemoryBlobStoreContractTest : BlobStoreContract() {
+    override fun createStore(): BlobStore =
+        InMemoryBlobStore(
+            InMemoryBlobBackingStorageImpl().getPartition(InMemoryBlobPartitionKey("contract", "contract")),
+        )
 }

@@ -41,9 +41,14 @@ kotlin {
             dependencies {
                 api(projects.libWalletInteractionPublic)
                 api(projects.libWalletPublic)
+                api(projects.libWalletWscaPublic)
                 api(projects.libOpenidOid4vpHolderPublic)
                 api(projects.libOpenidOid4vpCommonPublic)
                 api(projects.libOpenidOid4vpDcql)
+                // SD-JWT codec (parse/serialize) reused by SecureComponentOid4vpSdJwtHolderBindingProvider
+                // to pre-sign the RFC 9901 Key Binding JWT through Wsca instead of the generic
+                // holder's KMS-managed-identifier path.
+                api(projects.libSdjwtPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
             }
         }

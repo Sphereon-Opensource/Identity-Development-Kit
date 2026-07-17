@@ -272,6 +272,7 @@ class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
     private fun jwksHttpClientOptions(): HttpClientOptions =
         HttpClientOptions.createDefault().copy(
             additionalConfig = {
+                followRedirects = false
                 install(HttpRequestRetry) {
                     retryOnException(maxRetries = MAX_FETCH_RETRIES, retryOnTimeout = true)
                     retryOnServerErrors(maxRetries = MAX_FETCH_RETRIES)

@@ -109,6 +109,7 @@ class WalletMethodDriver(
             createAuthorizationRequestCommand
                 .execute(
                     CreateAuthorizationRequestArgs(
+                        instanceId = definition.verifierInstanceId,
                         dcqlQuery = dcqlQuery,
                         clientId = definition.verifierClientId,
                         responseUri = work.callbackBaseUrl,

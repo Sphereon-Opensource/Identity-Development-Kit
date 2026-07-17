@@ -6,6 +6,8 @@ amz-metro-public = { module = "software.amazon.app.platform:metro-public", versi
 amz-metro-impl = { module = "software.amazon.app.platform:metro-impl", version.ref = "app-platform"}
 amz-kotlin-scope-public = { module = "software.amazon.app.platform:scope-public", version.ref = "app-platform"}
 amz-di-common-public = { module = "software.amazon.app.platform:di-common-public", version.ref = "app-platform"}
+amz-presenter-backstack-nav3-public = { module = "software.amazon.app.platform:presenter-backstack-nav3-public", version.ref = "app-platform"}
+amz-presenter-molecule-testing = { module = "software.amazon.app.platform:presenter-molecule-testing", version.ref = "app-platform"}
 
 [bundles]
 app-platform-di = [

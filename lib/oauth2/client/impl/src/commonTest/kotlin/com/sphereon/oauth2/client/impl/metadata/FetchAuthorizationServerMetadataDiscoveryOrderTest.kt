@@ -192,4 +192,49 @@ class FetchAuthorizationServerMetadataDiscoveryOrderTest {
             assertTrue(result.isOk)
             assertEquals(rfc8414Url, attempts.first())
         }
+
+    @Test
+    fun issuerMatch_acceptsTrailingSlashOnEitherSide() =
+        runTest {
+            // The OIDF conformance suite publishes its AS metadata issuer WITH a trailing slash
+            // while credential offers carry the bare URL; the match must tolerate both directions.
+            val mockEngine =
+                MockEngine {
+                    respond(
+                        content =
+                            """
+                            {
+                              "issuer": "$issuer/",
+                              "authorization_endpoint": "$issuer/authorize",
+                              "token_endpoint": "$issuer/token",
+                              "jwks_uri": "$issuer/.well-known/jwks.json"
+                            }
+                            """.trimIndent(),
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                    )
+                }
+            val factory =
+                object : HttpClientFactory {
+                    override fun createClient(options: HttpClientOptions): HttpClient =
+                        HttpClient(mockEngine) {
+                            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+                        }
+
+                    override fun isSupportedOptions(options: HttpClientOptions): Boolean = true
+
+                    override fun getEngineTypesSupported(): List<HttpClientEngineType> = emptyList()
+
+                    override fun getEngineTypeDefault(): HttpClientEngineType = HttpClientEngineType.CIO
+                }
+            val command =
+                FetchAuthorizationServerMetadataCommandImpl(
+                    execution = execution,
+                    httpClientFactory = factory,
+                )
+
+            val result = command.execute(FetchServerMetadataArgs(issuer = issuer))
+            assertTrue(result.isOk, "trailing-slash issuer must not be rejected, got ${if (result.isErr) result.error else ""}")
+            assertEquals("$issuer/", result.value.issuer)
+        }
 }

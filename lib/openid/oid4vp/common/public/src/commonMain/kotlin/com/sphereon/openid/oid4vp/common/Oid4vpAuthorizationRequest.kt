@@ -71,7 +71,7 @@ val AuthorizationRequest.clientMetadata: ClientMetadata?
     get() =
         additionalParameters["client_metadata"]?.let {
             try {
-                Json.decodeFromJsonElement(ClientMetadata.serializer(), it)
+                Oid4vpJson.wire.decodeFromJsonElement(ClientMetadata.serializer(), it)
             } catch (_: Exception) {
                 null
             }

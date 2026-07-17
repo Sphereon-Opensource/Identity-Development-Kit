@@ -60,6 +60,10 @@ data class AuthorizationSession(
      * Requested scope
      */
     val scope: String? = null,
+    /** RFC 8707 resource indicators bound to this authorization session. */
+    val resource: List<String> = emptyList(),
+    /** Exact AS-client default audience bound for this authorization flow. */
+    val defaultAccessTokenAudience: String? = null,
     /**
      * PKCE code challenge (if present)
      */

@@ -160,6 +160,8 @@ class OAuth2ClientsConfigBinder(
             responseTypes = responseTypes,
             redirectUris = readStringList(properties, "redirectUris").orEmpty(),
             allowedScopes = readStringList(properties, "allowedScopes"),
+            defaultAccessTokenAudience = readString(properties, "defaultAccessTokenAudience"),
+            allowedAccessTokenAudiences = readStringList(properties, "allowedAccessTokenAudiences")?.toSet().orEmpty(),
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
             jwks = readJwks(configPrefix, properties, "jwks", entryKey),
             jwksUri = readString(properties, "jwksUri"),

@@ -84,7 +84,7 @@ sqldelight {
             packageName.set("com.sphereon.did.persistence.sqlite")
             srcDirs("src/commonMain/sqldelight")
             verifyMigrations.set(false)
-            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.3.2")
         }
     }
 }

@@ -41,6 +41,7 @@ import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
 import com.sphereon.oauth2.common.config.FeaturePolicy
+import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.config.SessionConfig
@@ -168,9 +169,32 @@ class OAuth2ServersConfigBinderRoundTripTest {
         assertEquals("sentinel-revocation-endpoint", server.revocationEndpoint, "revocationEndpoint")
         assertEquals("sentinel-jwks-uri", server.jwksUri, "jwksUri")
         // Internal service-to-service clients
-        assertEquals("sentinel-issuer-client-id" to "sentinel-issuer-client-secret", server.internalClients["issuer"], "internalClients[issuer]")
-        assertEquals("sentinel-kms-client-id" to "sentinel-kms-client-secret", server.internalClients["kms"], "internalClients[kms]")
-        assertEquals("sentinel-verifier-client-id" to "sentinel-verifier-client-secret", server.internalClients["verifier"], "internalClients[verifier]")
+        assertEquals(
+            InternalClientConfig(
+                clientId = "sentinel-issuer-client-id",
+                clientSecret = "sentinel-issuer-client-secret",
+                defaultAccessTokenAudience = "sentinel-platform-audience",
+                allowedAccessTokenAudiences = setOf("sentinel-kms-audience", "sentinel-wallet-audience"),
+            ),
+            server.internalClients["issuer"],
+            "internalClients[issuer]",
+        )
+        assertEquals(
+            InternalClientConfig(
+                clientId = "sentinel-kms-client-id",
+                clientSecret = "sentinel-kms-client-secret",
+            ),
+            server.internalClients["kms"],
+            "internalClients[kms]",
+        )
+        assertEquals(
+            InternalClientConfig(
+                clientId = "sentinel-verifier-client-id",
+                clientSecret = "sentinel-verifier-client-secret",
+            ),
+            server.internalClients["verifier"],
+            "internalClients[verifier]",
+        )
         // Public clients
         assertEquals(true, server.publicClients.allowAny, "publicClients.allowAny")
         assertEquals(listOf("sentinel-public-client-1", "sentinel-public-client-2"), server.publicClients.allowedClientIds, "publicClients.allowedClientIds")
@@ -263,6 +287,8 @@ class OAuth2ServersConfigBinderRoundTripTest {
             // Internal clients
             "$prefix.internal-clients.issuer.client-id" to "sentinel-issuer-client-id",
             "$prefix.internal-clients.issuer.client-secret" to "sentinel-issuer-client-secret",
+            "$prefix.internal-clients.issuer.default-access-token-audience" to "sentinel-platform-audience",
+            "$prefix.internal-clients.issuer.allowed-access-token-audiences" to "sentinel-kms-audience,sentinel-wallet-audience",
             "$prefix.internal-clients.kms.client-id" to "sentinel-kms-client-id",
             "$prefix.internal-clients.kms.client-secret" to "sentinel-kms-client-secret",
             "$prefix.internal-clients.verifier.client-id" to "sentinel-verifier-client-id",
@@ -289,6 +315,8 @@ class OAuth2ServersConfigBinderRoundTripTest {
                     "$serverPrefix.issuer" to "https://platform.saas.localtest.me",
                     "$serverPrefix.internal-clients.authorization-server.client-id" to "tenant-as-service",
                     "$serverPrefix.internal-clients.authorization-server.client-secret" to secret,
+                    "$serverPrefix.internal-clients.authorization-server.default-access-token-audience" to "enterprise-platform",
+                    "$serverPrefix.internal-clients.authorization-server.allowed-access-token-audiences" to "enterprise-tenant-kms",
                     "$serverPrefix.internal-clients.issuer.client-id" to "issuer-service",
                     "$serverPrefix.internal-clients.issuer.client-secret" to secret,
                 ),
@@ -299,10 +327,23 @@ class OAuth2ServersConfigBinderRoundTripTest {
             binder.getServer(serverId)
                 ?: fail("binder returned null for normalized serverId='$serverId'")
 
-        assertEquals("tenant-as-service" to secret, server.internalClients["authorization.server"], "internalClients[authorization.server]")
-        assertEquals("issuer-service" to secret, server.internalClients["issuer"], "internalClients[issuer]")
+        assertEquals(
+            InternalClientConfig(
+                clientId = "tenant-as-service",
+                clientSecret = secret,
+                defaultAccessTokenAudience = "enterprise-platform",
+                allowedAccessTokenAudiences = setOf("enterprise-tenant-kms"),
+            ),
+            server.internalClients["authorization.server"],
+            "internalClients[authorization.server]",
+        )
+        assertEquals(
+            InternalClientConfig(clientId = "issuer-service", clientSecret = secret),
+            server.internalClients["issuer"],
+            "internalClients[issuer]",
+        )
         assertTrue(
-            server.internalClients.values.contains("tenant-as-service" to secret),
+            server.internalClients.values.any { it.clientId == "tenant-as-service" && it.clientSecret == secret },
             "configured internal clients must expose tenant-as-service to the client registry",
         )
     }

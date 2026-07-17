@@ -23,6 +23,8 @@ import com.sphereon.data.store.kv.KvNamespace
 import com.sphereon.data.store.kv.KvStoreBackends
 import com.sphereon.data.store.kv.KvStoreFactory
 import com.sphereon.data.store.kv.KvStoreScopeBinding
+import com.sphereon.data.store.kv.KvStoreVersioning
+import com.sphereon.data.store.kv.KvVersionAppendResult
 import com.sphereon.data.store.kv.getKvStoreFactory
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
@@ -32,6 +34,9 @@ import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.createGraphFactory
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -39,6 +44,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.time.Duration
 
@@ -159,6 +166,101 @@ class InMemoryKvStoreDiTest {
             val removed = store.cleanupExpired().getOrThrow()
             assertEquals(2, removed)
         }
+
+    @Test
+    fun `version chain preserves history and is isolated from mutable data and delete`() =
+        runTest {
+            val store = versioningStore("chain")
+            store.put(stringNamespace, "shared", "mutable", Duration.INFINITE).getOrThrow()
+
+            val first =
+                assertIs<KvVersionAppendResult.Applied<String>>(
+                    store.append(stringNamespace, "shared", null, "v1", Duration.INFINITE).getOrThrow(),
+                ).entry
+            val second =
+                assertIs<KvVersionAppendResult.Applied<String>>(
+                    store.append(stringNamespace, "shared", first.versionId, "v2", Duration.INFINITE).getOrThrow(),
+                ).entry
+
+            assertNull(first.previousVersionId)
+            assertNotEquals(first.versionId, second.versionId)
+            assertEquals(first.versionId, second.previousVersionId)
+            assertEquals(second, store.getHead(stringNamespace, "shared").getOrThrow())
+            assertEquals(first, store.getVersion(stringNamespace, "shared", first.versionId).getOrThrow())
+            assertEquals(second, store.getVersion(stringNamespace, "shared", second.versionId).getOrThrow())
+            assertEquals("mutable", store.get(stringNamespace, "shared").getOrThrow())
+
+            assertEquals(true, store.deleteVersioned(stringNamespace, "shared").getOrThrow())
+            assertNull(store.getHead(stringNamespace, "shared").getOrThrow())
+            assertEquals("mutable", store.get(stringNamespace, "shared").getOrThrow())
+            assertEquals(false, store.deleteVersioned(stringNamespace, "shared").getOrThrow())
+        }
+
+    @Test
+    fun `concurrent appenders against one predecessor have exactly one winner`() =
+        runTest {
+            val store = versioningStore("race")
+            val root =
+                assertIs<KvVersionAppendResult.Applied<String>>(
+                    store.append(stringNamespace, "key", null, "root", Duration.INFINITE).getOrThrow(),
+                ).entry
+
+            val outcomes =
+                coroutineScope {
+                    (0 until 64)
+                        .map { index ->
+                            async {
+                                store.append(stringNamespace, "key", root.versionId, "candidate-$index", Duration.INFINITE).getOrThrow()
+                            }
+                        }.awaitAll()
+                }
+
+            val applied = outcomes.filterIsInstance<KvVersionAppendResult.Applied<String>>()
+            val conflicts = outcomes.filterIsInstance<KvVersionAppendResult.Conflict<String>>()
+            assertEquals(1, applied.size)
+            assertEquals(63, conflicts.size)
+            assertEquals(applied.single().entry, store.getHead(stringNamespace, "key").getOrThrow())
+            assertEquals(setOf(applied.single().entry.versionId), conflicts.mapNotNull { it.currentHead?.versionId }.toSet())
+        }
+
+    @Test
+    fun `expired head removes entire chain and expected null recreates it`() =
+        runTest {
+            val store = versioningStore("expiry")
+            val first =
+                assertIs<KvVersionAppendResult.Applied<String>>(
+                    store.append(stringNamespace, "key", null, "v1", Duration.INFINITE).getOrThrow(),
+                ).entry
+            val expiredHead =
+                assertIs<KvVersionAppendResult.Applied<String>>(
+                    store.append(stringNamespace, "key", first.versionId, "expired", Duration.ZERO).getOrThrow(),
+                ).entry
+
+            assertNull(store.getHead(stringNamespace, "key").getOrThrow())
+            assertNull(store.getVersion(stringNamespace, "key", first.versionId).getOrThrow())
+
+            val fresh =
+                assertIs<KvVersionAppendResult.Applied<String>>(
+                    store.append(stringNamespace, "key", null, "fresh", Duration.INFINITE).getOrThrow(),
+                ).entry
+            assertNull(fresh.previousVersionId)
+            assertEquals("fresh", store.getHead(stringNamespace, "key").getOrThrow()?.value)
+            assertNull(store.getVersion(stringNamespace, "key", first.versionId).getOrThrow())
+            assertNull(store.getVersion(stringNamespace, "key", expiredHead.versionId).getOrThrow())
+        }
+
+    private fun versioningStore(configId: String): KvStoreVersioning {
+        val tenant = tenantData("tenant-versioning")
+        val user = app.userContextManager.createOrGetFromData(tenantData = tenant, principalValue = "principal-versioning")
+        val session = user.createSession(sessionId = "session-$configId", makeActive = true)
+        val factory = app.kvStoreFactories.getKvStoreFactory(KvStoreBackends.MEMORY)
+        return assertIs(
+            factory.create(
+                InMemoryKvStoreConfig(id = configId, scopeBinding = KvStoreScopeBinding.SESSION),
+                session.sessionExecution,
+            ),
+        )
+    }
 
     private fun tenantData(tenantId: String): TenantContextData =
         object : TenantContextData {

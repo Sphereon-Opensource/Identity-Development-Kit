@@ -32,4 +32,5 @@ interface Oid4vciHolderConfig {
      * an error regardless of this setting — the issuer committed to signing by including the field.
      */
     val requireVerifiedSignedMetadata: Boolean get() = false
+
 }

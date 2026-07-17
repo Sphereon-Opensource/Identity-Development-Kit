@@ -96,17 +96,17 @@ class KeyAttestationEvidenceEnforcerTest {
     }
 
     @Test
-    fun rejectsLocalAndSoftwareTestEvidence() {
+    fun rejectsLocalAndTestEvidence() {
         val result =
             enforcer.enforce(
                 header = header(),
-                claims = claims(profile = "LOCAL_TEST_REFERENCE", signerProfile = "SOFTWARE_TEST", production = false),
+                claims = claims(profile = "LOCAL_EVALUATION_REFERENCE", signerProfile = "LOCAL_EVALUATION", production = false),
                 policy = policy,
                 attestedKeyCount = 1,
             )
 
-        assertTrue(result.isErr, "expected local/software-test evidence to fail")
-        assertTrue("SOFTWARE_TEST" in result.error.message.defaultMessage || "local" in result.error.message.defaultMessage)
+        assertTrue(result.isErr, "expected local/evaluation evidence to fail")
+        assertTrue("LOCAL_EVALUATION" in result.error.message.defaultMessage || "local" in result.error.message.defaultMessage)
     }
 
     @Test
@@ -121,6 +121,20 @@ class KeyAttestationEvidenceEnforcerTest {
 
         assertTrue(result.isErr, "expected unsupported storage/authentication evidence to fail")
         assertTrue("secure_component" in result.error.message.defaultMessage || "user_authentication" in result.error.message.defaultMessage)
+    }
+
+    @Test
+    fun rejectsWebAuthnPrfProfileInflationAsRemoteWscd() {
+        val result =
+            enforcer.enforce(
+                header = header(),
+                claims = claims(profile = "WEBAUTHN_PRF_WSCD", secureComponent = "REMOTE_WSCD"),
+                policy = policy,
+                attestedKeyCount = 1,
+            )
+
+        assertTrue(result.isErr, "PRF-backed client WSCD evidence must not claim production remote-WSCD assurance")
+        assertTrue("WEBAUTHN_PRF_WSCD" in result.error.message.defaultMessage)
     }
 
     private fun header(x5c: Boolean = true) =

@@ -21,13 +21,13 @@ object WalletInteractionApiConstants {
     const val BASE_PATH: String = "/api/wallet/interaction/v1"
 
     object Paths {
-        const val INTERACTIONS: String = "/wallets/{walletInstanceId}/interactions"
-        const val INTERACTION: String = "/wallets/{walletInstanceId}/interactions/{sessionId}"
-        const val RESUME: String = "/wallets/{walletInstanceId}/interactions/{sessionId}/resume"
-        const val ACTIONS: String = "/wallets/{walletInstanceId}/interactions/{sessionId}/actions"
-        const val STATE: String = "/wallets/{walletInstanceId}/interactions/{sessionId}/state"
-        const val EVENTS: String = "/wallets/{walletInstanceId}/interactions/{sessionId}/events"
-        const val FRAMES: String = "/wallets/{walletInstanceId}/interactions/{sessionId}/frames"
+        const val INTERACTIONS: String = "/wallets/{walletUnitId}/interactions"
+        const val INTERACTION: String = "/wallets/{walletUnitId}/interactions/{sessionId}"
+        const val RESUME: String = "/wallets/{walletUnitId}/interactions/{sessionId}/resume"
+        const val ACTIONS: String = "/wallets/{walletUnitId}/interactions/{sessionId}/actions"
+        const val STATE: String = "/wallets/{walletUnitId}/interactions/{sessionId}/state"
+        const val EVENTS: String = "/wallets/{walletUnitId}/interactions/{sessionId}/events"
+        const val FRAMES: String = "/wallets/{walletUnitId}/interactions/{sessionId}/frames"
     }
 
     object Commands {
@@ -119,34 +119,34 @@ enum class WalletInteractionServerFrameType {
     PONG,
 }
 
-fun WalletInteractionApiConstants.interactionsPath(walletInstanceId: String): String = "${WalletInteractionApiConstants.BASE_PATH}/wallets/$walletInstanceId/interactions"
+fun WalletInteractionApiConstants.interactionsPath(walletUnitId: String): String = "${WalletInteractionApiConstants.BASE_PATH}/wallets/$walletUnitId/interactions"
 
 fun WalletInteractionApiConstants.interactionPath(
-    walletInstanceId: String,
+    walletUnitId: String,
     sessionId: WalletInteractionSessionId,
-): String = "${interactionsPath(walletInstanceId)}/${sessionId.value}"
+): String = "${interactionsPath(walletUnitId)}/${sessionId.value}"
 
 fun WalletInteractionApiConstants.resumePath(
-    walletInstanceId: String,
+    walletUnitId: String,
     sessionId: WalletInteractionSessionId,
-): String = "${interactionPath(walletInstanceId, sessionId)}/resume"
+): String = "${interactionPath(walletUnitId, sessionId)}/resume"
 
 fun WalletInteractionApiConstants.actionsPath(
-    walletInstanceId: String,
+    walletUnitId: String,
     sessionId: WalletInteractionSessionId,
-): String = "${interactionPath(walletInstanceId, sessionId)}/actions"
+): String = "${interactionPath(walletUnitId, sessionId)}/actions"
 
 fun WalletInteractionApiConstants.statePath(
-    walletInstanceId: String,
+    walletUnitId: String,
     sessionId: WalletInteractionSessionId,
-): String = "${interactionPath(walletInstanceId, sessionId)}/state"
+): String = "${interactionPath(walletUnitId, sessionId)}/state"
 
 fun WalletInteractionApiConstants.eventsPath(
-    walletInstanceId: String,
+    walletUnitId: String,
     sessionId: WalletInteractionSessionId,
-): String = "${interactionPath(walletInstanceId, sessionId)}/events"
+): String = "${interactionPath(walletUnitId, sessionId)}/events"
 
 fun WalletInteractionApiConstants.framePath(
-    walletInstanceId: String,
+    walletUnitId: String,
     sessionId: WalletInteractionSessionId,
-): String = "${interactionPath(walletInstanceId, sessionId)}/frames"
+): String = "${interactionPath(walletUnitId, sessionId)}/frames"

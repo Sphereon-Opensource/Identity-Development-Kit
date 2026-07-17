@@ -22,8 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.events.EventCategories
-import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
@@ -34,6 +32,7 @@ import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.command.HandleNotificationArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleNotificationCommand
+import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuancePhase
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
@@ -56,8 +55,8 @@ import kotlinx.serialization.json.put
  *
  * Flow:
  * 1. Validate notification_id is not blank
- * 2. Check if already processed (idempotent)
- * 3. Record the notification
+ * 2. Atomically record the receipt and resolve its exact protocol session
+ * 3. Run offer-session lifecycle integration when that session exists
  * 4. Return Ok(Unit)
  */
 @Inject
@@ -78,6 +77,10 @@ class HandleNotificationCommandImpl(
     ),
     HandleNotificationCommand {
     override val commandId: String get() = HandleNotificationCommand.COMMAND_ID
+    private var pendingHistorySession: IssuanceSession? = null
+    private var pendingHistoryProtocolSessionId: String? = null
+    private var pendingHistoryInstanceId: String? = null
+    private var pendingNotificationEvent: String? = null
 
     override suspend fun supports(args: Any): Boolean = args is HandleNotificationArgs
 
@@ -85,31 +88,47 @@ class HandleNotificationCommandImpl(
         args: HandleNotificationArgs,
         applyDuring: (HandleNotificationArgs) -> HandleNotificationArgs,
     ): IdkResult<Unit, IdkError> {
+        pendingHistorySession = null
+        pendingHistoryProtocolSessionId = null
+        pendingHistoryInstanceId = null
+        pendingNotificationEvent = null
         val result = doExecuteInternal(args, applyDuring)
-        emitOutcome(args, result)
+        emitOutcome(result)
+        pendingHistorySession = null
+        pendingHistoryProtocolSessionId = null
+        pendingHistoryInstanceId = null
+        pendingNotificationEvent = null
         return result
     }
 
     private suspend fun emitOutcome(
-        args: HandleNotificationArgs,
         result: IdkResult<Unit, IdkError>,
     ) {
-        if (!result.isOk) return
-        val payload =
-            buildJsonObject {
-                put("notificationId", args.notification.notificationId)
-                put("event", args.notification.event.toString())
-            }
         val es = eventService ?: return
-        es.emit(
-            es
-                .eventBuilder()
-                .type(EventTypes.OID4VCI_NOTIFICATION_RECEIVED)
-                .subsystem(EventSubsystems.OID4VCI)
-                .category(EventCategories.OPERATION)
-                .origin(HandleNotificationCommand.COMMAND_ID)
-                .payload(payload)
-                .build(),
+        val session = pendingHistorySession
+        val protocolSessionId =
+            pendingHistoryProtocolSessionId
+                ?: run {
+                    check(!result.isOk) { "Successful notification has no protocolSessionId for history" }
+                    return
+                }
+        val instanceId =
+            pendingHistoryInstanceId
+                ?: run {
+                    check(!result.isOk) { "Successful notification has no instanceId for history" }
+                    return
+                }
+        es.emitOid4vciSessionHistoryEvent(
+            type = EventTypes.OID4VCI_NOTIFICATION_RECEIVED,
+            origin = HandleNotificationCommand.COMMAND_ID,
+            instanceId = instanceId,
+            protocolSessionId = protocolSessionId,
+            correlationId = session?.lifecycleCorrelationId,
+            oldState = session?.status?.name ?: "CREDENTIAL_ISSUED",
+            newState = session?.status?.name ?: "CREDENTIAL_ISSUED",
+            stage = "NOTIFICATION",
+            outcome = if (result.isOk) "RECEIVED" else "FAILED",
+            notificationEvent = pendingNotificationEvent,
         )
     }
 
@@ -136,28 +155,36 @@ class HandleNotificationCommandImpl(
         if (notification.notificationId.isBlank()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_request"))
         }
+        pendingNotificationEvent = notification.event.value
 
-        // 2. Check if already processed (idempotent)
-        val alreadyProcessed =
+        // 2. Resolve and consume the issuer-generated notification identifier atomically. The
+        // returned protocolSessionId is the only valid history correlation; configuration IDs
+        // and subjects are deliberately not consulted.
+        val identity =
             notificationStore
-                .isProcessed(notification.notificationId)
+                .getNotificationIdentity(notification.notificationId)
                 .getOrElse { return Err(it) }
-        if (alreadyProcessed) {
-            return Ok(Unit)
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_id"))
+        val session = sessionStore.get(identity.protocolSessionId).getOrElse { return Err(it) }
+        if (session != null && session.instanceId != identity.instanceId) {
+            return Err(IdkError.INVALID_STATE(message = "Notification identity does not match its issuance session"))
         }
 
-        // 3. Record the notification.
-        // Per OID4VCI spec, if the store rejects the notification ID (e.g. it was never issued
-        // by this issuer), we return invalid_notification_id to distinguish it from a malformed
-        // request (invalid_notification_request). With the current in-memory store this path
-        // is only reachable on underlying KV errors, but custom store implementations may
-        // actively reject IDs that were never registered at issuance time.
-        val recordResult = notificationStore.recordNotification(notification.notificationId, notification.event)
-        if (recordResult.isErr) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_id"))
-        }
+        val receipt =
+            notificationStore
+                .recordNotification(notification.notificationId, notification.event)
+                .getOrElse { return Err(it) }
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_id"))
+        if (!receipt.firstReceipt) return Ok(Unit)
 
-        contributeNotificationReceiptPhase(tokenContext, notification).getOrElse { return Err(it) }
+        pendingHistoryProtocolSessionId = receipt.protocolSessionId
+        pendingHistoryInstanceId = receipt.instanceId
+        // History is already exactly correlated by notification_id. A wallet-initiated protocol
+        // session intentionally has no IssuanceSession row, and a transient optional lookup failure
+        // must not discard the atomically accepted receipt or its durable history event.
+        pendingHistorySession = session
+
+        contributeNotificationReceiptPhase(tokenContext, notification, pendingHistorySession).getOrElse { return Err(it) }
 
         // 4. Return success
         return Ok(Unit)
@@ -166,29 +193,21 @@ class HandleNotificationCommandImpl(
     private suspend fun contributeNotificationReceiptPhase(
         tokenContext: ValidatedTokenContext,
         notification: CredentialNotification,
+        session: IssuanceSession?,
     ): IdkResult<Unit, IdkError> {
         val hook = lifecycleHook ?: return Ok(Unit)
-        val session = findPipelineSession(tokenContext).getOrElse { return Err(it) } ?: return Ok(Unit)
+        session ?: return Ok(Unit)
         val correlationId = session.lifecycleCorrelationId ?: return Ok(Unit)
         hook
             .recordPhase(
                 Oid4vciPhaseLifecycleArgs(
                     correlationId = correlationId,
+                    protocolSessionId = session.sessionId,
                     phase = Oid4vciIssuancePhase.NOTIFICATION_RECEIPT,
                     fields = notificationReceiptFields(tokenContext, notification),
                 ),
             ).getOrElse { return Err(it) }
         return Ok(Unit)
-    }
-
-    private suspend fun findPipelineSession(tokenContext: ValidatedTokenContext): IdkResult<IssuanceSession?, IdkError> {
-        for (configId in tokenContext.credentialConfigurationIds) {
-            val session = sessionStore.findByCredentialConfigurationId(configId).getOrElse { return Err(it) }
-            if (session?.lifecycleCorrelationId != null) {
-                return Ok(session)
-            }
-        }
-        return Ok(null)
     }
 
     private fun notificationReceiptFields(

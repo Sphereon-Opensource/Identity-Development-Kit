@@ -21,43 +21,41 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.generic.DigestAlg
-import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.CreateDpopProofArgs
 import com.sphereon.oauth2.common.command.CreateDpopProofCommand
+import com.sphereon.oauth2.common.command.DpopProofAssembly
+import com.sphereon.oauth2.common.command.DpopProofAssemblyRequest
 import com.sphereon.oauth2.common.error.DpopError
 import com.sphereon.oauth2.common.model.CreateDpopProofOptions
-import com.sphereon.oauth2.common.model.DpopJwtHeader
-import com.sphereon.oauth2.common.model.DpopJwtPayload
 import com.sphereon.oauth2.common.model.DpopProofResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
-import kotlin.time.Clock
 
 /**
  * Implementation of CreateDpopProofCommand
  *
  * Creates DPoP proof JWTs as defined in RFC 9449.
+ *
+ * Header/payload assembly (jti generation, access-token-hash computation, URL normalization,
+ * algorithm inference) is delegated to [DpopProofAssembly]: the SAME seam the wallet WSCA
+ * local-signing path (`LocalWsca`) uses, so both signers build byte-for-byte
+ * structurally identical DPoP proofs from one implementation. Only the actual signing differs -
+ * this command signs via the KMS-backed [JwtService]; `LocalWsca` signs via a `Wscd`.
  */
 @Inject
 @SingleIn(SessionScope::class)
 class CreateDpopProofCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
-    private val secureRandom: SecureRandom,
+    secureRandom: SecureRandom,
 ) : TypedServiceCommandAdapter<CreateDpopProofArgs, DpopProofResult, IdkError>(
         commandId = CreateDpopProofCommand.COMMAND_ID,
         execution = execution,
@@ -65,6 +63,15 @@ class CreateDpopProofCommandImpl(
         outputTypeToken = typeToken<DpopProofResult>(),
     ),
     CreateDpopProofCommand {
+    /**
+     * Constructed directly rather than injected, so this command's public constructor - and its
+     * existing direct-construction call sites in tests - stay unchanged. [DpopProofAssembly] is a
+     * stateless, config-free helper (its only dependency is [secureRandom], which this command
+     * already receives), so a private instance here behaves identically to the DI-managed
+     * singleton `LocalWsca` receives.
+     */
+    private val dpopProofAssembly = DpopProofAssembly(secureRandom)
+
     override val commandId: String get() = CreateDpopProofCommand.COMMAND_ID
 
     override suspend fun supports(args: Any): Boolean = args is CreateDpopProofArgs
@@ -82,50 +89,26 @@ class CreateDpopProofCommandImpl(
         publicJwk: Jwk,
     ): IdkResult<DpopProofResult, DpopError> {
         try {
-            // Generate unique JTI
-            val jti = generateJti()
-
-            // Calculate access token hash if needed
-            val ath = options.accessToken?.let { calculateAccessTokenHash(it) }
-
-            // Normalize URL (remove query and fragment)
-            val normalizedHtu = normalizeUrl(options.httpUrl)
-
-            // Get timestamp
-            val iat = options.issuedAt ?: Clock.System.now().epochSeconds
-
-            // Build DPoP header
-            val algorithm = determineAlgorithm(publicJwk)
-            val header =
-                DpopJwtHeader(
-                    typ = "dpop+jwt",
-                    alg = algorithm,
-                    jwk = publicJwk,
+            val assembled =
+                dpopProofAssembly.assemble(
+                    DpopProofAssemblyRequest(
+                        httpMethod = options.httpMethod,
+                        httpUrl = options.httpUrl,
+                        nonce = options.nonce,
+                        accessToken = options.accessToken,
+                        issuedAt = options.issuedAt,
+                    ),
+                    publicJwk,
                 )
-
-            // Build DPoP payload
-            val payload =
-                DpopJwtPayload(
-                    jti = jti,
-                    htm = options.httpMethod.uppercase(),
-                    htu = normalizedHtu,
-                    iat = iat,
-                    ath = ath,
-                    nonce = options.nonce,
-                )
-
-            // Serialize header and payload to JSON
-            val headerJson = Json.encodeToJsonElement(header).jsonObject
-            val payloadString = Json.encodeToString(payload)
 
             // Create JWT using JwtService with the issuer from options
             val jwsArgs =
                 CreateJwsArgs(
                     issuer = options.issuer,
-                    payload = payloadString,
+                    payload = assembled.payloadJsonString,
                     opts =
                         CreateJwsOpts(
-                            protectedHeader = headerJson,
+                            protectedHeader = assembled.headerJson,
                             noIssPayloadUpdate = true, // Don't add iss to payload
                             noIdentifierInHeader = true, // Don't add kid to header (we use jwk)
                         ),
@@ -142,13 +125,10 @@ class CreateDpopProofCommandImpl(
                     )
                 }
 
-            val dpopProof = jwtResult.jwt // JwtCompactResult.jwt is a String
-            val jwkThumbprint = generateJwkThumbprint(publicJwk)
-
             return Ok(
                 DpopProofResult(
-                    dpopProof = dpopProof,
-                    jwkThumbprint = jwkThumbprint,
+                    dpopProof = jwtResult.jwt, // JwtCompactResult.jwt is a String
+                    jwkThumbprint = assembled.jwkThumbprint,
                 ),
             )
         } catch (expected: Exception) {
@@ -159,85 +139,5 @@ class CreateDpopProofCommandImpl(
                 ),
             )
         }
-    }
-
-    /**
-     * Generates a unique JWT ID using a random UUID-like string
-     */
-    private suspend fun generateJti(): String =
-        // 16 random bytes (128 bits) encoded as base64url
-        secureRandom.newToken(lengthBytes = JTI_RANDOM_BYTES)
-
-    /**
-     * Calculates the SHA-256 hash of an access token (RFC 9449 Section 4.2)
-     * The hash is base64url-encoded
-     */
-    private fun calculateAccessTokenHash(accessToken: String): String {
-        val tokenBytes = accessToken.encodeToByteArray()
-        val hashBytes = hash(tokenBytes, DigestAlg.SHA256)
-        return hashBytes.encodeToBase64Url()
-    }
-
-    /**
-     * Normalizes a URL by removing query parameters and fragment
-     * RFC 9449 requires htu to contain only scheme, host, port, and path
-     */
-    private fun normalizeUrl(url: String): String {
-        // Find the position of '?' or '#'
-        val queryStart = url.indexOf('?')
-        val fragmentStart = url.indexOf('#')
-
-        // Determine where to cut the URL
-        val cutPosition =
-            when {
-                queryStart != -1 && fragmentStart != -1 -> minOf(queryStart, fragmentStart)
-                queryStart != -1 -> queryStart
-                fragmentStart != -1 -> fragmentStart
-                else -> url.length
-            }
-
-        return url.substring(0, cutPosition)
-    }
-
-    /**
-     * Determines the signing algorithm from the JWK
-     * Maps JWK key types and curves to appropriate signing algorithms
-     */
-    private fun determineAlgorithm(jwk: Jwk): String {
-        // If alg is explicitly set in JWK, use it
-        jwk.alg?.let { return it.value }
-
-        // Otherwise, infer from key type and curve
-        return when (jwk.kty.value) {
-            "RSA" -> {
-                "RS256"
-            }
-
-            // Default RSA algorithm
-            "EC" -> {
-                when (jwk.crv?.value) {
-                    "P-256" -> "ES256"
-                    "P-384" -> "ES384"
-                    "P-521" -> "ES512"
-                    "secp256k1" -> "ES256K"
-                    else -> throw IllegalArgumentException("Unsupported EC curve: ${jwk.crv?.value}")
-                }
-            }
-
-            "OKP" -> {
-                when (jwk.crv?.value) {
-                    "Ed25519" -> "EdDSA"
-                    else -> throw IllegalArgumentException("Unsupported OKP curve: ${jwk.crv?.value}")
-                }
-            }
-
-            else -> {
-                throw IllegalArgumentException("Unsupported key type for DPoP: ${jwk.kty.value}")
-            }
-        }
-    }
-
-    companion object {
-        private const val JTI_RANDOM_BYTES = 16
     }
 }

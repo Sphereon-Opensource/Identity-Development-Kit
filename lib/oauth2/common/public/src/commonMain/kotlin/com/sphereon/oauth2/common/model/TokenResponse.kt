@@ -339,6 +339,13 @@ data class TokenRequest(
     // Additional extension parameters (auto-captured from unknown JSON fields)
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
     /**
+     * Extra HTTP headers to send with the token request.
+     *
+     * Not serialized over the wire (the custom [TokenRequestSerializer] omits it); this is a
+     * client-side directive for extension auth schemes such as OAuth client attestation.
+     */
+    val additionalHeaders: Map<String, String> = emptyMap(),
+    /**
      * Selects the OAuth 2.0 client authentication method applied to this token request.
      *
      * `null` lets the exchange command pick the legacy default (body-only client_secret_post).

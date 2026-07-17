@@ -243,6 +243,14 @@ class ParseAuthorizationRequestCommandImpl(
 
         // authorization_details (RFC 9396 / OID4VCI) — validated by verifier
         val authorizationDetails = queryParameters["authorization_details"]
+        val resources =
+            queryParameters["resource"]?.let { value ->
+                val resource = value.trim()
+                if (!SECURE_RESOURCE_URI.matches(resource)) {
+                    return Err(AuthorizationServerError.InvalidTarget(resource = value, reason = "resource must be a secure absolute URI without a fragment"))
+                }
+                listOf(resource)
+            }.orEmpty()
 
         return Ok(
             AuthorizationRequestData(
@@ -263,12 +271,14 @@ class ParseAuthorizationRequestCommandImpl(
                 idTokenHint = idTokenHint,
                 loginHint = loginHint,
                 acrValues = acrValues,
+                resource = resources,
                 request = requestObject,
                 requestUri = requestUri,
                 claims = claims,
                 additionalParameters =
                     buildMap {
                         authorizationDetails?.let { put("authorization_details", it) }
+                        queryParameters["issuer_state"]?.takeIf(String::isNotBlank)?.let { put("issuer_state", it) }
                     },
             ),
         )
@@ -281,3 +291,5 @@ class ParseAuthorizationRequestCommandImpl(
 }
 
 private fun String.splitToNonEmpty(): List<String> = split(" ").map { it.trim() }.filter { it.isNotEmpty() }
+
+private val SECURE_RESOURCE_URI = Regex("^https://[a-z0-9.-]+(?::[0-9]{1,5})?(?:/[^#\\s]*)?$", RegexOption.IGNORE_CASE)

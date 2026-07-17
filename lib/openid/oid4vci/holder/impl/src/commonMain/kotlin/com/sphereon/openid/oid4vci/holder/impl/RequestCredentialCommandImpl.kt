@@ -45,7 +45,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -57,7 +57,7 @@ import io.ktor.http.isSuccess
 /**
  * Requests a credential from the issuer's credential endpoint.
  *
- * Per OID4VCI 1.1 Section 9.2: HTTP POST to credential endpoint with Bearer auth.
+ * Per OID4VCI 1.1 Section 9.2: HTTP POST to credential endpoint with access-token auth.
  *
  * Response handling:
  * - HTTP 200 = immediate issuance  → parse as CredentialResponse
@@ -146,7 +146,11 @@ class RequestCredentialCommandImpl(
             val response =
                 httpClient.post(applied.credentialEndpoint) {
                     contentType(requestContentType)
-                    bearerAuth(applied.accessToken)
+                    headers {
+                        val scheme = if (applied.dpopProofJwt != null) "DPoP" else "Bearer"
+                        append("Authorization", "$scheme ${applied.accessToken}")
+                        applied.dpopProofJwt?.let { append("DPoP", it) }
+                    }
                     setBody(requestBody)
                 }
 
@@ -208,6 +212,22 @@ class RequestCredentialCommandImpl(
                             )
                         }
                         log.warn("Received invalid_nonce but failed to fetch fresh nonce from $nonceEndpoint")
+                    }
+
+                    val dpopNonce = response.headers["DPoP-Nonce"]
+                    val wwwAuthenticate = response.headers["WWW-Authenticate"].orEmpty()
+                    if (dpopNonce != null && (errorResponse?.error == "use_dpop_nonce" || wwwAuthenticate.contains("use_dpop_nonce"))) {
+                        return Err(
+                            IdkError(
+                                code = "use_dpop_nonce",
+                                message =
+                                    IdkError.Message(
+                                        i18nKey = "use_dpop_nonce",
+                                        defaultMessage = "Credential endpoint requires nonce in DPoP proof",
+                                    ),
+                                meta = mapOf("dpop_nonce" to dpopNonce),
+                            ),
+                        )
                     }
 
                     val errorMsg =

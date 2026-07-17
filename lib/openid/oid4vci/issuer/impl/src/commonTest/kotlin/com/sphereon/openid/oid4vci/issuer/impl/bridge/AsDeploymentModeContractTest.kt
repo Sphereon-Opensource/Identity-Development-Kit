@@ -36,6 +36,7 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
+import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -509,6 +510,8 @@ class AsDeploymentModeContractTest {
                     sub = "user-123",
                     clientId = "client-abc",
                     scope = "openid",
+                    jti = "hosted-as-token-jti",
+                    exp = 2_000_000_000L,
                     additionalClaims = mapOf<String, JsonElement>("authorization_details" to authDetails),
                 )
 
@@ -529,6 +532,8 @@ class AsDeploymentModeContractTest {
             assertEquals("openid", ctx.scope)
             assertEquals(listOf("IdentityCredential"), ctx.credentialConfigurationIds)
             assertEquals(listOf("id-1", "id-2"), ctx.credentialIdentifiers)
+            assertEquals("hosted-as-token-jti", ctx.tokenId)
+            assertEquals(2_000_000_000L, ctx.expiresAtEpochSeconds)
         }
 
     @Test
@@ -545,7 +550,14 @@ class AsDeploymentModeContractTest {
                 FakeOAuth2ServersConfigProvider(
                     OAuth2ServerInstanceConfig(
                         issuer = "https://issuer.example.com",
-                        internalClients = mapOf("issuer" to ("issuer-service" to "issuer-secret")),
+                        internalClients =
+                            mapOf(
+                                "issuer" to
+                                    InternalClientConfig(
+                                        clientId = "issuer-service",
+                                        clientSecret = "issuer-secret",
+                                    ),
+                            ),
                     ),
                 )
 

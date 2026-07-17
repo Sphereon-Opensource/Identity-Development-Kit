@@ -1,0 +1,73 @@
+import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import com.sphereon.gradle.plugin.configureLinuxTargetIfEnabled
+import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
+import org.jetbrains.kotlin.gradle.dsl.JsModuleKind
+
+plugins {
+    `maven-publish`
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.com.vanniktech.maven.publish)
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
+    alias(sphereonplug.plugins.com.sphereon.gradle.plugin.npm.publication)
+    alias(sphereonplug.plugins.dev.zacsweers.metro)
+}
+metro {
+}
+
+kotlin {
+    jvm()
+    run {
+        val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
+        if ("all" in kmpTargets || "js" in kmpTargets) {
+            js {
+                compilerOptions {
+                    moduleKind = JsModuleKind.MODULE_ES
+                    target = "es2015"
+                }
+                browser { testTask { enabled = false } }
+                nodejs { testTask { useMocha { timeout = "60000" } } }
+                binaries.library()
+                generateTypeScriptDefinitions()
+            }
+        }
+    }
+    configureWasmJsTargetIfEnabled {
+        nodejs()
+        binaries.library()
+        generateTypeScriptDefinitions()
+    }
+    configureIosTargetsIfEnabled()
+    configureLinuxTargetIfEnabled()
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                api(projects.libCoreApiPublic)
+                api(projects.libWalletWscaPublic)
+                api(projects.libWalletWscdPublic)
+                // Sanctioned raw-KMS wiring for tests (TestWscdSupport): this
+                // module lives under lib/wallet/wscd/, so the boundary guards exempt it. Not
+                // re-exported (implementation): consumers get a KeyManagerService handle back from
+                // TestWscdSupport, never a provider type directly.
+                implementation(projects.libCryptoKmsProviderSoftware)
+                api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
+            }
+        }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+            }
+        }
+        val jvmMain by getting {
+            dependencies {
+                // WalletAppGraph + WalletBootstrap (dev/test composition roots) live here per the
+                // repo rule that @DependencyGraph belongs only in final apps and test support, never
+                // in a library's jvmMain. The graph composes lib-wallet-impl's bindings and needs the
+                // software KMS provider factory binding on its compile classpath.
+                api(projects.libWalletImpl)
+                api(projects.libCryptoKmsProviderSoftware)
+            }
+        }
+    }
+}

@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.sphereon.conf.theme.ui.compose.ComponentTheme
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.tokens.LocalRadioTokens
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 @Composable
 fun RadioGroup(

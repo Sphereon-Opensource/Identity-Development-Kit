@@ -629,7 +629,7 @@ class WalletIssuanceHttpE2ETest {
                 holder.createCredentialRequestProof(
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
-                    signingKeyId = signingKeyId,
+                    signingKeyIds = listOf(signingKeyId),
                     signingAlgorithm = "ES256",
                 )
             assertTrue(

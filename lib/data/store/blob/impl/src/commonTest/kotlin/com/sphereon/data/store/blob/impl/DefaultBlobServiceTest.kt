@@ -20,6 +20,8 @@ import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobMetadata
 import com.sphereon.data.store.blob.BlobStoreSchemes
+import com.sphereon.data.store.blob.ByteArrayBlobSource
+import com.sphereon.data.store.blob.DeleteOptions
 import com.sphereon.data.store.blob.InMemoryBlobStoreConfig
 import com.sphereon.data.store.blob.MetadataSearchQuery
 import com.sphereon.data.store.blob.PutOptions
@@ -65,6 +67,70 @@ class DefaultBlobServiceTest {
             val getResult = blobService.getBlob(info = BlobInfo(tenantId = "t1", path = "docs/readme.txt"))
             assertTrue(getResult.isOk, "getBlob should succeed: ${if (getResult.isErr) getResult.error else ""}")
             assertEquals("hello blob service", getResult.value.data.decodeToString())
+        }
+
+    @Test
+    fun capabilitiesAreDiscoveredForConfiguredStore() {
+        val capabilities = blobService.getCapabilities()
+        assertTrue(capabilities.supportsStreamingRead)
+        assertTrue(capabilities.supportsStreamingWrite)
+        assertTrue(capabilities.supportsConditionalWrites)
+        assertTrue(capabilities.supportsConditionalDelete)
+    }
+
+    @Test
+    fun streamingRoundtripUsesTenantScopedServiceBoundary() =
+        runTest {
+            val data = ByteArray(150_000) { (it % 251).toByte() }
+            val target = BlobInfo(tenantId = "stream-tenant", path = "large/payload.bin")
+
+            val stored = blobService.storeBlobStream(target, ByteArrayBlobSource(data))
+            assertTrue(stored.isOk)
+            assertEquals("large/payload.bin", stored.value.path)
+
+            val opened = blobService.openBlobRead(target)
+            assertTrue(opened.isOk)
+            assertEquals("large/payload.bin", opened.value.descriptor.path)
+            val chunks = mutableListOf<ByteArray>()
+            while (true) {
+                val chunk =
+                    opened.value.source
+                        .read(20_000)
+                        .value ?: break
+                chunks += chunk
+            }
+            val roundtrip = ByteArray(data.size)
+            var offset = 0
+            chunks.forEach { chunk ->
+                chunk.copyInto(roundtrip, offset)
+                offset += chunk.size
+            }
+            assertTrue(data.contentEquals(roundtrip))
+        }
+
+    @Test
+    fun conditionalDeletePreservesBlobAfterStaleRevision() =
+        runTest {
+            val target = BlobInfo(tenantId = "t1", path = "conditional.txt")
+            val first =
+                blobService
+                    .storeBlob(target, "one".encodeToByteArray())
+                    .value
+            val current =
+                blobService
+                    .storeBlob(
+                        target,
+                        "two".encodeToByteArray(),
+                        PutOptions(expectedRevision = first.revision),
+                    ).value
+
+            val stale = blobService.deleteBlobConditional(target, DeleteOptions(expectedRevision = first.revision))
+            assertTrue(stale.isErr)
+            assertTrue(blobService.getBlob(target).isOk)
+
+            val deleted = blobService.deleteBlobConditional(target, DeleteOptions(ifMatch = current.etag))
+            assertTrue(deleted.isOk && deleted.value)
+            assertTrue(blobService.getBlob(target).isErr)
         }
 
     @Test

@@ -40,6 +40,11 @@ import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.common.model.stringValues
 import com.sphereon.openid.oid4vci.holder.ExchangePreAuthorizedCodeArgs
+import com.sphereon.oauth2.common.command.ApplyClientAuthenticationCommand
+import com.sphereon.oauth2.client.command.ExchangeTokenCommand
+import com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl
+import com.sphereon.oauth2.client.impl.token.ExchangeTokenCommandImpl
+import com.sphereon.openid.oid4vci.holder.Oid4vciHolderConfig
 import com.sphereon.openid.oid4vci.holder.RequestCredentialArgs
 import com.sphereon.openid.oid4vci.holder.RequestNonceArgs
 import com.sphereon.openid.oid4vci.holder.ResolveIssuerMetadataArgs
@@ -305,15 +310,26 @@ class WalletClientE2ETest {
             execution = ctx.execution,
             httpClientFactory = factory,
             signedMetadataVerifier = depsGraph.signedMetadataVerifier,
-            config = null,
+            config =
+                object : Oid4vciHolderConfig {
+                    override val clientId: String? = null
+                    override val preferredFormat: String? = null
+                },
         )
     }
 
-    private fun createExchangePreAuthorizedCodeCommand(factory: InProcessHttpClientFactory): ExchangePreAuthorizedCodeCommandImpl =
-        ExchangePreAuthorizedCodeCommandImpl(
+    private fun createExchangePreAuthorizedCodeCommand(factory: InProcessHttpClientFactory): ExchangePreAuthorizedCodeCommandImpl {
+        // The pre-auth exchange delegates HTTP to the oauth2 client commands (HAIP-era
+        // constructor); the in-process factory is consumed by those commands via the graph.
+        // Hermetic routing: construct the oauth2 commands directly over the purpose-built
+        // in-process factory so the token exchange hits the test routes (the graph commands
+        // would use the session factory, which has no routes for this scenario).
+        return ExchangePreAuthorizedCodeCommandImpl(
             execution = ctx.execution,
-            httpClientFactory = factory,
+            applyClientAuthenticationCommand = ApplyClientAuthenticationCommandImpl(ctx.execution),
+            exchangeTokenCommand = ExchangeTokenCommandImpl(ctx.execution, factory),
         )
+    }
 
     private fun createRequestNonceCommand(factory: InProcessHttpClientFactory): RequestNonceCommandImpl =
         RequestNonceCommandImpl(
@@ -446,7 +462,8 @@ class WalletClientE2ETest {
             assertTrue(invalidResult.isErr, "Invalid pre-auth code should fail")
             val errorMessage = invalidResult.error.message.defaultMessage
             assertTrue(
-                errorMessage.contains("invalid_grant") || errorMessage.contains("invalid_request") || errorMessage.contains("Token exchange failed"),
+                errorMessage.contains("invalid_grant") || errorMessage.contains("invalid_request") ||
+                    errorMessage.contains("Invalid grant") || errorMessage.contains("Token exchange failed"),
                 "Error should indicate invalid grant/request, got: $errorMessage",
             )
             // Crucially: no TOKEN_NETWORK_ERROR
@@ -593,7 +610,7 @@ class WalletClientE2ETest {
                 holder.createCredentialRequestProof(
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
-                    signingKeyId = signingKeyId,
+                    signingKeyIds = listOf(signingKeyId),
                     signingAlgorithm = "ES256",
                 )
             assertTrue(

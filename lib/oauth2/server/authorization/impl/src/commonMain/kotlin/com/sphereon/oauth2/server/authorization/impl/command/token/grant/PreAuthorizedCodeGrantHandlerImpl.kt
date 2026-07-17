@@ -78,23 +78,6 @@ class PreAuthorizedCodeGrantHandlerImpl : GrantHandler {
         // RFC 9449 §10.1 (and OID4VCI 1.0 §6.1 wallet-attestation guidance): the
         // pre-authorized-code grant carries no upfront commitment in this build, so
         // the proof presented at /token establishes the binding for the access token.
-        val accessToken =
-            commands.createAccessToken
-                .execute(
-                    CreateAccessTokenArgs(
-                        subject = verified.subject ?: tokenRequest.clientId,
-                        clientId = tokenRequest.clientId,
-                        audience = listOfNotNull(verified.issuerIdentifier),
-                        dpopJkt = proofJkt,
-                        certificateThumbprintS256 = certThumbprint,
-                        additionalClaims = context.walletInstanceAttestation?.accessTokenClaims().orEmpty(),
-                        baseUrlOverride = applied.baseUrlOverride,
-                    ),
-                ).getOrElse { error -> return Err(error) }
-
-        // OID4VCI Section 6.2: optionally include authorization_details with credential_identifiers.
-        // When useCredentialIdentifiers is true, the wallet MUST use credential_identifier in
-        // the credential request. When false, the wallet uses credential_configuration_id.
         val authorizationDetails =
             if (verified.useCredentialIdentifiers && verified.credentialConfigurationIds.isNotEmpty()) {
                 JsonArray(
@@ -111,6 +94,25 @@ class PreAuthorizedCodeGrantHandlerImpl : GrantHandler {
             } else {
                 null
             }
+
+        val accessTokenClaims =
+            buildMap<String, Any> {
+                putAll(context.walletInstanceAttestation?.accessTokenClaims().orEmpty())
+                authorizationDetails?.let { put("authorization_details", it) }
+            }
+        val accessToken =
+            commands.createAccessToken
+                .execute(
+                    CreateAccessTokenArgs(
+                        subject = verified.subject ?: tokenRequest.clientId,
+                        clientId = tokenRequest.clientId,
+                        audience = listOfNotNull(verified.issuerIdentifier),
+                        dpopJkt = proofJkt,
+                        certificateThumbprintS256 = certThumbprint,
+                        additionalClaims = accessTokenClaims,
+                        baseUrlOverride = applied.baseUrlOverride,
+                    ),
+                ).getOrElse { error -> return Err(error) }
 
         return commands.createTokenResponse.execute(
             CreateTokenResponseArgs(

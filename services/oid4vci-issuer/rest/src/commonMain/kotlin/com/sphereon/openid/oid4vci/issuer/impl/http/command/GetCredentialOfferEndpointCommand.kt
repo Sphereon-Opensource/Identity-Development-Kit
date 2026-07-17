@@ -202,6 +202,7 @@ class GetCredentialOfferEndpointCommandImpl(
 
         val args =
             CreateCredentialOfferArgs(
+                instanceId = offerSession.instanceId,
                 issuerId = template.issuerId,
                 credentialConfigurationIds = template.credentialConfigurationIds,
                 preAuthorizedCodeGrant = template.preAuthorizedCodeGrant,

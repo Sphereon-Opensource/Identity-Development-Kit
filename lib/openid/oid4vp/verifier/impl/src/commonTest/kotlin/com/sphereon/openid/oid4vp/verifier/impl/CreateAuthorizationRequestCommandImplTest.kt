@@ -38,7 +38,8 @@ import kotlin.test.assertTrue
  */
 class CreateAuthorizationRequestCommandImplTest {
     private val testContext = Oid4vpVerifierTestContext("create-auth-req-test", this)
-    private val command = createTestCommand()
+    private val sessionStore = TestAuthorizationSessionStore()
+    private val command = createTestCommand(sessionStore)
 
     @Test
     fun `test create basic authorization request`() =
@@ -62,6 +63,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-basic-authorization-request",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -82,8 +84,12 @@ class CreateAuthorizationRequestCommandImplTest {
             assertEquals("nonce12345678", createdRequest.request.nonce)
             assertEquals("direct_post", createdRequest.request.responseMode)
             assertEquals("state123", createdRequest.request.state)
-            assertNotNull(createdRequest.sessionId)
+            val createdSessionId = assertNotNull(createdRequest.sessionId)
             assertNotNull(createdRequest.request.dcqlQuery)
+
+            val storedSession = sessionStore.get(createdSessionId)
+            assertIs<Ok<*>>(storedSession)
+            assertEquals(args.instanceId, storedSession.value?.instanceId)
         }
 
     @Test
@@ -102,6 +108,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-client-metadata-request",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -127,6 +134,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-empty-nonce-validation",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -153,6 +161,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-short-nonce-validation",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -179,6 +188,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-missing-response-uri-validation",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = null, // Missing response_uri
@@ -205,6 +215,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-fragment-response-request",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     redirectUri = "https://verifier.example.com/callback",
@@ -230,6 +241,7 @@ class CreateAuthorizationRequestCommandImplTest {
 
             val args =
                 CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-empty-dcql-validation",
                     dcqlQuery = dcqlQuery,
                     clientId = "https://verifier.example.com",
                     responseUri = "https://verifier.example.com/response",
@@ -270,6 +282,7 @@ class CreateAuthorizationRequestCommandImplTest {
             val result =
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "verifier-instance-did-signer-binding",
                         dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/response",
@@ -314,6 +327,7 @@ class CreateAuthorizationRequestCommandImplTest {
             val result =
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "verifier-instance-x509-signer-binding",
                         dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/response",
@@ -341,6 +355,7 @@ class CreateAuthorizationRequestCommandImplTest {
             val result =
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "verifier-instance-missing-signer-binding",
                         dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/response",
@@ -384,6 +399,7 @@ class CreateAuthorizationRequestCommandImplTest {
             val result =
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "verifier-instance-caller-supplied-binding",
                         dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
                         clientId = "x509_san_dns:caller.example.com",
                         clientIdScheme = ClientIdScheme.X509_SAN_DNS,
@@ -407,10 +423,10 @@ class CreateAuthorizationRequestCommandImplTest {
         return ClientIdScheme.entries.first { it.prefix == scheme }
     }
 
-    private fun createTestCommand(): CreateAuthorizationRequestCommandImpl =
+    private fun createTestCommand(sessionStore: TestAuthorizationSessionStore): CreateAuthorizationRequestCommandImpl =
         CreateAuthorizationRequestCommandImpl(
             execution = testContext.execution,
-            authorizationSessionStore = TestAuthorizationSessionStore(),
+            authorizationSessionStore = sessionStore,
             requestObjectSigningConfig =
                 com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
                     .disabled(),

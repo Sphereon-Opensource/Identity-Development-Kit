@@ -9,6 +9,7 @@ package com.sphereon.wallet.interaction.protocol.oid4vp
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ResponseMode
+import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
@@ -53,11 +54,48 @@ interface Oid4vpWalletConfigProvider {
     }
 }
 
+interface Oid4vpJarmOptionsProvider {
+    suspend fun jarmOptions(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+        resolvedRequest: ResolvedOid4vpRequest,
+    ): JarmOptions?
+
+    companion object {
+        val none: Oid4vpJarmOptionsProvider =
+            object : Oid4vpJarmOptionsProvider {
+                override suspend fun jarmOptions(
+                    context: WalletInteractionContext,
+                    state: WalletInteractionState,
+                    resolvedRequest: ResolvedOid4vpRequest,
+                ): JarmOptions? = null
+            }
+
+        /**
+         * Default holder-side JARM options enabling encrypted `direct_post.jwt` responses (OpenID4VP
+         * 1.0 section 8.3: unsigned encrypted JWTs). The JWE configuration is derived downstream from
+         * the verifier's client_metadata; the wallet unit id becomes the JARM payload issuer. No
+         * signing key is provided, so a verifier demanding signed JARM fails with the explicit
+         * signing-key error instead of silently degrading.
+         */
+        val walletUnitIssuer: Oid4vpJarmOptionsProvider =
+            object : Oid4vpJarmOptionsProvider {
+                override suspend fun jarmOptions(
+                    context: WalletInteractionContext,
+                    state: WalletInteractionState,
+                    resolvedRequest: ResolvedOid4vpRequest,
+                ): JarmOptions = JarmOptions(issuer = context.walletUnitId)
+            }
+    }
+}
+
 class Oid4vpHolderPresentationExecutor(
     private val holder: Oid4vpHolderService,
     private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
+    private val jarmOptionsProvider: Oid4vpJarmOptionsProvider = Oid4vpJarmOptionsProvider.none,
     private val responseMode: ResponseMode? = null,
+    private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider = Oid4vpSdJwtHolderBindingProvider.passthrough,
 ) : Oid4vpPresentationExecutor {
     override suspend fun submitPresentation(
         context: WalletInteractionContext,
@@ -107,12 +145,37 @@ class Oid4vpHolderPresentationExecutor(
                 )
             }
 
-        val response = holder.createAuthorizationResponse(resolved.value, selectedCredentials)
+        val boundCredentials =
+            sdJwtHolderBindingProvider
+                .applyHolderBinding(
+                    Oid4vpSdJwtHolderBindingRequest(
+                        walletUnitId = context.walletUnitId,
+                        operationBinding =
+                            state.adapterId?.let { namespace ->
+                                context.privateSessionStore
+                                    .get(context.sessionId, namespace)
+                                    ?.values
+                                    ?.get(Oid4vpWalletInteractionProtocolAdapter.SECURITY_OPERATION_BINDING_PRIVATE_KEY)
+                            },
+                        request = resolved.value,
+                        selectedCredentials = selectedCredentials,
+                    ),
+                ).getOrElse {
+                    return failed("oid4vp.response_creation_failed", "wallet.interaction.error.oid4vp_response_creation_failed", it)
+                }
+
+        val response = holder.createAuthorizationResponse(resolved.value, boundCredentials)
         if (response.isErr) {
             return failed("oid4vp.response_creation_failed", "wallet.interaction.error.oid4vp_response_creation_failed", response.error)
         }
 
-        val submission = holder.submitAuthorizationResponse(resolved.value, response.value, responseMode)
+        val submission =
+            holder.submitAuthorizationResponse(
+                resolvedRequest = resolved.value,
+                response = response.value,
+                responseMode = responseMode,
+                jarmOptions = jarmOptionsProvider.jarmOptions(context, state, resolved.value),
+            )
         if (submission.isErr) {
             return failed("oid4vp.response_submission_failed", "wallet.interaction.error.oid4vp_response_submission_failed", submission.error)
         }
@@ -192,7 +255,13 @@ class Oid4vpHolderPresentationExecutor(
             code = code,
             messageKey = messageKey,
             retryable = retryable,
-            arguments = mapOf("providerErrorCode" to error.code),
+            arguments =
+                buildMap {
+                    put("providerErrorCode", error.code)
+                    error.message.defaultMessage
+                        .takeIf { it.isNotBlank() }
+                        ?.let { put("providerErrorMessage", it) }
+                },
         )
 
     private fun failed(

@@ -28,9 +28,13 @@ import com.sphereon.core.api.validation.validate
 import com.sphereon.crypto.core.x509.certificateFromPem
 import com.sphereon.crypto.core.x509.x509DerOrPemToPem
 import com.sphereon.di.session.SessionScope
+import com.sphereon.mdoc.oid4vp.Oid4VPPresentationDefinition
+import com.sphereon.mdoc.oid4vp.assertedPathEntry
 import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.JarSignerMethod
 import com.sphereon.openid.oid4vp.common.ParseClientIdArgs
+import com.sphereon.openid.oid4vp.common.ParsedClientId
 import com.sphereon.openid.oid4vp.common.ParseTransactionDataArgs
 import com.sphereon.openid.oid4vp.common.ParseTransactionDataCommand
 import com.sphereon.openid.oid4vp.common.ParsedTransactionDataEntry
@@ -41,6 +45,8 @@ import com.sphereon.openid.oid4vp.common.ValidateClientIdCommand
 import com.sphereon.openid.oid4vp.common.VerifierAttestation
 import com.sphereon.openid.oid4vp.common.verifierInfo
 import com.sphereon.openid.oid4vp.dcql.DcqlError
+import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.validateDcqlQuery
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommand
@@ -53,10 +59,14 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 @Inject
 @SingleIn(SessionScope::class)
@@ -170,8 +180,18 @@ class ResolveAuthorizationRequestCommandImpl(
             )
         }
 
-        // Use whichever DCQL query was provided
-        val dcqlQuery = dcqlQueryFromParam ?: dcqlQueryFromScope
+        val presentationDefinitionQuery =
+            if (dcqlQueryFromParam == null && dcqlQueryFromScope == null) {
+                processedArgs.additionalParameters["presentation_definition"]?.let { definition ->
+                    presentationDefinitionToDcql(definition).getOrElse { return Err(it) }
+                }
+            } else {
+                null
+            }
+
+        // Use one normalized credential-query model for both OID4VP Final/DCQL and the
+        // ISO 18013-7 mdoc profile's Presentation Definition input.
+        val dcqlQuery = dcqlQueryFromParam ?: dcqlQueryFromScope ?: presentationDefinitionQuery
 
         // 2. Parse verifier attestations if present (OpenID4VP 1.0 Section 5.1.1)
         val verifierAttestations: List<VerifierAttestation>? = processedArgs.verifierInfo
@@ -204,10 +224,37 @@ class ResolveAuthorizationRequestCommandImpl(
                 .getOrElse { return it.asErrorResult() }
 
         // 5. Parse client_id to determine scheme
-        val parsedClientId =
+        val prefixParsedClientId =
             parseClientIdCommand
                 .execute(ParseClientIdArgs(processedArgs.clientId))
                 .getOrElse { return it.asErrorResult() }
+        val declaredClientIdScheme =
+            processedArgs.additionalParameters["client_id_scheme"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.let(ClientIdScheme::fromPrefix)
+        if (prefixParsedClientId.clientIdScheme != ClientIdScheme.PRE_REGISTERED &&
+            declaredClientIdScheme != null &&
+            prefixParsedClientId.clientIdScheme != declaredClientIdScheme
+        ) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message =
+                        "client_id prefix '${prefixParsedClientId.clientIdScheme.prefix}' conflicts with " +
+                            "client_id_scheme '${declaredClientIdScheme.prefix}'",
+                ),
+            )
+        }
+        val parsedClientId =
+            if (prefixParsedClientId.clientIdScheme == ClientIdScheme.PRE_REGISTERED && declaredClientIdScheme != null) {
+                ParsedClientId(
+                    clientIdScheme = declaredClientIdScheme,
+                    clientId = processedArgs.clientId,
+                    clientIdWithScheme = processedArgs.clientId,
+                )
+            } else {
+                prefixParsedClientId
+            }
 
         // 6. Validate client_id according to its scheme
         // If a Request Object (JAR) was used, propagate parsed header context into client_id validation
@@ -292,4 +339,57 @@ class ResolveAuthorizationRequestCommandImpl(
             ),
         )
     }
+
 }
+
+internal fun presentationDefinitionToDcql(definitionElement: JsonElement): IdkResult<DcqlQuery, IdkError> =
+    try {
+        val normalized =
+            when (definitionElement) {
+                is JsonPrimitive -> Json.parseToJsonElement(definitionElement.content)
+                else -> definitionElement
+            }
+        val definition = Json.decodeFromJsonElement<Oid4VPPresentationDefinition>(normalized)
+        val credentialQueries =
+            definition.input_descriptors.map { descriptor ->
+                require(descriptor.format.mso_mdoc != null) {
+                    "The ISO mdoc Presentation Definition descriptor '${descriptor.id}' does not request mso_mdoc"
+                }
+                val requestedClaims =
+                    descriptor.constraints.fields.flatMap { field ->
+                        field.path.map { path ->
+                            val (namespace, elementIdentifier) = assertedPathEntry(path)
+                            DcqlClaimQuery(
+                                path = listOf(namespace.toString(), elementIdentifier.toString()),
+                                intent_to_retain = field.intent_to_retain,
+                            )
+                        }
+                    }
+                val namespaces = requestedClaims.mapNotNull { it.path.firstOrNull() }.distinct()
+                DcqlCredentialQuery(
+                    id = descriptor.id.toString(),
+                    format = "mso_mdoc",
+                    meta =
+                        buildJsonObject {
+                            put("doctype_value", descriptor.id.toString())
+                            put(
+                                "namespace_values",
+                                kotlinx.serialization.json.JsonArray(namespaces.map(::JsonPrimitive)),
+                            )
+                        },
+                    claims = requestedClaims,
+                )
+            }
+        if (credentialQueries.isEmpty()) {
+            Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Presentation Definition has no input descriptors"))
+        } else {
+            Ok(DcqlQuery(credentials = credentialQueries))
+        }
+    } catch (expected: Exception) {
+        Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "Failed to parse ISO mdoc Presentation Definition: ${expected.message}",
+                throwable = expected,
+            ),
+        )
+    }

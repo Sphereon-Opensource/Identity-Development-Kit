@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Copyright 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,10 +34,10 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 /**
- * RFC 6749 §4.4 client-credentials grant handler.
+ * RFC 6749 section 4.4 client-credentials grant handler.
  *
  * The DPoP proof presented at this first issuance establishes the binding for the access token
- * (RFC 9449 §10.1). No refresh token is minted; subsequent calls go through this same grant.
+ * (RFC 9449 section 10.1). No refresh token is minted; subsequent calls go through this same grant.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -64,10 +64,11 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
                     VerifyClientCredentialsGrantArgs(
                         clientId = tokenRequest.clientId,
                         requestedScope = ccParams.scope,
+                        requestedAudience = ccParams.audiences,
                     ),
                 ).getOrElse { error -> return Err(error) }
 
-        // RFC 9449 §10.1: client_credentials carries no prior commitment, so the
+        // RFC 9449 section 10.1: client_credentials carries no prior commitment, so the
         // proof presented at this first issuance establishes the binding. The
         // proof's thumbprint is pinned as `cnf.jkt` on the access token; subsequent
         // resource-server requests must present a proof from the same key.
@@ -78,7 +79,7 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
-                        audience = ccParams.audiences,
+                        audience = verified.audience,
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
                         baseUrlOverride = applied.baseUrlOverride,

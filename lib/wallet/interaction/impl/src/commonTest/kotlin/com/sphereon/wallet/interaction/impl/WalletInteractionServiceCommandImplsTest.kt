@@ -67,7 +67,7 @@ class WalletInteractionServiceCommandImplsTest {
                 startCommand
                     .execute(
                         WalletInteractionInput(
-                            walletInstanceId = WALLET_INSTANCE_ID,
+                            walletUnitId = WALLET_UNIT_ID,
                             entryPoint = WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x"),
                         ),
                     ).getOrThrow()
@@ -77,7 +77,7 @@ class WalletInteractionServiceCommandImplsTest {
                     observeCommand
                         .executeStream(
                             GetWalletInteractionEventsArgs(
-                                walletInstanceId = WALLET_INSTANCE_ID,
+                                walletUnitId = WALLET_UNIT_ID,
                                 sessionId = started.sessionId,
                                 afterRevision = started.state.revision,
                             ),
@@ -91,7 +91,7 @@ class WalletInteractionServiceCommandImplsTest {
             submitCommand
                 .execute(
                     SubmitWalletInteractionActionArgs(
-                        walletInstanceId = WALLET_INSTANCE_ID,
+                        walletUnitId = WALLET_UNIT_ID,
                         sessionId = started.sessionId,
                         action = WalletInteractionAction.continueFlow(),
                     ),
@@ -146,6 +146,6 @@ class WalletInteractionServiceCommandImplsTest {
     }
 
     private companion object {
-        const val WALLET_INSTANCE_ID = "wallet-command-stream"
+        const val WALLET_UNIT_ID = "wallet-command-stream"
     }
 }

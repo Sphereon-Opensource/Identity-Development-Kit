@@ -71,6 +71,13 @@ data class OidcLoginResult
         val idToken: String,
         val idTokenClaims: IdTokenPayload,
         val tokenResponse: TokenResponse,
+        val issuer: String,
+        val redirectUri: String,
+        val resource: String? = null,
+        val audience: String? = null,
+        val ownerHandleDigest: String? = null,
+        val grantBinding: String? = null,
+        val clientCorrelation: String? = null,
     )
 
 /**

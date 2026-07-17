@@ -79,6 +79,8 @@ class Oid4vpHolderFlow(
      * @param clientId The client_id from Authorization Request
      * @param responseUri The response_uri from Authorization Request
      * @param authorizationRequestNonce The nonce from Authorization Request
+     * @param verifierEncryptionJwkThumbprint Raw RFC 7638 SHA-256 thumbprint of the verifier's
+     * encryption JWK for encrypted response modes; null for unencrypted responses
      * @param mdocNonce Optional mdoc-generated nonce (UUID v4 by default per ISO 18013-7)
      * @return DeviceResponse containing signed documents and/or errors
      */
@@ -88,6 +90,7 @@ class Oid4vpHolderFlow(
         clientId: String,
         responseUri: String,
         authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
         mdocNonce: String = Uuid.v4String(),
     ): Oid4vpHolderResult {
         logService.info("[OID4VP Holder] Processing Authorization Request for client: $clientId")
@@ -122,6 +125,7 @@ class Oid4vpHolderFlow(
                 clientId = clientId,
                 responseUri = responseUri,
                 authorizationRequestNonce = authorizationRequestNonce,
+                verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
             )
 
         // Create presentation submission

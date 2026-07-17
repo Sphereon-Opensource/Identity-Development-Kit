@@ -187,8 +187,9 @@ class KvCredentialOfferSessionStore(
     @Serializable
     internal data class CredentialOfferSessionEntry(
         val correlationId: String,
+        val instanceId: String,
         val offerId: String,
-        val issuanceSessionId: String? = null,
+        val issuanceSessionId: String,
         val status: String,
         val callbackUrl: String? = null,
         val callbackStatuses: List<String>? = null,
@@ -225,6 +226,7 @@ class KvCredentialOfferSessionStore(
                 }
             return CredentialOfferSession(
                 correlationId = correlationId,
+                instanceId = instanceId,
                 offerId = offerId,
                 issuanceSessionId = issuanceSessionId,
                 status =
@@ -245,6 +247,7 @@ class KvCredentialOfferSessionStore(
             fun fromPublic(session: CredentialOfferSession): CredentialOfferSessionEntry =
                 CredentialOfferSessionEntry(
                     correlationId = session.correlationId,
+                    instanceId = session.instanceId,
                     offerId = session.offerId,
                     issuanceSessionId = session.issuanceSessionId,
                     status = session.status.name,

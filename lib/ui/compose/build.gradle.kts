@@ -10,6 +10,7 @@
  */
 
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import com.sphereon.gradle.plugin.configureJsTargetIfEnabled
 import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
 plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
@@ -24,19 +25,14 @@ kotlin {
     kotlin.applyDefaultHierarchyTemplate()
     jvm()
 
-    androidLibrary {
+    android {
         namespace = "com.sphereon.conf.theme.ui.compose"
         compileSdk = 35
         minSdk = 27
     }
-    run {
-        val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
-        if ("all" in kmpTargets || "js" in kmpTargets) {
-            js {
-                browser()
-                nodejs()
-            }
-        }
+    configureJsTargetIfEnabled {
+        browser()
+        nodejs()
     }
     configureWasmJsTargetIfEnabled {
         browser()
@@ -51,7 +47,7 @@ kotlin {
                 api(projects.libConfThemeCompose)
 
                 // Compose runtime — available on ALL targets including JS
-                implementation(compose.runtime)
+                implementation(sphereonlib.org.jetbrains.compose.runtime.runtime)
             }
         }
         val commonTest by getting {
@@ -60,35 +56,41 @@ kotlin {
             }
         }
 
-        // Intermediate source set for Compose UI platforms (JVM + iOS).
-        // compose.foundation, compose.material3, and compose.ui do NOT support JS,
-        // so component implementations live here.
+        // Shared Compose Multiplatform source set for JVM, Android, iOS, classic JS, and WasmJS.
         val composeUiMain by creating {
             dependsOn(commonMain)
             dependencies {
-                implementation(compose.foundation)
-                implementation(compose.material3)
-                implementation(compose.ui)
-                implementation(compose.components.uiToolingPreview)
+                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
+                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
+                implementation(sphereonlib.org.jetbrains.compose.ui.ui)
+                implementation(sphereonlib.org.jetbrains.compose.ui.tooling.preview)
 
-                // BlobService types for BlobServiceDataSource adapter
-                api(projects.libDataStoreBlobPublic)
             }
         }
         val jvmMain by getting {
             dependsOn(composeUiMain)
         }
+        findByName("jsMain")?.dependsOn(composeUiMain)
         findByName("wasmJsMain")?.dependsOn(composeUiMain)
         val jvmTest by getting {
             dependencies {
-                implementation(compose.foundation)
-                implementation(compose.material3)
-                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
-                implementation(compose.uiTest)
-                implementation(compose.desktop.currentOs)
+                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
+                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
+                implementation(sphereonlib.org.jetbrains.compose.ui.test)
+                implementation(composeDesktopRuntime())
             }
         }
         findByName("androidMain")?.dependsOn(composeUiMain)
         findByName("iosMain")?.dependsOn(composeUiMain)
     }
 }
+
+fun composeDesktopRuntime() =
+    when {
+        System.getProperty("os.name").startsWith("Windows") -> sphereonlib.org.jetbrains.compose.desktop.jvm.windows.x64
+        System.getProperty("os.name").startsWith("Mac") && System.getProperty("os.arch") == "aarch64" ->
+            sphereonlib.org.jetbrains.compose.desktop.jvm.macos.arm64
+        System.getProperty("os.name").startsWith("Mac") -> sphereonlib.org.jetbrains.compose.desktop.jvm.macos.x64
+        System.getProperty("os.arch") == "aarch64" -> sphereonlib.org.jetbrains.compose.desktop.jvm.linux.arm64
+        else -> sphereonlib.org.jetbrains.compose.desktop.jvm.linux.x64
+    }

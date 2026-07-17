@@ -48,6 +48,8 @@ data class BlobDescriptor(
     val contentType: String? = null,
     val filename: String? = null,
     val etag: String? = null,
+    /** Monotonic object revision when the backend supports revision-aware conditional operations. */
+    val revision: Long? = null,
     val createdAt: Instant? = null,
     val lastModified: Instant? = null,
     val metadata: BlobMetadata = BlobMetadata.EMPTY,

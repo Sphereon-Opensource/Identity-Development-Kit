@@ -25,6 +25,8 @@ kotlin {
 
                 // SD-JWT for ClaimPathUtils
                 implementation(projects.libSdjwtPublic)
+                // ISO mdoc IssuerSigned codec contract
+                implementation(projects.libMdocCorePublic)
 
                 // DI (Metro)
                 api(libs.bundles.app.platform.di)
@@ -36,6 +38,7 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                implementation(projects.libMdocCoreImpl)
             }
         }
         val jvmTest by getting {

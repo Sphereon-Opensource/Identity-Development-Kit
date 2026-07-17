@@ -34,6 +34,7 @@ class Oid4vpNestedPresentationExecutor(
     private val holder: Oid4vpHolderService,
     private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
+    private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider = Oid4vpSdJwtHolderBindingProvider.passthrough,
 ) : WalletNestedPresentationExecutor {
     override suspend fun preparePresentation(
         context: WalletInteractionContext,
@@ -92,7 +93,30 @@ class Oid4vpNestedPresentationExecutor(
                     retryable = true,
                 )
             }
-        val response = holder.createAuthorizationResponse(resolved, selectedCredentials)
+        val boundCredentials =
+            sdJwtHolderBindingProvider
+                .applyHolderBinding(
+                    Oid4vpSdJwtHolderBindingRequest(
+                        walletUnitId = context.walletUnitId,
+                        operationBinding =
+                            state.adapterId?.let { namespace ->
+                                context.privateSessionStore
+                                    .get(context.sessionId, namespace)
+                                    ?.values
+                                    ?.get("security_operation_binding")
+                            },
+                        request = resolved,
+                        selectedCredentials = selectedCredentials,
+                    ),
+                ).getOrElse {
+                    return failed(
+                        code = "oid4vp.response_creation_failed",
+                        messageKey = "wallet.interaction.error.oid4vp_response_creation_failed",
+                        arguments = mapOf("providerErrorCode" to it.code),
+                    )
+                }
+
+        val response = holder.createAuthorizationResponse(resolved, boundCredentials)
         if (response.isErr) {
             return failed(
                 code = "oid4vp.response_creation_failed",

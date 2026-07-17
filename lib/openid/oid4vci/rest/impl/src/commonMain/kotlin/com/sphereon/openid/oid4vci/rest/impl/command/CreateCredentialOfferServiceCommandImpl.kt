@@ -29,6 +29,7 @@ import com.sphereon.openid.oid4vc.common.QrCodeService
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferInput
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferOutput
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferServiceCommand
@@ -38,11 +39,14 @@ import com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStore
 import com.sphereon.openid.oid4vci.rest.CredentialOfferTemplate
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestEventTypes
+import com.sphereon.openid.oid4vci.rest.impl.event.putSessionEventIdentity
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
@@ -59,6 +63,7 @@ class CreateCredentialOfferServiceCommandImpl(
     private val qrCodeService: QrCodeService,
     private val configProvider: Oid4vciRestConfigProvider,
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
+    private val instanceIdProvider: Oid4vciIssuerInstanceIdProvider,
     private val sessionEventService: SessionEventService,
 ) : TypedServiceCommandAdapter<CreateCredentialOfferInput, CreateCredentialOfferOutput, IdkError>(
         commandId = CreateCredentialOfferServiceCommand.COMMAND_ID,
@@ -74,6 +79,13 @@ class CreateCredentialOfferServiceCommandImpl(
         applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput,
     ): IdkResult<CreateCredentialOfferOutput, IdkError> {
         val input = applyDuring(args)
+        val instanceId =
+            instanceIdProvider.currentInstanceId()?.trim()?.takeIf(String::isNotEmpty)
+                ?: return Err(
+                    IdkError.INVALID_STATE(
+                        message = "An OID4VCI issuer instance must be resolved before creating a credential offer",
+                    ),
+                )
 
         if (input.credentialConfigurationIds.isEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "credential_configuration_ids must not be empty"))
@@ -85,16 +97,15 @@ class CreateCredentialOfferServiceCommandImpl(
         val txCodeRequired = txCodeConfig != null
 
         // Prefer the Credential Issuer Identifier (OID4VCI §11.2.2) — may include a path
-        // component (e.g. "${BASE}/oid4vci"). Fall back to the REST external base URL for
-        // backwards compat with deployments that only configure the latter.
+        // component (e.g. "${BASE}/oid4vci").
         val effectiveIssuerId =
             input.issuerId?.takeIf { it.isNotBlank() }
                 ?: issuerConfigProvider.issuerIdentifier.takeIf { it.isNotBlank() }
-                ?: configProvider.getConfig().externalBaseUrl
-                ?: ""
+                ?: return Err(IdkError.INVALID_STATE(message = "Credential issuer identifier is not configured"))
 
         val createArgs =
             CreateCredentialOfferArgs(
+                instanceId = instanceId,
                 issuerId = effectiveIssuerId,
                 credentialConfigurationIds = input.credentialConfigurationIds,
                 preAuthorizedCodeGrant = hasPreAuth || (!hasPreAuth && !hasAuthCode),
@@ -140,6 +151,7 @@ class CreateCredentialOfferServiceCommandImpl(
         val session =
             CredentialOfferSession(
                 correlationId = correlationId,
+                instanceId = created.instanceId,
                 offerId = created.offerId,
                 issuanceSessionId = created.sessionId,
                 status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
@@ -168,7 +180,7 @@ class CreateCredentialOfferServiceCommandImpl(
                 qrCodeService.generateDataUri(created.offerUri, options)
             }
 
-        emitSessionCreatedEvent(correlationId, input.credentialConfigurationIds, created.offerUri)
+        emitSessionCreatedEvent(created.instanceId, correlationId, created.sessionId, input.credentialConfigurationIds)
 
         return Ok(
             CreateCredentialOfferOutput(
@@ -184,12 +196,12 @@ class CreateCredentialOfferServiceCommandImpl(
     private fun generateCorrelationId(): String = Uuid.random().toString()
 
     private suspend fun emitSessionCreatedEvent(
+        instanceId: String,
         correlationId: String,
+        protocolSessionId: String,
         credentialConfigurationIds: List<String>,
-        offerUri: String,
     ) {
-        try {
-            sessionEventService.emit(
+        sessionEventService.emit(
                 sessionEventService
                     .eventBuilder()
                     .type(Oid4vciRestEventTypes.SESSION_CREATED)
@@ -197,13 +209,27 @@ class CreateCredentialOfferServiceCommandImpl(
                     .payload(
                         buildJsonObject {
                             put("correlationId", correlationId)
-                            put("credentialConfigurationIds", credentialConfigurationIds.joinToString(","))
-                            put("offerUri", offerUri)
+                            put("credentialConfigurationIds", buildJsonArray {
+                                credentialConfigurationIds.forEach { add(JsonPrimitive(it)) }
+                            })
+                            putSessionEventIdentity(
+                                protocolSessionId = protocolSessionId,
+                                instanceId = instanceId,
+                                newState = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED.name,
+                                creationSnapshot = buildJsonObject {
+                                    put("correlationId", correlationId)
+                                    put("credentialConfigurationIds", buildJsonArray {
+                                        credentialConfigurationIds.forEach { add(JsonPrimitive(it)) }
+                                    })
+                                },
+                                currentResult = buildJsonObject {
+                                    put("correlationId", correlationId)
+                                    put("sessionId", protocolSessionId)
+                                    put("status", CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED.name)
+                                },
+                            )
                         },
                     ).build(),
             )
-        } catch (expected: Exception) {
-            log.warn("Failed to emit SESSION_CREATED event: ${expected.message}")
-        }
     }
 }

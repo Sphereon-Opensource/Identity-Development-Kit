@@ -117,6 +117,7 @@ data class VerifyAuthorizationCodeGrantArgs(
     val redirectUri: String,
     val clientId: String,
     val codeVerifier: String? = null,
+    val requestedResource: List<String> = emptyList(),
 )
 
 /**
@@ -150,6 +151,7 @@ data class VerifyRefreshTokenGrantArgs(
     val refreshToken: String,
     val clientId: String,
     val requestedScope: String? = null,
+    val requestedResource: List<String> = emptyList(),
 )
 
 /**
@@ -181,6 +183,7 @@ interface VerifyRefreshTokenGrantCommand : ServiceCommand<VerifyRefreshTokenGran
 data class VerifyClientCredentialsGrantArgs(
     val clientId: String,
     val requestedScope: String? = null,
+    val requestedAudience: List<String> = emptyList(),
 )
 
 /**
@@ -264,6 +267,8 @@ data class CreateRefreshTokenArgs(
     val subject: String,
     val clientId: String,
     val scope: String? = null,
+    val resource: List<String> = emptyList(),
+    val defaultAccessTokenAudience: String? = null,
     val expiresInSeconds: Int? = null,
     val dpopJkt: String? = null,
     val clientInstanceKeyJkt: String? = null,
@@ -392,6 +397,7 @@ sealed interface GrantParameters {
         val code: String,
         val redirectUri: String,
         val codeVerifier: String? = null,
+        val resource: List<String> = emptyList(),
     ) : GrantParameters
 
     /**
@@ -400,6 +406,7 @@ sealed interface GrantParameters {
     data class RefreshToken(
         val refreshToken: String,
         val scope: String? = null,
+        val resource: List<String> = emptyList(),
     ) : GrantParameters
 
     /**
@@ -475,6 +482,8 @@ data class VerifiedAuthorizationCodeGrant(
      * Granted scope
      */
     val scope: String? = null,
+    val resource: List<String> = emptyList(),
+    val defaultAccessTokenAudience: String? = null,
     /**
      * DPoP JWK thumbprint (if DPoP-bound)
      */
@@ -506,6 +515,8 @@ data class VerifiedRefreshTokenGrant(
      * Granted scope (may be subset of original)
      */
     val scope: String? = null,
+    val resource: List<String> = emptyList(),
+    val defaultAccessTokenAudience: String? = null,
     /**
      * DPoP JWK thumbprint (if DPoP-bound)
      */
@@ -558,6 +569,8 @@ data class VerifiedClientCredentialsGrant(
      * Granted scope
      */
     val scope: String? = null,
+    /** Exact access-token audience authorized by this client's registration. */
+    val audience: List<String> = emptyList(),
 )
 
 /**

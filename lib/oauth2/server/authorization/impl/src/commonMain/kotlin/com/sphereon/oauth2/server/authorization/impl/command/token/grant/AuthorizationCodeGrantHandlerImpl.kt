@@ -16,11 +16,9 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.token.grant
 
-import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.config.isRequired
@@ -61,7 +59,6 @@ import kotlinx.serialization.json.putJsonArray
 @SingleIn(SessionScope::class)
 @ContributesIntoSet(SessionScope::class, binding = binding<GrantHandler>())
 class AuthorizationCodeGrantHandlerImpl(
-    private val secureRandom: SecureRandom,
     private val authorizationCodeStorage: com.sphereon.oauth2.server.authorization.storage.AuthorizationCodeStorage,
     private val scopeClaimsMapper: OidcScopeClaimsMapper? = null,
 ) : GrantHandler {
@@ -88,6 +85,7 @@ class AuthorizationCodeGrantHandlerImpl(
                         redirectUri = authParams.redirectUri,
                         clientId = tokenRequest.clientId,
                         codeVerifier = authParams.codeVerifier,
+                        requestedResource = authParams.resource,
                     ),
                 ).getOrElse { error -> return Err(error) }
 
@@ -122,6 +120,16 @@ class AuthorizationCodeGrantHandlerImpl(
             return invalidDpopProof("DPoP proof thumbprint does not match dpop_jkt committed at /authorize")
         }
         val boundJkt = proofJkt ?: committedJkt
+
+        val credentialConfigurationIds =
+            (verified.additionalData["credential_configuration_ids"] as? List<*>)
+                ?.filterIsInstance<String>()
+                ?.ifEmpty { null }
+        val authCodeAuthorizationDetails =
+            buildAuthorizationCodeCredentialAuthorizationDetails(
+                credentialConfigurationIds = credentialConfigurationIds,
+                issuerState = verified.additionalData["issuer_state"] as? String,
+            )
 
         // Access token: no identity claims (RFC 9068). The OIDC `claims` request parameter
         // (§5.5) carries through `additionalData` so /userinfo can union the requested per-
@@ -160,6 +168,7 @@ class AuthorizationCodeGrantHandlerImpl(
                 }
 
                 context.walletInstanceAttestation?.let { putAll(it.accessTokenClaims()) }
+                authCodeAuthorizationDetails?.let { put("authorization_details", it) }
             }
         val accessToken =
             commands.createAccessToken
@@ -168,6 +177,7 @@ class AuthorizationCodeGrantHandlerImpl(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
+                        audience = verified.resource.ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) },
                         dpopJkt = boundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         additionalClaims = accessTokenAdditional,
@@ -185,6 +195,8 @@ class AuthorizationCodeGrantHandlerImpl(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
+                        resource = verified.resource,
+                        defaultAccessTokenAudience = verified.defaultAccessTokenAudience,
                         dpopJkt = boundJkt,
                         authTime = verified.codeData.authTime,
                         acr = verified.codeData.acr,
@@ -268,31 +280,6 @@ class AuthorizationCodeGrantHandlerImpl(
         // OID4VCI 1.1 Section 7.2: include authorization_details with credential_identifiers
         // when the auth-code grant carried credential configuration IDs (e.g. from authorization_details
         // in the original authorization request), so the wallet knows which credentials to request.
-        val authCodeAuthorizationDetails =
-            run {
-                // Extract credential_configuration_ids from codeData.additionalData
-                val configIds =
-                    (verified.additionalData["credential_configuration_ids"] as? List<*>)
-                        ?.filterIsInstance<String>()
-                        ?.ifEmpty { null }
-
-                configIds?.let { ids ->
-                    // Pre-compute suffixes outside the non-suspend JSON builder lambda.
-                    val idsWithSuffixes = ids.map { it to generateCredentialIdentifierSuffix() }
-                    JsonArray(
-                        idsWithSuffixes.map { (configId, suffix) ->
-                            buildJsonObject {
-                                put("type", JsonPrimitive("openid_credential"))
-                                put("credential_configuration_id", JsonPrimitive(configId))
-                                putJsonArray("credential_identifiers") {
-                                    add(JsonPrimitive("$configId-$suffix"))
-                                }
-                            }
-                        },
-                    )
-                }
-            }
-
         return commands.createTokenResponse.execute(
             CreateTokenResponseArgs(
                 accessToken = accessToken.value,
@@ -305,15 +292,7 @@ class AuthorizationCodeGrantHandlerImpl(
         )
     }
 
-    /**
-     * Generate a short random suffix for credential identifiers.
-     * 12 random bytes (96 bits of entropy) encoded as 24 lowercase hex characters.
-     */
-    private suspend fun generateCredentialIdentifierSuffix(): String = secureRandom.newToken(lengthBytes = CREDENTIAL_IDENTIFIER_SUFFIX_BYTES, encoding = Encoding.HEX)
-
     private companion object {
-        private const val CREDENTIAL_IDENTIFIER_SUFFIX_BYTES = 12
-
         /** RFC 9068 §2.2.3.1 / RFC 7643 §4.1.2 authorization claim name. */
         private const val ROLES_CLAIM = "roles"
         private const val AUTH_TIME_CLAIM = "auth_time"
@@ -321,3 +300,22 @@ class AuthorizationCodeGrantHandlerImpl(
         private const val AMR_CLAIM = "amr"
     }
 }
+
+internal fun buildAuthorizationCodeCredentialAuthorizationDetails(
+    credentialConfigurationIds: List<String>?,
+    issuerState: String?,
+): JsonArray? =
+    credentialConfigurationIds?.takeIf { it.isNotEmpty() }?.let { configIds ->
+        val exactOfferSessionId = issuerState?.takeIf(String::isNotBlank)
+        JsonArray(
+            configIds.map { configId ->
+                buildJsonObject {
+                    put("type", JsonPrimitive("openid_credential"))
+                    put("credential_configuration_id", JsonPrimitive(configId))
+                    exactOfferSessionId?.let { sessionId ->
+                        putJsonArray("credential_identifiers") { add(JsonPrimitive(sessionId)) }
+                    }
+                }
+            },
+        )
+    }

@@ -35,4 +35,16 @@ enum class PartyOrigin {
     /** Party was created and is managed natively within this system */
     @SerialName("managed")
     MANAGED,
+
+    /** Party was materialized from connector entity discovery. */
+    @SerialName("connector_discovery")
+    CONNECTOR_DISCOVERY,
+
+    /** Party was materialized from governed connector ingress. */
+    @SerialName("connector_governed_ingress")
+    CONNECTOR_GOVERNED_INGRESS,
+
+    /** Party was materialized from an externally initiated connector write. */
+    @SerialName("connector_external_write")
+    CONNECTOR_EXTERNAL_WRITE,
 }

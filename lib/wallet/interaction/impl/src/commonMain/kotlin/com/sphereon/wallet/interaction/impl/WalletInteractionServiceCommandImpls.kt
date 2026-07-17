@@ -68,7 +68,7 @@ class StartWalletInteractionCommandImpl(
     ): IdkResult<WalletInteractionSession, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.start(input).also { session -> session.state.requireWallet(input.walletInstanceId) }
+            client.start(input).also { session -> session.state.requireWallet(input.walletUnitId) }
         }
 }
 
@@ -92,7 +92,7 @@ class ResumeWalletInteractionCommandImpl(
     ): IdkResult<WalletInteractionSession, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).also { session -> session.state.requireWallet(input.walletInstanceId) }
+            client.resume(input.sessionId).also { session -> session.state.requireWallet(input.walletUnitId) }
         }
 }
 
@@ -116,9 +116,9 @@ class SubmitWalletInteractionActionCommandImpl(
     ): IdkResult<WalletInteractionState, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.requireWallet(input.walletInstanceId)
+            client.resume(input.sessionId).state.requireWallet(input.walletUnitId)
             client.dispatch(input.sessionId, input.action)
-            client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletInstanceId) }
+            client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
         }
 }
 
@@ -142,11 +142,11 @@ class CancelWalletInteractionCommandImpl(
     ): IdkResult<CancelWalletInteractionResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.requireWallet(input.walletInstanceId)
+            client.resume(input.sessionId).state.requireWallet(input.walletUnitId)
             client.cancel(input.sessionId)
             CancelWalletInteractionResult(
                 sessionId = input.sessionId,
-                state = client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletInstanceId) },
+                state = client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) },
             )
         }
 }
@@ -171,7 +171,7 @@ class GetWalletInteractionStateCommandImpl(
     ): IdkResult<WalletInteractionState, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletInstanceId) }
+            client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
         }
 }
 
@@ -195,13 +195,13 @@ class GetWalletInteractionEventsCommandImpl(
     ): IdkResult<GetWalletInteractionEventsResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            val current = client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletInstanceId) }
+            val current = client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
             val afterRevision = input.afterRevision
             val events =
                 if (client is WalletInteractionStateEventSource) {
                     client
                         .events(input.sessionId, afterRevision)
-                        .also { replay -> replay.forEach { event -> event.state.requireWallet(input.walletInstanceId) } }
+                        .also { replay -> replay.forEach { event -> event.state.requireWallet(input.walletUnitId) } }
                 } else if (afterRevision == null || current.revision > afterRevision) {
                     listOf(current.toEvent())
                 } else {
@@ -246,14 +246,14 @@ class ObserveWalletInteractionEventsCommandImpl(
 
     override suspend fun executeStream(args: GetWalletInteractionEventsArgs): IdkResult<Flow<WalletInteractionStateEvent>, IdkError> =
         walletInteractionCommand {
-            client.resume(args.sessionId).state.requireWallet(args.walletInstanceId)
+            client.resume(args.sessionId).state.requireWallet(args.walletUnitId)
             val source =
                 client as? WalletInteractionStateEventSource
                     ?: throw UnsupportedOperationException("wallet_interaction_live_event_source_unavailable")
 
             source
                 .observeEvents(args.sessionId, args.afterRevision)
-                .onEach { event -> event.state.requireWallet(args.walletInstanceId) }
+                .onEach { event -> event.state.requireWallet(args.walletUnitId) }
         }
 }
 
@@ -322,8 +322,8 @@ private suspend fun <T : Any> walletInteractionCommand(block: suspend () -> T): 
         )
     }
 
-private fun WalletInteractionState.requireWallet(walletInstanceId: String) {
-    require(this.walletInstanceId == walletInstanceId) {
+private fun WalletInteractionState.requireWallet(walletUnitId: String) {
+    require(this.walletUnitId == walletUnitId) {
         "wallet_interaction_session_wallet_mismatch"
     }
 }

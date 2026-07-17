@@ -37,8 +37,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Tests for (response_type enforcement against server metadata + client
- * registration) and Task 1.6 (optional redirect_uri resolution from client registration).
+ * Tests for response_type enforcement against server metadata + client registration, and
+ * for optional redirect_uri resolution from client registration.
  */
 class VerifyAuthorizationRequestResponseTypeRedirectTest {
     private val ctx = OAuth2ServerTestContext("verify-response-type-redirect-test", this)
@@ -134,9 +134,8 @@ class VerifyAuthorizationRequestResponseTypeRedirectTest {
     @Test
     fun verifyEmptyClientResponseTypesDefaultsToCodeOnly() =
         runTest {
-            // Clients registered before Task 1.5 may have `responseTypes = []`. For backward
-            // compatibility we treat that as `[CODE]`, so a code request succeeds but a token
-            // request still fails.
+            // A client with `responseTypes = []` is treated as `[CODE]` for backward
+            // compatibility, so a code request succeeds but a token request still fails.
             val cmd =
                 createCommand(
                     client(responseTypes = emptyList()),

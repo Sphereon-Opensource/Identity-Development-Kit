@@ -49,9 +49,13 @@ import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpUriScheme
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCallbackConfig
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
+import com.sphereon.openid.oid4vp.verifier.model.Oid4vpSessionIdentity
+import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvider
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
+import com.sphereon.openid.oid4vp.universal.impl.event.putSessionEventIdentity
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.buildJsonObject
@@ -79,6 +83,7 @@ class CreateAuthRequestServiceCommandImpl(
     private val dcqlQueryResolver: DcqlQueryResolver,
     private val clientMetadataConfigStore: ClientMetadataConfigurationStore,
     private val sessionEventService: SessionEventService,
+    private val instanceIdProvider: Oid4vpVerifierInstanceIdProvider,
     private val qrCodeService: QrCodeService,
     private val configProvider: UniversalOid4vpConfigProvider,
     private val requestObjectSigningConfig: RequestObjectSigningConfig,
@@ -97,6 +102,20 @@ class CreateAuthRequestServiceCommandImpl(
         applyDuring: (CreateAuthorizationRequestInput) -> CreateAuthorizationRequestInput,
     ): IdkResult<CreateAuthorizationRequestOutput, IdkError> {
         val input = applyDuring(args)
+        val instanceId =
+            try {
+                Oid4vpSessionIdentity.normalize(
+                    "instanceId",
+                    instanceIdProvider.currentInstanceId()
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "A verifier instance must be resolved before creating an OID4VP authorization session",
+                            ),
+                        ),
+                )
+            } catch (e: IllegalArgumentException) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = e.message ?: "Invalid verifier instanceId"))
+            }
 
         // 1. Validate input - must have either queryId or dcqlQuery
         val inputQueryId = input.queryId
@@ -288,6 +307,7 @@ class CreateAuthRequestServiceCommandImpl(
 
         val createArgs =
             CreateAuthorizationRequestArgs(
+                instanceId = instanceId,
                 dcqlQuery = dcqlQuery,
                 clientId = clientId,
                 responseUri = responseUri,
@@ -323,6 +343,14 @@ class CreateAuthRequestServiceCommandImpl(
             created.sessionId
                 ?: return Err(IdkError.UNKNOWN_ERROR(message = "Session ID not generated"))
 
+        var persistedSession =
+            oid4vpVerifierService.authorizationSessionStore.getByCorrelationId(sessionId).getOrElse { return Err(it) }
+                ?: return Err(
+                    IdkError.UNKNOWN_ERROR(
+                        message = "Created authorization session was not persisted: $sessionId",
+                    ),
+                )
+
         // 8. Update session with callback config if provided
         val inputCallback = input.callback
         if (inputCallback != null) {
@@ -331,20 +359,19 @@ class CreateAuthRequestServiceCommandImpl(
                     url = inputCallback.url,
                     statuses = inputCallback.statuses,
                 )
-            // Update the session with callback config
-            oid4vpVerifierService.authorizationSessionStore.getByCorrelationId(sessionId).getOrNull()?.let { session ->
-                oid4vpVerifierService.authorizationSessionStore.put(
+            persistedSession = persistedSession.copy(callback = callbackConfig)
+            oid4vpVerifierService.authorizationSessionStore
+                .put(
                     sessionId,
-                    session.copy(callback = callbackConfig),
+                    persistedSession,
                     input.ttlSeconds ?: AuthorizationSessionStore.DEFAULT_TTL_SECONDS,
-                )
-            }
+                ).getOrElse { return Err(it) }
         }
 
         // 9. Build authorization request URI
         // Validate request_uri_base is an HTTP(S) URL — it controls the URL the wallet
         // fetches the signed JAR from, not the wallet-deeplink scheme. A custom scheme
-        // (`oid4vp://`, `haip://`) here would produce nonsense like
+        // (`oid4vp://`, `haip-vp://`) here would produce nonsense like
         // `oid4vp:/oid4vp/request-uri/<id>` that the wallet can't actually call.
         input.requestUriBase?.let { base ->
             val lower = base.lowercase()
@@ -359,7 +386,7 @@ class CreateAuthRequestServiceCommandImpl(
             }
         }
         // walletUriScheme may be:
-        //   - bare scheme name (`openid4vp`, `haip`, `oid4vp`) → maps to Oid4vpUriScheme enum
+        //   - bare scheme name (`openid4vp`, `haip-vp`, `oid4vp`) → maps to Oid4vpUriScheme enum
         //   - full URL (`https://demo.certification.openid.net/.../authorize`) for web wallets,
         //     universal links, or app links → passed through as a deeplink prefix
         val rawWalletUri = input.walletUriScheme?.trim()?.takeIf { it.isNotEmpty() }
@@ -411,7 +438,7 @@ class CreateAuthRequestServiceCommandImpl(
             }
 
         // 11. Emit SESSION_CREATED event
-        emitSessionCreatedEvent(sessionId, input.queryId, requestUri)
+        emitSessionCreatedEvent(persistedSession)
 
         // 12. Build response per Universal OID4VP spec
         val output =
@@ -532,28 +559,33 @@ class CreateAuthRequestServiceCommandImpl(
         }
     }
 
-    private suspend fun emitSessionCreatedEvent(
-        correlationId: String,
-        queryId: String?,
-        requestUri: String,
-    ) {
-        try {
-            sessionEventService.emit(
+    private suspend fun emitSessionCreatedEvent(session: com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession) {
+        sessionEventService.emit(
                 sessionEventService
                     .eventBuilder()
                     .type(UniversalOid4vpEventTypes.SESSION_CREATED)
                     .origin(CreateAuthRequestServiceCommand.COMMAND_ID)
                     .payload(
                         buildJsonObject {
-                            put("correlationId", correlationId)
-                            queryId?.let { put("queryId", it) }
-                            put("requestUri", requestUri)
+                            put("correlationId", session.correlationId)
+                            session.queryId?.let { put("queryId", it) }
+                            putSessionEventIdentity(
+                                protocolSessionId = session.sessionId,
+                                instanceId = session.instanceId,
+                                newState = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED.name,
+                                creationSnapshot = buildJsonObject {
+                                    put("correlationId", session.correlationId)
+                                    session.queryId?.let { put("queryId", it) }
+                                },
+                                currentResult = buildJsonObject {
+                                    put("correlationId", session.correlationId)
+                                    session.queryId?.let { put("queryId", it) }
+                                    put("sessionId", session.sessionId)
+                                    put("status", AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED.name)
+                                },
+                            )
                         },
                     ).build(),
             )
-        } catch (expected: Exception) {
-            // Best effort - don't fail the request if event emission fails
-            log.warn("Failed to emit SESSION_CREATED event: ${expected.message}")
-        }
     }
 }

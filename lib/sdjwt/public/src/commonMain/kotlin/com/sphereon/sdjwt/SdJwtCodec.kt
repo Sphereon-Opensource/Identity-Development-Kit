@@ -174,7 +174,8 @@ object SdJwtCodec {
     /**
      * Parse a disclosure from its base64url-encoded format
      *
-     * A disclosure is a JSON array: [salt, claim_name, claim_value]
+     * An object-property disclosure is a JSON array [salt, claim_name, claim_value]; an
+     * array-element disclosure (RFC 9901) is [salt, claim_value] and yields a null key.
      *
      * @param encoded The base64url-encoded disclosure
      * @param hashAlgorithm The hash algorithm to use for computing the digest
@@ -187,11 +188,13 @@ object SdJwtCodec {
         val decoded = encoded.decodeFromBase64Url().decodeToString()
         val array = Json.parseToJsonElement(decoded).jsonArray
 
-        require(array.size == 3) { "Invalid disclosure format: expected [salt, key, value], got $decoded" }
+        require(array.size == 2 || array.size == 3) {
+            "Invalid disclosure format: expected [salt, key, value] or [salt, value], got $decoded"
+        }
 
         val salt = array[0].jsonPrimitive.content
-        val key = array[1].jsonPrimitive.content
-        val value = array[2]
+        val key = if (array.size == 3) array[1].jsonPrimitive.content else null
+        val value = array[array.size - 1]
 
         // Compute digest
         val digest = DisclosureDigest.calculateDigest(encoded, hashAlgorithm)
@@ -291,7 +294,9 @@ object SdJwtCodec {
                         value.forEach { digestElement ->
                             val digest = digestElement.jsonPrimitive.content
                             val disclosure = digestedDisclosures[digest]
-                            if (disclosure != null) {
+                            // Only object-property disclosures (non-null key) belong in _sd;
+                            // a malformed array-element disclosure here is skipped.
+                            if (disclosure?.key != null) {
                                 val unveiledValue =
                                     if (disclosure.value is JsonObject) {
                                         // Recursively reconstruct nested objects
@@ -312,10 +317,50 @@ object SdJwtCodec {
                         put(key, reconstructPayloadRecursive(value, digestedDisclosures))
                     }
 
+                    value is JsonArray -> {
+                        put(key, reconstructArrayRecursive(value, digestedDisclosures))
+                    }
+
                     else -> {
                         // Regular claim, keep as-is
                         put(key, value)
                     }
+                }
+            }
+        }
+
+    /**
+     * Reconstruct a JSON array, unveiling RFC 9901 array-element disclosures: an element of the
+     * form {"...": "<digest>"} is replaced by the matching disclosure's value (recursively
+     * reconstructed), or dropped entirely when the element stays undisclosed.
+     */
+    private fun reconstructArrayRecursive(
+        array: JsonArray,
+        digestedDisclosures: Map<String, Disclosure>,
+    ): JsonArray =
+        buildJsonArray {
+            array.forEach { element ->
+                val arrayDigest =
+                    (element as? JsonObject)
+                        ?.takeIf { it.size == 1 }
+                        ?.get(SdJwt.SD_ARRAY_ELEMENT_CLAIM)
+                        ?.let { it as? JsonPrimitive }
+                        ?.content
+                when {
+                    arrayDigest != null -> {
+                        val disclosure = digestedDisclosures[arrayDigest] ?: return@forEach
+                        val unveiled =
+                            when (disclosure.value) {
+                                is JsonObject -> reconstructPayloadRecursive(disclosure.value.jsonObject, digestedDisclosures)
+                                is JsonArray -> reconstructArrayRecursive(disclosure.value.jsonArray, digestedDisclosures)
+                                else -> disclosure.value
+                            }
+                        add(unveiled)
+                    }
+
+                    element is JsonObject -> add(reconstructPayloadRecursive(element, digestedDisclosures))
+                    element is JsonArray -> add(reconstructArrayRecursive(element, digestedDisclosures))
+                    else -> add(element)
                 }
             }
         }

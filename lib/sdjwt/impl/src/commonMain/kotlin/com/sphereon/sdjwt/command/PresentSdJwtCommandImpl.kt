@@ -135,8 +135,8 @@ class PresentSdJwtCommandImpl(
                     presentationWithoutKb
                 }
 
-            // Extract disclosed claim names
-            val disclosedClaimNames = selectedDisclosures.map { it.key }.filter { it.isNotEmpty() }
+            // Extract disclosed claim names (array-element disclosures carry no claim name)
+            val disclosedClaimNames = selectedDisclosures.mapNotNull { it.key }.filter { it.isNotEmpty() }
 
             log.info(
                 "Created SD-JWT presentation with ${selectedDisclosures.size} disclosed claims${if (kbJwt != null) {
@@ -176,9 +176,10 @@ class PresentSdJwtCommandImpl(
             return sdJwt.disclosures
         }
 
-        // Filter disclosures based on SdMap
+        // Filter disclosures based on SdMap. Array-element disclosures have no claim name to
+        // match an SdMap entry on, so a keyed selection cannot include them.
         return sdJwt.disclosures.filter { disclosure ->
-            val field = selection[disclosure.key]
+            val field = disclosure.key?.let { selection[it] }
             field?.sd == true
         }
     }

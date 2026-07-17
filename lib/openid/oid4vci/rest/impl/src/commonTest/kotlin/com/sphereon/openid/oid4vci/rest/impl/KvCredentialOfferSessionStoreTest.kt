@@ -54,6 +54,8 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 
 class KvCredentialOfferSessionStoreTest {
+    private val instanceId = "issuer-instance-credential-offer-store"
+
     private fun createStore(): KvCredentialOfferSessionStore {
         val kvStoreManager = StoreTestKvStoreManager()
         val kvStoreService = NoOpKvStoreService()
@@ -75,7 +77,9 @@ class KvCredentialOfferSessionStoreTest {
             val session =
                 CredentialOfferSession(
                     correlationId = "corr-abc",
+                    instanceId = instanceId,
                     offerId = "offer-xyz",
+                    issuanceSessionId = "issuance-session-offer-xyz",
                     status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                     createdAt = now,
                     lastUpdatedAt = now,
@@ -88,7 +92,9 @@ class KvCredentialOfferSessionStoreTest {
             assertTrue(lookupResult.isOk, "getByOfferId should succeed")
             assertNotNull(lookupResult.value)
             assertEquals("corr-abc", lookupResult.value!!.correlationId)
+            assertEquals(instanceId, lookupResult.value!!.instanceId)
             assertEquals("offer-xyz", lookupResult.value!!.offerId)
+            assertEquals("issuance-session-offer-xyz", lookupResult.value!!.issuanceSessionId)
         }
 
     @Test
@@ -120,7 +126,9 @@ class KvCredentialOfferSessionStoreTest {
             val session =
                 CredentialOfferSession(
                     correlationId = "corr-tmpl",
+                    instanceId = instanceId,
                     offerId = "offer-tmpl",
+                    issuanceSessionId = "issuance-session-offer-template",
                     status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                     createdAt = now,
                     lastUpdatedAt = now,
@@ -143,7 +151,9 @@ class KvCredentialOfferSessionStoreTest {
             val session =
                 CredentialOfferSession(
                     correlationId = "corr-no-tmpl",
+                    instanceId = instanceId,
                     offerId = "offer-no-tmpl",
+                    issuanceSessionId = "issuance-session-no-template",
                     status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                     createdAt = now,
                     lastUpdatedAt = now,
@@ -165,7 +175,9 @@ class KvCredentialOfferSessionStoreTest {
             val session =
                 CredentialOfferSession(
                     correlationId = "corr-del",
+                    instanceId = instanceId,
                     offerId = "offer-del",
+                    issuanceSessionId = "issuance-session-delete-offer",
                     status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                     createdAt = now,
                     lastUpdatedAt = now,

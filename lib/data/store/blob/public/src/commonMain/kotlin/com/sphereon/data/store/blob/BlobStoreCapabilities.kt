@@ -27,6 +27,13 @@ import kotlin.time.Duration
 @JsExportCompat
 data class BlobStoreCapabilities(
     val supportsEtag: Boolean = false,
+    val supportsRevisions: Boolean = false,
+    val supportsConditionalWrites: Boolean = false,
+    val supportsConditionalDelete: Boolean = false,
+    val supportsStreamingRead: Boolean = false,
+    val supportsStreamingWrite: Boolean = false,
+    val supportsRangeReads: Boolean = false,
+    val supportsIntegrityVerification: Boolean = false,
     val supportsCopy: Boolean = false,
     val supportsMove: Boolean = false,
     val supportsBulkDelete: Boolean = false,
@@ -51,6 +58,12 @@ data class BlobStoreCapabilities(
         val CLOUD_OBJECT_STORE =
             BlobStoreCapabilities(
                 supportsEtag = true,
+                supportsConditionalWrites = true,
+                supportsConditionalDelete = true,
+                supportsStreamingRead = true,
+                supportsStreamingWrite = true,
+                supportsRangeReads = true,
+                supportsIntegrityVerification = true,
                 supportsCopy = true,
                 supportsMove = true,
                 supportsBulkDelete = true,

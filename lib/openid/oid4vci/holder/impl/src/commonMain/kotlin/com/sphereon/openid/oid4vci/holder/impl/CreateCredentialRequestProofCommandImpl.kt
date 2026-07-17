@@ -75,7 +75,19 @@ class CreateCredentialRequestProofCommandImpl(
     ): IdkResult<CreatedProof, IdkError> {
         val applied = applyDuring(args)
 
-        if (applied.proofType != "jwt") {
+        if (applied.proofType == ATTESTATION_PROOF_TYPE) {
+            val attestationJwt =
+                applied.keyAttestationJwt?.takeIf { it.isNotBlank() }
+                    ?: return Err(
+                        IdkError.fromString(
+                            code = "MISSING_KEY_ATTESTATION",
+                            message = "Proof type 'attestation' requires keyAttestationJwt",
+                        ),
+                    )
+            return Ok(CreatedProof(proofs = CredentialRequestProofs.attestation(attestationJwt)))
+        }
+
+        if (applied.proofType != JWT_PROOF_TYPE) {
             return Err(
                 IdkError.fromString(
                     code = "UNSUPPORTED_PROOF_TYPE",
@@ -84,12 +96,13 @@ class CreateCredentialRequestProofCommandImpl(
             )
         }
 
-        val count = applied.count.coerceAtLeast(1)
+        val signingKeyIds = applied.signingKeyIds
+        val count = signingKeyIds.size
         log.debug("Creating $count JWT proof(s) for issuer: ${applied.issuerUrl}")
 
         val signedJwts = mutableListOf<String>()
-        repeat(count) {
-            val jwtResult = createSingleProofJwt(applied).getOrElse { return Err(it) }
+        for (signingKeyId in signingKeyIds) {
+            val jwtResult = createSingleProofJwt(applied, signingKeyId).getOrElse { return Err(it) }
             signedJwts.add(jwtResult)
         }
 
@@ -102,7 +115,10 @@ class CreateCredentialRequestProofCommandImpl(
         return Ok(createdProof)
     }
 
-    private suspend fun createSingleProofJwt(args: CreateCredentialRequestProofArgs): IdkResult<String, IdkError> {
+    private suspend fun createSingleProofJwt(
+        args: CreateCredentialRequestProofArgs,
+        signingKeyId: String,
+    ): IdkResult<String, IdkError> {
         val iat = Clock.System.now().epochSeconds
 
         // Build the protected header with only typ and alg — the key identifier header
@@ -112,6 +128,9 @@ class CreateCredentialRequestProofCommandImpl(
                 .create()
                 .typ(PROOF_JWT_TYP)
                 .alg(args.signingAlgorithm)
+                .apply {
+                    args.keyAttestationJwt?.takeIf { it.isNotBlank() }?.let { claim("key_attestation", it) }
+                }
                 .build()
 
         // Build the payload per OID4VCI 1.1 Appendix F.1
@@ -129,7 +148,7 @@ class CreateCredentialRequestProofCommandImpl(
         // Use KID-based managed identifier to sign with the specified key.
         // The KMS resolves the full key material regardless of keyInclusionMode,
         // so ManagedOptsKid is correct for all modes.
-        val issuer = ManagedOptsKid(identifier = args.signingKeyId)
+        val issuer = ManagedOptsKid(identifier = signingKeyId)
 
         val jwsArgs =
             CreateJwsArgs(
@@ -154,5 +173,6 @@ class CreateCredentialRequestProofCommandImpl(
     companion object {
         const val PROOF_JWT_TYP = "openid4vci-proof+jwt"
         const val JWT_PROOF_TYPE = "jwt"
+        const val ATTESTATION_PROOF_TYPE = "attestation"
     }
 }

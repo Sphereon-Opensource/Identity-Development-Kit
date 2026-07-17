@@ -335,6 +335,7 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
     @Test
     fun reusableOfferWithinRateLimitMintsFreshOfferPerFetch() =
         runTest {
+            val seenArgsBeforeFetch = fakeCreateCredentialOffer.seenArgs.size
             val offer =
                 CredentialOffer(
                     credentialIssuer = "https://issuer.example.com",
@@ -375,6 +376,9 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             assertNotNull(firstCode)
             assertNotNull(secondCode)
             assertTrue(firstCode != secondCode, "two GETs on the same reusable URI must mint distinct inner offers")
+            val fetchArgs = fakeCreateCredentialOffer.seenArgs.drop(seenArgsBeforeFetch)
+            assertEquals(2, fetchArgs.size)
+            assertTrue(fetchArgs.all { it.instanceId == "issuer-instance-http-adapter" })
         }
 
     private fun preAuthorizedCodeOf(body: String): String? =
@@ -391,7 +395,9 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
     private fun singleUseSession(offerId: String) =
         com.sphereon.openid.oid4vci.rest.CredentialOfferSession(
             correlationId = "corr-$offerId",
+            instanceId = "issuer-instance-http-adapter",
             offerId = offerId,
+            issuanceSessionId = "issuance-session-$offerId",
             status = com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
             createdAt = 0L,
             lastUpdatedAt = 0L,
@@ -403,7 +409,9 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
         rateLimit: com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit,
     ) = com.sphereon.openid.oid4vci.rest.CredentialOfferSession(
         correlationId = "corr-$offerId",
+        instanceId = "issuer-instance-http-adapter",
         offerId = offerId,
+        issuanceSessionId = "issuance-session-$offerId",
         status = com.sphereon.openid.oid4vci.rest.CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
         createdAt = 0L,
         lastUpdatedAt = 0L,

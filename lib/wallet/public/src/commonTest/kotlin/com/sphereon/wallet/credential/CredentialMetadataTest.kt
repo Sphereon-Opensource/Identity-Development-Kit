@@ -8,7 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Instant
 
-private const val META_WALLET_INSTANCE_ID = "wallet-work"
+private const val META_WALLET_UNIT_ID = "wallet-work"
 private val META_NOW = Instant.fromEpochSeconds(1_800_000_000)
 private val META_ISSUER_REF = IdentifierRef(type = IdentifierType.DID, value = "did:ex:issuer")
 private val META_SUBJECT_REF = IdentifierRef(type = IdentifierType.DID, value = "did:ex:subject")
@@ -28,11 +28,11 @@ private fun metaInstance(
     bindingRefs: List<CredentialBindingRef> = emptyList(),
 ) = CredentialInstance(
     id = id,
-    walletInstanceId = META_WALLET_INSTANCE_ID,
+    walletUnitId = META_WALLET_UNIT_ID,
     credentialRecordId = "record-meta",
     format = CredentialFormat.JWT_VC_JSON,
     raw = "jwt-$id",
-    bodyStorageRef = BodyStorageRef(BodyStorageKind.WALLET_STORE, "wallet-instances/$META_WALLET_INSTANCE_ID/credentials/record-meta/instances/$id/body"),
+    bodyStorageRef = BodyStorageRef(BodyStorageKind.WALLET_STORE, "wallet-units/$META_WALLET_UNIT_ID/credentials/record-meta/instances/$id/body"),
     holderKeyRef = KeyRef(alias = "key-$id"),
     lifecycleState = state,
     validity = CredentialValidityWindow(validFrom = Instant.fromEpochSeconds(1_700_000_000), validUntil = Instant.fromEpochSeconds(1_950_000_000)),
@@ -45,7 +45,7 @@ private fun metaInstance(
 private fun metaRecord() =
     CredentialRecord(
         id = "record-meta",
-        walletInstanceId = META_WALLET_INSTANCE_ID,
+        walletUnitId = META_WALLET_UNIT_ID,
         issuerRef = META_ISSUER_REF,
         subjectRefs = listOf(META_SUBJECT_REF),
         format = CredentialFormat.JWT_VC_JSON,
@@ -76,7 +76,7 @@ class CredentialMetadataTest {
         val meta = metaRecord().metadata(META_NOW)
 
         assertEquals("record-meta", meta.credentialRecordId)
-        assertEquals(META_WALLET_INSTANCE_ID, meta.walletInstanceId)
+        assertEquals(META_WALLET_UNIT_ID, meta.walletUnitId)
         assertEquals(META_ISSUER_REF, meta.issuerRef)
         assertEquals(listOf(META_SUBJECT_REF), meta.subjectRefs)
         assertEquals(CredentialFormat.JWT_VC_JSON, meta.format)

@@ -48,6 +48,9 @@ import com.sphereon.oauth2.common.model.IdTokenValidationOptions
 import com.sphereon.oauth2.common.model.TokenRequest
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import io.ktor.http.Url
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Top-level OIDC login-callback command.
@@ -125,6 +128,14 @@ class CompleteOidcLoginCommandImpl(
         if (transactionResult.isErr) return Err(IdkError.fromDTO(transactionResult.error))
         val transaction: OidcLoginTransaction = transactionResult.value
 
+        val responseIssuer = successResponse.additionalParameters["iss"]?.jsonPrimitive?.contentOrNull
+        if (responseIssuer == null || responseIssuer != transaction.issuer) {
+            return Err(IdkError.fromDTO(Oauth2Error.InvalidGrant(reason = "Authorization response issuer mismatch")))
+        }
+        if (applied.callbackUrl.substringBefore('?').substringBefore('#') != transaction.redirectUri) {
+            return Err(IdkError.fromDTO(Oauth2Error.InvalidGrant(reason = "Authorization response redirect URI mismatch")))
+        }
+
         // OIDC_FIRST so we prefer the richer openid-configuration document over RFC 8414.
         val metadataResult =
             fetchMetadataCommand.execute(
@@ -135,6 +146,9 @@ class CompleteOidcLoginCommandImpl(
             )
         if (metadataResult.isErr) return Err(metadataResult.error)
         val metadata = metadataResult.value
+        if (metadata.issuer != transaction.issuer) {
+            return Err(IdkError.fromDTO(Oauth2Error.InvalidGrant(reason = "Authorization server metadata issuer mismatch")))
+        }
         val tokenEndpoint =
             metadata.tokenEndpoint
                 ?: return Err(
@@ -142,6 +156,9 @@ class CompleteOidcLoginCommandImpl(
                         Oauth2Error.InvalidGrant(reason = "Authorization server metadata missing token_endpoint"),
                     ),
                 )
+        if (!sameOrigin(transaction.issuer, tokenEndpoint)) {
+            return Err(IdkError.fromDTO(Oauth2Error.InvalidGrant(reason = "Authorization server token endpoint origin mismatch")))
+        }
 
         val (clientId, clientSecret) = extractClientCredentials(applied.clientAuthentication)
         val tokenAuthMethod = resolveTokenAuthMethod(applied.clientAuthentication)
@@ -158,6 +175,8 @@ class CompleteOidcLoginCommandImpl(
                             clientId = clientId,
                             clientSecret = clientSecret,
                             tokenEndpointAuthMethod = tokenAuthMethod,
+                            resource = transaction.resource?.let(::listOf).orEmpty(),
+                            audience = if (transaction.resource != null) transaction.audience?.let(::listOf).orEmpty() else emptyList(),
                         ),
                 ),
             )
@@ -202,9 +221,28 @@ class CompleteOidcLoginCommandImpl(
                 idToken = idToken,
                 idTokenClaims = validated.payload,
                 tokenResponse = tokenResponse,
+                issuer = transaction.issuer,
+                redirectUri = transaction.redirectUri,
+                resource = transaction.resource,
+                audience = transaction.audience,
+                ownerHandleDigest = transaction.ownerHandleDigest,
+                grantBinding = transaction.grantBinding,
+                clientCorrelation = transaction.clientCorrelation,
             ),
         )
     }
+
+    private fun sameOrigin(issuer: String, endpoint: String): Boolean =
+        runCatching {
+            val issuerUrl = Url(issuer)
+            val endpointUrl = Url(endpoint)
+            val secureIssuer = issuerUrl.protocol.name == "https" ||
+                (issuerUrl.protocol.name == "http" && issuerUrl.host in setOf("localhost", "127.0.0.1"))
+            secureIssuer && issuerUrl.fragment.isEmpty() && endpointUrl.fragment.isEmpty() &&
+                issuerUrl.protocol == endpointUrl.protocol &&
+                issuerUrl.host == endpointUrl.host &&
+                issuerUrl.port == endpointUrl.port
+        }.getOrDefault(false)
 
     private fun extractClientCredentials(config: ClientAuthenticationConfig): Pair<String?, String?> =
         when (config) {

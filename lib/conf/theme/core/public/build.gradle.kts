@@ -27,8 +27,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(projects.libCoreApiPublic)
-                api(project(":lib-data-store-asset-public"))
+                api(projects.libCoreCompatAnnotations)
                 implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 implementation(sphereonlib.org.jetbrains.kotlinx.datetime)
             }

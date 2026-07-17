@@ -130,4 +130,37 @@ class CompleteOidcLoginCommandImplTest {
                 "replay must reject as invalid_grant, got ${replay.error.code}",
             )
         }
+
+    @Test
+    fun complete_requiresExactRfc9207ResponseIssuer() = runTest {
+        suspend fun store(state: String) {
+            val now = Clock.System.now()
+            assertTrue(
+                transactionStore.put(
+                    OidcLoginTransaction(
+                        state = state,
+                        nonce = "nonce",
+                        pkceVerifier = "verifier",
+                        issuer = "https://issuer.example.com",
+                        redirectUri = "https://rp.example.com/callback",
+                        responseMode = OAuth2ResponseMode.QUERY,
+                        createdAt = now,
+                        expiresAt = now + 5.minutes,
+                    ),
+                ).isOk,
+            )
+        }
+
+        store("missing-iss")
+        val missing = complete("https://rp.example.com/callback?code=abc&state=missing-iss")
+        assertTrue(missing.isErr)
+        assertTrue(missing.error.message.defaultMessage?.contains("issuer") == true)
+
+        store("wrong-iss")
+        val wrong = complete(
+            "https://rp.example.com/callback?code=abc&state=wrong-iss&iss=https%3A%2F%2Fother.example.com",
+        )
+        assertTrue(wrong.isErr)
+        assertTrue(wrong.error.message.defaultMessage?.contains("issuer") == true)
+    }
 }

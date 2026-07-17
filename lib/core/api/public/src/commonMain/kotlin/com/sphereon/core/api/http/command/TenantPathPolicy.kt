@@ -59,7 +59,6 @@ sealed class TenantPathPolicy {
      * peeled segment is validated as a child slug of the currently-resolved
      * parent (or as a root slug when there is no parent yet).
      */
-    @JsExportCompat
     data class LeadingSlug(
         val maxDepth: Int = 1,
         override val required: Boolean = false,
@@ -80,7 +79,6 @@ sealed class TenantPathPolicy {
      * the tenant tree right-to-left along the URL but the parent→child
      * relationship still goes left-to-right (URL semantic order).
      */
-    @JsExportCompat
     data class WellKnownSuffix(
         val maxDepth: Int = 1,
         override val required: Boolean = false,

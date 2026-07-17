@@ -280,12 +280,12 @@ class ParseAuthorizationResponseCommandImpl(
      *
      * OpenID4VP 1.0 Final DCQL format:
      * - vp_token is a JSON object where keys are credential query IDs
-     * - Values are either single presentation strings or arrays of strings
+     * - Every value is an array of one or more Presentations
      *
      * Example:
      * ```json
      * {
-     *   "driver_license_query": "eyJhbGc...",
+     *   "driver_license_query": ["eyJhbGc..."],
      *   "employment_query": ["eyJhbGc...", "eyJhbGc..."]
      * }
      * ```

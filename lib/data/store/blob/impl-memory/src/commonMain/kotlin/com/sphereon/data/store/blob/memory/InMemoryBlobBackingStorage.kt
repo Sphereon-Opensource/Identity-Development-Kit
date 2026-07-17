@@ -35,6 +35,7 @@ data class InMemoryStoredBlob(
     val metadata: BlobMetadata,
     val createdAtEpochMillis: Long,
     val lastModifiedAtEpochMillis: Long,
+    val revision: Long,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -45,7 +46,8 @@ data class InMemoryStoredBlob(
         }
         return data.contentEquals(other.data) && metadata == other.metadata &&
             createdAtEpochMillis == other.createdAtEpochMillis &&
-            lastModifiedAtEpochMillis == other.lastModifiedAtEpochMillis
+            lastModifiedAtEpochMillis == other.lastModifiedAtEpochMillis &&
+            revision == other.revision
     }
 
     override fun hashCode(): Int {
@@ -53,6 +55,7 @@ data class InMemoryStoredBlob(
         result = 31 * result + metadata.hashCode()
         result = 31 * result + createdAtEpochMillis.hashCode()
         result = 31 * result + lastModifiedAtEpochMillis.hashCode()
+        result = 31 * result + revision.hashCode()
         return result
     }
 }

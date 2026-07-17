@@ -18,7 +18,9 @@ package com.sphereon.openid.oid4vp.common
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
+import com.sphereon.crypto.core.jose.JoseKeyOperations
 import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.core.jose.JwkType
 import io.konform.validation.Validation
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -80,6 +82,23 @@ data class ClientMetadata(
     @SerialName("encrypted_response_enc_values_supported")
     val encryptedResponseEncValuesSupported: List<String>? = null,
 )
+
+/**
+ * Selects the verifier key used for an encrypted OID4VP authorization response.
+ *
+ * The same key must drive both JWE encryption and the RFC 7638 thumbprint in the
+ * ISO 18013-7 OpenID4VPHandover. Keeping the selection here prevents those two
+ * cryptographic bindings from silently choosing different keys.
+ */
+fun ClientMetadata.selectEncryptedResponseJwk(): JwkType? =
+    jwks?.keys?.firstOrNull { jwk ->
+        val isEncryptionKey =
+            jwk.use == "enc" ||
+                jwk.key_ops?.any { operation ->
+                    operation == JoseKeyOperations.ENCRYPT || operation == JoseKeyOperations.WRAP_KEY
+                } == true
+        isEncryptionKey && jwk.alg != null
+    }
 
 /**
  * VP Format Information (vp_formats_supported)

@@ -29,6 +29,7 @@ import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
@@ -42,12 +43,15 @@ import com.sphereon.mdoc.oid4vp.Oid4VPConstraints
 import com.sphereon.mdoc.oid4vp.Oid4VPFormat
 import com.sphereon.mdoc.oid4vp.Oid4VPInputDescriptor
 import com.sphereon.mdoc.oid4vp.Oid4VPPresentationDefinition
+import com.sphereon.mdoc.oid4vp.Oid4VPPresentationSubmission
 import com.sphereon.mdoc.oid4vp.Oid4VPSupportedAlgorithm
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.CredentialFormat
+import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationResponse
 import com.sphereon.openid.oid4vp.common.responseUri
+import com.sphereon.openid.oid4vp.common.selectEncryptedResponseJwk
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommandService
@@ -57,6 +61,13 @@ import com.sphereon.sdjwt.PresentSdJwtArgs
 import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * Implementation of CreateAuthorizationResponseCommand for OpenID4VP.
@@ -138,6 +149,37 @@ class CreateAuthorizationResponseCommandImpl(
             )
         }
 
+        // ISO/IEC 18013-7 deployments using mdoc-openid4vp carry a Presentation Definition.
+        // Keep the protocol in this holder command: UI and interaction orchestration still use
+        // the normalized credential requirements, while the wire response retains the profile's
+        // vp_token + presentation_submission shape.
+        val presentationDefinition = parsePresentationDefinition(request)
+        if (presentationDefinition != null) {
+            if (selectedCredentials.size != 1 || presentationDefinition.input_descriptors.size != 1) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "The mdoc Presentation Definition response currently requires exactly one " +
+                                "input descriptor and one selected credential",
+                    ),
+                )
+            }
+            val presentation = resolvePresentation(request, selectedCredentials.single()).getOrElse { return Err(it) }
+            val submission = Oid4VPPresentationSubmission.fromPresentationDefinition(presentationDefinition)
+            return Ok(
+                AuthorizationResponse(
+                    code = "",
+                    state = request.request.state,
+                    additionalParameters =
+                        mapOf(
+                            "vp_token" to JsonPrimitive(presentation),
+                            "presentation_submission" to
+                                responseJson.encodeToJsonElement(Oid4VPPresentationSubmission.serializer(), submission),
+                        ),
+                ),
+            )
+        }
+
         // Build VP token from selected credentials. For SD-JWT credentials that carry a holder
         // key, the holder produces a Key Binding JWT (RFC 9901 §4.3) binding the presentation to
         // the verifier (audience = client_id) and the request nonce; other formats pass through.
@@ -165,12 +207,12 @@ class CreateAuthorizationResponseCommandImpl(
      *
      * OpenID4VP 1.0 Final §8.1 (DCQL Format):
      * - vp_token is a JSON object where keys are credential query IDs
-     * - Values are single presentation strings or arrays of strings
+     * - Every value is an array of one or more Presentations
      *
      * Example:
      * ```json
      * {
-     *   "driver_license_query": "eyJhbGc...",
+     *   "driver_license_query": ["eyJhbGc..."],
      *   "employment_query": ["eyJhbGc...", "eyJhbGc..."]
      * }
      * ```
@@ -274,9 +316,9 @@ class CreateAuthorizationResponseCommandImpl(
      *  4. match document <-> descriptor (derives the device key from the MSO) and call
      *     [MdocOid4vpService.createDeviceResponse], which signs `DeviceAuth` over the §B.2.6
      *     `OpenID4VPHandover` SessionTranscript built from `client_id` + `nonce` + `response_uri`
-     *     (jwkThumbprint = null for the unencrypted `direct_post`). The verifier reconstructs the
-     *     SAME transcript via `SessionTranscript.fromOid4vpClientIdAndResponseUri(...)`, so the
-     *     two agree and `DeviceAuth` verifies.
+     *     For `direct_post.jwt`, the handover includes the RFC 7638 thumbprint of the exact
+     *     verifier encryption JWK used for the response JWE. The verifier reconstructs the same
+     *     transcript via `SessionTranscript.fromOid4vpClientIdAndResponseUri(...)`.
      *  5. submit base64url(CBOR(DeviceResponse)) as the vp_token entry (the form the verifier's
      *     `DeviceResponseCborCodec` decodes; `CredentialFormat.detectFormat` reads it as mso_mdoc).
      */
@@ -353,19 +395,54 @@ class CreateAuthorizationResponseCommandImpl(
 
         val document = Document(docType = docType, issuerSigned = issuerSigned, deviceSigned = null, original = null)
 
-        // Build the presentation definition: id = docType, constraint fields = every issued
-        // element. limit_disclosure="required" (mandatory per ISO 18013-7), so the holder
-        // discloses exactly what the definition lists; listing all held elements guarantees the
-        // verifier's requested subset is present in the response.
-        val constraintFields =
-            (issuerSigned.nameSpaces ?: emptyMap()).flatMap { (nameSpace, items) ->
-                items.map { encoded ->
-                    Oid4VPConstraintField(
-                        path = arrayOf("$['$nameSpace']['${encoded.data().elementIdentifier}']"),
-                        intent_to_retain = false,
-                    )
+        // Preserve the exact requested elements. For the ISO Presentation Definition profile we
+        // reuse its constraints directly. For DCQL, translate namespace/element claim paths to
+        // the ISO JSONPath form. A DCQL query without claim constraints requests the full mdoc.
+        val presentationDescriptor =
+            parsePresentationDefinition(request)
+                ?.input_descriptors
+                ?.firstOrNull { it.id.toString() == credential.credentialQueryId }
+        val dcqlCredentialQuery =
+            request.dcqlQuery
+                ?.credentials
+                ?.firstOrNull { it.id == credential.credentialQueryId }
+        val requestedDcqlFields =
+            dcqlCredentialQuery
+                ?.claims
+                .orEmpty()
+                .flatMap { claim ->
+                    val namespaces =
+                        when {
+                            claim.path.size >= 2 -> listOf(claim.path[0])
+                            claim.path.size == 1 ->
+                                (dcqlCredentialQuery?.meta?.get("namespace_values") as? JsonArray)
+                                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                                    .orEmpty()
+                            else -> emptyList()
+                        }
+                    val elementIdentifier = claim.path.lastOrNull()
+                    if (elementIdentifier == null) {
+                        emptyList()
+                    } else {
+                        namespaces.map { namespace ->
+                            Oid4VPConstraintField(
+                                path = arrayOf("$['$namespace']['$elementIdentifier']"),
+                                intent_to_retain = claim.intent_to_retain ?: false,
+                            )
+                        }
+                    }
                 }
-            }
+        val constraintFields =
+            presentationDescriptor?.constraints?.fields?.toList()
+                ?: requestedDcqlFields.takeIf { it.isNotEmpty() }
+                ?: (issuerSigned.nameSpaces ?: emptyMap()).flatMap { (nameSpace, items) ->
+                    items.map { encoded ->
+                        Oid4VPConstraintField(
+                            path = arrayOf("$['$nameSpace']['${encoded.data().elementIdentifier}']"),
+                            intent_to_retain = false,
+                        )
+                    }
+                }
         if (constraintFields.isEmpty()) {
             return Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -426,6 +503,41 @@ class CreateAuthorizationResponseCommandImpl(
                 matchResults
             }
 
+        val verifierEncryptionJwkThumbprint =
+            when (ResponseMode.fromValue(request.request.responseMode ?: ResponseMode.DIRECT_POST.value)) {
+                ResponseMode.DIRECT_POST_JWT,
+                ResponseMode.IAE_POST_JWT -> {
+                    val encryptionJwk =
+                        request.clientMetadata
+                            ?.selectEncryptedResponseJwk()
+                            ?: return Err(
+                                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                    message =
+                                        "Cannot create encrypted mdoc DeviceResponse for query " +
+                                            "'${credential.credentialQueryId}': client_metadata.jwks has no " +
+                                            "encryption JWK with an alg",
+                                ),
+                            )
+                    val encodedThumbprint =
+                        tryGenerateJwkThumbprint(encryptionJwk)
+                            .getOrElse { return Err(it) }
+                    try {
+                        encodedThumbprint.decodeFromBase64Url()
+                    } catch (expected: Exception) {
+                        return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message =
+                                    "Cannot create encrypted mdoc DeviceResponse for query " +
+                                        "'${credential.credentialQueryId}': verifier JWK thumbprint is invalid: " +
+                                        expected.message,
+                            ),
+                        )
+                    }
+                }
+
+                else -> null
+            }
+
         val deviceResponse =
             try {
                 mdocOid4vpService.createDeviceResponse(
@@ -434,6 +546,7 @@ class CreateAuthorizationResponseCommandImpl(
                     clientId = clientId,
                     responseUri = responseUri,
                     authorizationRequestNonce = nonce,
+                    verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
                 )
             } catch (expected: Exception) {
                 return Err(
@@ -467,5 +580,19 @@ class CreateAuthorizationResponseCommandImpl(
                 }
 
         return Ok(deviceResponseBytes.encodeToBase64Url())
+    }
+
+    private fun parsePresentationDefinition(request: ResolvedOid4vpRequest): Oid4VPPresentationDefinition? {
+        val definitionElement = request.request.additionalParameters["presentation_definition"] ?: return null
+        val normalized: JsonElement =
+            when (definitionElement) {
+                is JsonPrimitive -> responseJson.parseToJsonElement(definitionElement.content)
+                else -> definitionElement
+            }
+        return responseJson.decodeFromJsonElement(Oid4VPPresentationDefinition.serializer(), normalized)
+    }
+
+    private companion object {
+        val responseJson = Json { ignoreUnknownKeys = true }
     }
 }

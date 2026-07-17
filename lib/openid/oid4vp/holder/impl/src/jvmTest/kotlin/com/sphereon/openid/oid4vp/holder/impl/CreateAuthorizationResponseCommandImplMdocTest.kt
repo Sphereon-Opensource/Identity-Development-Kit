@@ -41,6 +41,12 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.kms.CertificateServiceImpl
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
@@ -49,6 +55,7 @@ import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.mdoc.MdocSignService
 import com.sphereon.mdoc.MdocSignServiceImpl
 import com.sphereon.mdoc.SessionTranscriptCborCodecImpl
+import com.sphereon.mdoc.data.DeviceAuthValidationImpl
 import com.sphereon.mdoc.data.device.DataElementIdentifier
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodecImpl
 import com.sphereon.mdoc.data.device.DocType
@@ -60,8 +67,12 @@ import com.sphereon.mdoc.data.device.NameSpace
 import com.sphereon.mdoc.data.mso.DigestID
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodecImpl
 import com.sphereon.mdoc.oid4vp.MdocOid4vpServiceImpl
+import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.ResponseMode
+import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
@@ -77,9 +88,12 @@ import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.createGraphFactory
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -260,8 +274,11 @@ class CreateAuthorizationResponseCommandImplMdocTest {
             val result = command.execute(CreateAuthorizationResponseArgs(resolvedRequest, selected))
             if (result.isErr) error("command failed: ${result.error.message.defaultMessage}")
             assertIs<Ok<*>>(result)
-            val vpToken = result.getOrThrow().vpToken
+            val response = result.getOrThrow()
+            val vpToken = response.vpToken
             assertNotNull(vpToken)
+            val wireVpToken = assertIs<JsonObject>(response.additionalParameters["vp_token"])
+            assertEquals(1, assertIs<JsonArray>(wireVpToken["businesscard_mdoc"]).size)
 
             val presentation = vpToken.getSinglePresentation("businesscard_mdoc")
             assertNotNull(presentation)
@@ -281,27 +298,107 @@ class CreateAuthorizationResponseCommandImplMdocTest {
             assertNotNull(doc.deviceSigned!!.deviceAuth.deviceSignature, "DeviceAuth must carry a device signature")
             // The disclosed issuer-signed elements survive.
             assertNotNull(doc.issuerSigned.getIssuerSignedItem(docTypeNamespace, DataElementIdentifier("given_name")))
+
+            // 5. For an encrypted response the holder must bind DeviceAuth to the exact
+            // verifier JWK selected for the response JWE. This is the OpenID4VP 1.0 final
+            // B.2.6 slot that used to be signed as null and caused verifier rejection.
+            val verifierEncryptionJwk =
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    crv = JwaCurve.P_256,
+                    x = "0_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc",
+                    y = "ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA",
+                    use = "enc",
+                    alg = JwaAlgorithm.ECDH_ES,
+                    kid = "verifier-encryption-key",
+                )
+            val encryptedRequest =
+                resolvedRequest(
+                    responseMode = ResponseMode.DIRECT_POST_JWT,
+                    clientMetadata =
+                        ClientMetadata(
+                            jwks = JwkSet(arrayOf(verifierEncryptionJwk)),
+                            encryptedResponseEncValuesSupported = listOf("A128GCM"),
+                        ),
+                )
+            val encryptedResult = command.execute(CreateAuthorizationResponseArgs(encryptedRequest, selected))
+            if (encryptedResult.isErr) error("encrypted command failed: ${encryptedResult.error.message.defaultMessage}")
+            val encryptedPresentation =
+                encryptedResult
+                    .getOrThrow()
+                    .vpToken
+                    ?.getSinglePresentation("businesscard_mdoc")
+            assertNotNull(encryptedPresentation)
+            val encryptedDocument =
+                DeviceResponseCborCodecImpl()
+                    .decode(encryptedPresentation.decodeFromBase64Url())
+                    .getOrThrow()
+                    .value
+                    .documents
+                    ?.single()
+            assertNotNull(encryptedDocument)
+
+            val verifierThumbprint =
+                tryGenerateJwkThumbprint(verifierEncryptionJwk)
+                    .getOrThrow()
+                    .decodeFromBase64Url()
+            val expectedTranscript =
+                SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                    clientId = encryptedRequest.request.clientId,
+                    nonce = encryptedRequest.request.nonce!!,
+                    jwkThumbprint = verifierThumbprint,
+                    responseUri = encryptedRequest.request.responseUri!!,
+                )
+            val deviceAuthValidation =
+                DeviceAuthValidationImpl(
+                    coseCryptoService = CoseCryptoServiceImpl(),
+                    sessionTranscriptCborCodec = SessionTranscriptCborCodecImpl(),
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                )
+            val correctBinding =
+                deviceAuthValidation.verifyDeviceAuth(
+                    document = encryptedDocument,
+                    expectedSessionTranscript = expectedTranscript,
+                )
+            assertFalse(correctBinding.error, "encrypted DeviceAuth must verify with the verifier JWK thumbprint: ${correctBinding.message}")
+
+            val oldNullBinding =
+                deviceAuthValidation.verifyDeviceAuth(
+                    document = encryptedDocument,
+                    expectedSessionTranscript =
+                        SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                            clientId = encryptedRequest.request.clientId,
+                            nonce = encryptedRequest.request.nonce!!,
+                            jwkThumbprint = null,
+                            responseUri = encryptedRequest.request.responseUri!!,
+                        ),
+                )
+            assertTrue(oldNullBinding.error, "encrypted DeviceAuth must reject the old null-thumbprint transcript")
         }
 
-    private fun resolvedRequest(): ResolvedOid4vpRequest {
+    private fun resolvedRequest(
+        responseMode: ResponseMode = ResponseMode.DIRECT_POST,
+        clientMetadata: ClientMetadata? = null,
+    ): ResolvedOid4vpRequest {
         val authRequest =
             AuthorizationRequest(
                 clientId = "https://verifier.acme.example",
                 redirectUri = "https://verifier.acme.example/callback",
                 responseType = "vp_token",
+                responseMode = responseMode.value,
                 scope = null,
                 state = "test-state",
                 nonce = "test-nonce",
                 additionalParameters =
                     mapOf(
                         "response_uri" to JsonPrimitive("https://verifier.acme.example/oid4vp/auth/response"),
-                        "response_mode" to JsonPrimitive("direct_post"),
+                        "response_mode" to JsonPrimitive(responseMode.value),
                     ),
             )
         return ResolvedOid4vpRequest(
             request = authRequest,
             dcqlQuery = null,
-            clientMetadata = null,
+            clientMetadata = clientMetadata,
             verifierInfo =
                 VerifierInfo(
                     clientId = "https://verifier.acme.example",

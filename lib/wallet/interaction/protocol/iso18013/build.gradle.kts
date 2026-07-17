@@ -62,6 +62,7 @@ kotlin {
                 implementation(projects.libMdocCoreImpl)
                 implementation(projects.libMdocDatatransferImpl)
                 implementation(projects.libWalletImpl)
+                implementation(projects.libWalletWscdTestFixtures)
                 implementation(libs.bundles.app.platform.di)
                 implementation(sphereonlib.software.amazon.app.platform.metro.public)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)

@@ -72,6 +72,14 @@ class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyServi
                 )
             }
 
+            "passkey_credential_id" -> {
+                IdentifierProtectionPolicy(
+                    identifierType = type,
+                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
+                    normalization = NormalizationProfile.NONE,
+                )
+            }
+
             "x509",
             "pas",
             "idc",

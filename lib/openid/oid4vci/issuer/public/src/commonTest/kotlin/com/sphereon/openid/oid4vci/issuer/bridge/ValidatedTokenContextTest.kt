@@ -40,6 +40,8 @@ class ValidatedTokenContextTest {
         assertNull(ctx.authTime)
         assertNull(ctx.upstreamSubject)
         assertNull(ctx.upstreamIssuer)
+        assertNull(ctx.tokenId)
+        assertNull(ctx.expiresAtEpochSeconds)
     }
 
     @Test
@@ -52,6 +54,8 @@ class ValidatedTokenContextTest {
                 credentialConfigurationIds = listOf("IdentityCredential"),
                 credentialIdentifiers = listOf("id-001"),
                 cnfJkt = "thumbprint-abc",
+                tokenId = "token-jti-1",
+                expiresAtEpochSeconds = 2_000_000_000L,
             )
         assertEquals("sub-1", ctx.subject)
         assertEquals("client-1", ctx.clientId)
@@ -59,6 +63,8 @@ class ValidatedTokenContextTest {
         assertEquals(listOf("IdentityCredential"), ctx.credentialConfigurationIds)
         assertEquals(listOf("id-001"), ctx.credentialIdentifiers)
         assertEquals("thumbprint-abc", ctx.cnfJkt)
+        assertEquals("token-jti-1", ctx.tokenId)
+        assertEquals(2_000_000_000L, ctx.expiresAtEpochSeconds)
     }
 
     @Test
@@ -78,6 +84,7 @@ class ValidatedTokenContextTest {
                 authTime = instant,
                 upstreamSubject = "ext-sub-42",
                 upstreamIssuer = "https://idp.example.com",
+                tokenId = "token-jti-2",
             )
 
         assertEquals(claims, ctx.userinfoClaims)

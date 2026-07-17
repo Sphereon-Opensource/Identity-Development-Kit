@@ -48,7 +48,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
 
 /**
- * File-private helper that owns the Task 7.3 pipeline re-execution flow on
+ * File-private helper that owns the pipeline re-execution flow on
  * `/deferred_credential`. Pulled out of [HandleDeferredCredentialRequestCommandImpl] so the
  * command class stays at a single concern (status routing + access-token validation + entry
  * lifecycle) while the multi-step re-execution machinery sits in its own testable unit.
@@ -85,16 +85,20 @@ class DeferredPipelineReExecutor(
         val correlationId = session?.lifecycleCorrelationId
         return when {
             session == null || correlationId == null -> null
-            !runDeferredPhaseAndPipelineIsReady(correlationId) -> null
+            !runDeferredPhaseAndPipelineIsReady(correlationId, session.sessionId) -> null
             else -> issueCredential(entry, tokenContext, session)
         }
     }
 
-    private suspend fun runDeferredPhaseAndPipelineIsReady(correlationId: String): Boolean {
+    private suspend fun runDeferredPhaseAndPipelineIsReady(
+        correlationId: String,
+        protocolSessionId: String,
+    ): Boolean {
         val contributeResult =
             lifecycleHook.recordPhase(
                 Oid4vciPhaseLifecycleArgs(
                     correlationId = correlationId,
+                    protocolSessionId = protocolSessionId,
                     phase = Oid4vciIssuancePhase.DEFERRED,
                 ),
             )
@@ -124,6 +128,7 @@ class DeferredPipelineReExecutor(
         val preIssueRan =
             contributeOid4vciPhase(
                 correlationId = correlationId,
+                protocolSessionId = session.sessionId,
                 phase = Oid4vciIssuancePhase.PRE_ISSUE,
                 fields = preIssuePhaseFields(inputs, issuanceContext),
             )
@@ -132,6 +137,7 @@ class DeferredPipelineReExecutor(
         val postIssuanceRan =
             contributeOid4vciPhase(
                 correlationId = correlationId,
+                protocolSessionId = session.sessionId,
                 phase = Oid4vciIssuancePhase.POST_ISSUANCE,
                 fields = response.value.toPostIssuancePhaseFields(inputs.configId),
             )
@@ -158,10 +164,9 @@ class DeferredPipelineReExecutor(
      * Invoke the resolved format handler, persist the produced credential onto the entry as
      * READY, and return the credential response.
      *
-     * Task 7.3 contract: write the produced credential onto the entry as READY. The wallet call
-     * that triggered re-execution already returns the credential, but persisting READY (rather
-     * than DELIVERED) keeps the existing READY -> DELIVERED transition the single canonical
-     * place that marks delivery if the wallet polls again.
+     * The credential is persisted as READY, not DELIVERED: this response already carries the
+     * credential to the caller, but marking DELIVERED here would bypass the single canonical
+     * READY -> DELIVERED transition that fires when the wallet polls again.
      */
     private suspend fun runDispatch(
         entry: DeferredCredentialEntry,
@@ -216,6 +221,7 @@ class DeferredPipelineReExecutor(
 
     private suspend fun contributeOid4vciPhase(
         correlationId: String,
+        protocolSessionId: String,
         phase: Oid4vciIssuancePhase,
         fields: Map<String, JsonElement>,
     ): Boolean =
@@ -223,6 +229,7 @@ class DeferredPipelineReExecutor(
             .recordPhase(
                 Oid4vciPhaseLifecycleArgs(
                     correlationId = correlationId,
+                    protocolSessionId = protocolSessionId,
                     phase = phase,
                     fields = fields,
                 ),

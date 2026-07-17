@@ -47,7 +47,7 @@ class ParseAuthorizationResponseCommandImplTest {
     fun `test parse single query vp_token response`() =
         runTest {
             // Given: Response with VP token in DCQL object format
-            val dcqlVpToken = """{"driver_license_query":"eyJhbGciOiJFUzI1NiIsInR5cCI6InZjK3NkLWp3dCJ9.payload.signature"}"""
+            val dcqlVpToken = """{"driver_license_query":["eyJhbGciOiJFUzI1NiIsInR5cCI6InZjK3NkLWp3dCJ9.payload.signature"]}"""
             val args =
                 ParseAuthorizationResponseArgs(
                     responseParams =
@@ -77,8 +77,8 @@ class ParseAuthorizationResponseCommandImplTest {
         runTest {
             // Given: Response with multiple credential queries
             val dcqlVpToken = """{
-            "driver_license_query":"eyJhbGciOiJFUzI1NiJ9.payload1.sig1",
-            "employment_query":"eyJhbGciOiJFUzI1NiJ9.payload2.sig2"
+            "driver_license_query":["eyJhbGciOiJFUzI1NiJ9.payload1.sig1"],
+            "employment_query":["eyJhbGciOiJFUzI1NiJ9.payload2.sig2"]
         }"""
             val args =
                 ParseAuthorizationResponseArgs(
@@ -137,7 +137,7 @@ class ParseAuthorizationResponseCommandImplTest {
     @Test
     fun `test parse response without state`() =
         runTest {
-            val dcqlVpToken = """{"query1":"eyJhbGciOiJFUzI1NiJ9.payload.signature"}"""
+            val dcqlVpToken = """{"query1":["eyJhbGciOiJFUzI1NiJ9.payload.signature"]}"""
             val args =
                 ParseAuthorizationResponseArgs(
                     responseParams =
@@ -210,7 +210,7 @@ class ParseAuthorizationResponseCommandImplTest {
                 )
 
             // And: Response with mismatched state
-            val dcqlVpToken = """{"query1":"eyJhbGciOiJFUzI1NiJ9.payload.signature"}"""
+            val dcqlVpToken = """{"query1":["eyJhbGciOiJFUzI1NiJ9.payload.signature"]}"""
             val args =
                 ParseAuthorizationResponseArgs(
                     responseParams =
@@ -242,7 +242,7 @@ class ParseAuthorizationResponseCommandImplTest {
                     state = "matching_state",
                 )
 
-            val dcqlVpToken = """{"query1":"eyJhbGciOiJFUzI1NiJ9.payload.signature"}"""
+            val dcqlVpToken = """{"query1":["eyJhbGciOiJFUzI1NiJ9.payload.signature"]}"""
             val args =
                 ParseAuthorizationResponseArgs(
                     responseParams =
@@ -264,7 +264,7 @@ class ParseAuthorizationResponseCommandImplTest {
         runTest {
             // SD-JWT format: issuer-jwt~disclosure1~disclosure2~kb-jwt
             val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~WyJkZWY0NTYiLCJsYXN0X25hbWUiLCJEb2UiXQ~eyJhbGciOiJFUzI1NiJ9.kb.signature"
-            val dcqlVpToken = """{"identity_query":"$sdJwt"}"""
+            val dcqlVpToken = """{"identity_query":["$sdJwt"]}"""
 
             val args =
                 ParseAuthorizationResponseArgs(
@@ -300,17 +300,30 @@ class ParseAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun `test reject scalar presentation value in DCQL object`() =
+        runTest {
+            val result =
+                command.parseAuthorizationResponse(
+                    ParseAuthorizationResponseArgs(
+                        responseParams = mapOf("vp_token" to """{"query1":"presentation"}"""),
+                    ),
+                )
+
+            assertIs<Err<*>>(result)
+        }
+
+    @Test
     fun `test parse DCQL vp_token with string and JSON-object presentation values`() =
         runTest {
             // OID4VP §8.1: a DCQL vp_token is a JSON object keyed by credential-query id whose
-            // Presentation values are Credential-Format dependent: a STRING for compact formats
-            // (dc+sd-jwt here) and a JSON OBJECT for the W3C Data Integrity formats (ldp_vc/ldp_vp).
-            // Parsing MUST handle both shapes without a `.jsonPrimitive` ClassCastException.
+            // Every credential-query value is an array. Its Presentation elements remain
+            // Credential-Format dependent: strings for compact formats and JSON objects for
+            // W3C Data Integrity formats.
             val compactSdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.sig~WyJhYmMiLCJnaXZlbl9uYW1lIiwiQWxpY2UiXQ~"
             val dcqlVpToken =
                 """{
-                    "compact_query": "$compactSdJwt",
-                    "ldp_query": { "@context": ["https://www.w3.org/ns/credentials/v2"], "type": "VerifiablePresentation", "proof": { "type": "DataIntegrityProof" } }
+                    "compact_query": ["$compactSdJwt"],
+                    "ldp_query": [{ "@context": ["https://www.w3.org/ns/credentials/v2"], "type": "VerifiablePresentation", "proof": { "type": "DataIntegrityProof" } }]
                 }"""
 
             val args =

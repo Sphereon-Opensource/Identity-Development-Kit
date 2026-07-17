@@ -36,6 +36,28 @@ import kotlinx.serialization.serializer
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+/**
+ * [KmsProviderConfigBase.defaultConfigValues] key requesting a specific hardware-backing preference
+ * for key generation (wallet-v4 P2 Task 5, `LocalNativeWscd`). Value is one of
+ * [MOBILE_KMS_HARDWARE_BACKING_REQUIRED] or [MOBILE_KMS_HARDWARE_BACKING_PREFERRED]; absent or any
+ * other value falls back to the provider's original, unconditional behavior (preferred).
+ */
+const val MOBILE_KMS_HARDWARE_BACKING_KEY: String = "hardware.backing"
+
+/**
+ * Requests signum-supreme's `REQUIRED` hardware-backing feature preference: the platform actual then
+ * refuses to create the key at all when hardware-backed storage cannot be provided, instead of
+ * silently falling back to software storage. See `MobileKmsProviderImpl.hardwareBackingPreference`.
+ */
+const val MOBILE_KMS_HARDWARE_BACKING_REQUIRED: String = "required"
+
+/**
+ * Requests signum-supreme's `PREFERRED` hardware-backing feature preference (default when
+ * [MOBILE_KMS_HARDWARE_BACKING_KEY] is absent): hardware is used when available, with a silent
+ * software fallback otherwise.
+ */
+const val MOBILE_KMS_HARDWARE_BACKING_PREFERRED: String = "preferred"
+
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("MobileKmsProviderConfigType", exact = true)
 interface MobileKmsProviderConfigType : KmsProviderConfigBase

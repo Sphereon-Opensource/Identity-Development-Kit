@@ -30,6 +30,8 @@ import com.sphereon.openid.oid4vp.universal.DeleteAuthRequestOutput
 import com.sphereon.openid.oid4vp.universal.DeleteAuthRequestServiceCommand
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusInput
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpEventTypes
+import com.sphereon.openid.oid4vp.universal.impl.event.putSessionEventIdentity
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -90,7 +92,7 @@ class DeleteAuthRequestServiceCommandImpl(
         }
 
         // 3. Emit SESSION_DELETED event
-        emitSessionDeletedEvent(correlationId)
+        emitSessionDeletedEvent(session)
 
         // 4. Return success
         return Ok(
@@ -101,22 +103,21 @@ class DeleteAuthRequestServiceCommandImpl(
         )
     }
 
-    private suspend fun emitSessionDeletedEvent(correlationId: String) {
-        try {
-            sessionEventService.emit(
+    private suspend fun emitSessionDeletedEvent(session: AuthorizationSession) {
+        sessionEventService.emit(
                 sessionEventService
                     .eventBuilder()
                     .type(UniversalOid4vpEventTypes.SESSION_DELETED)
                     .origin(DeleteAuthRequestServiceCommand.COMMAND_ID)
                     .payload(
                         buildJsonObject {
-                            put("correlationId", correlationId)
+                            put("correlationId", session.correlationId)
+                            putSessionEventIdentity(
+                                protocolSessionId = session.sessionId,
+                                instanceId = session.instanceId,
+                            )
                         },
                     ).build(),
             )
-        } catch (expected: Exception) {
-            // Best effort - don't fail the request if event emission fails
-            log.debug("Failed to emit SESSION_DELETED event: ${expected.message}")
-        }
     }
 }

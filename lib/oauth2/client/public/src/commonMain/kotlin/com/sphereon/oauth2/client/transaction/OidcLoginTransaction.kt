@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Copyright 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
+import kotlinx.serialization.Serializable
 
 /**
  * Immutable record of an in-flight OIDC login initiated by the RP.
@@ -32,6 +33,7 @@ import kotlin.time.Instant
  * Persisted via [OidcLoginTransactionStore]; consumed atomically at callback time.
  */
 @JsExportCompat
+@Serializable
 public data class OidcLoginTransaction
     @JvmOverloads
     constructor(
@@ -44,4 +46,14 @@ public data class OidcLoginTransaction
         public val createdAt: Instant,
         public val expiresAt: Instant,
         public val tenantId: String? = null,
+        /** RFC 8707 resource indicator. Null means the client deliberately omitted it. */
+        public val resource: String? = null,
+        /** Exact single access-token audience selected by the registered client binding. */
+        public val audience: String? = null,
+        /** Digest of an opaque client owner handle, when the caller uses one. */
+        public val ownerHandleDigest: String? = null,
+        /** Stable application-defined grant key bound to this transaction. */
+        public val grantBinding: String? = null,
+        /** Opaque client-owned callback correlation, protected by the transaction store. */
+        public val clientCorrelation: String? = null,
     )

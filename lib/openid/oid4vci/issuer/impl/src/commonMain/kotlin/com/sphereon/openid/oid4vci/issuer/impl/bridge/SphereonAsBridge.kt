@@ -152,7 +152,7 @@ class SphereonAsBridge(
                 ?.serverConfig
                 ?.internalClients
                 ?.get(ISSUER_INTERNAL_CLIENT_ROLE)
-                ?.first
+                ?.clientId
                 .orEmpty()
 
         // Introspect the access token via the AS service
@@ -175,6 +175,8 @@ class SphereonAsBridge(
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Token introspection missing sub claim"))
 
         val clientId = introspection.clientId ?: ""
+        val tokenId =
+            introspection.jti?.takeIf { it.isNotBlank() && it.length <= MAX_TOKEN_ID_LENGTH }
 
         // RFC 9449 §7.1: when the access token carries `cnf.jkt`, the resource server MUST
         // require a DPoP proof in the request and verify that:
@@ -250,6 +252,8 @@ class SphereonAsBridge(
 
         return Ok(
             ValidatedTokenContext(
+                tokenId = tokenId,
+                expiresAtEpochSeconds = introspection.exp,
                 subject = subject,
                 clientId = clientId,
                 scope = introspection.scope,
@@ -264,6 +268,7 @@ class SphereonAsBridge(
                 walletInstanceAttestation = parseWalletInstanceAttestation(additionalClaims),
             ),
         )
+
     }
 
     /**
@@ -389,6 +394,7 @@ class SphereonAsBridge(
     private fun JsonObject.booleanClaim(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 
     private companion object {
+        const val MAX_TOKEN_ID_LENGTH = 128
         const val DEFAULT_TX_CODE_LENGTH = 6
         const val MAX_TX_CODE_LENGTH = 32
         const val TX_CODE_NUMERIC = "0123456789"

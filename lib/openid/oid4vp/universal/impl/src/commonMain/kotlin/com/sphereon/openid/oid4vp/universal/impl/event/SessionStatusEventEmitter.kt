@@ -62,9 +62,9 @@ interface SessionStatusEventEmitter {
     /**
      * Emit a session deleted event.
      *
-     * @param correlationId The correlation ID of the deleted session
+     * @param session The deleted protocol session, retained long enough to emit its identity
      */
-    suspend fun onSessionDeleted(correlationId: String): IdkResult<Unit, IdkError>
+    suspend fun onSessionDeleted(session: AuthorizationSession): IdkResult<Unit, IdkError>
 
     /**
      * Emit a status polled event.
@@ -119,6 +119,29 @@ class SessionStatusEventEmitterImpl(
                         put("status", session.status.name)
                         previousStatus?.let { put("previousStatus", it.name) }
                         put("updatedAt", session.updatedAt)
+                        putSessionEventIdentity(
+                            protocolSessionId = session.sessionId,
+                            instanceId = session.instanceId,
+                            oldState = previousStatus?.name,
+                            newState = session.status.name,
+                            creationSnapshot = if (previousStatus == null) {
+                                buildJsonObject {
+                                    put("correlationId", session.correlationId)
+                                    session.queryId?.let { put("queryId", it) }
+                                    put("createdAt", session.createdAt)
+                                }
+                            } else null,
+                            currentResult = buildJsonObject {
+                                put("correlationId", session.correlationId)
+                                session.queryId?.let { put("queryId", it) }
+                                put("sessionId", session.sessionId)
+                                put("status", session.status.name)
+                                put("createdAt", session.createdAt)
+                                put("expiresAt", session.expiresAt)
+                                put("lastUpdated", session.updatedAt)
+                                session.error?.code?.let { put("errorCode", it) }
+                            },
+                        )
                     },
                 ).build()
 
@@ -139,6 +162,30 @@ class SessionStatusEventEmitterImpl(
                         errorMessage = session.error?.message,
                     )
 
+                sessionEventService.emit(
+                    sessionEventService
+                        .eventBuilder()
+                        .type(UniversalOid4vpEventTypes.CALLBACK_ATTEMPTED)
+                        .origin("universal-oid4vp")
+                        .subsystem(UniversalOid4vpSubsystems.UNIVERSAL_OID4VP)
+                        .category(UniversalOid4vpCategories.CALLBACK)
+                        .correlationId(session.correlationId)
+                        .payload(
+                            buildJsonObject {
+                                put("correlationId", session.correlationId)
+                                put("status", session.status.name)
+                                put("stage", "CALLBACK")
+                                put("outcome", "ATTEMPTED")
+                                putSessionEventIdentity(
+                                    protocolSessionId = session.sessionId,
+                                    instanceId = session.instanceId,
+                                    oldState = session.status.name,
+                                    newState = session.status.name,
+                                )
+                            },
+                        ).build(),
+                )
+
                 val dispatchResult = callbackDispatcher.dispatch(callback.url, update)
 
                 // Emit callback event (success or failure)
@@ -152,11 +199,15 @@ class SessionStatusEventEmitterImpl(
                 val callbackPayload =
                     buildJsonObject {
                         put("correlationId", session.correlationId)
-                        put("callbackUrl", callback.url)
                         put("status", session.status.name)
-                        if (dispatchResult.isErr) {
-                            put("error", dispatchResult.error.message.defaultMessage)
-                        }
+                        put("stage", "CALLBACK")
+                        put("outcome", if (dispatchResult.isOk) "SUCCEEDED" else "FAILED")
+                        putSessionEventIdentity(
+                            protocolSessionId = session.sessionId,
+                            instanceId = session.instanceId,
+                            newState = session.status.name,
+                        )
+                        if (dispatchResult.isErr) put("errorCode", "callback_dispatch_failed")
                     }
 
                 val callbackEvent =
@@ -177,7 +228,7 @@ class SessionStatusEventEmitterImpl(
         return Ok(Unit)
     }
 
-    override suspend fun onSessionDeleted(correlationId: String): IdkResult<Unit, IdkError> {
+    override suspend fun onSessionDeleted(session: AuthorizationSession): IdkResult<Unit, IdkError> {
         val event =
             sessionEventService
                 .eventBuilder()
@@ -185,11 +236,16 @@ class SessionStatusEventEmitterImpl(
                 .origin("universal-oid4vp")
                 .subsystem(UniversalOid4vpSubsystems.UNIVERSAL_OID4VP)
                 .category(UniversalOid4vpCategories.SESSION)
-                .correlationId(correlationId)
+                .correlationId(session.correlationId)
                 .payload(
                     buildJsonObject {
-                        put("correlationId", correlationId)
+                        put("correlationId", session.correlationId)
                         put("deletedAt", Clock.System.now().toEpochMilliseconds())
+                        putSessionEventIdentity(
+                            protocolSessionId = session.sessionId,
+                            instanceId = session.instanceId,
+                            oldState = session.status.name,
+                        )
                     },
                 ).build()
 
@@ -212,6 +268,22 @@ class SessionStatusEventEmitterImpl(
                         put("correlationId", session.correlationId)
                         put("status", session.status.name)
                         put("polledAt", Clock.System.now().toEpochMilliseconds())
+                        putSessionEventIdentity(
+                            protocolSessionId = session.sessionId,
+                            instanceId = session.instanceId,
+                            oldState = session.status.name,
+                            newState = session.status.name,
+                            currentResult = buildJsonObject {
+                                put("correlationId", session.correlationId)
+                                session.queryId?.let { put("queryId", it) }
+                                put("sessionId", session.sessionId)
+                                put("status", session.status.name)
+                                put("createdAt", session.createdAt)
+                                put("expiresAt", session.expiresAt)
+                                put("lastUpdated", session.updatedAt)
+                                session.error?.code?.let { put("errorCode", it) }
+                            },
+                        )
                     },
                 ).build()
 

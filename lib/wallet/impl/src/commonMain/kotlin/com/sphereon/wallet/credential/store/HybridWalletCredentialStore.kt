@@ -45,7 +45,7 @@ import kotlin.time.Clock
  * Hybrid local-first [HybridWalletCredentialStoreDelegate].
  *
  * This adapter composes the existing local and remote wallet stores. It writes locally first,
- * records a wallet operation under `wallet-instances/{walletInstanceId}/ops/{operationId}`,
+ * records a wallet operation under `wallet-units/{walletUnitId}/ops/{operationId}`,
  * then attempts remote replication with a base-revision check.
  */
 @SingleIn(SessionScope::class)
@@ -78,11 +78,11 @@ class HybridWalletCredentialStore private constructor(
     }
 
     override suspend fun putCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
     ): IdkResult<CredentialRecord, IdkError> {
-        if (record.walletInstanceId != walletInstanceId) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "record.walletInstanceId must match walletInstanceId"))
+        if (record.walletUnitId != walletUnitId) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "record.walletUnitId must match walletUnitId"))
         }
         val resolvedDeviceId = deviceId()
         if (resolvedDeviceId.isErr) return Err(resolvedDeviceId.error)
@@ -92,7 +92,7 @@ class HybridWalletCredentialStore private constructor(
         val operation =
             WalletOperation(
                 id = operationId,
-                walletInstanceId = walletInstanceId,
+                walletUnitId = walletUnitId,
                 credentialRecordId = record.id,
                 operationType = WalletOperationType.PUT_CREDENTIAL,
                 baseRemoteRevision = record.syncState.remoteRevision,
@@ -102,13 +102,13 @@ class HybridWalletCredentialStore private constructor(
             )
         val pendingRecord = record.withPendingOperation(operation)
 
-        val localResult = localStore.putCredential(walletInstanceId, pendingRecord)
+        val localResult = localStore.putCredential(walletUnitId, pendingRecord)
         if (localResult.isErr) return Err(localResult.error)
 
-        val enqueueResult = operationQueue.enqueue(walletInstanceId, operation)
+        val enqueueResult = operationQueue.enqueue(walletUnitId, operation)
         if (enqueueResult.isErr) return Err(enqueueResult.error)
 
-        val remoteExisting = remoteStore.getCredential(walletInstanceId, record.id)
+        val remoteExisting = remoteStore.getCredential(walletUnitId, record.id)
         if (remoteExisting.isErr) return Ok(pendingRecord)
         val conflict = remoteExisting.value.hasRemoteConflict(operation.baseRemoteRevision)
         if (conflict) return Err(syncConflict("Remote credential '${record.id}' changed since base revision '${operation.baseRemoteRevision}'"))
@@ -122,23 +122,23 @@ class HybridWalletCredentialStore private constructor(
                         pendingOperationIds = pendingRecord.syncState.pendingOperationIds - operation.id,
                     ),
             )
-        val remotePut = remoteStore.putCredential(walletInstanceId, syncedRecord)
+        val remotePut = remoteStore.putCredential(walletUnitId, syncedRecord)
         if (remotePut.isErr) return Ok(pendingRecord)
 
-        val ackLocal = localStore.putCredential(walletInstanceId, syncedRecord)
+        val ackLocal = localStore.putCredential(walletUnitId, syncedRecord)
         if (ackLocal.isErr) return Err(ackLocal.error)
-        operationQueue.remove(walletInstanceId, operation.id)
+        operationQueue.remove(walletUnitId, operation.id)
         return Ok(syncedRecord)
     }
 
     override suspend fun getCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialRecord?, IdkError> {
-        val localResult = localStore.getCredential(walletInstanceId, credentialRecordId)
+        val localResult = localStore.getCredential(walletUnitId, credentialRecordId)
         if (localResult.isOk && localResult.value != null) return localResult
 
-        val remoteResult = remoteStore.getCredential(walletInstanceId, credentialRecordId)
+        val remoteResult = remoteStore.getCredential(walletUnitId, credentialRecordId)
         if (remoteResult.isErr) {
             return if (localResult.isErr) Err(localResult.error) else Err(remoteResult.error)
         }
@@ -146,43 +146,43 @@ class HybridWalletCredentialStore private constructor(
             remoteResult.value
                 ?: return if (localResult.isErr) Err(localResult.error) else Ok(null)
 
-        val cacheResult = localStore.putCredential(walletInstanceId, remoteRecord)
+        val cacheResult = localStore.putCredential(walletUnitId, remoteRecord)
         return if (cacheResult.isOk) Ok(remoteRecord) else Err(cacheResult.error)
     }
 
     override suspend fun getMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialMetadata?, IdkError> {
-        val localResult = localStore.getMetadata(walletInstanceId, credentialRecordId)
+        val localResult = localStore.getMetadata(walletUnitId, credentialRecordId)
         if (localResult.isErr) return Err(localResult.error)
         if (localResult.value != null) return localResult
-        return remoteStore.getMetadata(walletInstanceId, credentialRecordId)
+        return remoteStore.getMetadata(walletUnitId, credentialRecordId)
     }
 
     override suspend fun listMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter,
     ): IdkResult<List<CredentialMetadata>, IdkError> {
-        val localAllResult = localStore.listMetadata(walletInstanceId, CredentialMetadataFilter(includeDeleted = true))
+        val localAllResult = localStore.listMetadata(walletUnitId, CredentialMetadataFilter(includeDeleted = true))
         if (localAllResult.isErr) {
-            return remoteStore.listMetadata(walletInstanceId, filter)
+            return remoteStore.listMetadata(walletUnitId, filter)
         }
-        val remoteResult = remoteStore.listMetadata(walletInstanceId, filter)
+        val remoteResult = remoteStore.listMetadata(walletUnitId, filter)
         if (remoteResult.isErr) return Ok(localAllResult.value.filter { it.matches(filter) })
 
         return Ok(mergeLocalOverrideRemote(localAllResult.value, remoteResult.value, filter))
     }
 
     override suspend fun findByCredentialTypeRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         ref: CredentialTypeRef,
     ): IdkResult<List<CredentialMetadata>, IdkError> {
-        val localAllResult = localStore.listMetadata(walletInstanceId, CredentialMetadataFilter(includeDeleted = true))
+        val localAllResult = localStore.listMetadata(walletUnitId, CredentialMetadataFilter(includeDeleted = true))
         if (localAllResult.isErr) {
-            return remoteStore.findByCredentialTypeRef(walletInstanceId, ref)
+            return remoteStore.findByCredentialTypeRef(walletUnitId, ref)
         }
-        val remoteResult = remoteStore.findByCredentialTypeRef(walletInstanceId, ref)
+        val remoteResult = remoteStore.findByCredentialTypeRef(walletUnitId, ref)
         val filter = CredentialMetadataFilter(credentialTypeRefs = setOf(ref))
         if (remoteResult.isErr) return Ok(localAllResult.value.filter { it.matches(filter) })
 
@@ -190,15 +190,15 @@ class HybridWalletCredentialStore private constructor(
     }
 
     override suspend fun deleteCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<Boolean, IdkError> {
-        val localRecordResult = localStore.getCredential(walletInstanceId, credentialRecordId)
+        val localRecordResult = localStore.getCredential(walletUnitId, credentialRecordId)
         if (localRecordResult.isErr) return Err(localRecordResult.error)
         val localRecord = localRecordResult.value
         val baseRemoteRevision = localRecord?.syncState?.remoteRevision
 
-        val remoteExisting = remoteStore.getCredential(walletInstanceId, credentialRecordId)
+        val remoteExisting = remoteStore.getCredential(walletUnitId, credentialRecordId)
         if (remoteExisting.isOk && remoteExisting.value.hasRemoteConflict(baseRemoteRevision)) {
             return Err(syncConflict("Remote credential '$credentialRecordId' changed since base revision '$baseRemoteRevision'"))
         }
@@ -209,7 +209,7 @@ class HybridWalletCredentialStore private constructor(
         val operation =
             WalletOperation(
                 id = Uuid.v4String(),
-                walletInstanceId = walletInstanceId,
+                walletUnitId = walletUnitId,
                 credentialRecordId = credentialRecordId,
                 operationType = WalletOperationType.DELETE_CREDENTIAL,
                 baseRemoteRevision = baseRemoteRevision,
@@ -222,7 +222,7 @@ class HybridWalletCredentialStore private constructor(
             if (localRecord != null) {
                 localStore
                     .putCredential(
-                        walletInstanceId,
+                        walletUnitId,
                         localRecord.copy(
                             updatedAt = now,
                             deletedAt = now,
@@ -236,18 +236,18 @@ class HybridWalletCredentialStore private constructor(
                         ),
                     ).mapToDeleteResult()
             } else {
-                localStore.deleteCredential(walletInstanceId, credentialRecordId)
+                localStore.deleteCredential(walletUnitId, credentialRecordId)
             }
         if (localDelete.isErr) return Err(localDelete.error)
 
-        val enqueueResult = operationQueue.enqueue(walletInstanceId, operation)
+        val enqueueResult = operationQueue.enqueue(walletUnitId, operation)
         if (enqueueResult.isErr) return Err(enqueueResult.error)
 
         if (remoteExisting.isErr) return Ok(localDelete.value)
 
-        val remoteDelete = remoteStore.deleteCredential(walletInstanceId, credentialRecordId)
+        val remoteDelete = remoteStore.deleteCredential(walletUnitId, credentialRecordId)
         if (remoteDelete.isErr) return Ok(localDelete.value)
-        operationQueue.remove(walletInstanceId, operation.id)
+        operationQueue.remove(walletUnitId, operation.id)
         return localDelete
     }
 

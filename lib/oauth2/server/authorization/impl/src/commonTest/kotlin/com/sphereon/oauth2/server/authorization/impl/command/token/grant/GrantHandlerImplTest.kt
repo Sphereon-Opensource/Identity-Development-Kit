@@ -64,7 +64,6 @@ class GrantHandlerImplTest {
     fun authorizationCodeHandlerAdvertisesAuthorizationCodeWireString() {
         val handler =
             AuthorizationCodeGrantHandlerImpl(
-                secureRandom = defaultSecureRandom(),
                 authorizationCodeStorage = InMemoryAuthorizationCodeStorageImpl(InMemoryOAuth2BackingStorageImpl()),
                 scopeClaimsMapper = null,
             )

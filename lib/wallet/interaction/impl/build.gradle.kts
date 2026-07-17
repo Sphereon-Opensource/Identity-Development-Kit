@@ -44,6 +44,8 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(projects.libWalletInteractionPublic)
+                api(projects.libWalletWscaPublic)
+                api(projects.libWalletWscdPublic)
                 implementation(projects.libCryptoCorePublic)
                 implementation(projects.libDataStoreKvPublic)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)

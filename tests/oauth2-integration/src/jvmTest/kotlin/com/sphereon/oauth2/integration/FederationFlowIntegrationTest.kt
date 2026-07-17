@@ -587,6 +587,11 @@ class CapturingOAuth2Client : OAuth2Client {
         prompt: String?,
         loginHint: String?,
         tenantId: String?,
+        resource: String?,
+        audience: String?,
+        ownerHandleDigest: String?,
+        grantBinding: String?,
+        clientCorrelation: String?,
     ): IdkResult<OidcLoginInitiation, IdkError> = notImplemented()
 
     override suspend fun initiateOidcLogin(
@@ -598,6 +603,11 @@ class CapturingOAuth2Client : OAuth2Client {
         prompt: String?,
         loginHint: String?,
         tenantId: String?,
+        resource: String?,
+        audience: String?,
+        ownerHandleDigest: String?,
+        grantBinding: String?,
+        clientCorrelation: String?,
     ): IdkResult<OidcLoginInitiation, IdkError> = notImplemented()
 
     override suspend fun parseAuthorizationResponse(redirectUrl: String): IdkResult<AuthorizationResponse, IdkError> = notImplemented()

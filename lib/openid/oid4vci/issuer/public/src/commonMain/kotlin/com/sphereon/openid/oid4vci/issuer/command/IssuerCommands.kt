@@ -35,6 +35,7 @@ import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncrypt
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
+import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionCallbackConfig
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.OptionalBinding
 import kotlinx.serialization.Serializable
@@ -46,6 +47,8 @@ import kotlinx.serialization.json.JsonElement
 
 @JsExportCompat
 data class CreateCredentialOfferArgs(
+    /** Immutable issuer-instance identity resolved by the routing boundary. */
+    val instanceId: String,
     val issuerId: String,
     val credentialConfigurationIds: List<String>,
     val preAuthorizedCodeGrant: Boolean = false,
@@ -77,6 +80,8 @@ data class CreateCredentialOfferArgs(
      * hook fan-out. Null = no narrowing (default).
      */
     val postIssuanceHookAllowList: List<String>? = null,
+    val callback: IssuanceSessionCallbackConfig? = null,
+    val state: String? = null,
     /**
      * Outer deeplink prefix for `offerUri` (OID4VCI 1.0 §4.1.1). Examples:
      * `"openid-credential-offer://"` (default), `"haip://"`, or a full HTTPS URL such as
@@ -101,6 +106,7 @@ data class CreateCredentialOfferArgs(
 
 @JsExportCompat
 data class CreatedCredentialOffer(
+    val instanceId: String,
     val offerId: String,
     val sessionId: String,
     val offer: CredentialOffer,

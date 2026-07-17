@@ -35,12 +35,16 @@ import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseComma
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.TokenRequestData
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationCodeGrant
+import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
+import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAuthorizationCodeStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
@@ -96,8 +100,10 @@ class AuthorizationCodeGrantRolesClaimTest {
 
     private class CapturingCommands(
         private val verifyStub: VerifyAuthorizationCodeGrantCommand,
+        private val refreshVerifyStub: VerifyRefreshTokenGrantCommand? = null,
     ) : AuthorizationServerService.Commands {
         var capturedAccessTokenArgs: CreateAccessTokenArgs? = null
+        var capturedRefreshTokenArgs: CreateRefreshTokenArgs? = null
 
         override val verifyAuthorizationCodeGrant get() = verifyStub
 
@@ -119,7 +125,10 @@ class AuthorizationCodeGrantRolesClaimTest {
                 override val outputTypeToken = typeToken<StringResult>()
                 override val isEnabled = true
 
-                override suspend fun execute(args: CreateRefreshTokenArgs): IdkResult<StringResult, IdkError> = Ok(StringResult(value = "RT-ROLES"))
+                override suspend fun execute(args: CreateRefreshTokenArgs): IdkResult<StringResult, IdkError> {
+                    capturedRefreshTokenArgs = args
+                    return Ok(StringResult(value = "RT-ROLES"))
+                }
             }
 
         override val createTokenResponse: CreateTokenResponseCommand =
@@ -133,7 +142,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             }
 
         override val parseTokenRequest get(): com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand = throw NotImplementedError()
-        override val verifyRefreshTokenGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand = throw NotImplementedError()
+        override val verifyRefreshTokenGrant get() = refreshVerifyStub ?: throw NotImplementedError()
         override val verifyClientCredentialsGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand = throw NotImplementedError()
         override val verifyTokenExchangeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand = throw NotImplementedError()
         override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = throw NotImplementedError()
@@ -162,7 +171,6 @@ class AuthorizationCodeGrantRolesClaimTest {
 
     private fun newHandler(): AuthorizationCodeGrantHandlerImpl =
         AuthorizationCodeGrantHandlerImpl(
-            secureRandom = defaultSecureRandom(),
             authorizationCodeStorage = InMemoryAuthorizationCodeStorageImpl(InMemoryOAuth2BackingStorageImpl()),
             scopeClaimsMapper = null,
         )
@@ -219,9 +227,35 @@ class AuthorizationCodeGrantRolesClaimTest {
         )
     }
 
+    private fun refreshGrantContext(commands: AuthorizationServerService.Commands): GrantContext {
+        val tokenRequest =
+            TokenRequestData(
+                grantType = GrantType.REFRESH_TOKEN,
+                clientId = "client-1",
+                clientAuthentication = ClientAuthenticationConfig.None(clientId = "client-1"),
+                grantParameters = GrantParameters.RefreshToken(refreshToken = "refresh-1"),
+                httpUrl = "https://as.example.com/token",
+            )
+        return GrantContext(
+            tokenRequest = tokenRequest,
+            resolvedClientId = "client-1",
+            proofJkt = null,
+            certThumbprintS256 = null,
+            applied =
+                HandleTokenRequestArgs(
+                    requestBody = mapOf("grant_type" to listOf("refresh_token"), "refresh_token" to listOf("refresh-1")),
+                    requestHeaders = emptyMap(),
+                    httpUrl = "https://as.example.com/token",
+                ),
+            commands = commands,
+            serverConfig = OAuth2ServerInstanceConfig(issuer = "https://as.example.com", refreshTokenRotation = false),
+        )
+    }
+
     private suspend fun mintWithUserClaims(
         userClaims: Map<String, Any>,
         codeData: AuthorizationCodeData = codeData(),
+        resource: List<String> = emptyList(),
     ): CreateAccessTokenArgs {
         val commands =
             CapturingCommands(
@@ -231,6 +265,7 @@ class AuthorizationCodeGrantRolesClaimTest {
                         subject = "operator-1",
                         clientId = "client-1",
                         scope = "openid",
+                        resource = resource,
                         userClaims = userClaims,
                     ),
                 ),
@@ -285,6 +320,72 @@ class AuthorizationCodeGrantRolesClaimTest {
             assertEquals("urn:nist:sp:800-63:aal1", args.additionalClaims["acr"], "acr must reach the access-token mint")
             assertEquals(listOf("pwd"), args.additionalClaims["amr"], "amr must reach the access-token mint")
             assertFalse(args.additionalClaims.containsKey("email"), "identity claims must NOT leak into the access token")
+        }
+
+    @Test
+    fun resourceBoundAuthorizationCodeMintsThatResourceAsAccessTokenAudience() =
+        runTest {
+            val resource = "https://issuer.example.test/api/developer/v1"
+            val args = mintWithUserClaims(userClaims = emptyMap(), resource = listOf(resource))
+
+            assertEquals(listOf(resource), args.audience)
+        }
+
+    @Test
+    fun defaultClientAudienceIsUsedAndBoundWhenAuthorizationCodeHasNoResource() =
+        runTest {
+            val defaultAudience = "enterprise-issuer"
+            val commands = CapturingCommands(
+                verifyStub(
+                    VerifiedAuthorizationCodeGrant(
+                        codeData = codeData().copy(defaultAccessTokenAudience = defaultAudience),
+                        subject = "operator-1",
+                        clientId = "client-1",
+                        scope = "openid",
+                        defaultAccessTokenAudience = defaultAudience,
+                    ),
+                ),
+            )
+        val context = grantContext(commands)
+        val result = newHandler().handle(context.tokenRequest.grantParameters, context)
+
+            assertTrue(result.isOk)
+            assertEquals(listOf(defaultAudience), commands.capturedAccessTokenArgs?.audience)
+            assertEquals(defaultAudience, commands.capturedRefreshTokenArgs?.defaultAccessTokenAudience)
+        }
+
+    @Test
+    fun refreshGrantRetainsDefaultClientAudienceWhenNoResourceWasBound() =
+        runTest {
+            val defaultAudience = "enterprise-issuer"
+            val refreshVerifier =
+                object : VerifyRefreshTokenGrantCommand {
+                    override val inputTypeToken = typeToken<VerifyRefreshTokenGrantArgs>()
+                    override val outputTypeToken = typeToken<VerifiedRefreshTokenGrant>()
+                    override val isEnabled = true
+
+                    override suspend fun execute(args: VerifyRefreshTokenGrantArgs): IdkResult<VerifiedRefreshTokenGrant, IdkError> =
+                        Ok(
+                            VerifiedRefreshTokenGrant(
+                                subject = "operator-1",
+                                clientId = "client-1",
+                                scope = "openid",
+                                defaultAccessTokenAudience = defaultAudience,
+                                refreshTokenId = "refresh-1",
+                            ),
+                        )
+                }
+            val commands = CapturingCommands(verifyStub = verifyStub(VerifiedAuthorizationCodeGrant(codeData(), "operator-1", "client-1")), refreshVerifyStub = refreshVerifier)
+            val context = refreshGrantContext(commands)
+
+            val result =
+                RefreshTokenGrantHandlerImpl(
+                    tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
+                    auditEmitter = com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
+                ).handle(context.tokenRequest.grantParameters, context)
+
+            assertTrue(result.isOk)
+            assertEquals(listOf(defaultAudience), commands.capturedAccessTokenArgs?.audience)
         }
 
     @Test

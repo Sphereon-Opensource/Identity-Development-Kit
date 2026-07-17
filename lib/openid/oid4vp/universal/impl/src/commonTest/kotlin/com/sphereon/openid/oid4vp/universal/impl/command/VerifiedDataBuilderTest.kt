@@ -38,6 +38,7 @@ class VerifiedDataBuilderTest {
     fun `build verified data reconstructs authorization response and credential set refs`() {
         val session =
             AuthorizationSession(
+                instanceId = "verifier-instance-verified-data-builder",
                 sessionId = "session-1",
                 correlationId = "corr-1",
                 queryId = "kw1c-enrollment",
@@ -73,7 +74,7 @@ class VerifiedDataBuilderTest {
                                 "eyJhbGciOiJFUzI1NiJ9.payload.signature",
                             ),
                         state = "state-123",
-                        rawVpToken = """{"passport":"eyJhbGciOiJFUzI1NiJ9.payload.signature"}""",
+                        rawVpToken = """{"passport":["eyJhbGciOiJFUzI1NiJ9.payload.signature"]}""",
                     ),
                 validationResult =
                     ValidationResult(

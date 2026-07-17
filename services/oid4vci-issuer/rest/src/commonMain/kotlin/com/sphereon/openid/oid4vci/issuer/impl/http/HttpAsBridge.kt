@@ -64,9 +64,11 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
@@ -291,8 +293,16 @@ class HttpAsBridge(
                     detail.jsonObject["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
                 } ?: emptyList()
 
+            val tokenId =
+                (introspection["jti"] as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.takeIf { it.isNotBlank() && it.length <= MAX_TOKEN_ID_LENGTH }
+            val expiresAtEpochSeconds = (introspection["exp"] as? JsonPrimitive)?.longOrNull
+
             return Ok(
                 ValidatedTokenContext(
+                    tokenId = tokenId,
+                    expiresAtEpochSeconds = expiresAtEpochSeconds,
                     subject = subject,
                     clientId = clientId,
                     scope = scope,
@@ -361,6 +371,7 @@ class HttpAsBridge(
     }
 
     companion object {
+        const val MAX_TOKEN_ID_LENGTH = 128
         const val CONFIG_PREFIX = "oid4vci.issuer.as-bridge"
         const val SURFACE_LOCAL_USERINFO_KEY = "oid4vci.issuer.surface-local-userinfo-to-issuance"
 

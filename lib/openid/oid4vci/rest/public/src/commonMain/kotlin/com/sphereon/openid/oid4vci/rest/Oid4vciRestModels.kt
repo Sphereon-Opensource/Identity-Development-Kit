@@ -266,6 +266,17 @@ data class GetCredentialOfferStatusOutput(
      */
     @SerialName("last_updated")
     val lastUpdated: Long,
+    /** Optional non-sensitive session metadata for developer/test integrations. */
+    @SerialName("session_id")
+    val sessionId: String? = null,
+    @SerialName("offer_id")
+    val offerId: String? = null,
+    @SerialName("issuance_session_id")
+    val issuanceSessionId: String? = null,
+    @SerialName("created_at")
+    val createdAt: Long? = null,
+    @SerialName("expires_at")
+    val expiresAt: Long? = null,
     /**
      * Error details when status is ERROR.
      */

@@ -78,12 +78,13 @@ class VerifyClientCredentialsGrantCommandImpl(
         applyDuring: (VerifyClientCredentialsGrantArgs) -> VerifyClientCredentialsGrantArgs,
     ): IdkResult<VerifiedClientCredentialsGrant, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.clientId, applied.requestedScope).mapError { IdkError.fromDTO(it) }
+        return executeInternal(applied.clientId, applied.requestedScope, applied.requestedAudience).mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
         clientId: String,
         requestedScope: String?,
+        requestedAudience: List<String>,
     ): IdkResult<VerifiedClientCredentialsGrant, AuthorizationServerError> {
         // Retrieve client registration
         val client =
@@ -136,6 +137,48 @@ class VerifyClientCredentialsGrantCommandImpl(
                 requestedScope
             }
 
+        val normalizedRequestedAudience = requestedAudience.map(String::trim).filter(String::isNotEmpty)
+        val defaultAudience = client.defaultAccessTokenAudience?.trim()?.takeIf(String::isNotEmpty)
+        val allowedAudiences = client.allowedAccessTokenAudiences.map(String::trim).filter(String::isNotEmpty).toSet()
+        if (normalizedRequestedAudience.size > 1) {
+            return Err(
+                AuthorizationServerError.InvalidTarget(
+                    audience = normalizedRequestedAudience.joinToString(" "),
+                    reason = "Client credentials access tokens are restricted to one audience per request",
+                ),
+            )
+        }
+
+        val requestedTarget = normalizedRequestedAudience.singleOrNull()
+        val grantedAudience =
+            when {
+                requestedTarget == null && defaultAudience == null -> {
+                    return Err(
+                        AuthorizationServerError.InvalidTarget(
+                            audience = "",
+                            reason = "No audience was requested and this client has no default access-token audience",
+                        ),
+                    )
+                }
+
+                requestedTarget == null -> {
+                    listOf(defaultAudience!!)
+                }
+
+                requestedTarget == defaultAudience || requestedTarget in allowedAudiences -> {
+                    listOf(requestedTarget)
+                }
+
+                else -> {
+                    return Err(
+                        AuthorizationServerError.InvalidTarget(
+                            audience = requestedTarget,
+                            reason = "Requested audience is not registered for this client",
+                        ),
+                    )
+                }
+            }
+
         // Return verified grant
         // Note: subject is the client_id itself (no user involved)
         return Ok(
@@ -143,6 +186,7 @@ class VerifyClientCredentialsGrantCommandImpl(
                 subject = clientId, // In client_credentials, the client IS the subject
                 clientId = clientId,
                 scope = grantedScope,
+                audience = grantedAudience,
             ),
         )
     }

@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
@@ -42,6 +43,9 @@ interface BlobService {
      */
     fun defaultStoreId(): String
 
+    /** Capabilities of the configured store selected by [storeId], or the default store. */
+    fun getCapabilities(storeId: String? = null): BlobStoreCapabilities = BlobStoreCapabilities.MINIMAL
+
     // -- Standard CRUD --
 
     suspend fun storeBlob(
@@ -50,14 +54,37 @@ interface BlobService {
         options: PutOptions = PutOptions.DEFAULT,
     ): IdkResult<BlobDescriptor, IdkError>
 
+    suspend fun storeBlobStream(
+        target: BlobInfo,
+        source: BlobByteSource,
+        options: PutOptions = PutOptions.DEFAULT,
+    ): IdkResult<BlobDescriptor, IdkError> = Err(BlobStoreError.Unsupported("storeBlobStream").toIdkError())
+
     /**
      * Retrieve a blob. If [info] is already a [ResolvedBlobInfo], returns it directly (no re-fetch).
      */
     suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError>
 
+    suspend fun openBlobRead(info: BlobInfoType): IdkResult<BlobReadStream, IdkError> = Err(BlobStoreError.Unsupported("openBlobRead").toIdkError())
+
+    suspend fun openBlobReadRange(
+        info: BlobInfoType,
+        range: BlobReadRange,
+    ): IdkResult<BlobReadStream, IdkError> = Err(BlobStoreError.Unsupported("openBlobReadRange").toIdkError())
+
+    suspend fun verifyBlobIntegrity(
+        info: BlobInfoType,
+        expected: ContentAddress,
+    ): IdkResult<Boolean, IdkError> = Err(BlobStoreError.Unsupported("verifyBlobIntegrity").toIdkError())
+
     suspend fun getBlobInfo(info: BlobInfoType): IdkResult<BlobDescriptor, IdkError>
 
     suspend fun deleteBlob(info: BlobInfoType): IdkResult<Boolean, IdkError>
+
+    suspend fun deleteBlobConditional(
+        info: BlobInfoType,
+        options: DeleteOptions,
+    ): IdkResult<Boolean, IdkError> = Err(BlobStoreError.Unsupported("deleteBlobConditional").toIdkError())
 
     suspend fun listBlobs(
         info: BlobInfo,

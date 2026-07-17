@@ -92,7 +92,7 @@ data class CreateAuthorizationRequestInput(
     val responseUri: String? = null,
     /**
      * URI scheme of the outer wallet deeplink (the part before `://?`), per OID4VP §5.10.
-     * Examples: `openid4vp` (default, spec-canonical), `haip` (HAIP profile),
+     * Examples: `openid4vp` (default, spec-canonical), `haip-vp` (HAIP 1.0 Final presentation),
      * `oid4vp` (Sphereon mobile-wallet custom), `openid` (legacy).
      *
      * Sent without the trailing `://`. The verifier emits
@@ -259,6 +259,15 @@ data class GetAuthorizationRequestStatusOutput(
      */
     @SerialName("last_updated")
     val lastUpdated: Long,
+    /** Optional non-sensitive session metadata for developer/test integrations. */
+    @SerialName("session_id")
+    val sessionId: String? = null,
+    @SerialName("verifier_id")
+    val verifierId: String? = null,
+    @SerialName("created_at")
+    val createdAt: Long? = null,
+    @SerialName("expires_at")
+    val expiresAt: Long? = null,
     /**
      * Error details when status is "error".
      */

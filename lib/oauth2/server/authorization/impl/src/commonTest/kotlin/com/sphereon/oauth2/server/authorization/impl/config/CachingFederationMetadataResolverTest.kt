@@ -201,6 +201,7 @@ class CachingFederationMetadataResolverTest {
             pkceData: PkceData?,
             resource: List<String>?,
             dpopContext: DpopContext?,
+            audience: List<String>?,
         ): IdkResult<TokenResponse, IdkError> = notImpl()
 
         override suspend fun exchangePreAuthorizedCode(
@@ -219,6 +220,7 @@ class CachingFederationMetadataResolverTest {
             scope: String?,
             resource: List<String>?,
             dpopContext: DpopContext?,
+            audience: List<String>?,
         ): IdkResult<TokenResponse, IdkError> = notImpl()
 
         override suspend fun introspectToken(
@@ -247,6 +249,11 @@ class CachingFederationMetadataResolverTest {
             prompt: String?,
             loginHint: String?,
             tenantId: String?,
+            resource: String?,
+            audience: String?,
+            ownerHandleDigest: String?,
+            grantBinding: String?,
+            clientCorrelation: String?,
         ): IdkResult<com.sphereon.oauth2.client.client.OidcLoginInitiation, IdkError> = notImpl()
 
         override suspend fun initiateOidcLogin(
@@ -258,6 +265,11 @@ class CachingFederationMetadataResolverTest {
             prompt: String?,
             loginHint: String?,
             tenantId: String?,
+            resource: String?,
+            audience: String?,
+            ownerHandleDigest: String?,
+            grantBinding: String?,
+            clientCorrelation: String?,
         ): IdkResult<com.sphereon.oauth2.client.client.OidcLoginInitiation, IdkError> = notImpl()
 
         override val oidcLogin: com.sphereon.oauth2.client.client.OidcLoginApi

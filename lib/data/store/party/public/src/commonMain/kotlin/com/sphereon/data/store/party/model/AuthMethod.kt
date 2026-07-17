@@ -57,6 +57,9 @@ value class AuthMethod(
         /** Time-based one-time password (authenticator app). */
         val TOTP = AuthMethod("totp")
 
+        /** WebAuthn/passkey authentication. */
+        val WEBAUTHN = AuthMethod("webauthn")
+
         /** Federated login via an external OIDC identity provider. */
         val FEDERATED_OIDC = AuthMethod("federated_oidc")
 

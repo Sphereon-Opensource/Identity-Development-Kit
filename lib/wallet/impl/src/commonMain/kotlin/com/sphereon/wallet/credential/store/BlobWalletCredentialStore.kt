@@ -54,7 +54,7 @@ private val walletJson = Json { ignoreUnknownKeys = true }
 
 private const val CONTENT_TYPE = "application/vnd.sphereon.wallet.credential+json"
 
-private const val META_WALLET_INSTANCE_ID = "walletInstanceId"
+private const val META_WALLET_UNIT_ID = "walletUnitId"
 private const val META_CREDENTIAL_RECORD_ID = "credentialRecordId"
 private const val META_ISSUER_ID = "issuerId"
 private const val META_FORMAT = "format"
@@ -68,7 +68,7 @@ private const val META_TYPE_REF_PREFIX = "credentialTypeRef."
  *
  * Credential instance bodies and metadata sidecars are both persisted through [BlobService].
  * Metadata APIs read only sidecars under
- * `wallet-instances/{walletInstanceId}/credentials/{credentialRecordId}/metadata`; credential
+ * `wallet-units/{walletUnitId}/credentials/{credentialRecordId}/metadata`; credential
  * instance body paths are opened only by [getCredential].
  */
 @Inject
@@ -79,11 +79,11 @@ class BlobWalletCredentialStore(
     private val credentialBodyProtector: WalletCredentialBodyProtector,
 ) : LocalWalletCredentialStore {
     override suspend fun putCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
     ): IdkResult<CredentialRecord, IdkError> {
-        if (record.walletInstanceId != walletInstanceId) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "record.walletInstanceId must match walletInstanceId"))
+        if (record.walletUnitId != walletUnitId) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "record.walletUnitId must match walletUnitId"))
         }
 
         val normalizedRecord = record.withBlobBodyRefs()
@@ -92,16 +92,16 @@ class BlobWalletCredentialStore(
             if (raw != null) {
                 val protectedBody =
                     credentialBodyProtector
-                        .protect(walletInstanceId, normalizedRecord.id, instance.id, raw.encodeToByteArray())
+                        .protect(walletUnitId, normalizedRecord.id, instance.id, raw.encodeToByteArray())
                         .getOrElse { return Err(it) }
                 val bodyResult =
                     blobService.storeBlob(
-                        target = instanceBodyBlobInfo(walletInstanceId, normalizedRecord.id, instance.id),
+                        target = instanceBodyBlobInfo(walletUnitId, normalizedRecord.id, instance.id),
                         data = protectedBody,
                     )
                 if (bodyResult.isErr) return Err(bodyResult.error)
             } else {
-                val existingBody = blobService.getBlob(instanceBodyBlobInfo(walletInstanceId, normalizedRecord.id, instance.id))
+                val existingBody = blobService.getBlob(instanceBodyBlobInfo(walletUnitId, normalizedRecord.id, instance.id))
                 if (existingBody.isErr) {
                     return Err(
                         IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -116,44 +116,44 @@ class BlobWalletCredentialStore(
         val metadata = normalizedRecord.metadata(Clock.System.now())
         val envelopeResult =
             blobService.storeBlob(
-                target = recordEnvelopeBlobInfo(walletInstanceId, normalizedRecord.id),
+                target = recordEnvelopeBlobInfo(walletUnitId, normalizedRecord.id),
                 data = walletJson.encodeToString(envelope).encodeToByteArray(),
             )
         if (envelopeResult.isErr) return Err(envelopeResult.error)
 
         val sidecarResult =
             blobService.storeBlob(
-                target = metadataBlobInfo(walletInstanceId, normalizedRecord.id, metadata),
+                target = metadataBlobInfo(walletUnitId, normalizedRecord.id, metadata),
                 data = walletJson.encodeToString(metadata).encodeToByteArray(),
             )
         return if (sidecarResult.isOk) Ok(normalizedRecord) else Err(sidecarResult.error)
     }
 
     override suspend fun getCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialRecord?, IdkError> {
-        val metadataResult = getMetadata(walletInstanceId, credentialRecordId)
+        val metadataResult = getMetadata(walletUnitId, credentialRecordId)
         if (metadataResult.isErr) return Err(metadataResult.error)
         if (metadataResult.value?.lifecycleSummary?.tombstone == true) return Ok(null)
 
-        val envelopeResult = blobService.getBlob(info = recordEnvelopeBlobInfo(walletInstanceId, credentialRecordId))
+        val envelopeResult = blobService.getBlob(info = recordEnvelopeBlobInfo(walletUnitId, credentialRecordId))
         if (envelopeResult.isErr) {
             return if (envelopeResult.error.isNotFound()) Ok(null) else Err(envelopeResult.error)
         }
 
         val envelope = walletJson.decodeFromString<CredentialRecord>(envelopeResult.value.data.decodeToString())
-        if (envelope.walletInstanceId != walletInstanceId) return Ok(null)
+        if (envelope.walletUnitId != walletUnitId) return Ok(null)
 
         val hydratedInstances = mutableListOf<CredentialInstance>()
         for (instance in envelope.instances) {
-            val bodyResult = blobService.getBlob(info = instanceBodyBlobInfo(walletInstanceId, envelope.id, instance.id))
+            val bodyResult = blobService.getBlob(info = instanceBodyBlobInfo(walletUnitId, envelope.id, instance.id))
             if (bodyResult.isErr) {
                 return Err(IdkError.NOT_FOUND_ERROR(message = "Credential instance body '${instance.id}' was not found"))
             }
             val plaintext =
                 credentialBodyProtector
-                    .open(walletInstanceId, envelope.id, instance.id, bodyResult.value.data)
+                    .open(walletUnitId, envelope.id, instance.id, bodyResult.value.data)
                     .getOrElse { return Err(it) }
             hydratedInstances += instance.copy(raw = plaintext.decodeToString())
         }
@@ -161,14 +161,14 @@ class BlobWalletCredentialStore(
     }
 
     override suspend fun getMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialMetadata?, IdkError> {
-        val getResult = blobService.getBlob(info = metadataBlobInfoRef(walletInstanceId, credentialRecordId))
+        val getResult = blobService.getBlob(info = metadataBlobInfoRef(walletUnitId, credentialRecordId))
         return when {
             getResult.isOk -> {
                 val metadata = walletJson.decodeFromString<CredentialMetadata>(getResult.value.data.decodeToString())
-                if (metadata.walletInstanceId == walletInstanceId) Ok(metadata) else Ok(null)
+                if (metadata.walletUnitId == walletUnitId) Ok(metadata) else Ok(null)
             }
 
             getResult.error.isNotFound() -> {
@@ -182,32 +182,32 @@ class BlobWalletCredentialStore(
     }
 
     override suspend fun listMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter,
     ): IdkResult<List<CredentialMetadata>, IdkError> {
         val metadataResult =
             fetchSidecarMetadata(
                 MetadataSearchQuery(
-                    pathPrefix = walletCredentialMetadataPrefix(walletInstanceId),
-                    customMetadata = indexedMetadataQuery(walletInstanceId, filter),
+                    pathPrefix = walletCredentialMetadataPrefix(walletUnitId),
+                    customMetadata = indexedMetadataQuery(walletUnitId, filter),
                     maxResults = 1000,
                 ),
             )
         if (metadataResult.isErr) return Err(metadataResult.error)
-        return Ok(metadataResult.value.filter { it.walletInstanceId == walletInstanceId && it.matches(filter) })
+        return Ok(metadataResult.value.filter { it.walletUnitId == walletUnitId && it.matches(filter) })
     }
 
     override suspend fun findByCredentialTypeRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         ref: CredentialTypeRef,
     ): IdkResult<List<CredentialMetadata>, IdkError> {
         val metadataResult =
             fetchSidecarMetadata(
                 MetadataSearchQuery(
-                    pathPrefix = walletCredentialMetadataPrefix(walletInstanceId),
+                    pathPrefix = walletCredentialMetadataPrefix(walletUnitId),
                     customMetadata =
                         mapOf(
-                            META_WALLET_INSTANCE_ID to walletInstanceId,
+                            META_WALLET_UNIT_ID to walletUnitId,
                             typeRefIndexKey(ref) to "true",
                         ),
                     maxResults = 1000,
@@ -216,7 +216,7 @@ class BlobWalletCredentialStore(
         if (metadataResult.isErr) return Err(metadataResult.error)
         return Ok(
             metadataResult.value.filter {
-                it.walletInstanceId == walletInstanceId &&
+                it.walletUnitId == walletUnitId &&
                     it.hasTypeRef(ref) &&
                     !it.lifecycleSummary.tombstone
             },
@@ -224,24 +224,24 @@ class BlobWalletCredentialStore(
     }
 
     override suspend fun deleteCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<Boolean, IdkError> {
-        val metadataResult = getMetadata(walletInstanceId, credentialRecordId)
+        val metadataResult = getMetadata(walletUnitId, credentialRecordId)
         if (metadataResult.isErr) return Err(metadataResult.error)
         val metadata = metadataResult.value ?: return Ok(false)
 
-        val envelopeResult = blobService.getBlob(info = recordEnvelopeBlobInfo(walletInstanceId, credentialRecordId))
+        val envelopeResult = blobService.getBlob(info = recordEnvelopeBlobInfo(walletUnitId, credentialRecordId))
         if (envelopeResult.isOk) {
             val envelope = walletJson.decodeFromString<CredentialRecord>(envelopeResult.value.data.decodeToString())
             for (instance in envelope.instances) {
-                val instanceDelete = blobService.deleteBlob(info = instanceBodyBlobInfo(walletInstanceId, credentialRecordId, instance.id))
+                val instanceDelete = blobService.deleteBlob(info = instanceBodyBlobInfo(walletUnitId, credentialRecordId, instance.id))
                 if (instanceDelete.isErr) return Err(instanceDelete.error)
             }
         } else if (!envelopeResult.error.isNotFound()) {
             return Err(envelopeResult.error)
         }
-        val envelopeDelete = blobService.deleteBlob(info = recordEnvelopeBlobInfo(walletInstanceId, credentialRecordId))
+        val envelopeDelete = blobService.deleteBlob(info = recordEnvelopeBlobInfo(walletUnitId, credentialRecordId))
         if (envelopeDelete.isErr) return Err(envelopeDelete.error)
 
         val tombstone =
@@ -256,7 +256,7 @@ class BlobWalletCredentialStore(
             )
         val sidecarResult =
             blobService.storeBlob(
-                target = metadataBlobInfo(walletInstanceId, credentialRecordId, tombstone),
+                target = metadataBlobInfo(walletUnitId, credentialRecordId, tombstone),
                 data = walletJson.encodeToString(tombstone).encodeToByteArray(),
             )
         return if (sidecarResult.isOk) Ok(true) else Err(sidecarResult.error)
@@ -279,43 +279,43 @@ class BlobWalletCredentialStore(
     }
 
     private fun recordEnvelopeBlobInfo(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): BlobInfo =
         BlobInfo(
-            path = walletCredentialRecordEnvelopePath(walletInstanceId, credentialRecordId),
+            path = walletCredentialRecordEnvelopePath(walletUnitId, credentialRecordId),
             contentType = CONTENT_TYPE,
         )
 
     private fun instanceBodyBlobInfo(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
         credentialInstanceId: String,
     ): BlobInfo =
         BlobInfo(
-            path = walletCredentialInstanceBodyPath(walletInstanceId, credentialRecordId, credentialInstanceId),
+            path = walletCredentialInstanceBodyPath(walletUnitId, credentialRecordId, credentialInstanceId),
             contentType = CONTENT_TYPE,
         )
 
     private fun metadataBlobInfo(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
         metadata: CredentialMetadata,
     ): BlobInfo =
         BlobInfo(
-            path = walletCredentialMetadataPath(walletInstanceId, credentialRecordId),
+            path = walletCredentialMetadataPath(walletUnitId, credentialRecordId),
             contentType = CONTENT_TYPE,
             metadata = sidecarIndex(metadata),
         )
 
     private fun metadataBlobInfoRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
-    ): BlobInfo = BlobInfo(path = walletCredentialMetadataPath(walletInstanceId, credentialRecordId))
+    ): BlobInfo = BlobInfo(path = walletCredentialMetadataPath(walletUnitId, credentialRecordId))
 
     private fun sidecarIndex(metadata: CredentialMetadata): Map<String, String> =
         buildMap {
-            put(META_WALLET_INSTANCE_ID, metadata.walletInstanceId)
+            put(META_WALLET_UNIT_ID, metadata.walletUnitId)
             put(META_CREDENTIAL_RECORD_ID, metadata.credentialRecordId)
             put(META_ISSUER_ID, metadata.issuerRef.value)
             put(META_FORMAT, metadata.format.value)
@@ -326,11 +326,11 @@ class BlobWalletCredentialStore(
         }
 
     private fun indexedMetadataQuery(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter,
     ): Map<String, String> =
         buildMap {
-            put(META_WALLET_INSTANCE_ID, walletInstanceId)
+            put(META_WALLET_UNIT_ID, walletUnitId)
             filter.issuerRef?.let { put(META_ISSUER_ID, it.value) }
             filter.credentialConfigurationId?.let { put(META_CREDENTIAL_CONFIGURATION_ID, it) }
             filter.formats.singleOrNull()?.let { put(META_FORMAT, it.value) }
@@ -346,7 +346,7 @@ class BlobWalletCredentialStore(
                         bodyStorageRef =
                             BodyStorageRef(
                                 kind = BodyStorageKind.BLOB,
-                                path = walletCredentialInstanceBodyPath(walletInstanceId, id, instance.id),
+                                path = walletCredentialInstanceBodyPath(walletUnitId, id, instance.id),
                                 storeRef = StoreRef(id = blobService.defaultStoreId(), type = "blob"),
                             ),
                     )

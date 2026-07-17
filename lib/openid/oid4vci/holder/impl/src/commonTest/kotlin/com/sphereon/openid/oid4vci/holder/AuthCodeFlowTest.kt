@@ -42,11 +42,17 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.CreatePkceCommand
+import com.sphereon.oauth2.client.impl.authorization.CreateAuthorizationRequestUrlCommandImpl
 import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.client.util.decodeQueryParameters
+import com.sphereon.oauth2.common.command.ApplyClientAuthenticationArgs
+import com.sphereon.oauth2.common.command.ApplyClientAuthenticationCommand
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.openid.oid4vci.holder.impl.BuildAuthorizationRequestCommandImpl
 import com.sphereon.openid.oid4vci.holder.impl.ExchangeAuthorizationCodeCommandImpl
+import com.sphereon.oauth2.common.model.ClientAssertion
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.common.model.ClientAuthenticationResult
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -56,6 +62,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -82,12 +89,20 @@ class AuthCodeFlowTest {
 
     private fun makeNoOpHttpClientFactory(): HttpClientFactory = ThrowingHttpClientFactory()
 
-    private fun makeBuildCmd(httpClientFactory: HttpClientFactory = makeNoOpHttpClientFactory()): BuildAuthorizationRequestCommandImpl =
-        BuildAuthorizationRequestCommandImpl(
-            execution = makeExecution(),
-            createPkceCommand = makePkceCommand(),
-            httpClientFactory = httpClientFactory,
+    private fun makeBuildCmd(httpClientFactory: HttpClientFactory = makeNoOpHttpClientFactory()): BuildAuthorizationRequestCommandImpl {
+        val execution = makeExecution()
+        return BuildAuthorizationRequestCommandImpl(
+            execution = execution,
+            createAuthorizationRequestUrlCommand =
+                CreateAuthorizationRequestUrlCommandImpl(
+                    execution = execution,
+                    createPkceCommand = makePkceCommand(),
+                    applyClientAuthenticationCommand = TestApplyClientAuthenticationCommand(),
+                    httpClientFactory = httpClientFactory,
+                ),
+            secureRandom = TestSecureRandom,
         )
+    }
 
     // ============================================================================
     // BuildAuthorizationRequestCommand — URL construction
@@ -114,7 +129,7 @@ class AuthCodeFlowTest {
             assertEquals("code", params["response_type"])
             assertEquals("wallet-client", params["client_id"])
             assertEquals("https://wallet.example.com/callback", params["redirect_uri"])
-            assertNotNull(params["state"])
+            assertEquals("test-state-32", params["state"])
             assertNotNull(params["code_challenge"])
             assertNotNull(params["code_challenge_method"])
             assertNotNull(params["authorization_details"])
@@ -304,11 +319,22 @@ class AuthCodeFlowTest {
                 codeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
                 redirectUri = "https://wallet.example.com/callback",
                 clientId = "wallet-client",
+                clientAuthentication =
+                    ClientAuthenticationConfig.PrivateKeyJwt(
+                        ClientAssertion(
+                            clientId = "wallet-client",
+                            assertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                            assertion = "jwt.assertion",
+                        ),
+                    ),
             )
 
         assertEquals("SplxlOBeZQQYbYS6WxSbIA", args.code)
         assertEquals("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", args.codeVerifier)
         assertEquals("wallet-client", args.clientId)
+        val auth = args.clientAuthentication as ClientAuthenticationConfig.PrivateKeyJwt
+        assertEquals("urn:ietf:params:oauth:client-assertion-type:jwt-bearer", auth.assertion.assertionType)
+        assertEquals("jwt.assertion", auth.assertion.assertion)
     }
 
     @Test
@@ -322,6 +348,19 @@ class AuthCodeFlowTest {
             )
 
         assertNull(args.clientId)
+    }
+
+    @Test
+    fun exchangeArgsClientAuthenticationIsOptional() {
+        val args =
+            ExchangeAuthorizationCodeArgs(
+                tokenEndpoint = "https://as.example.com/token",
+                code = "SplxlOBeZQQYbYS6WxSbIA",
+                codeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+                redirectUri = "https://wallet.example.com/callback",
+            )
+
+        assertNull(args.clientAuthentication)
     }
 
     @Test
@@ -410,6 +449,17 @@ private class TestAcfSessionExecution(
     override val conf: ContextConfig = AcfNoOpContextConfig()
 }
 
+private object TestSecureRandom : com.sphereon.core.api.random.SecureRandom {
+    override val commands: com.sphereon.core.api.random.SecureRandom.Commands
+        get() = throw NotImplementedError("Not needed for unit tests")
+
+    override suspend fun generateToken(args: com.sphereon.core.api.random.GenerateTokenArgs): IdkResult<com.sphereon.core.api.service.StringResult, com.sphereon.core.api.error.IdkError> =
+        Ok(com.sphereon.core.api.service.StringResult("test-state-${args.lengthBytes}"))
+
+    override suspend fun nextBytes(args: com.sphereon.core.api.random.NextBytesArgs): IdkResult<com.sphereon.core.api.service.ByteArrayResult, com.sphereon.core.api.error.IdkError> =
+        Ok(com.sphereon.core.api.service.ByteArrayResult(ByteArray(args.length) { index -> index.toByte() }))
+}
+
 /**
  * HttpClientFactory that always throws — used for tests that do not trigger HTTP calls.
  */
@@ -449,4 +499,19 @@ private class TestPkceCommand : CreatePkceCommand {
     override suspend fun supports(args: Any): Boolean = args is CreatePkceArgs
 
     private fun generateVerifier(): String = Random.Default.nextBytes(64).encodeToBase64Url()
+}
+
+private class TestApplyClientAuthenticationCommand : ApplyClientAuthenticationCommand {
+    override val commandId: String get() = ApplyClientAuthenticationCommand.COMMAND_ID
+    override val id: String get() = commandId
+    override val isEnabled: Boolean = true
+    override val inputTypeToken: com.sphereon.core.api.binary.TypeToken<ApplyClientAuthenticationArgs> =
+        com.sphereon.core.api.binary.typeToken()
+    override val outputTypeToken: com.sphereon.core.api.binary.TypeToken<ClientAuthenticationResult> =
+        com.sphereon.core.api.binary.typeToken()
+
+    override suspend fun execute(args: ApplyClientAuthenticationArgs): IdkResult<ClientAuthenticationResult, com.sphereon.core.api.error.IdkError> =
+        Ok(ClientAuthenticationResult(headers = emptyMap(), bodyParameters = emptyMap()))
+
+    override suspend fun supports(args: Any): Boolean = args is ApplyClientAuthenticationArgs
 }

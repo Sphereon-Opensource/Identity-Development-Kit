@@ -41,8 +41,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Tests for (PKCE default + server-policy enforcement), Task 1.8 (public-client
- * permissive-redirect-URI fallback flag), and Task 1.9 (response_mode resolution).
+ * Tests for PKCE default + server-policy enforcement, the public-client permissive-redirect-URI
+ * fallback flag, and response_mode resolution.
  */
 class VerifyAuthorizationRequestPkceResponseModeTest {
     private val ctx = OAuth2ServerTestContext("verify-pkce-rmode-test", this)

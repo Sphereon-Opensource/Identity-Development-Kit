@@ -155,7 +155,14 @@ kotlin {
                 implementation(projects.libWalletInteractionProtocolOid4vci)
                 implementation(projects.libWalletInteractionProtocolOid4vp)
 
-                // In-memory blob backing store (BlobWalletCredentialStore used by WalletImpl)
+                // WSCA/WSCD (real Software-profile key custody + key attestation): the
+                // KA-on-demand e2e leg mints a holder key and self-attests it exactly the way a
+                // real OSS wallet does, rather than faking a compact JWT by hand.
+                implementation(projects.libWalletWscaImpl)
+                implementation(projects.libWalletWscdSoftware)
+                implementation(projects.libWalletUnitPublic)
+
+                // In-memory blob backing store for BlobWalletCredentialStore
                 implementation(projects.libDataStoreBlobImpl)
                 implementation(projects.libDataStoreBlobImplMemory)
 

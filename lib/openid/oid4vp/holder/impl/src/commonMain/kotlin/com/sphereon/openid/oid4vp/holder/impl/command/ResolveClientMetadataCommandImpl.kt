@@ -29,6 +29,7 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientMetadata
+import com.sphereon.openid.oid4vp.common.Oid4vpJson
 import com.sphereon.openid.oid4vp.holder.command.ResolveClientMetadataCommand
 import com.sphereon.openid.oid4vp.holder.command.ResolveClientMetadataCommandService
 import com.sphereon.openid.oid4vp.holder.command.ResolvedClientMetadata
@@ -125,7 +126,7 @@ class ResolveClientMetadataCommandImpl(
                             metadataJson
                         }
                     }
-                val metadata = Json.decodeFromJsonElement(ClientMetadata.serializer(), normalized)
+                val metadata = Oid4vpJson.wire.decodeFromJsonElement(ClientMetadata.serializer(), normalized)
                 Ok(ResolvedClientMetadata(metadata))
             } catch (expected: Exception) {
                 Err(
@@ -164,7 +165,7 @@ class ResolveClientMetadataCommandImpl(
             }
 
             val responseBody = response.body<String>()
-            val metadata = Json.decodeFromString(ClientMetadata.serializer(), responseBody)
+            val metadata = Oid4vpJson.wire.decodeFromString(ClientMetadata.serializer(), responseBody)
 
             Ok(ResolvedClientMetadata(metadata))
         } catch (expected: Exception) {

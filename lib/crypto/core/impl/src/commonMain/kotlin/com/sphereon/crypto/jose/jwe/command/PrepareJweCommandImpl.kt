@@ -101,6 +101,7 @@ class PrepareJweCommandImpl(
         val header = JweHeader()
         header.alg = appliedArgs.keyEncryptionAlg
         header.enc = appliedArgs.contentEncryptionAlg
+        header.kid = resolvedRecipient.asResult().keyInfo.kid
 
         // RFC 7516 §4.1.3: when `zip=DEF` is set, the plaintext MUST be DEFLATE-compressed
         // (raw, RFC 1951 — no zlib wrapper) BEFORE encryption. Without actually compressing
@@ -124,7 +125,6 @@ class PrepareJweCommandImpl(
             }
         }
 
-        // TODO: Add key identifier (kid) from recipient if available
         // TODO: Add ephemeral public key (epk) for ECDH-ES algorithms
         // TODO: Add other algorithm-specific parameters (apu, apv, p2s, p2c, etc.)
 

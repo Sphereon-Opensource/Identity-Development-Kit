@@ -67,14 +67,14 @@ enum class WalletEntryPointKind {
 
 @Serializable
 data class WalletInteractionInput(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val entryPoint: WalletEntryPoint,
     val executionMode: WalletInteractionExecutionMode = WalletInteractionExecutionMode.LOCAL,
     val requestedFlowKinds: List<WalletInteractionFlowKind> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
 ) {
     init {
-        require(walletInstanceId.isNotBlank()) { "wallet_interaction_wallet_instance_id_blank" }
+        require(walletUnitId.isNotBlank()) { "wallet_interaction_wallet_unit_id_blank" }
     }
 }
 
@@ -187,7 +187,6 @@ enum class WalletInteractionStatus {
     DisclosureConsent,
     SecurityUnlockRequired,
     DeferredRetrievalPending,
-    ReceivedCredentialReview,
     Sharing,
     Completed,
     Cancelled,
@@ -197,7 +196,7 @@ enum class WalletInteractionStatus {
 @Serializable
 data class WalletInteractionState(
     val sessionId: WalletInteractionSessionId,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val status: WalletInteractionStatus,
     val revision: Long = 0,
     val flowKind: WalletInteractionFlowKind? = null,
@@ -207,13 +206,19 @@ data class WalletInteractionState(
     val entryPoint: WalletEntryPointSummary? = null,
     val implementationChoices: List<WalletImplementationChoice> = emptyList(),
     val counterparty: WalletCounterpartySummary? = null,
+    val counterpartyEncounter: WalletCounterpartyEncounterResult? = null,
     val trust: WalletCounterpartyTrustSummary? = null,
     val credentialOffer: WalletCredentialOfferSummary? = null,
+    val selectedCredentialConfigurationIds: List<String> = emptyList(),
     val credentialPreview: List<WalletCredentialPreview> = emptyList(),
+    /** Credentials actually returned and accepted during this interaction; never offer previews. */
+    val receivedCredentialPreview: List<WalletCredentialPreview> = emptyList(),
     val credentialSelection: WalletCredentialSelectionRequest? = null,
     val disclosure: WalletDisclosureSummary? = null,
     val securityChallenge: WalletSecurityChallenge? = null,
-    val authorizationUrl: String? = null,
+    val authorizationHandoffRef: WalletInteractionSensitiveInputRef? = null,
+    /** Optional post-completion user-agent handoff, kept opaque outside the private session store. */
+    val completionHandoffRef: WalletInteractionSensitiveInputRef? = null,
     val txCode: WalletTxCodeSpec? = null,
     val deferred: WalletDeferredRetrievalSummary? = null,
     val message: WalletDisplayMessage? = null,
@@ -221,7 +226,7 @@ data class WalletInteractionState(
     val terminal: Boolean = false,
 ) {
     init {
-        require(walletInstanceId.isNotBlank()) { "wallet_interaction_wallet_instance_id_blank" }
+        require(walletUnitId.isNotBlank()) { "wallet_interaction_wallet_unit_id_blank" }
     }
 
     fun next(
@@ -239,7 +244,7 @@ data class WalletInteractionState(
         ): WalletInteractionState =
             WalletInteractionState(
                 sessionId = sessionId,
-                walletInstanceId = input.walletInstanceId,
+                walletUnitId = input.walletUnitId,
                 status = WalletInteractionStatus.ResolvingEntryPoint,
                 entryPoint = input.entryPoint.summary(),
             )
@@ -306,8 +311,35 @@ data class WalletCounterpartySummary(
     val identifier: String,
     val displayName: String? = null,
     val logoUri: String? = null,
+    /** Complete protocol-supplied display metadata. [displayName]/[logoUri] are the resolved active-locale face. */
+    val localizedBranding: List<WalletCounterpartyLocalizedBranding> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
-)
+    /** Stable Party identifier assigned by the wallet Party registry after resolution. */
+    val partyId: String? = null,
+) {
+    init {
+        require(identifier.isNotBlank()) { "wallet_counterparty_identifier_blank" }
+        require(partyId == null || partyId.isNotBlank()) { "wallet_counterparty_party_id_blank" }
+    }
+}
+
+/** Provider-neutral localized issuer/RP branding retained with the wallet Party contact. */
+@Serializable
+data class WalletCounterpartyLocalizedBranding(
+    val locale: String? = null,
+    val name: String,
+    val logoUri: String? = null,
+    val logoAltText: String? = null,
+    val description: String? = null,
+    val backgroundImageUri: String? = null,
+    val backgroundColor: String? = null,
+    val textColor: String? = null,
+) {
+    init {
+        require(name.isNotBlank()) { "wallet_counterparty_branding_name_blank" }
+        require(locale == null || locale.isNotBlank()) { "wallet_counterparty_branding_locale_blank" }
+    }
+}
 
 @Serializable
 enum class WalletCounterpartyRole {
@@ -331,10 +363,25 @@ data class WalletCredentialBranding(
     val credentialConfigurationId: String,
     val name: String? = null,
     val locale: String? = null,
+    val description: String? = null,
     val logoUri: String? = null,
+    val backgroundImageUri: String? = null,
     val backgroundColor: String? = null,
     val textColor: String? = null,
+    /** Pre-issuance display names only. Credential values never belong in an offer summary. */
+    val info: List<WalletCredentialOfferInfoDescriptor> = emptyList(),
 )
+
+@Serializable
+data class WalletCredentialOfferInfoDescriptor(
+    val path: List<String>,
+    val displayName: String,
+) {
+    init {
+        require(path.isNotEmpty() && path.none(String::isBlank)) { "wallet_credential_offer_info_path_invalid" }
+        require(displayName.isNotBlank()) { "wallet_credential_offer_info_name_blank" }
+    }
+}
 
 @Serializable
 data class WalletTxCodeSpec(
@@ -355,6 +402,8 @@ data class WalletCredentialPreview(
     val format: String? = null,
     val issuer: WalletCounterpartySummary? = null,
     val claims: List<WalletClaimDescriptor> = emptyList(),
+    /** Domain-resolved face from the accepted credential record, not renderer fallback data. */
+    val branding: WalletCredentialBranding? = null,
 )
 
 @Serializable
@@ -434,6 +483,7 @@ data class WalletSecurityChallenge(
 
 @Serializable
 enum class WalletSecurityChallengeKind {
+    PASSKEY,
     PIN,
     BIOMETRIC,
     LOCAL_HSM_UNLOCK,
@@ -451,10 +501,68 @@ data class WalletSecurityGrant(
     val evidence: Map<String, String> = emptyMap(),
 )
 
+/** Typed result for one-time attended grant validation at the protocol boundary. */
+sealed interface WalletSecurityGrantValidation {
+    data object Valid : WalletSecurityGrantValidation
+
+    data class Invalid(val reasonKey: String) : WalletSecurityGrantValidation
+}
+
+/**
+ * Validates the consumed grant against the exact outstanding challenge before protocol state can
+ * advance. Consumption provides one-time use; this function adds challenge, expiry, assurance,
+ * Wallet Unit, audience and operation binding checks.
+ */
+fun WalletSecurityGrant.validateFor(
+    challenge: WalletSecurityChallenge?,
+    walletUnitId: String,
+    audience: String?,
+    nowEpochSeconds: Long,
+): WalletSecurityGrantValidation {
+    challenge ?: return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.challenge_missing")
+    if (grantId != challenge.challengeId || evidence["challenge_id"] != challenge.challengeId) {
+        return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.challenge_binding_invalid")
+    }
+    val expiry = expiresAtEpochSeconds
+        ?: return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.grant_expiry_missing")
+    if (expiry <= nowEpochSeconds) return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.grant_expired")
+    if (!assurance.satisfies(challenge.requiredAssurance)) {
+        return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.grant_assurance_insufficient")
+    }
+    challenge.arguments["wallet_unit_id"]?.let { expected ->
+        if (expected != walletUnitId || evidence["wallet_unit_id"] != expected) {
+            return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.grant_wallet_unit_invalid")
+        }
+    }
+    challenge.arguments["audience"]?.let { expected ->
+        if (expected != audience || evidence["audience"] != expected) {
+            return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.grant_audience_invalid")
+        }
+    }
+    challenge.arguments["operation_binding"]?.let { expected ->
+        if (evidence["operation_binding"] != expected) {
+            return WalletSecurityGrantValidation.Invalid("wallet.interaction.security.grant_operation_binding_invalid")
+        }
+    }
+    return WalletSecurityGrantValidation.Valid
+}
+
+private fun WalletSecurityAssurance.satisfies(required: WalletSecurityAssurance): Boolean =
+    when (required) {
+        WalletSecurityAssurance.NONE -> true
+        WalletSecurityAssurance.USER_PRESENT -> this != WalletSecurityAssurance.NONE
+        WalletSecurityAssurance.PASSKEY -> this == WalletSecurityAssurance.PASSKEY
+        WalletSecurityAssurance.PIN -> this == WalletSecurityAssurance.PASSKEY || this == WalletSecurityAssurance.PIN || this == WalletSecurityAssurance.BIOMETRIC
+        WalletSecurityAssurance.BIOMETRIC -> this == WalletSecurityAssurance.PASSKEY || this == WalletSecurityAssurance.BIOMETRIC
+        WalletSecurityAssurance.HARDWARE_BACKED -> this == WalletSecurityAssurance.HARDWARE_BACKED || this == WalletSecurityAssurance.REMOTE_AUTHORIZED
+        WalletSecurityAssurance.REMOTE_AUTHORIZED -> this == WalletSecurityAssurance.REMOTE_AUTHORIZED
+    }
+
 @Serializable
 enum class WalletSecurityAssurance {
     NONE,
     USER_PRESENT,
+    PASSKEY,
     PIN,
     BIOMETRIC,
     HARDWARE_BACKED,
@@ -464,21 +572,20 @@ enum class WalletSecurityAssurance {
 @Serializable
 data class WalletInteractionAction(
     val type: WalletInteractionActionType,
-    val value: String? = null,
     val implementationId: String? = null,
     val selection: WalletCredentialSelection? = null,
-    val authorizationCallback: String? = null,
-    val securityGrant: WalletSecurityGrant? = null,
+    val sensitiveInputRef: WalletInteractionSensitiveInputRef? = null,
     val rememberDecision: Boolean = false,
+    val counterpartyAssociation: WalletCounterpartyAssociationDecision? = null,
 ) {
     init {
         when (type) {
             WalletInteractionActionType.SUBMIT_TX_CODE -> {
-                require(!value.isNullOrBlank()) { "wallet_interaction_action_tx_code_missing" }
+                require(sensitiveInputRef != null) { "wallet_interaction_action_tx_code_ref_missing" }
             }
 
             WalletInteractionActionType.AUTH_CALLBACK -> {
-                require(!authorizationCallback.isNullOrBlank()) { "wallet_interaction_action_auth_callback_missing" }
+                require(sensitiveInputRef != null) { "wallet_interaction_action_auth_callback_ref_missing" }
             }
 
             WalletInteractionActionType.CHOOSE_IMPLEMENTATION -> {
@@ -490,7 +597,11 @@ data class WalletInteractionAction(
             }
 
             WalletInteractionActionType.APPROVE_SECURITY_CHALLENGE -> {
-                require(securityGrant != null) { "wallet_interaction_action_security_grant_missing" }
+                require(sensitiveInputRef != null) { "wallet_interaction_action_security_grant_ref_missing" }
+            }
+
+            WalletInteractionActionType.RESOLVE_COUNTERPARTY_CONTACT -> {
+                require(counterpartyAssociation != null) { "wallet_interaction_action_counterparty_association_missing" }
             }
 
             else -> {
@@ -502,11 +613,16 @@ data class WalletInteractionAction(
     companion object {
         fun continueFlow(): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.CONTINUE)
 
+        fun resolveCounterpartyContact(decision: WalletCounterpartyAssociationDecision): WalletInteractionAction =
+            WalletInteractionAction(WalletInteractionActionType.RESOLVE_COUNTERPARTY_CONTACT, counterpartyAssociation = decision)
+
         fun decline(): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.DECLINE)
 
-        fun submitTxCode(value: String): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.SUBMIT_TX_CODE, value = value)
+        fun submitTxCode(ref: WalletInteractionSensitiveInputRef): WalletInteractionAction =
+            WalletInteractionAction(WalletInteractionActionType.SUBMIT_TX_CODE, sensitiveInputRef = ref)
 
-        fun authCallback(callbackUri: String): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.AUTH_CALLBACK, authorizationCallback = callbackUri)
+        fun authCallback(ref: WalletInteractionSensitiveInputRef): WalletInteractionAction =
+            WalletInteractionAction(WalletInteractionActionType.AUTH_CALLBACK, sensitiveInputRef = ref)
 
         fun chooseImplementation(adapterId: String): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.CHOOSE_IMPLEMENTATION, implementationId = adapterId)
 
@@ -514,11 +630,8 @@ data class WalletInteractionAction(
 
         fun revealClaimValues(): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.REVEAL_CLAIM_VALUES)
 
-        fun approveSecurityChallenge(grant: WalletSecurityGrant): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.APPROVE_SECURITY_CHALLENGE, securityGrant = grant)
-
-        fun acceptReceivedCredential(): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.ACCEPT_RECEIVED_CREDENTIAL)
-
-        fun declineReceivedCredential(): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.DECLINE_RECEIVED_CREDENTIAL)
+        fun approveSecurityChallenge(ref: WalletInteractionSensitiveInputRef): WalletInteractionAction =
+            WalletInteractionAction(WalletInteractionActionType.APPROVE_SECURITY_CHALLENGE, sensitiveInputRef = ref)
 
         fun retryDeferredRetrieval(): WalletInteractionAction = WalletInteractionAction(WalletInteractionActionType.RETRY_DEFERRED_RETRIEVAL)
 
@@ -530,6 +643,9 @@ data class WalletInteractionAction(
 
 @Serializable
 enum class WalletInteractionActionType {
+    @SerialName("resolve_counterparty_contact")
+    RESOLVE_COUNTERPARTY_CONTACT,
+
     @SerialName("continue")
     CONTINUE,
 
@@ -553,12 +669,6 @@ enum class WalletInteractionActionType {
 
     @SerialName("approve_security_challenge")
     APPROVE_SECURITY_CHALLENGE,
-
-    @SerialName("accept_received_credential")
-    ACCEPT_RECEIVED_CREDENTIAL,
-
-    @SerialName("decline_received_credential")
-    DECLINE_RECEIVED_CREDENTIAL,
 
     @SerialName("retry_deferred_retrieval")
     RETRY_DEFERRED_RETRIEVAL,

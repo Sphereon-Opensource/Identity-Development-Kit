@@ -30,11 +30,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SessionEntryConversionTest {
+    private val instanceId = "issuer-instance-session-entry-conversion"
+
     @Test
     fun roundtripWithoutCallback() {
         val session =
             CredentialOfferSession(
                 correlationId = "corr-123",
+                instanceId = instanceId,
                 offerId = "offer-456",
                 issuanceSessionId = "session-789",
                 status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
@@ -49,6 +52,8 @@ class SessionEntryConversionTest {
         val restored = entry.toPublic()
 
         assertEquals(session.correlationId, restored.correlationId)
+        assertEquals(instanceId, entry.instanceId)
+        assertEquals(instanceId, restored.instanceId)
         assertEquals(session.offerId, restored.offerId)
         assertEquals(session.issuanceSessionId, restored.issuanceSessionId)
         assertEquals(session.status, restored.status)
@@ -74,7 +79,9 @@ class SessionEntryConversionTest {
         val session =
             CredentialOfferSession(
                 correlationId = "corr-abc",
+                instanceId = instanceId,
                 offerId = "offer-def",
+                issuanceSessionId = "issuance-session-callback",
                 status = CredentialOfferSessionStatus.TOKEN_REQUESTED,
                 callbackConfig = callback,
                 createdAt = 2000000L,
@@ -99,7 +106,9 @@ class SessionEntryConversionTest {
         val entry =
             KvCredentialOfferSessionStore.CredentialOfferSessionEntry(
                 correlationId = "corr-1",
+                instanceId = "issuer-instance-unknown-status",
                 offerId = "offer-1",
+                issuanceSessionId = "issuance-session-unknown-status",
                 status = "UNKNOWN_STATUS",
                 createdAt = 1000L,
                 lastUpdatedAt = 1000L,
@@ -114,7 +123,9 @@ class SessionEntryConversionTest {
         val entry =
             KvCredentialOfferSessionStore.CredentialOfferSessionEntry(
                 correlationId = "corr-2",
+                instanceId = "issuer-instance-unknown-callback-status",
                 offerId = "offer-2",
+                issuanceSessionId = "issuance-session-unknown-callback-status",
                 status = "CREDENTIAL_OFFER_CREATED",
                 callbackUrl = "https://example.com/hook",
                 callbackStatuses = listOf("CREDENTIAL_ISSUED", "NONEXISTENT_STATUS"),
@@ -129,11 +140,13 @@ class SessionEntryConversionTest {
     }
 
     @Test
-    fun nullOptionalFields() {
+    fun optionalFieldsRemainNullWhileMandatoryIdentityRoundTrips() {
         val session =
             CredentialOfferSession(
                 correlationId = "corr-min",
+                instanceId = instanceId,
                 offerId = "offer-min",
+                issuanceSessionId = "issuance-session-minimal-fields",
                 status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                 createdAt = 0L,
                 lastUpdatedAt = 0L,
@@ -142,7 +155,8 @@ class SessionEntryConversionTest {
         val entry = KvCredentialOfferSessionStore.CredentialOfferSessionEntry.fromPublic(session)
         val restored = entry.toPublic()
 
-        assertNull(restored.issuanceSessionId)
+        assertEquals(instanceId, restored.instanceId)
+        assertEquals("issuance-session-minimal-fields", restored.issuanceSessionId)
         assertNull(restored.callbackConfig)
         assertNull(restored.state)
         assertNull(restored.expiresAt)
@@ -154,7 +168,9 @@ class SessionEntryConversionTest {
         val session =
             CredentialOfferSession(
                 correlationId = "corr-reusable",
+                instanceId = instanceId,
                 offerId = "offer-reusable",
+                issuanceSessionId = "issuance-session-reusable-offer",
                 status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                 createdAt = 3000000L,
                 lastUpdatedAt = 3000000L,
@@ -183,7 +199,9 @@ class SessionEntryConversionTest {
         val session =
             CredentialOfferSession(
                 correlationId = "corr-single",
+                instanceId = instanceId,
                 offerId = "offer-single",
+                issuanceSessionId = "issuance-session-single-use-offer",
                 status = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED,
                 createdAt = 4000000L,
                 lastUpdatedAt = 4000000L,

@@ -103,6 +103,7 @@ import com.sphereon.crypto.core.x509.CertificateCreationUtils
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreConfigType
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreService
 import com.sphereon.crypto.kms.keystore.software.JksKeyStoreConfig
+import com.sphereon.crypto.kms.keystore.software.EncryptedFileKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
 import dev.whyoleg.cryptography.BinarySize.Companion.bits
 import dev.whyoleg.cryptography.CryptographyProvider
@@ -1411,6 +1412,7 @@ class SoftwareKmsProviderImpl(
 
 internal fun KeyStoreConfig.withProviderScopedFileId(providerId: String): KeyStoreConfig =
     when (this) {
+        is EncryptedFileKeyStoreConfig -> copy(id = providerId)
         is Pkcs12KeyStoreConfig -> copy(id = providerId)
         is JksKeyStoreConfig -> copy(id = providerId)
         else -> this

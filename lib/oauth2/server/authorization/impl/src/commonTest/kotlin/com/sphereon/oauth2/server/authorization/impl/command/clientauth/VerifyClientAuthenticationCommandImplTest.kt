@@ -1091,8 +1091,8 @@ class VerifyClientAuthenticationCommandImplTest {
     @Test
     fun clientSecretJwt_weakHsAlg_rejectsIfClientRegisteredHs256() =
         runTest {
-            // Registered allow-list narrows to HS256; request arrives with HS384 → rejected by the
-            // per-client signing-alg gate added in Task 2.3 and kept enforced here.
+            // Registered allow-list narrows to HS256; request arrives with HS384, so the
+            // per-client signing-alg gate rejects it.
             val registry =
                 StubClientRegistry(
                     client =

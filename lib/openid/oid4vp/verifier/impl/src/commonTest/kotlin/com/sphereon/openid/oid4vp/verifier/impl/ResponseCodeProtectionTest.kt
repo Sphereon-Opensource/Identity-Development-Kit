@@ -46,6 +46,8 @@ import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeError
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
 import kotlinx.coroutines.test.runTest
@@ -73,6 +75,7 @@ class ResponseCodeProtectionTest {
         val parseCommand: ParseAuthorizationResponseCommandImpl,
         val handleCommand: HandleDirectPostResponseCommandImpl,
         val retrieveCommand: RetrieveAuthorizationResponseCommandImpl,
+        val authorizationSessionStore: TestAuthorizationSessionStore,
         val clock: MutableClock,
     )
 
@@ -93,12 +96,13 @@ class ResponseCodeProtectionTest {
                 execution = execution,
                 verifyJarmCommand = MockVerifyJarmResponseCommand(),
             )
+        val authorizationSessionStore = TestAuthorizationSessionStore()
         val handleCommand =
             HandleDirectPostResponseCommandImpl(
                 execution = execution,
                 parseAuthorizationResponseCommand = parseCommand,
                 validateAuthorizationResponseCommand = MockValidateAuthorizationResponseCommand(),
-                authorizationSessionStore = TestAuthorizationSessionStore(),
+                authorizationSessionStore = authorizationSessionStore,
                 responseCodeStore = store,
             )
         val retrieveCommand =
@@ -106,7 +110,32 @@ class ResponseCodeProtectionTest {
                 execution = execution,
                 responseCodeStore = store,
             )
-        return TestFixture(store, parseCommand, handleCommand, retrieveCommand, clock)
+        return TestFixture(store, parseCommand, handleCommand, retrieveCommand, authorizationSessionStore, clock)
+    }
+
+    private suspend fun TestFixture.persistAuthorizationSession(
+        args: HandleDirectPostResponseArgs,
+        instanceId: String,
+    ) {
+        val correlationState = requireNotNull(args.originalRequest.state) { "Test authorization request must have correlation state" }
+        val now = clock.now().toEpochMilliseconds()
+        val session =
+            AuthorizationSession(
+                instanceId = instanceId,
+                sessionId = "response-code-session-$correlationState",
+                correlationId = correlationState,
+                dcqlQuery = args.dcqlQuery,
+                authorizationRequest = args.originalRequest,
+                status = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED,
+                createdAt = now,
+                updatedAt = now,
+                expiresAt = now + 600_000,
+            )
+
+        assertIs<Ok<*>>(authorizationSessionStore.put(correlationState, session, ttlSeconds = 600))
+        val persistedSession = authorizationSessionStore.get(correlationState)
+        assertIs<Ok<*>>(persistedSession)
+        assertEquals(instanceId, persistedSession.value?.instanceId)
     }
 
     // =========================================================================
@@ -118,7 +147,7 @@ class ResponseCodeProtectionTest {
         runTest {
             val f = createFixture()
             // Given: A valid direct_post response
-            val vpToken = """{"driver_license":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"driver_license":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val originalRequest =
                 AuthorizationRequest(
                     clientId = "https://verifier.example.com",
@@ -137,6 +166,7 @@ class ResponseCodeProtectionTest {
                     dcqlQuery = testDcqlQuery,
                     redirectUri = "https://verifier.example.com/callback",
                 )
+            f.persistAuthorizationSession(args, instanceId = "verifier-instance-response-code-generation")
 
             // When: Handling the direct_post response
             val result = f.handleCommand.handleDirectPostResponse(args)
@@ -158,19 +188,21 @@ class ResponseCodeProtectionTest {
     fun `test handle direct_post appends response_code to existing query params`() =
         runTest {
             val f = createFixture()
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val originalRequest =
                 AuthorizationRequest(
                     clientId = "https://verifier.example.com",
                     redirectUri = "https://verifier.example.com/callback?existing=param",
+                    state = "response-code-existing-query-state",
                 )
             val args =
                 HandleDirectPostResponseArgs(
-                    responseParams = mapOf("vp_token" to vpToken),
+                    responseParams = mapOf("vp_token" to vpToken, "state" to "response-code-existing-query-state"),
                     originalRequest = originalRequest,
                     dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
                     redirectUri = "https://verifier.example.com/callback?existing=param",
                 )
+            f.persistAuthorizationSession(args, instanceId = "verifier-instance-response-code-existing-query")
 
             val result = f.handleCommand.handleDirectPostResponse(args)
 
@@ -188,15 +220,17 @@ class ResponseCodeProtectionTest {
             val f = createFixture()
             val args =
                 HandleDirectPostResponseArgs(
-                    responseParams = mapOf("state" to "test"), // Missing vp_token
+                    responseParams = mapOf("state" to "response-code-invalid-vp-token-state"), // Missing vp_token
                     originalRequest =
                         AuthorizationRequest(
                             clientId = "https://verifier.example.com",
                             redirectUri = "https://verifier.example.com/callback",
+                            state = "response-code-invalid-vp-token-state",
                         ),
                     dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
                     redirectUri = "https://verifier.example.com/callback",
                 )
+            f.persistAuthorizationSession(args, instanceId = "verifier-instance-response-code-invalid-vp-token")
 
             val result = f.handleCommand.handleDirectPostResponse(args)
 
@@ -216,7 +250,7 @@ class ResponseCodeProtectionTest {
         runTest {
             val f = createFixture()
             // Given: A stored response
-            val vpToken = """{"license":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"license":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val handleArgs =
                 HandleDirectPostResponseArgs(
                     responseParams =
@@ -233,6 +267,7 @@ class ResponseCodeProtectionTest {
                     dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
                     redirectUri = "https://verifier.example.com/callback",
                 )
+            f.persistAuthorizationSession(handleArgs, instanceId = "verifier-instance-response-code-retrieval")
             val handleResult = f.handleCommand.handleDirectPostResponse(handleArgs)
             val responseCode = handleResult.getOrThrow().responseCode
 
@@ -257,20 +292,21 @@ class ResponseCodeProtectionTest {
         runTest {
             val f = createFixture()
             // Given: A stored response
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
-            val handleResult =
-                f.handleCommand.handleDirectPostResponse(
-                    HandleDirectPostResponseArgs(
-                        responseParams = mapOf("vp_token" to vpToken),
-                        originalRequest =
-                            AuthorizationRequest(
-                                clientId = "https://verifier.example.com",
-                                redirectUri = "https://verifier.example.com/callback",
-                            ),
-                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
-                        redirectUri = "https://verifier.example.com/callback",
-                    ),
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
+            val handleArgs =
+                HandleDirectPostResponseArgs(
+                    responseParams = mapOf("vp_token" to vpToken, "state" to "response-code-single-use-state"),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "response-code-single-use-state",
+                        ),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    redirectUri = "https://verifier.example.com/callback",
                 )
+            f.persistAuthorizationSession(handleArgs, instanceId = "verifier-instance-response-code-single-use")
+            val handleResult = f.handleCommand.handleDirectPostResponse(handleArgs)
             val responseCode = handleResult.getOrThrow().responseCode
 
             // When: First retrieval (marks as used)
@@ -294,20 +330,21 @@ class ResponseCodeProtectionTest {
         runTest {
             val f = createFixture()
             // Given: A stored response
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
-            val handleResult =
-                f.handleCommand.handleDirectPostResponse(
-                    HandleDirectPostResponseArgs(
-                        responseParams = mapOf("vp_token" to vpToken),
-                        originalRequest =
-                            AuthorizationRequest(
-                                clientId = "https://verifier.example.com",
-                                redirectUri = "https://verifier.example.com/callback",
-                            ),
-                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
-                        redirectUri = "https://verifier.example.com/callback",
-                    ),
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
+            val handleArgs =
+                HandleDirectPostResponseArgs(
+                    responseParams = mapOf("vp_token" to vpToken, "state" to "response-code-reusable-state"),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "response-code-reusable-state",
+                        ),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    redirectUri = "https://verifier.example.com/callback",
                 )
+            f.persistAuthorizationSession(handleArgs, instanceId = "verifier-instance-response-code-reusable")
+            val handleResult = f.handleCommand.handleDirectPostResponse(handleArgs)
             val responseCode = handleResult.getOrThrow().responseCode
 
             // When: Retrieving without marking as used
@@ -346,7 +383,7 @@ class ResponseCodeProtectionTest {
     fun `test store generates unique response codes`() =
         runTest {
             val f = createFixture()
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val parsedResponse =
                 f.parseCommand
                     .parseAuthorizationResponse(
@@ -372,7 +409,7 @@ class ResponseCodeProtectionTest {
     fun `test store respects TTL`() =
         runTest {
             val f = createFixture()
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val parsedResponse =
                 f.parseCommand
                     .parseAuthorizationResponse(
@@ -409,7 +446,7 @@ class ResponseCodeProtectionTest {
     fun `test cleanup removes expired entries`() =
         runTest {
             val f = createFixture()
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val parsedResponse =
                 f.parseCommand
                     .parseAuthorizationResponse(
@@ -435,7 +472,7 @@ class ResponseCodeProtectionTest {
     fun `test delete removes entry`() =
         runTest {
             val f = createFixture()
-            val vpToken = """{"query":"eyJhbGciOiJFUzI1NiJ9.payload.sig"}"""
+            val vpToken = """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}"""
             val parsedResponse =
                 f.parseCommand
                     .parseAuthorizationResponse(

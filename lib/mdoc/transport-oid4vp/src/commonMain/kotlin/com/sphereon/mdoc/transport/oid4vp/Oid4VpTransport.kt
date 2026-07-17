@@ -21,12 +21,14 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.toException
 import com.sphereon.core.compat.Uuid
 import com.sphereon.core.defaults.log.AppNoLogService
 import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceRequestCborCodec
@@ -48,6 +50,7 @@ import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.oid4vpNonce
 import com.sphereon.openid.oid4vp.common.responseUri
+import com.sphereon.openid.oid4vp.common.selectEncryptedResponseJwk
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
@@ -230,8 +233,11 @@ class Oid4VpTransport(
 
                 this.resolvedRequest = resolvedRequest
                 this.presentationDefinition = presentationDefinition
-                this.authorizationRequestNonce = parsedRequest.oid4vpNonce
-                this.responseUri = parsedRequest.responseUri ?: parsedRequest.redirectUri
+                // The signed Request Object is authoritative for values covered by the
+                // OpenID4VP 1.0 Final SessionTranscript. Resolution has already merged and
+                // validated it, so never fall back to the outer invocation URI here.
+                this.authorizationRequestNonce = resolvedRequest.request.oid4vpNonce
+                this.responseUri = resolvedRequest.request.responseUri ?: resolvedRequest.request.redirectUri
 
                 if (authorizationRequestNonce == null) {
                     return@withLock Err(
@@ -313,19 +319,22 @@ class Oid4VpTransport(
      * Must be called after open() has completed successfully so the auth-request inputs
      * (`response_uri`, `nonce`) are populated.
      *
-     * @param verifierEncryptionJwkThumbprint Raw 32-byte SHA-256 thumbprint (RFC 7638) of
-     *   the verifier's encryption-key JWK; null for unencrypted response modes.
      */
-    fun getSessionTranscript(verifierEncryptionJwkThumbprint: ByteArray? = null): com.sphereon.mdoc.transfer.reader.SessionTranscript {
+    fun getSessionTranscript(): com.sphereon.mdoc.transfer.reader.SessionTranscript {
         requireOpen()
 
-        val clientId = options.clientId
+        val clientId =
+            resolvedRequest
+                ?.request
+                ?.clientId
+                ?: error("Authorization Request not resolved")
         val responseUri =
             this.responseUri
                 ?: error("response_uri not set - Authorization Request not fetched")
         val nonce =
             this.authorizationRequestNonce
                 ?: error("nonce not set - Authorization Request not fetched")
+        val verifierEncryptionJwkThumbprint = resolveVerifierEncryptionJwkThumbprint()
 
         log.info("Creating OID4VP session transcript per §B.2.6")
         log.debug("clientId: $clientId")
@@ -347,6 +356,23 @@ class Oid4VpTransport(
 
         log.info("OID4VP session transcript created")
         return sessionTranscript
+    }
+
+    private fun resolveVerifierEncryptionJwkThumbprint(): ByteArray? {
+        val request = resolvedRequest ?: error("Authorization Request not resolved")
+        val responseMode =
+            ResponseMode.fromValue(request.request.responseMode ?: ResponseMode.DIRECT_POST.value)
+        if (responseMode != ResponseMode.DIRECT_POST_JWT && responseMode != ResponseMode.IAE_POST_JWT) {
+            return null
+        }
+
+        val encryptionJwk =
+            request.clientMetadata
+                ?.selectEncryptedResponseJwk()
+                ?: error("Encrypted OID4VP response requires an encryption JWK with an alg in client_metadata.jwks")
+        return tryGenerateJwkThumbprint(encryptionJwk)
+            .getOrElse { throw it.toException() }
+            .decodeFromBase64Url()
     }
 
     override suspend fun messageSendBlocking(message: ByteArray) {
@@ -467,9 +493,16 @@ class Oid4VpTransport(
                     holderFlow.processAuthorizationRequest(
                         presentationDefinition = presentationDef,
                         availableDocuments = availableDocuments,
-                        clientId = options.clientId,
+                        clientId =
+                            resolvedRequest
+                                ?.request
+                                ?.clientId
+                                ?: return@withLock Err(
+                                    Oid4vpError.InvalidRequest("Authorization Request not resolved").toIdkError(),
+                                ),
                         responseUri = responseUri,
                         authorizationRequestNonce = nonce,
+                        verifierEncryptionJwkThumbprint = resolveVerifierEncryptionJwkThumbprint(),
                         mdocNonce = mdocNonce,
                     )
 

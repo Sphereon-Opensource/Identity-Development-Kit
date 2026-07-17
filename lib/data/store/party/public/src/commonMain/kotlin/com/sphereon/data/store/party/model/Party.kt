@@ -68,6 +68,9 @@ data class Party
         /** Reference to the owning party (for identities, this is the person/org that owns the identity) */
         @SerialName("ownerId")
         val ownerId: Uuid? = null,
+        /** Home organization unit for this Party. Root organization-unit Parties have no home unit. */
+        @SerialName("organizationUnitId")
+        val organizationUnitId: Uuid? = null,
         /** When the party was created */
         @SerialName("createdAt")
         val createdAt: Instant,

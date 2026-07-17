@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.holder
 
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import kotlinx.serialization.Serializable
 
 // ============================================================================
@@ -108,7 +109,21 @@ data class ExchangeAuthorizationCodeArgs(
     val codeVerifier: String,
     val redirectUri: String,
     val clientId: String? = null,
-)
+    /** Optional RFC 9449 DPoP proof JWT to send as the `DPoP` token endpoint header. */
+    val dpopProofJwt: String? = null,
+    /** Optional OAuth attestation-based client-auth JWT for the `OAuth-Client-Attestation` header. */
+    val clientAttestationJwt: String? = null,
+    /** Optional PoP JWT for the `OAuth-Client-Attestation-PoP` header. */
+    val clientAttestationPopJwt: String? = null,
+    /** Optional OAuth2 token endpoint client authentication configuration. */
+    val clientAuthentication: ClientAuthenticationConfig? = null,
+) {
+    init {
+        require((clientAttestationJwt == null) == (clientAttestationPopJwt == null)) {
+            "clientAttestationJwt and clientAttestationPopJwt must be supplied together"
+        }
+    }
+}
 
 /**
  * Command for exchanging an authorization code for tokens.

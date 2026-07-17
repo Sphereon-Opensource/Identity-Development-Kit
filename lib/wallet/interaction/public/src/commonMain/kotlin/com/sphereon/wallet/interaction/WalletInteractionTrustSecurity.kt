@@ -43,6 +43,18 @@ interface WalletTrustPolicy {
                         else -> WalletTrustPolicyDecision(WalletTrustPolicyAction.WARN)
                     }
             }
+
+        /**
+         * Always ALLOW, regardless of [WalletCounterpartyTrustSummary.status] (including BLOCKED).
+         * For the conformance profile only: a conformance run deliberately trusts arbitrary suite
+         * issuer/verifier endpoints so the headless runner can drive OIDF conformance non-interactively.
+         * Production profiles never use this; they use [warn].
+         */
+        val allow: WalletTrustPolicy =
+            object : WalletTrustPolicy {
+                override suspend fun evaluate(summary: WalletCounterpartyTrustSummary): WalletTrustPolicyDecision =
+                    WalletTrustPolicyDecision(WalletTrustPolicyAction.ALLOW)
+            }
     }
 }
 
@@ -50,6 +62,14 @@ interface WalletSecurityGate {
     suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult
 
     companion object {
+        /** Fail-closed default for incomplete application graphs and direct context construction. */
+        val deny: WalletSecurityGate =
+            object : WalletSecurityGate {
+                override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult =
+                    WalletSecurityGateResult.Denied("wallet.interaction.security.gate_not_configured")
+            }
+
+        /** Explicit test/conformance helper; production composition must install a real gate. */
         val allow: WalletSecurityGate =
             object : WalletSecurityGate {
                 override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult =

@@ -37,6 +37,7 @@ import kotlin.test.assertTrue
 class DeferredCredentialEntryTest {
     private val json = Oid4vciJson.lenient
     private val jsonNoDefaults = Oid4vciJson.lenientNoDefaults
+    private val instanceId = "issuer-instance-deferred-entry-serialization"
 
     private val now = 1711900800L // fixed epoch seconds for deterministic tests
     private val expiresAt = now + 3600
@@ -51,6 +52,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-single-001",
                 issuanceSessionId = "session-abc",
+                instanceId = instanceId,
                 credentialConfigurationId = "IdentityCredential",
                 status = DeferredCredentialStatus.READY,
                 credentialResponse = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.credential.sig"),
@@ -64,6 +66,7 @@ class DeferredCredentialEntryTest {
         assertEquals(entry, decoded)
         assertEquals("txn-single-001", decoded.transactionId)
         assertEquals("session-abc", decoded.issuanceSessionId)
+        assertEquals(instanceId, decoded.instanceId)
         assertEquals("IdentityCredential", decoded.credentialConfigurationId)
         assertEquals(DeferredCredentialStatus.READY, decoded.status)
         assertNotNull(decoded.credentialResponse)
@@ -82,6 +85,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-batch-001",
                 issuanceSessionId = "session-def",
+                instanceId = instanceId,
                 credentialConfigurationId = "BatchCredential",
                 status = DeferredCredentialStatus.READY,
                 credentialResponses =
@@ -116,6 +120,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-notif-001",
                 issuanceSessionId = "session-ghi",
+                instanceId = instanceId,
                 credentialConfigurationId = "IdentityCredential",
                 status = DeferredCredentialStatus.READY,
                 credentialResponse = JsonPrimitive("eyJ.cred.sig"),
@@ -141,6 +146,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-transition-001",
                 issuanceSessionId = "session-jkl",
+                instanceId = instanceId,
                 credentialConfigurationId = "IdentityCredential",
                 status = DeferredCredentialStatus.PENDING,
                 createdAt = now,
@@ -176,6 +182,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-transition-002",
                 issuanceSessionId = "session-mno",
+                instanceId = instanceId,
                 credentialConfigurationId = "IdentityCredential",
                 status = DeferredCredentialStatus.READY,
                 credentialResponse = JsonPrimitive("eyJ.cred.sig"),
@@ -205,6 +212,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-failed-001",
                 issuanceSessionId = "session-pqr",
+                instanceId = instanceId,
                 credentialConfigurationId = "IdentityCredential",
                 status = DeferredCredentialStatus.PENDING,
                 createdAt = now,
@@ -232,6 +240,7 @@ class DeferredCredentialEntryTest {
             DeferredCredentialEntry(
                 transactionId = "txn-defaults",
                 issuanceSessionId = "session-stu",
+                instanceId = instanceId,
                 credentialConfigurationId = "IdentityCredential",
                 status = DeferredCredentialStatus.PENDING,
                 createdAt = now,

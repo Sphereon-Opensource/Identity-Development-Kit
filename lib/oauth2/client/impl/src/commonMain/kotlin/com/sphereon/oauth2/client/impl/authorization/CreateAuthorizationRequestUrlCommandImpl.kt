@@ -62,6 +62,9 @@ import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Implementation of CreateAuthorizationRequestUrlCommand
@@ -196,31 +199,42 @@ class CreateAuthorizationRequestUrlCommandImpl(
     ): Map<String, String?> {
         val request = options.authorizationRequest
 
-        return mapOf(
-            "response_type" to request.responseType,
-            "client_id" to request.clientId,
-            "redirect_uri" to request.redirectUri,
-            "scope" to request.scope,
-            "state" to request.state,
-            "resource" to request.resource,
-            "issuer_state" to request.issuerState,
-            "nonce" to request.nonce,
-            "response_mode" to request.responseMode,
-            "request_uri" to request.requestUri,
-            "request" to request.request,
-            "code_challenge" to pkceData?.codeChallenge,
-            "code_challenge_method" to pkceData?.codeChallengeMethod?.value,
+        return buildMap {
+            put("response_type", request.responseType)
+            put("client_id", request.clientId)
+            put("redirect_uri", request.redirectUri)
+            put("scope", request.scope)
+            put("state", request.state)
+            put("resource", request.resource)
+            put("issuer_state", request.issuerState)
+            put("nonce", request.nonce)
+            put("response_mode", request.responseMode)
+            put("request_uri", request.requestUri)
+            put("request", request.request)
+            put("code_challenge", pkceData?.codeChallenge)
+            put("code_challenge_method", pkceData?.codeChallengeMethod?.value)
             // OIDC parameters (OpenID Connect Core 1.0 Section 3.1.2.1)
-            "prompt" to request.prompt,
-            "login_hint" to request.loginHint,
-            "max_age" to request.maxAge?.toString(),
-            "ui_locales" to request.uiLocales,
-            "id_token_hint" to request.idTokenHint,
-            "acr_values" to request.acrValues,
-            "display" to request.display,
+            put("prompt", request.prompt)
+            put("login_hint", request.loginHint)
+            put("max_age", request.maxAge?.toString())
+            put("ui_locales", request.uiLocales)
+            put("id_token_hint", request.idTokenHint)
+            put("acr_values", request.acrValues)
+            put("display", request.display)
+            request.additionalParameters.forEach { (key, value) ->
+                put(key, value.authorizationRequestParameterValue())
+            }
             // TODO: Phase 3 - Add dpop_jkt if DPoP is used
-        )
+        }
     }
+
+    private fun JsonElement.authorizationRequestParameterValue(): String =
+        when (this) {
+            is JsonPrimitive ->
+                if (isString) jsonPrimitive.content else toString()
+
+            else -> json.encodeToString(JsonElement.serializer(), this)
+        }
 
     private suspend fun pushAuthorizationRequest(
         endpoint: String,
@@ -230,15 +244,15 @@ class CreateAuthorizationRequestUrlCommandImpl(
         clientAuthentication: ClientAuthenticationConfig?,
         pkceData: PkceData?,
     ): IdkResult<AuthorizationRequestUrlResult, Oauth2Error> {
-        val httpClient =
-            httpClientFactory.createClient(
-                HttpClientOptions(
-                    engine = null,
-                    enableContentNegotiation = true,
-                ),
-            )
-
         return try {
+            val httpClient =
+                httpClientFactory.createClient(
+                    HttpClientOptions(
+                        engine = null,
+                        enableContentNegotiation = true,
+                    ),
+                )
+
             // Apply client authentication if provided
             val authResult =
                 if (clientAuthentication != null) {

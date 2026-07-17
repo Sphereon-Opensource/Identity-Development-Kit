@@ -8,12 +8,15 @@ package com.sphereon.wallet.interaction.protocol.oid4vp
 
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ResponseMode
+import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.interaction.WalletClaimDescriptor
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
+import com.sphereon.wallet.interaction.WalletCounterpartyAssociationRequest
 import com.sphereon.wallet.interaction.WalletCounterpartySummary
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustRequest
 import com.sphereon.wallet.interaction.WalletCredentialRequirement
@@ -35,18 +38,22 @@ import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.WalletInteractionSession
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.WalletProtocolCapability
 import com.sphereon.wallet.interaction.WalletProtocolExecutionRequest
 import com.sphereon.wallet.interaction.WalletProtocolMatch
 import com.sphereon.wallet.interaction.WalletSecurityGateResult
 import com.sphereon.wallet.interaction.WalletSecurityOperation
+import com.sphereon.wallet.interaction.WalletSecurityGrantValidation
+import com.sphereon.wallet.interaction.validateFor
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.Clock
 
 class Oid4vpWalletInteractionProtocolAdapter(
     private val holder: Oid4vpHolderService? = null,
@@ -69,7 +76,10 @@ class Oid4vpWalletInteractionProtocolAdapter(
         val raw = entryPoint.raw ?: return WalletProtocolMatch.none
         val lower = raw.lowercase()
         return when {
-            lower.startsWith("openid4vp://") -> WalletProtocolMatch.strong(capability.priority, "oid4vp.match.scheme")
+            lower.startsWith("openid4vp://") ||
+                lower.startsWith("haip-vp://") ||
+                lower.startsWith("mdoc-openid4vp://") ->
+                WalletProtocolMatch.strong(capability.priority, "oid4vp.match.scheme")
             "response_type=vp_token" in lower || "dcql_query=" in lower -> WalletProtocolMatch.strong(capability.priority, "oid4vp.match.authorization_request")
             "request_uri=" in lower && ("openid" in lower || "vp" in lower) -> WalletProtocolMatch.weak(capability.priority, "oid4vp.match.request_uri_candidate")
             else -> WalletProtocolMatch.none
@@ -106,11 +116,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         entryPoint = entryPoint,
                     ).copy(
                         terminal = true,
-                        error =
-                            WalletInteractionError(
-                                code = "oid4vp.request_parse_failed",
-                                messageKey = "wallet.interaction.error.oid4vp_request_parse_failed",
-                            ),
+                        error = parsed.error.toOid4vpRequestError(),
                     )
             return WalletInteractionSession(context.sessionId, state)
         }
@@ -119,7 +125,28 @@ class Oid4vpWalletInteractionProtocolAdapter(
         if (parsedRequest != null) {
             context.storePrivate(mapOf("authorization_request" to json.encodeToString(AuthorizationRequest.serializer(), parsedRequest)))
         }
-        val resolved = parsedRequest?.let { holder?.resolveAuthorizationRequest(it) }?.takeIf { it.isOk }?.value
+        val resolvedResult = parsedRequest?.let { holder?.resolveAuthorizationRequest(it) }
+        if (resolvedResult != null && resolvedResult.isErr) {
+            val state =
+                context
+                    .baseState(
+                        status = WalletInteractionStatus.Failed,
+                        flowKind = WalletInteractionFlowKind.CredentialPresent,
+                        protocol = WalletProtocol.OID4VP,
+                        adapterId = capability.adapterId,
+                        entryPoint = entryPoint,
+                    ).copy(
+                        terminal = true,
+                        error =
+                            WalletInteractionError(
+                                code = "oid4vp.request_resolve_failed",
+                                messageKey = "wallet.interaction.error.oid4vp_request_resolve_failed",
+                                arguments = mapOf("providerErrorCode" to resolvedResult.error.code),
+                            ),
+                    )
+            return WalletInteractionSession(context.sessionId, state)
+        }
+        val resolved = resolvedResult?.takeIf { it.isOk }?.value
         val interactionPurpose = context.resolveInteractionPurpose(parsedRequest, resolved)
         val activityType =
             when (interactionPurpose) {
@@ -127,7 +154,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                 Oid4vpInteractionPurpose.PRESENTATION -> WalletInteractionActivityType.CREDENTIAL_PRESENTATION
             }
         val interactionContext = interactionPurpose.metadataValue
-        val verifier =
+        val unresolvedVerifier =
             resolved?.verifierInfo?.let {
                 WalletCounterpartySummary(
                     role = WalletCounterpartyRole.VERIFIER,
@@ -135,13 +162,18 @@ class Oid4vpWalletInteractionProtocolAdapter(
                     displayName = it.displayName ?: it.clientId,
                     logoUri = it.logoUri,
                     metadata =
-                        mapOf(
-                            "client_id_scheme" to it.clientIdScheme.name,
-                            "interaction_context" to interactionContext,
-                            "activity_type" to activityType.name,
-                        ),
+                        buildMap {
+                            put("client_id_scheme", it.clientIdScheme.name)
+                            put("interaction_context", interactionContext)
+                            put("activity_type", activityType.name)
+                            (resolved.request.requestUri ?: parsedRequest.requestUri)?.let { uri -> put("request_uri", uri) }
+                            resolved.request.responseUri?.let { uri -> put("response_uri", uri) }
+                            it.trustRoot?.let { uri -> put("trust_root", uri) }
+                        },
                 )
             } ?: fallbackVerifier(entryPoint, activityType, interactionContext)
+        val encounter = context.recordCounterpartyEncounter(WalletProtocol.OID4VP, unresolvedVerifier)
+        val verifier = encounter.counterparty
         val activity =
             WalletInteractionActivitySummary(
                 type = activityType,
@@ -175,7 +207,8 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         protocol = WalletProtocol.OID4VP,
                     ),
                 ).let { trust -> trust.copy(policyAction = context.trustPolicy.evaluate(trust).action) }
-        if (trust.policyAction == WalletTrustPolicyAction.BLOCK) {
+                .copy(counterparty = verifier)
+        if (!encounter.organizationCreated && trust.policyAction == WalletTrustPolicyAction.BLOCK) {
             val state =
                 context
                     .baseState(
@@ -187,6 +220,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                     ).copy(
                         activity = activity,
                         counterparty = verifier,
+                        counterpartyEncounter = encounter,
                         trust = trust,
                         credentialSelection = requirements,
                         disclosure = WalletDisclosureSummary(verifier = verifier, requestedClaims = requestedClaims),
@@ -200,7 +234,11 @@ class Oid4vpWalletInteractionProtocolAdapter(
             return WalletInteractionSession(context.sessionId, state)
         }
         val reviewStatus =
-            if (trust.policyAction == WalletTrustPolicyAction.ASK_USER ||
+            if (encounter.organizationCreated) {
+                WalletInteractionStatus.CounterpartyNotice
+            } else if (encounter.firstInteraction ||
+                trust.policyAction == WalletTrustPolicyAction.WARN ||
+                trust.policyAction == WalletTrustPolicyAction.ASK_USER ||
                 trust.policyAction == WalletTrustPolicyAction.FIRST_CONTACT_PROMPT
             ) {
                 WalletInteractionStatus.TrustReview
@@ -220,6 +258,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                 ).copy(
                     activity = activity,
                     counterparty = verifier,
+                    counterpartyEncounter = encounter,
                     trust = trust,
                     credentialSelection = requirements,
                     disclosure = WalletDisclosureSummary(verifier = verifier, requestedClaims = requestedClaims),
@@ -237,10 +276,16 @@ class Oid4vpWalletInteractionProtocolAdapter(
                 sessionState.next(WalletInteractionStatus.Cancelled, terminal = true)
             }
 
+            WalletInteractionActionType.RESOLVE_COUNTERPARTY_CONTACT -> {
+                context.resolveCounterpartyContact(sessionState, action)
+            }
+
             WalletInteractionActionType.SELECT_CREDENTIALS,
             WalletInteractionActionType.CONTINUE,
             -> {
-                if (sessionState.status == WalletInteractionStatus.TrustReview) {
+                if (sessionState.status == WalletInteractionStatus.CounterpartyNotice) {
+                    sessionState.rejectAction("oid4vp.counterparty_resolution_required")
+                } else if (sessionState.status == WalletInteractionStatus.TrustReview) {
                     sessionState.copy(
                         status =
                             if (sessionState.credentialSelection
@@ -298,13 +343,30 @@ class Oid4vpWalletInteractionProtocolAdapter(
             }
 
             WalletInteractionActionType.APPROVE_SECURITY_CHALLENGE -> {
-                action.securityGrant?.let { grant -> context.storePrivate(mapOf("security_grant_id" to grant.grantId)) }
-                context.applyPresentationResult(
-                    sessionState.copy(
-                        revision = sessionState.revision + 1,
-                        securityChallenge = null,
-                    ),
-                )
+                val grant = action.sensitiveInputRef?.let { context.sensitiveInputAuthority.consumeSecurityGrant(sessionState.sessionId, it) }
+                val validation =
+                    grant?.validateFor(
+                        sessionState.securityChallenge,
+                        sessionState.walletUnitId,
+                        sessionState.counterparty?.identifier,
+                        Clock.System.now().epochSeconds,
+                    )
+                if (grant == null || validation is WalletSecurityGrantValidation.Invalid) {
+                    sessionState.next(
+                        status = WalletInteractionStatus.Failed,
+                        error = WalletInteractionError("oid4vp.security_grant_ref_invalid", "wallet.interaction.error.security_grant_ref_invalid", retryable = true),
+                    )
+                } else {
+                    context.storePrivate(
+                        mapOf(
+                            "security_grant_id" to grant.grantId,
+                            SECURITY_OPERATION_BINDING_PRIVATE_KEY to grant.evidence["operation_binding"].orEmpty(),
+                        ),
+                    )
+                    context.applyPresentationResult(
+                        sessionState.copy(revision = sessionState.revision + 1, securityChallenge = null),
+                    )
+                }
             }
 
             else -> {
@@ -316,6 +378,94 @@ class Oid4vpWalletInteractionProtocolAdapter(
             }
         }
 
+    private suspend fun WalletInteractionContext.resolveCounterpartyContact(
+        sessionState: WalletInteractionState,
+        action: WalletInteractionAction,
+    ): WalletInteractionState {
+        if (sessionState.status != WalletInteractionStatus.CounterpartyNotice) {
+            return sessionState.rejectAction("oid4vp.action_counterparty_resolution_not_allowed")
+        }
+        val encounter = sessionState.counterpartyEncounter
+            ?: return sessionState.rejectAction("oid4vp.counterparty_encounter_missing")
+        val decision = action.counterpartyAssociation
+            ?: return sessionState.rejectAction("oid4vp.counterparty_association_missing")
+        val resolvedEncounter =
+            counterpartyEncounterRegistry.resolveAssociation(
+                WalletCounterpartyAssociationRequest(
+                    walletUnitId = sessionState.walletUnitId,
+                    encounter = encounter,
+                    decision = decision,
+                ),
+            )
+        require(resolvedEncounter.resolved) { "wallet_counterparty_association_unresolved" }
+        require(resolvedEncounter.associationCandidates.isEmpty()) { "wallet_counterparty_association_candidates_remaining" }
+        require(resolvedEncounter.counterparty.role == encounter.counterparty.role) { "wallet_counterparty_association_role_changed" }
+        require(resolvedEncounter.counterparty.identifier == encounter.counterparty.identifier) { "wallet_counterparty_association_identifier_changed" }
+
+        val counterparty = resolvedEncounter.counterparty
+        val trust =
+            trustResolver
+                .resolve(
+                    WalletCounterpartyTrustRequest(
+                        counterparty = counterparty,
+                        protocol = WalletProtocol.OID4VP,
+                    ),
+                ).let { resolved -> resolved.copy(policyAction = trustPolicy.evaluate(resolved).action) }
+                .copy(counterparty = counterparty)
+        val activity = sessionState.activity?.copy(counterparty = counterparty)
+        val disclosure = sessionState.disclosure?.copy(verifier = counterparty)
+        if (trust.policyAction == WalletTrustPolicyAction.BLOCK) {
+            return sessionState.copy(
+                status = WalletInteractionStatus.Failed,
+                revision = sessionState.revision + 1,
+                activity = activity,
+                counterparty = counterparty,
+                counterpartyEncounter = resolvedEncounter,
+                trust = trust,
+                disclosure = disclosure,
+                terminal = true,
+                error =
+                    WalletInteractionError(
+                        code = "oid4vp.verifier_blocked",
+                        messageKey = "wallet.interaction.error.verifier_blocked",
+                    ),
+            )
+        }
+        val nextStatus =
+            if (resolvedEncounter.firstInteraction ||
+                trust.policyAction == WalletTrustPolicyAction.WARN ||
+                trust.policyAction == WalletTrustPolicyAction.ASK_USER ||
+                trust.policyAction == WalletTrustPolicyAction.FIRST_CONTACT_PROMPT
+            ) {
+                WalletInteractionStatus.TrustReview
+            } else if (sessionState.credentialSelection?.requirements.orEmpty().isEmpty()) {
+                WalletInteractionStatus.DisclosureConsent
+            } else {
+                WalletInteractionStatus.CredentialSelection
+            }
+        return sessionState.copy(
+            status = nextStatus,
+            revision = sessionState.revision + 1,
+            activity = activity,
+            counterparty = counterparty,
+            counterpartyEncounter = resolvedEncounter,
+            trust = trust,
+            disclosure = disclosure,
+            error = null,
+        )
+    }
+
+    private fun WalletInteractionState.rejectAction(code: String): WalletInteractionState =
+        copy(
+            revision = revision + 1,
+            error =
+                WalletInteractionError(
+                    code = code,
+                    messageKey = "wallet.interaction.error.action_not_allowed",
+                    retryable = true,
+                ),
+        )
+
     private suspend fun WalletInteractionContext.authorizePresentationSharing(sessionState: WalletInteractionState): WalletInteractionState {
         val securityContext = securityContextResolver.resolve(this, sessionState)
         val result =
@@ -323,7 +473,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                 WalletProtocolExecutionRequest(
                     operationId = "${sessionState.sessionId.value}-share",
                     sessionId = sessionState.sessionId,
-                    walletInstanceId = sessionState.walletInstanceId,
+                    sessionWalletUnitId = sessionState.walletUnitId,
                     protocol = WalletProtocol.OID4VP,
                     operation = WalletSecurityOperation.PRESENTATION_SHARING,
                     audience = sessionState.counterparty?.identifier,
@@ -338,7 +488,12 @@ class Oid4vpWalletInteractionProtocolAdapter(
             )
         return when (result) {
             is WalletSecurityGateResult.Authorized -> {
-                storePrivate(mapOf("security_grant_id" to result.grant.grantId))
+                storePrivate(
+                    mapOf(
+                        "security_grant_id" to result.grant.grantId,
+                        SECURITY_OPERATION_BINDING_PRIVATE_KEY to result.grant.evidence["operation_binding"].orEmpty(),
+                    ),
+                )
                 applyPresentationResult(sessionState.copy(revision = sessionState.revision + 1, securityChallenge = null))
             }
 
@@ -384,10 +539,19 @@ class Oid4vpWalletInteractionProtocolAdapter(
             }
 
             is Oid4vpPresentationExecutionResult.RedirectRequired -> {
+                val handoffRef =
+                    sensitiveInputAuthority.register(
+                        sessionId = sessionState.sessionId,
+                        purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_REDIRECT_HANDOFF,
+                        value = result.redirectUri,
+                    )
                 sessionState.copy(
-                    status = WalletInteractionStatus.AuthorizationRequired,
-                    authorizationUrl = result.redirectUri,
+                    status = WalletInteractionStatus.Completed,
+                    revision = sessionState.revision + 1,
+                    completionHandoffRef = handoffRef,
+                    message = WalletDisplayMessage(titleKey = "wallet.interaction.oid4vp.shared"),
                     error = null,
+                    terminal = true,
                 )
             }
 
@@ -473,6 +637,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
 
     companion object {
         const val ADAPTER_ID: String = "oid4vp"
+        const val SECURITY_OPERATION_BINDING_PRIVATE_KEY: String = "security_operation_binding"
         internal val json: Json =
             Json {
                 ignoreUnknownKeys = true
@@ -483,8 +648,10 @@ class Oid4vpWalletInteractionProtocolAdapter(
             holder: Oid4vpHolderService,
             credentialStore: WalletCredentialStore,
             walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
+            jarmOptionsProvider: Oid4vpJarmOptionsProvider = Oid4vpJarmOptionsProvider.none,
             responseMode: ResponseMode? = null,
             priority: Int = 90,
+            sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider = Oid4vpSdJwtHolderBindingProvider.passthrough,
         ): Oid4vpWalletInteractionProtocolAdapter {
             val resolver = WalletStoreOid4vpCredentialResolver(credentialStore)
             return Oid4vpWalletInteractionProtocolAdapter(
@@ -494,7 +661,9 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         holder = holder,
                         selectedCredentialResolver = resolver,
                         walletConfigProvider = walletConfigProvider,
+                        jarmOptionsProvider = jarmOptionsProvider,
                         responseMode = responseMode,
+                        sdJwtHolderBindingProvider = sdJwtHolderBindingProvider,
                     ),
                 candidateResolver = resolver,
                 securityContextResolver = resolver,
@@ -503,6 +672,24 @@ class Oid4vpWalletInteractionProtocolAdapter(
             )
         }
     }
+}
+
+private fun IdkError.toOid4vpRequestError(): WalletInteractionError {
+    val (publicCode, retryable) =
+        when {
+            code == "HTTP_410" -> "oid4vp.request_uri_expired" to false
+            code == "HTTP_404" -> "oid4vp.request_uri_not_found" to false
+            code == "HTTP_REQUEST_FAILED" || code == "HTTP_408" || code == "HTTP_429" || code.startsWith("HTTP_5") ->
+                "oid4vp.request_uri_fetch_failed" to true
+            code.startsWith("HTTP_4") -> "oid4vp.request_uri_rejected" to false
+            else -> "oid4vp.request_parse_failed" to false
+        }
+    return WalletInteractionError(
+        code = publicCode,
+        messageKey = "wallet.interaction.error.oid4vp_request_parse_failed",
+        retryable = retryable,
+        arguments = mapOf("providerErrorCode" to code),
+    )
 }
 
 interface Oid4vpCredentialCandidateResolver {

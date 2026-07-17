@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.proof
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
@@ -30,6 +31,7 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -62,6 +64,8 @@ class AttestationProofVerifier(
         expectedClientId: String?,
         credentialConfigId: String,
         proofTypeSupported: ProofTypeSupported?,
+        expectedNonce: String?,
+        consumeNonce: Boolean,
     ): IdkResult<VerifiedProof, IdkError> {
         val attestationJwt =
             (proofValue as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull()
@@ -95,7 +99,15 @@ class AttestationProofVerifier(
                 ),
             )
         }
-        if (attestationNonce != null) {
+        if (expectedNonce != null && attestationNonce != expectedNonce) {
+            return Err(
+                IdkError.fromString(
+                    code = "invalid_nonce",
+                    message = "Invalid attestation proof: c_nonce does not match the credential request nonce",
+                ),
+            )
+        }
+        if (consumeNonce && attestationNonce != null) {
             val nonceEntry = nonceManager.consume(attestationNonce).getOrElse { return Err(it) }
             if (nonceEntry == null) {
                 return Err(
@@ -133,6 +145,38 @@ class AttestationProofVerifier(
                 keyAttestation = validated.keyAttestation,
             ),
         )
+    }
+
+    override fun extractNonce(proofValue: JsonElement): IdkResult<String?, IdkError> {
+        val attestationJwt =
+            (proofValue as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull()
+                ?: return Err(
+                    IdkError.fromString(
+                        code = Oid4vciErrors.INVALID_PROOF,
+                        message = "Invalid attestation proof: proof value must be a key-attestation JWT string",
+                    ),
+                )
+        val claims = parseJwtClaims(attestationJwt).getOrElse { return Err(it) }
+        return Ok(
+            claims["c_nonce"]?.jsonPrimitive?.contentOrNull()
+                ?: claims["nonce"]?.jsonPrimitive?.contentOrNull(),
+        )
+    }
+
+    private fun parseJwtClaims(jwt: String): IdkResult<JsonObject, IdkError> {
+        val payloadPart =
+            jwt.split('.').getOrNull(1)
+                ?: return Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = "Invalid attestation proof: compact JWT payload is missing"))
+        return try {
+            val payload = payloadPart.decodeFromBase64Url().decodeToString()
+            val parsed = Json.parseToJsonElement(payload)
+            Ok(
+                parsed as? JsonObject
+                    ?: return Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = "Invalid attestation proof: payload must be a JSON object")),
+            )
+        } catch (t: Throwable) {
+            Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = "Invalid attestation proof: failed to parse payload: ${t.message}"))
+        }
     }
 
     private fun kotlinx.serialization.json.JsonPrimitive.contentOrNull(): String? = if (isString) content else content.takeIf { it.isNotEmpty() && it != "null" }

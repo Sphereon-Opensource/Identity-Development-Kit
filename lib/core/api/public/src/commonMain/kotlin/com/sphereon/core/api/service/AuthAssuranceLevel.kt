@@ -43,6 +43,7 @@ enum class AuthAssuranceLevel(
 object Amr {
     const val MFA = "mfa"
     const val OTP = "otp"
+    const val WEBAUTHN = "webauthn"
     const val HWK = "hwk"
     const val SWK = "swk"
     const val PWD = "pwd"

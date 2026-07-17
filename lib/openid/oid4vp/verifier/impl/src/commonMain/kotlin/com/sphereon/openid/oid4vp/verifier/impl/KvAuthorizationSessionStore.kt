@@ -23,6 +23,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToHex
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.log.AppLogManager
+import com.sphereon.core.events.SessionEventService
 import com.sphereon.data.store.kv.InMemoryKvStoreConfig
 import com.sphereon.data.store.kv.KotlinxSerializationJsonKvCodec
 import com.sphereon.data.store.kv.KvNamespace
@@ -45,11 +46,14 @@ import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackDispatcher
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusUpdate
+import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierSessionEventTypes
+import com.sphereon.openid.oid4vp.verifier.impl.event.emitOid4vpSessionHistoryEvent
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCallbackConfig
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCreateArgs
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionError
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
+import com.sphereon.openid.oid4vp.verifier.model.Oid4vpSessionIdentity
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.statuslist.CredentialStatusPolicy
 import dev.whyoleg.cryptography.random.CryptographyRandom
@@ -91,6 +95,7 @@ class KvAuthorizationSessionStore(
     appLogManager: AppLogManager,
     private val execution: SessionExecution,
     private val clock: Clock,
+    private val eventService: SessionEventService? = null,
 ) : AuthorizationSessionStore {
     private val log = appLogManager.withTag("Oid4vpAuthorizationSessionStore")
     private val json = Json
@@ -245,6 +250,7 @@ class KvAuthorizationSessionStore(
 
     @Serializable
     internal data class AuthorizationSessionEntry(
+        val instanceId: String,
         val sessionId: String,
         val correlationId: String,
         val queryId: String? = null,
@@ -280,6 +286,7 @@ class KvAuthorizationSessionStore(
                     ?: AuthorizationSessionStatus.ERROR
 
             return AuthorizationSession(
+                instanceId = instanceId,
                 sessionId = sessionId,
                 correlationId = correlationId,
                 queryId = queryId,
@@ -310,6 +317,12 @@ class KvAuthorizationSessionStore(
         args: AuthorizationSessionCreateArgs,
         ttlSeconds: Long,
     ): IdkResult<AuthorizationSession, IdkError> {
+        val instanceId =
+            try {
+                Oid4vpSessionIdentity.normalize("instanceId", args.instanceId)
+            } catch (e: IllegalArgumentException) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = e.message ?: "Invalid verifier instanceId"))
+            }
         val now = clock.now().toEpochMilliseconds()
         val effectiveCorrelationId = correlationId ?: generateSecureId()
 
@@ -322,6 +335,7 @@ class KvAuthorizationSessionStore(
 
         val entry =
             AuthorizationSessionEntry(
+                instanceId = instanceId,
                 sessionId = sessionId,
                 correlationId = effectiveCorrelationId,
                 queryId = args.queryId,
@@ -477,6 +491,7 @@ class KvAuthorizationSessionStore(
 
         val entry =
             AuthorizationSessionEntry(
+                instanceId = value.instanceId,
                 sessionId = value.sessionId,
                 correlationId = value.correlationId,
                 queryId = value.queryId,
@@ -661,9 +676,33 @@ class KvAuthorizationSessionStore(
             return Err(IdkError.fromString(message = "Failed to update authorization session: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR"))
         }
 
+        val previous = existing.toPublic(json)
         val public = updated.toPublic(json)
+        emitStatusTransition(previous, public)
         dispatchIfConfigured(public)
         return Ok(public)
+    }
+
+    private suspend fun emitStatusTransition(
+        previous: AuthorizationSession,
+        current: AuthorizationSession,
+    ) {
+        if (previous.status == current.status) return
+        eventService?.emitOid4vpSessionHistoryEvent(
+            type = Oid4vpVerifierSessionEventTypes.STATUS_CHANGED,
+            origin = "oid4vp-authorization-session-store",
+            session = current,
+            oldState = previous.status.name,
+            newState = current.status.name,
+            stage = when (current.status) {
+                AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED -> "REQUEST_RETRIEVED"
+                AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_RECEIVED -> "RESPONSE_RECEIVED"
+                AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED -> "RESPONSE_VERIFIED"
+                AuthorizationSessionStatus.ERROR -> "ERROR"
+                else -> "STATUS"
+            },
+            outcome = if (current.status == AuthorizationSessionStatus.ERROR) "FAILED" else "SUCCEEDED",
+        )
     }
 
     private suspend fun dispatchIfConfigured(session: AuthorizationSession) {
@@ -682,9 +721,38 @@ class KvAuthorizationSessionStore(
                 errorMessage = session.error?.message,
             )
 
+        eventService?.emitOid4vpSessionHistoryEvent(
+            type = Oid4vpVerifierSessionEventTypes.CALLBACK_ATTEMPTED,
+            origin = "oid4vp-authorization-session-store",
+            session = session,
+            oldState = session.status.name,
+            newState = session.status.name,
+            stage = "CALLBACK",
+            outcome = "ATTEMPTED",
+        )
         callbackDispatcher.dispatch(callback.url, update).fold(
-            success = { },
+            success = {
+                eventService?.emitOid4vpSessionHistoryEvent(
+                    type = Oid4vpVerifierSessionEventTypes.CALLBACK_SUCCEEDED,
+                    origin = "oid4vp-authorization-session-store",
+                    session = session,
+                    oldState = session.status.name,
+                    newState = session.status.name,
+                    stage = "CALLBACK",
+                    outcome = "SUCCEEDED",
+                )
+            },
             failure = { e ->
+                eventService?.emitOid4vpSessionHistoryEvent(
+                    type = Oid4vpVerifierSessionEventTypes.CALLBACK_FAILED,
+                    origin = "oid4vp-authorization-session-store",
+                    session = session,
+                    oldState = session.status.name,
+                    newState = session.status.name,
+                    stage = "CALLBACK",
+                    outcome = "FAILED",
+                    errorCode = "callback_dispatch_failed",
+                )
                 // Best-effort: do not fail the main flow because callback delivery failed.
                 log.warn("Failed to dispatch authorization session callback: ${e.message.defaultMessage}")
             },

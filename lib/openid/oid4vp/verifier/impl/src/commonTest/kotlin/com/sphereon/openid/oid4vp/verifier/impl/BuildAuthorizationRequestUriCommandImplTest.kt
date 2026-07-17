@@ -110,7 +110,7 @@ class BuildAuthorizationRequestUriCommandImplTest {
         }
 
     @Test
-    fun testBuildUriWithHaipScheme() =
+    fun testBuildUriWithHaipVpFinalScheme() =
         runTest {
             val request =
                 buildOid4vpAuthorizationRequest(
@@ -123,13 +123,13 @@ class BuildAuthorizationRequestUriCommandImplTest {
             val args =
                 BuildAuthorizationRequestUriArgs(
                     request = request,
-                    scheme = Oid4vpUriScheme.HAIP,
+                    scheme = Oid4vpUriScheme.HAIP_VP,
                 )
 
             val result = command.buildAuthorizationRequestUri(args)
 
             assertIs<Ok<*>>(result)
-            assertTrue(result.value.value.startsWith("haip://?"))
+            assertTrue(result.value.value.startsWith("haip-vp://?"))
         }
 
     @Test

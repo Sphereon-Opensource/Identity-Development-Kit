@@ -31,6 +31,7 @@ import com.sphereon.openid.oid4vci.rest.DeleteCredentialOfferOutput
 import com.sphereon.openid.oid4vci.rest.DeleteCredentialOfferServiceCommand
 import com.sphereon.openid.oid4vci.rest.GetCredentialOfferStatusInput
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestEventTypes
+import com.sphereon.openid.oid4vci.rest.impl.event.putSessionEventIdentity
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -70,8 +71,7 @@ class DeleteCredentialOfferServiceCommandImpl(
         credentialOfferStore.delete(session.offerId)
         credentialOfferSessionStore.delete(input.correlationId)
 
-        try {
-            sessionEventService.emit(
+        sessionEventService.emit(
                 sessionEventService
                     .eventBuilder()
                     .type(Oid4vciRestEventTypes.SESSION_DELETED)
@@ -79,6 +79,10 @@ class DeleteCredentialOfferServiceCommandImpl(
                     .payload(
                         buildJsonObject {
                             put("correlationId", input.correlationId)
+                            putSessionEventIdentity(
+                                protocolSessionId = session.issuanceSessionId,
+                                instanceId = session.instanceId,
+                            )
                             put(
                                 "deletedAt",
                                 Clock.System
@@ -89,9 +93,6 @@ class DeleteCredentialOfferServiceCommandImpl(
                         },
                     ).build(),
             )
-        } catch (expected: Exception) {
-            log.debug("Failed to emit SESSION_DELETED event: ${expected.message}")
-        }
 
         return Ok(DeleteCredentialOfferOutput(correlationId = input.correlationId))
     }

@@ -53,6 +53,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(projects.libCoreCompatAnnotations)
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
                 implementation(sphereonlib.com.michael.bull.kotlin.result.kotlin.result)
                 // default deps are already injected by conventions plugin!

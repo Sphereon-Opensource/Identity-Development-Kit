@@ -22,12 +22,13 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import com.sphereon.conf.theme.ui.compose.ComponentTheme
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
 import com.sphereon.conf.theme.ui.compose.tokens.LocalInputTokens
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 @Composable
 fun TextField(
@@ -39,6 +40,8 @@ fun TextField(
     enabled: Boolean = true,
     isError: Boolean = false,
     singleLine: Boolean = true,
+    shape: Shape? = null,
+    leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     val tokens = LocalInputTokens.current
 
@@ -61,7 +64,8 @@ fun TextField(
         enabled = enabled,
         isError = isError,
         singleLine = singleLine,
-        shape = RoundedCornerShape(parseDp(tokens.radius)),
+        leadingIcon = leadingIcon,
+        shape = shape ?: RoundedCornerShape(parseDp(tokens.radius)),
         colors =
             OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = parseColor(tokens.background),

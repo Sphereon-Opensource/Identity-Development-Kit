@@ -22,20 +22,25 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CreateCredentialOfferArgsStaticOfferFieldsTest {
+    private val instanceId = "issuer-instance-static-offer-fields"
+
     @Test
     fun uriLifecycleDefaultsToSingleUse() {
         val args =
             CreateCredentialOfferArgs(
+                instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
             )
         assertEquals(OfferUriLifecycle.SINGLE_USE, args.uriLifecycle)
+        assertEquals(instanceId, args.instanceId)
     }
 
     @Test
     fun initialLifecycleFieldsDefaultsToEmptyMap() {
         val args =
             CreateCredentialOfferArgs(
+                instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
             )
@@ -46,6 +51,7 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
     fun rateLimitDefaultsToNull() {
         val args =
             CreateCredentialOfferArgs(
+                instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
             )
@@ -57,6 +63,7 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
         val rateLimit = OfferRateLimit(maxPerWindow = 50, windowSeconds = 3600)
         val args =
             CreateCredentialOfferArgs(
+                instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
                 uriLifecycle = OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,

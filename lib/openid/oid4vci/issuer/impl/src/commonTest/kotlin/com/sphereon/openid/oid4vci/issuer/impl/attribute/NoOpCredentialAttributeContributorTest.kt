@@ -29,6 +29,7 @@ class NoOpCredentialAttributeContributorTest {
     private val session =
         IssuanceSession(
             sessionId = "session-1",
+            instanceId = "issuer-instance-noop-attribute-contributor",
             issuerId = "https://test.example/oid4vci",
             credentialConfigurationIds = listOf("PID"),
             status = IssuanceSessionStatus.CREDENTIAL_REQUESTED,
@@ -38,6 +39,7 @@ class NoOpCredentialAttributeContributorTest {
 
     private val tokenContext =
         ValidatedTokenContext(
+            tokenId = "noop-contributor-token-jti",
             subject = "did:example:holder",
             clientId = "test-client",
             scope = null,

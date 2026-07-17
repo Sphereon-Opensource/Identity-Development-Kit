@@ -144,7 +144,7 @@ class EncryptionArgsTest {
     }
 
     // ========================================================================
-    // Default values are null (backward compat)
+    // Optional request values remain absent when the protocol does not supply them.
     // ========================================================================
 
     @Test

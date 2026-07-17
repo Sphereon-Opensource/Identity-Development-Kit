@@ -45,9 +45,12 @@ class DefaultWalletInteractionEngine(
     adapters: List<WalletInteractionProtocolAdapter> = emptyList(),
     private val sessionIdGenerator: WalletInteractionSessionIdGenerator = RandomWalletInteractionSessionIdGenerator(),
     private val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    private val counterpartyEncounterRegistry: com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry =
+        com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry.none,
     private val trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     private val trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
-    private val securityGate: WalletSecurityGate = WalletSecurityGate.allow,
+    private val securityGate: WalletSecurityGate = WalletSecurityGate.deny,
+    private val sensitiveInputAuthority: com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority,
     private val privateSessionStore: WalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
     private val sessionStore: WalletInteractionSessionStore = InMemoryWalletInteractionSessionStore(),
 ) : WalletInteractionEngine,
@@ -196,18 +199,21 @@ class DefaultWalletInteractionEngine(
     ): WalletInteractionContext =
         WalletInteractionContext(
             sessionId = sessionId,
-            walletInstanceId = input.walletInstanceId,
+            walletUnitId = input.walletUnitId,
             executionMode = input.executionMode,
             protocolExecutor = protocolExecutor.withExecutionMode(input.executionMode),
+            counterpartyEncounterRegistry = counterpartyEncounterRegistry,
             trustResolver = trustResolver,
             trustPolicy = trustPolicy,
             securityGate = securityGate,
             privateSessionStore = privateSessionStore,
+            sensitiveInputAuthority = sensitiveInputAuthority,
             attributes = input.metadata,
         )
 
     private suspend fun cleanupPrivateSessionIfTerminal(state: WalletInteractionState) {
         if (state.terminal) {
+            sensitiveInputAuthority.clear(state.sessionId)
             privateSessionStore.removeSession(state.sessionId)
         }
     }

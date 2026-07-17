@@ -23,6 +23,9 @@ import com.sphereon.core.api.conf.PropertySource
 import com.sphereon.core.api.conf.PropertySources
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.decodeFromBase64
+import com.sphereon.core.api.service.Amr
+import com.sphereon.core.api.service.AuthAssuranceLevel
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
@@ -30,6 +33,7 @@ import kotlin.reflect.KClass
 import kotlin.reflect.cast
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -141,6 +145,148 @@ class ConfigBackedUserAuthenticationProviderTest {
             val result = provider.authenticateWithCredentials(UserCredentials.BearerToken("token"))
             assertTrue(result.isOk)
             assertNull(result.value)
+        }
+
+    @Test
+    fun configBackedWebAuthnFailsClosedWithoutCryptographicVerifier() =
+        runTest {
+            val provider =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.alice.sub" to "alice-sub",
+                        "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to
+                            "credential-a, credential-b",
+                    ) + webAuthnPolicyConfig(),
+                )
+
+            val result =
+                provider.authenticateUserWithCredentials(
+                    UserCredentials.WebAuthnAssertion(
+                        credentialId = "credential-b",
+                        challengeId = "challenge-1",
+                        authenticatorData = "authenticator-data",
+                        clientDataJson = "client-data-json",
+                        signature = "signature",
+                        userIdHint = "alice-sub",
+                        origin = "https://login.example",
+                        rpId = "login.example",
+                        userVerified = true,
+                        transport = "internal",
+                        backupEligible = true,
+                        backupState = true,
+                        prfCapable = true,
+                        assertionEvidenceRef = "passkey-evidence-1",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+        }
+
+    @Test
+    fun configBackedWebAuthnDoesNotEnumerateConfiguredCredentials() =
+        runTest {
+            val provider =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.alice.sub" to "alice-sub",
+                        "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to
+                            "credential-a",
+                    ) + webAuthnPolicyConfig(),
+                )
+
+            val result =
+                provider.authenticateUserWithCredentials(
+                    UserCredentials.WebAuthnAssertion(
+                        credentialId = "credential-x",
+                        challengeId = "challenge-1",
+                        authenticatorData = "authenticator-data",
+                        clientDataJson = "client-data-json",
+                        signature = "signature",
+                        origin = "https://login.example",
+                        rpId = "login.example",
+                        userVerified = true,
+                        transport = "internal",
+                        backupEligible = true,
+                        backupState = true,
+                        assertionEvidenceRef = "passkey-evidence-1",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+        }
+
+    @Test
+    fun webAuthnAvailabilityIsFalseForConfigBackedProvider() =
+        runTest {
+            val withoutPasskey =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.alice.sub" to "alice-sub",
+                    ) + webAuthnPolicyConfig(),
+                )
+            assertFalse(withoutPasskey.isAuthenticationMethodAvailable(AuthenticationMethod.WEBAUTHN).value)
+
+            val withPasskey =
+                newProvider(
+                    mapOf(
+                        ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                        ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                        "oauth2.users.accounts.alice.sub" to "alice-sub",
+                        "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to
+                            "credential-a",
+                    ) + webAuthnPolicyConfig(),
+                )
+            assertFalse(withPasskey.isAuthenticationMethodAvailable(AuthenticationMethod.WEBAUTHN).value)
+        }
+
+    @Test
+    fun webAuthnAuthenticationFailsClosedWhenConfigMissingOrInvalid() =
+        runTest {
+            val accountConfig =
+                mapOf(
+                    ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                    ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                    "oauth2.users.accounts.alice.sub" to "alice-sub",
+                    "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to "credential-a",
+                )
+            val missing = newProvider(accountConfig)
+            assertFalse(missing.isAuthenticationMethodAvailable(AuthenticationMethod.WEBAUTHN).value)
+            assertTrue(missing.authenticateUserWithCredentials(validWebAuthnAssertion()).isErr)
+
+            val invalid = newProvider(accountConfig + webAuthnPolicyConfig(rpId = "https://login.example"))
+            assertFalse(invalid.isAuthenticationMethodAvailable(AuthenticationMethod.WEBAUTHN).value)
+            assertTrue(invalid.authenticateUserWithCredentials(validWebAuthnAssertion()).isErr)
+        }
+
+    @Test
+    fun webAuthnAuthenticationRejectsRpOriginUvTransportBackupAndPrfPolicyMismatches() =
+        runTest {
+            val base =
+                mapOf(
+                    ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
+                    ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
+                    "oauth2.users.accounts.alice.sub" to "alice-sub",
+                    "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to "credential-a",
+                )
+            val provider = newProvider(base + webAuthnPolicyConfig(prfEnabled = false))
+
+            assertTrue(provider.authenticateUserWithCredentials(validWebAuthnAssertion(rpId = "other.example")).isErr)
+            assertTrue(provider.authenticateUserWithCredentials(validWebAuthnAssertion(origin = "https://evil.example")).isErr)
+            assertTrue(provider.authenticateUserWithCredentials(validWebAuthnAssertion(userVerified = false)).isErr)
+            assertTrue(provider.authenticateUserWithCredentials(validWebAuthnAssertion(transport = "nfc")).isErr)
+            assertTrue(provider.authenticateUserWithCredentials(validWebAuthnAssertion(backupEligible = false)).isErr)
+            assertTrue(provider.authenticateUserWithCredentials(validWebAuthnAssertion(prfCapable = true)).isErr)
+            assertTrue(
+                provider.authenticateUserWithCredentials(
+                    validWebAuthnAssertion().copy(assertionEvidenceRef = null),
+                ).isErr,
+            )
         }
 
     @Test
@@ -291,6 +437,48 @@ class ConfigBackedUserAuthenticationProviderTest {
     private fun newProvider(properties: Map<String, String>): ConfigBackedUserAuthenticationProvider =
         ConfigBackedUserAuthenticationProvider(
             configService = FakePrincipalConfigService(properties),
+        )
+
+    private fun webAuthnPolicyConfig(
+        rpId: String = "login.example",
+        allowedOrigins: String = "https://login.example",
+        prfEnabled: Boolean = true,
+    ): Map<String, String> =
+        mapOf(
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_RP_ID_KEY to rpId,
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_ALLOWED_ORIGINS_KEY to allowedOrigins,
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_ATTESTATION_POLICY_KEY to "none",
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_USER_VERIFICATION_KEY to "required",
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_ALLOWED_TRANSPORTS_KEY to "internal,usb",
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_BACKUP_STATE_POLICY_KEY to "require-backup-eligible",
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_CHALLENGE_TTL_SECONDS_KEY to "300",
+            ConfigBackedUserAuthenticationProvider.WEBAUTHN_LEVEL3_PRF_ENABLED_KEY to prfEnabled.toString(),
+        )
+
+    private fun validWebAuthnAssertion(
+        rpId: String = "login.example",
+        origin: String = "https://login.example",
+        userVerified: Boolean = true,
+        transport: String = "internal",
+        backupEligible: Boolean = true,
+        backupState: Boolean = true,
+        prfCapable: Boolean = false,
+    ): UserCredentials.WebAuthnAssertion =
+        UserCredentials.WebAuthnAssertion(
+            credentialId = "credential-a",
+            challengeId = "challenge-1",
+            authenticatorData = "authenticator-data",
+            clientDataJson = "client-data-json",
+            signature = "signature",
+            userIdHint = "alice-sub",
+            origin = origin,
+            rpId = rpId,
+            userVerified = userVerified,
+            transport = transport,
+            backupEligible = backupEligible,
+            backupState = backupState,
+            prfCapable = prfCapable,
+            assertionEvidenceRef = "passkey-evidence-1",
         )
 }
 

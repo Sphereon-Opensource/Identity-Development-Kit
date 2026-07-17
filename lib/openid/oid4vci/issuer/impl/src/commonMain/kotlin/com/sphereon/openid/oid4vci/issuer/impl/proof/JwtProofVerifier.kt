@@ -36,6 +36,7 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -71,6 +72,8 @@ class JwtProofVerifier(
         expectedClientId: String?,
         credentialConfigId: String,
         proofTypeSupported: ProofTypeSupported?,
+        expectedNonce: String?,
+        consumeNonce: Boolean,
     ): IdkResult<VerifiedProof, IdkError> {
         val supportedAlgorithms = proofTypeSupported?.proofSigningAlgValuesSupported
         val jwt = proofValue.jsonPrimitive.content
@@ -141,9 +144,14 @@ class JwtProofVerifier(
             claims["nonce"]?.jsonPrimitive?.content
                 ?: return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce is required"))
 
-        val nonceEntry = nonceManager.consume(nonce).getOrElse { return Err(it) }
-        if (nonceEntry == null) {
-            return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce is invalid or expired"))
+        if (expectedNonce != null && nonce != expectedNonce) {
+            return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce does not match the credential request nonce"))
+        }
+        if (consumeNonce) {
+            val nonceEntry = nonceManager.consume(nonce).getOrElse { return Err(it) }
+            if (nonceEntry == null) {
+                return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce is invalid or expired"))
+            }
         }
 
         // 7. §F.1 mutual exclusion of kid / jwk / x5c.
@@ -288,6 +296,17 @@ class JwtProofVerifier(
         )
     }
 
+    override fun extractNonce(proofValue: JsonElement): IdkResult<String?, IdkError> {
+        val jwt =
+            proofValue.jsonPrimitive.contentOrNull
+                ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: proof value must be a JWT string"))
+        val claims = parseJwtClaims(jwt).getOrElse { return Err(it) }
+        return Ok(
+            claims["nonce"]?.jsonPrimitive?.content
+                ?: return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce is required")),
+        )
+    }
+
     /** Priority-1: resolve holder key from x5c (leaf cert's public key). */
     private suspend fun resolveViaX5c(
         x5c: JsonArray,
@@ -382,6 +401,22 @@ class JwtProofVerifier(
             parsed as? JsonObject
         } catch (t: Throwable) {
             null
+        }
+    }
+
+    private fun parseJwtClaims(jwt: String): IdkResult<JsonObject, IdkError> {
+        val payloadPart =
+            jwt.split('.').getOrNull(1)
+                ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: compact JWT payload is missing"))
+        return try {
+            val payload = payloadPart.decodeFromBase64Url().decodeToString()
+            val parsed = Json.parseToJsonElement(payload)
+            Ok(
+                parsed as? JsonObject
+                    ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: payload must be a JSON object")),
+            )
+        } catch (t: Throwable) {
+            Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: failed to parse payload: ${t.message}"))
         }
     }
 

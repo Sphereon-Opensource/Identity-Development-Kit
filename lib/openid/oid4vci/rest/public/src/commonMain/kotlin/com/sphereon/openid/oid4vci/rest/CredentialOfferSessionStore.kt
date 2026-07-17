@@ -22,6 +22,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
+import com.sphereon.openid.oid4vci.issuer.store.Oid4vciSessionIdentity
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -41,10 +42,12 @@ import kotlin.native.ObjCName
 data class CredentialOfferSession(
     @SerialName("correlation_id")
     val correlationId: String,
+    @SerialName("instance_id")
+    val instanceId: String,
     @SerialName("offer_id")
     val offerId: String,
     @SerialName("issuance_session_id")
-    val issuanceSessionId: String? = null,
+    val issuanceSessionId: String,
     val status: CredentialOfferSessionStatus,
     @SerialName("callback_config")
     val callbackConfig: IssuanceCallbackConfig? = null,
@@ -71,13 +74,18 @@ data class CredentialOfferSession(
      * Replayable offer-creation inputs. Present so the GET handler can rebuild a
      * [com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs] and mint a fresh
      * inner offer on each fetch of a [OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH] URI, while the
-     * stable offer URI / offer id and this session row stay put. Null for legacy sessions and
-     * for sessions created before the template was captured.
+     * stable offer URI / offer id and this session row stay put. It is optional because
+     * single-use sessions do not require replay inputs.
      */
     @SerialName("offer_template")
     @JsExportIgnoreCompat
     val offerTemplate: CredentialOfferTemplate? = null,
-)
+) {
+    init {
+        Oid4vciSessionIdentity.requireCanonical("instanceId", instanceId)
+        Oid4vciSessionIdentity.requireCanonical("protocolSessionId", issuanceSessionId)
+    }
+}
 
 /**
  * Minimal replayable snapshot of the inputs that produced this offer's inner protocol content.

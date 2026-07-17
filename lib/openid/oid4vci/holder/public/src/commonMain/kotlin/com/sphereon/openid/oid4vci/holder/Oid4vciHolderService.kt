@@ -27,6 +27,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialRequestProofs
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -63,21 +64,27 @@ interface Oid4vciHolderService {
         txCode: String? = null,
         clientId: String? = null,
         redirectUri: String? = null,
+        dpopProofJwt: String? = null,
+        clientAttestationJwt: String? = null,
+        clientAttestationPopJwt: String? = null,
+        clientAuthentication: ClientAuthenticationConfig? = null,
     ): IdkResult<TokenResponseWithContext, IdkError>
 
     suspend fun createCredentialRequestProof(
         issuerUrl: String,
         cNonce: String? = null,
-        signingKeyId: String,
+        signingKeyIds: List<String>,
         signingAlgorithm: String = "ES256",
         clientId: String? = null,
-        count: Int = 1,
         keyInclusionMode: JwsIdentifierMode = JwsIdentifierMode.JWK,
+        keyAttestationJwt: String? = null,
+        proofType: String = "jwt",
     ): IdkResult<CreatedProof, IdkError>
 
     suspend fun requestCredential(
         credentialEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String? = null,
         credentialConfigurationId: String? = null,
         credentialIdentifier: String? = null,
         proofs: CredentialRequestProofs? = null,
@@ -130,6 +137,10 @@ interface Oid4vciHolderService {
         codeVerifier: String,
         redirectUri: String,
         clientId: String? = null,
+        dpopProofJwt: String? = null,
+        clientAttestationJwt: String? = null,
+        clientAttestationPopJwt: String? = null,
+        clientAuthentication: ClientAuthenticationConfig? = null,
     ): IdkResult<TokenResponseWithContext, IdkError>
 }
 

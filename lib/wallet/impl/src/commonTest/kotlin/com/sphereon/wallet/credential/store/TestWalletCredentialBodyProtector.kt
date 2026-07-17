@@ -26,14 +26,14 @@ import com.sphereon.core.api.error.IdkError
 
 internal object TestWalletCredentialBodyProtector : WalletCredentialBodyProtector {
     override suspend fun protect(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
         credentialInstanceId: String,
         plaintext: ByteArray,
     ): IdkResult<ByteArray, IdkError> = Ok(("test-protected:" + plaintext.reversedArray().encodeTo(Encoding.BASE64URL)).encodeToByteArray())
 
     override suspend fun open(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
         credentialInstanceId: String,
         protectedBody: ByteArray,

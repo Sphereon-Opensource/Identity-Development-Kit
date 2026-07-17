@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,7 +32,7 @@ import com.sphereon.conf.theme.ui.compose.ComponentTheme
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
 import com.sphereon.conf.theme.ui.compose.tokens.LocalButtonTokens
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 enum class ButtonVariant { Primary, Secondary, Ghost, Outline }
 
@@ -61,6 +62,9 @@ fun Button(
         ButtonVariant.Primary -> {
             val bg = parseColor(tokens.primaryBackground)
             val fg = parseColor(tokens.primaryForeground)
+            // Disabled uses onSurface tints rather than an alpha-faded brand color: a translucent
+            // brand fill with translucent white text is illegible on light surfaces.
+            val disabledBase = MaterialTheme.colorScheme.onSurface
             androidx.compose.material3.Button(
                 onClick = onClick,
                 modifier = modifier,
@@ -69,8 +73,8 @@ fun Button(
                     ButtonDefaults.buttonColors(
                         containerColor = bg,
                         contentColor = fg,
-                        disabledContainerColor = bg.copy(alpha = 0.38f),
-                        disabledContentColor = fg.copy(alpha = 0.38f),
+                        disabledContainerColor = disabledBase.copy(alpha = 0.12f),
+                        disabledContentColor = disabledBase.copy(alpha = 0.38f),
                     ),
                 shape = shape,
                 contentPadding = padding,
@@ -83,6 +87,7 @@ fun Button(
             val fg = parseColor(tokens.secondaryForeground)
             val borderColor = parseColor(tokens.secondaryBorder)
             val borderWidth = parseDp(tokens.secondaryBorderWidth, 1.dp)
+            val disabledBase = MaterialTheme.colorScheme.onSurface
             OutlinedButton(
                 onClick = onClick,
                 modifier = modifier,
@@ -91,8 +96,8 @@ fun Button(
                     ButtonDefaults.outlinedButtonColors(
                         containerColor = bg,
                         contentColor = fg,
-                        disabledContainerColor = bg.copy(alpha = 0.38f),
-                        disabledContentColor = fg.copy(alpha = 0.38f),
+                        disabledContainerColor = disabledBase.copy(alpha = 0.12f),
+                        disabledContentColor = disabledBase.copy(alpha = 0.38f),
                     ),
                 border = BorderStroke(borderWidth, borderColor),
                 shape = shape,
@@ -129,7 +134,7 @@ fun Button(
                 colors =
                     ButtonDefaults.textButtonColors(
                         contentColor = fg,
-                        disabledContentColor = fg.copy(alpha = 0.38f),
+                        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     ),
                 shape = shape,
                 contentPadding = padding,

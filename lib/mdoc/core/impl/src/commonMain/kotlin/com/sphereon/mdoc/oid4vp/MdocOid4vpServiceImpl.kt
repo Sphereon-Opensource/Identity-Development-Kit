@@ -58,6 +58,7 @@ class MdocOid4vpServiceImpl(
         clientId: String,
         responseUri: String,
         authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
     ): DeviceResponse {
         var documentErrors = arrayOf<DeviceResponseDocumentErrorAlias>()
         var documents = arrayOf<Document>()
@@ -71,6 +72,7 @@ class MdocOid4vpServiceImpl(
                         clientId = clientId,
                         responseUri = responseUri,
                         authorizationRequestNonce = authorizationRequestNonce,
+                        verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
                         mdocNonce = doc.mdocNonce,
                         document = doc.document,
                         inputDescriptor = doc.inputDescriptor,
@@ -115,6 +117,7 @@ class MdocOid4vpServiceImpl(
         responseUri: String,
         mdocNonce: String,
         authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
         deviceNamespaces: DeviceNameSpaces,
         document: Document?,
         inputDescriptor: IOid4VPInputDescriptor?,
@@ -123,20 +126,11 @@ class MdocOid4vpServiceImpl(
         presentationDefinition: IOid4VPPresentationDefinition,
     ): Oid4vpSignResult {
         val request = Oid4VPPresentationDefinition.fromDTO(presentationDefinition).toDocRequest()
-        // Holder-side: the JWK thumbprint that must go into the §B.2.6 OpenID4VPHandover
-        // for encrypted-response modes is derived from the verifier's encryption-key JWK
-        // (read from client_metadata.jwks of the original authorization request). This
-        // signature does not currently surface that JWK, so the holder builds the
-        // unencrypted-mode handover (jwkThumbprint = null). When the holder needs to sign
-        // for `direct_post.jwt` / `dc_api.jwt` the caller must extend this signature with
-        // `verifierEncryptionJwkThumbprint: ByteArray?`. The verifier-side reconstruction
-        // already passes the correct thumbprint and will reject signatures built with the
-        // wrong handover — this is therefore safe to leave for the holder-flow follow-up.
         val deviceAuthentication =
             DeviceAuthentication.Companion.fromOid4vp(
                 clientId = clientId,
                 nonce = authorizationRequestNonce,
-                jwkThumbprint = null,
+                jwkThumbprint = verifierEncryptionJwkThumbprint,
                 responseUri = responseUri,
                 docType = docType,
                 deviceNamespaces = deviceNamespaces,

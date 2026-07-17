@@ -152,7 +152,7 @@ class DefaultWalletInteractionEngineTest {
 
             engine.start(
                 WalletInteractionInput(
-                    walletInstanceId = "wallet",
+                    walletUnitId = "wallet",
                     entryPoint = WalletEntryPoint.rawQr("capture"),
                     executionMode = WalletInteractionExecutionMode.SPLIT,
                 ),
@@ -347,7 +347,7 @@ class DefaultWalletInteractionEngineTest {
             val state =
                 WalletInteractionState(
                     sessionId = sessionId,
-                    walletInstanceId = "wallet",
+                    walletUnitId = "wallet",
                     status = WalletInteractionStatus.CredentialOfferReview,
                     revision = 1,
                     entryPoint = WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=pre-authorized_code-secret").summary(),
@@ -357,7 +357,7 @@ class DefaultWalletInteractionEngineTest {
                     sessionId = sessionId,
                     input =
                         WalletInteractionInput(
-                            walletInstanceId = "wallet",
+                            walletUnitId = "wallet",
                             entryPoint = WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=pre-authorized_code-secret"),
                             executionMode = WalletInteractionExecutionMode.BACKEND,
                         ),

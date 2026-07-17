@@ -23,7 +23,7 @@ class WalletInteractionPrivacyTest {
         val state =
             WalletInteractionState(
                 sessionId = WalletInteractionSessionId("session"),
-                walletInstanceId = "wallet",
+                walletUnitId = "wallet",
                 status = WalletInteractionStatus.DisclosureConsent,
                 disclosure =
                     WalletDisclosureSummary(

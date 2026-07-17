@@ -138,6 +138,8 @@ data class WalletMethodDefinition(
     val credentialType: String,
     val dcqlQuery: String,
     val trustedIssuers: Set<String>,
+    /** Verifier instance that owns every OID4VP session created by this method. */
+    val verifierInstanceId: String,
     val verifierClientId: String,
     val presentationDefinition: String? = null,
     val attributeMappings: List<AttributeMapping>,

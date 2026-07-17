@@ -238,3 +238,22 @@ fun <T> Page<T>.toPagingValues(): PagingValues =
         totalElements = totalCount.toInt(),
         totalPages = totalPages,
     )
+
+/**
+ * Slice this list according to [page] and wrap the slice in a [Page].
+ *
+ * Negative offsets and limits are treated as zero. A zero limit yields an empty
+ * item list while [Page.totalCount] still reflects the full list size. The
+ * returned [Page.limit] and [Page.offset] echo the requested values unchanged.
+ */
+fun <T> List<T>.paginate(page: PageRequest): Page<T> {
+    val safeOffset = page.offset.coerceAtLeast(0)
+    val safeLimit = page.limit.coerceAtLeast(0)
+    val items = if (safeLimit == 0) emptyList() else drop(safeOffset).take(safeLimit)
+    return Page(
+        items = items,
+        totalCount = size.toLong(),
+        limit = page.limit,
+        offset = page.offset,
+    )
+}

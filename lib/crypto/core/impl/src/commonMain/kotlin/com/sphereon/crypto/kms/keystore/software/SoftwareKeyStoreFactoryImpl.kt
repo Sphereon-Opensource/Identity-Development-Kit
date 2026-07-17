@@ -47,10 +47,10 @@ class SoftwareKeyStoreFactoryImpl(
     // when the AppScope is created. No manual registration needed.
 
     override val keyStoreType: String =
-        if (app.platformInfo.osFamily === PlatformInfo.OsFamily.IOS) {
-            PredefinedKeyStoreTypes.APPLE.keyStoreType
-        } else {
-            PredefinedKeyStoreTypes.PKCS12.keyStoreType
+        when (app.platformInfo.osFamily) {
+            PlatformInfo.OsFamily.IOS -> PredefinedKeyStoreTypes.APPLE.keyStoreType
+            PlatformInfo.OsFamily.JS, PlatformInfo.OsFamily.WASM_JS -> PredefinedKeyStoreTypes.FILE.keyStoreType
+            else -> PredefinedKeyStoreTypes.PKCS12.keyStoreType
         }
 
     override fun create(config: KeyStoreConfig): SoftwareKeyStoreService = realSoftwareKeyStoreFactory.create(config)

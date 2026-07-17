@@ -48,7 +48,7 @@ import kotlinx.serialization.json.Json
  * URI schemes:
  * - openid4vp:// (standard OpenID4VP)
  * - openid:// (legacy)
- * - haip:// (High Assurance Identity Profile)
+ * - haip-vp:// (HAIP 1.0 Final presentation invocation)
  *
  * Reference: OpenID4VP 1.0 Final Section 5.1 - Request URI
  */

@@ -36,16 +36,21 @@ import com.sphereon.data.store.kv.KvPutResult
 import com.sphereon.data.store.kv.KvStore
 import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreScopeBinding
+import com.sphereon.data.store.kv.KvStoreVersioning
+import com.sphereon.data.store.kv.KvVersionAppendResult
+import com.sphereon.data.store.kv.KvVersionedEntry
 import com.sphereon.data.store.kv.impl.KvStoreManager
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 import kotlin.time.Duration
 
 /**
  * Minimal in-memory KV store for unit testing store implementations.
  */
-internal class SimpleTestKvStore : KvStore {
+internal class SimpleTestKvStore : KvStoreVersioning {
     override val config: KvStoreConfigBase = InMemoryKvStoreConfig(id = "test", scopeBinding = KvStoreScopeBinding.APP)
 
     private data class Stored(
@@ -55,6 +60,15 @@ internal class SimpleTestKvStore : KvStore {
     )
 
     private val entries = mutableMapOf<String, Stored>()
+    private data class VersionStored(
+        val versionId: String,
+        val previousVersionId: String?,
+        val stored: Stored,
+    )
+
+    private val versionChains = mutableMapOf<String, MutableList<VersionStored>>()
+    private val versionMutex = Mutex()
+    private var nextVersion = 0L
 
     private fun k(
         namespace: KvNamespaceId,
@@ -137,6 +151,74 @@ internal class SimpleTestKvStore : KvStore {
         keysToRemove.forEach { entries.remove(it) }
         return Ok(keysToRemove.size)
     }
+
+    override suspend fun <V : Any> getHead(
+        namespace: KvNamespace<V>,
+        key: String,
+    ): IdkResult<KvVersionedEntry<V>?, IdkError> =
+        versionMutex.withLock {
+            val chainKey = k(namespace, key)
+            val head = liveVersionHead(chainKey) ?: return@withLock Ok(null)
+            Ok(head.decode(namespace))
+        }
+
+    override suspend fun <V : Any> getVersion(
+        namespace: KvNamespace<V>,
+        key: String,
+        versionId: String,
+    ): IdkResult<KvVersionedEntry<V>?, IdkError> =
+        versionMutex.withLock {
+            val chainKey = k(namespace, key)
+            liveVersionHead(chainKey) ?: return@withLock Ok(null)
+            Ok(versionChains[chainKey]?.firstOrNull { it.versionId == versionId }?.decode(namespace))
+        }
+
+    override suspend fun <V : Any> append(
+        namespace: KvNamespace<V>,
+        key: String,
+        expectedPreviousVersionId: String?,
+        value: V,
+        ttl: Duration,
+    ): IdkResult<KvVersionAppendResult<V>, IdkError> =
+        versionMutex.withLock {
+            val chainKey = k(namespace, key)
+            val current = liveVersionHead(chainKey)
+            if (current?.versionId != expectedPreviousVersionId) {
+                return@withLock Ok(KvVersionAppendResult.Conflict(currentHead = current?.decode(namespace)))
+            }
+            val now = Clock.System.now().toEpochMilliseconds()
+            val expiresAt = if (ttl.isInfinite()) Long.MAX_VALUE else now + ttl.inWholeMilliseconds
+            val appended =
+                VersionStored(
+                    versionId = (++nextVersion).toString(),
+                    previousVersionId = current?.versionId,
+                    stored = Stored(namespace.codec.encode(value), now, expiresAt),
+                )
+            versionChains.getOrPut(chainKey) { mutableListOf() }.add(appended)
+            Ok(KvVersionAppendResult.Applied(entry = appended.decode(namespace)))
+        }
+
+    override suspend fun deleteVersioned(
+        namespace: KvNamespaceId,
+        key: String,
+    ): IdkResult<Boolean, IdkError> = versionMutex.withLock { Ok(versionChains.remove(k(namespace, key)) != null) }
+
+    private fun liveVersionHead(chainKey: String): VersionStored? {
+        val head = versionChains[chainKey]?.lastOrNull() ?: return null
+        if (head.stored.expiresAt <= Clock.System.now().toEpochMilliseconds()) {
+            versionChains.remove(chainKey)
+            return null
+        }
+        return head
+    }
+
+    private fun <V : Any> VersionStored.decode(namespace: KvNamespace<V>): KvVersionedEntry<V> =
+        KvVersionedEntry(
+            versionId = versionId,
+            previousVersionId = previousVersionId,
+            value = namespace.codec.decode(stored.bytes),
+            metadata = KvEntryMetadata(stored.createdAt, stored.expiresAt),
+        )
 }
 
 /**

@@ -61,7 +61,7 @@ import dev.zacsweers.metro.binding
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
-private const val PARAM_WALLET_INSTANCE_ID = "walletInstanceId"
+private const val PARAM_WALLET_UNIT_ID = "walletUnitId"
 private const val PARAM_SESSION_ID = "sessionId"
 private const val WALLET_INTERACTION_TAG = "wallet-interaction"
 private val JSON_MEDIA = setOf(MediaType.ApplicationJson)
@@ -275,9 +275,9 @@ class StartWalletInteractionHttpEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> =
         runWalletInteractionEndpoint {
             val request = applyDuring(args)
-            val walletInstanceId = request.walletInstanceId().orAbort()
+            val walletUnitId = request.walletUnitId().orAbort()
             val body = request.requireJsonBody<StartWalletInteractionBody>(json).orAbort()
-            if (body.input.walletInstanceId != walletInstanceId) {
+            if (body.input.walletUnitId != walletUnitId) {
                 abort(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "wallet_interaction_start_wallet_mismatch"))
             }
             WalletInteractionSessionEnvelope(
@@ -308,7 +308,7 @@ class ResumeWalletInteractionHttpEndpointCommandImpl(
                 command
                     .execute(
                         ResumeWalletInteractionArgs(
-                            walletInstanceId = request.walletInstanceId().orAbort(),
+                            walletUnitId = request.walletUnitId().orAbort(),
                             sessionId = request.sessionId().orAbort(),
                         ),
                     ).orAbort(),
@@ -339,7 +339,7 @@ class DispatchWalletInteractionActionHttpEndpointCommandImpl(
                 command
                     .execute(
                         SubmitWalletInteractionActionArgs(
-                            walletInstanceId = request.walletInstanceId().orAbort(),
+                            walletUnitId = request.walletUnitId().orAbort(),
                             sessionId = request.sessionId().orAbort(),
                             action = body.action,
                         ),
@@ -369,7 +369,7 @@ class CancelWalletInteractionHttpEndpointCommandImpl(
             command
                 .execute(
                     CancelWalletInteractionArgs(
-                        walletInstanceId = request.walletInstanceId().orAbort(),
+                        walletUnitId = request.walletUnitId().orAbort(),
                         sessionId = request.sessionId().orAbort(),
                     ),
                 ).orAbort()
@@ -399,7 +399,7 @@ class GetWalletInteractionStateHttpEndpointCommandImpl(
                 command
                     .execute(
                         GetWalletInteractionStateArgs(
-                            walletInstanceId = request.walletInstanceId().orAbort(),
+                            walletUnitId = request.walletUnitId().orAbort(),
                             sessionId = request.sessionId().orAbort(),
                         ),
                     ).orAbort(),
@@ -430,7 +430,7 @@ class GetWalletInteractionEventsHttpEndpointCommandImpl(
                 command
                     .execute(
                         GetWalletInteractionEventsArgs(
-                            walletInstanceId = request.walletInstanceId().orAbort(),
+                            walletUnitId = request.walletUnitId().orAbort(),
                             sessionId = request.sessionId().orAbort(),
                             afterRevision = afterRevision,
                         ),
@@ -466,12 +466,12 @@ class HandleWalletInteractionFrameHttpEndpointCommandImpl(
             if (frame.sessionId != pathSessionId) {
                 abort(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "wallet_interaction_frame_session_mismatch"))
             }
-            val walletInstanceId = request.walletInstanceId().orAbort()
+            val walletUnitId = request.walletUnitId().orAbort()
             val state =
                 when (frame.type) {
                     WalletInteractionClientFrameType.RESUME -> {
                         resumeCommand
-                            .execute(ResumeWalletInteractionArgs(walletInstanceId, frame.sessionId))
+                            .execute(ResumeWalletInteractionArgs(walletUnitId, frame.sessionId))
                             .orAbort()
                             .state
                     }
@@ -480,7 +480,7 @@ class HandleWalletInteractionFrameHttpEndpointCommandImpl(
                         submitActionCommand
                             .execute(
                                 SubmitWalletInteractionActionArgs(
-                                    walletInstanceId = walletInstanceId,
+                                    walletUnitId = walletUnitId,
                                     sessionId = frame.sessionId,
                                     action = requireNotNull(frame.action) { "wallet_interaction_frame_action_missing" },
                                 ),
@@ -489,7 +489,7 @@ class HandleWalletInteractionFrameHttpEndpointCommandImpl(
 
                     WalletInteractionClientFrameType.CANCEL -> {
                         cancelCommand
-                            .execute(CancelWalletInteractionArgs(walletInstanceId, frame.sessionId))
+                            .execute(CancelWalletInteractionArgs(walletUnitId, frame.sessionId))
                             .orAbort()
                             .state
                     }
@@ -561,7 +561,7 @@ private class WalletInteractionHttpAbort(
     val error: IdkError,
 ) : RuntimeException(error.toString())
 
-private fun GenericHttpRequest.walletInstanceId(): IdkResult<String, IdkError> = requirePathParam(PARAM_WALLET_INSTANCE_ID)
+private fun GenericHttpRequest.walletUnitId(): IdkResult<String, IdkError> = requirePathParam(PARAM_WALLET_UNIT_ID)
 
 private fun GenericHttpRequest.sessionId(): IdkResult<WalletInteractionSessionId, IdkError> = requirePathParam(PARAM_SESSION_ID).map { raw -> WalletInteractionSessionId(raw) }
 

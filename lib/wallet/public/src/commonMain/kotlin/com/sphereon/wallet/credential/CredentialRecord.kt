@@ -16,40 +16,134 @@
 
 package com.sphereon.wallet.credential
 
+import com.sphereon.wallet.unit.WalletSecureComponentWalletBinding
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
+/**
+ * The per-unit PROFILE configuration (D10 vocabulary): one wallet unit has exactly one profile,
+ * and the unit's single wallet-unit instance is what that profile is activated onto. This record
+ * is the durable policy root for a wallet unit; it is not itself a device instance or an
+ * activation - see [WalletActivation] for the per-device activation state bound to this unit.
+ */
 @Serializable
-data class WalletInstance(
+data class WalletUnitProfile(
     val id: String,
     val ownerSubjectRef: IdentifierRef,
     val label: String,
-    val purpose: WalletInstancePurpose,
+    val purpose: WalletProfilePurpose,
     val storageProfileId: String,
     val defaultHolderKeyPolicyId: String,
     val trustDomainId: String? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
     val archivedAt: Instant? = null,
+    val profileType: WalletProfilePersona = WalletProfilePersona.PRIVATE_PERSON,
+    val holderPartyRoleRef: IdentifierRef? = null,
+    val activationPolicyId: String? = null,
 ) {
     init {
-        require(id.isNotBlank()) { "WalletInstance.id must not be blank" }
-        require(storageProfileId.isNotBlank()) { "WalletInstance.storageProfileId must not be blank" }
-        require(defaultHolderKeyPolicyId.isNotBlank()) { "WalletInstance.defaultHolderKeyPolicyId must not be blank" }
+        require(id.isNotBlank()) { "WalletUnitProfile.id must not be blank" }
+        require(storageProfileId.isNotBlank()) { "WalletUnitProfile.storageProfileId must not be blank" }
+        require(defaultHolderKeyPolicyId.isNotBlank()) { "WalletUnitProfile.defaultHolderKeyPolicyId must not be blank" }
     }
 }
 
 @Serializable
-enum class WalletInstancePurpose {
+enum class WalletProfilePurpose {
     PERSONAL,
     WORK,
     BUSINESS,
 }
 
 @Serializable
+enum class WalletProfilePersona {
+    PRIVATE_PERSON,
+    EMPLOYEE_REPRESENTATIVE,
+    ORGANIZATION_MANDATE,
+}
+
+/**
+ * A device-level activation of a [WalletUnitProfile]'s single wallet-unit instance.
+ *
+ * D10: a wallet unit has exactly ONE WSCA/WSCD binding, shared by every access surface (agent)
+ * that acts on behalf of it - see [WalletAgent]. [secureComponentBinding] therefore carries the
+ * unit-level binding, not a binding scoped to this individual activation; every [WalletActivation]
+ * that shares the same [walletUnitId] carries an identical [secureComponentBinding] value. Earlier
+ * revisions of this model held separate `wscaBinding`/`wscdBinding` fields per activation, which
+ * incorrectly implied that e.g. a mobile activation and a web activation of the same unit could
+ * diverge onto different secure components; that shape was replaced by this single unit-scoped
+ * field. This record and its type have no other production usages or persisted wire format yet,
+ * so this is a greenfield model correction, not a migration.
+ */
+@Serializable
+data class WalletActivation(
+    val id: String,
+    val walletUnitId: String,
+    val deviceBindingRef: IdentifierRef,
+    val secureComponentBinding: WalletSecureComponentWalletBinding,
+    val state: WalletActivationState,
+    val authorizedAt: Instant? = null,
+    val expiresAt: Instant? = null,
+    val revokedAt: Instant? = null,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+) {
+    init {
+        require(id.isNotBlank()) { "WalletActivation.id must not be blank" }
+        require(walletUnitId.isNotBlank()) { "WalletActivation.walletUnitId must not be blank" }
+    }
+}
+
+@Serializable
+enum class WalletActivationState {
+    PENDING,
+    ACTIVE,
+    SUSPENDED,
+    REVOKED,
+}
+
+/**
+ * A registered access surface acting on behalf of a wallet unit's single wallet-unit instance:
+ * a browser tab, a native mobile app install, a native desktop app install, or a headless
+ * automation client.
+ *
+ * D10 (binding): every [WalletAgent] of the same [walletUnitId] shares the unit's ONE WSCA/WSCD
+ * binding (see [WalletActivation.secureComponentBinding]); an agent owns NO secure component of
+ * its own, by construction this type carries no wsca/wscd/key fields. Agent registration NEVER
+ * provisions a secure component. Any agent/device/session integrity evidence produced during
+ * registration (for example a passkey ceremony credential id) is provider-side authorization
+ * context recorded in [authorizationEvidenceRef]; it is not a wallet-unit-attestation (WUA) object
+ * and must never be folded into WIA/KA claims.
+ */
+@Serializable
+data class WalletAgent(
+    val agentId: String,
+    val walletUnitId: String,
+    val walletInstanceId: String,
+    val kind: WalletAgentKind,
+    val registeredAt: Instant,
+    val authorizationEvidenceRef: String? = null,
+) {
+    init {
+        require(agentId.isNotBlank()) { "WalletAgent.agentId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "WalletAgent.walletUnitId must not be blank" }
+        require(walletInstanceId.isNotBlank()) { "WalletAgent.walletInstanceId must not be blank" }
+    }
+}
+
+@Serializable
+enum class WalletAgentKind {
+    BROWSER,
+    NATIVE_MOBILE,
+    NATIVE_DESKTOP,
+    HEADLESS,
+}
+
+@Serializable
 data class StorageProfile(
     val id: String,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val mode: WalletStorageMode,
     val localStoreRef: StoreRef? = null,
     val remoteVaultRef: StoreRef? = null,
@@ -58,7 +152,7 @@ data class StorageProfile(
 ) {
     init {
         require(id.isNotBlank()) { "StorageProfile.id must not be blank" }
-        require(walletInstanceId.isNotBlank()) { "StorageProfile.walletInstanceId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "StorageProfile.walletUnitId must not be blank" }
         require(encryptionPolicyId.isNotBlank()) { "StorageProfile.encryptionPolicyId must not be blank" }
     }
 }
@@ -303,7 +397,7 @@ data class RecordSyncState(
 @Serializable
 data class CredentialInstance(
     val id: String,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val credentialRecordId: String,
     val format: CredentialFormat,
     val raw: String? = null,
@@ -320,7 +414,7 @@ data class CredentialInstance(
 ) {
     init {
         require(id.isNotBlank()) { "CredentialInstance.id must not be blank" }
-        require(walletInstanceId.isNotBlank()) { "CredentialInstance.walletInstanceId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "CredentialInstance.walletUnitId must not be blank" }
         require(credentialRecordId.isNotBlank()) { "CredentialInstance.credentialRecordId must not be blank" }
         require(raw == null || raw.isNotBlank()) { "CredentialInstance.raw must not be blank when present" }
     }
@@ -328,12 +422,21 @@ data class CredentialInstance(
     fun requireRaw(): String = raw ?: error("CredentialInstance.raw is not loaded; open the credential through WalletCredentialStore.getCredential first")
 
     fun withoutRaw(): CredentialInstance = copy(raw = null)
+
+    /**
+     * True once this instance has been presented to at least one relying party (ARF Method A one-time-use).
+     *
+     * Consumption is currently RECORDED but NOT enforced: a presented instance remains presentable
+     * until one-time-use enforcement and replenishment land as a follow-up task. This flag does not
+     * affect [CredentialRecord.presentableInstance] or [CredentialRecord.needsRefresh].
+     */
+    val isConsumed: Boolean get() = bindingRefs.isNotEmpty()
 }
 
 @Serializable
 data class CredentialRecord(
     val id: String,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val issuerRef: IdentifierRef,
     val subjectRefs: List<IdentifierRef> = emptyList(),
     val format: CredentialFormat,
@@ -349,10 +452,10 @@ data class CredentialRecord(
 ) {
     init {
         require(id.isNotBlank()) { "CredentialRecord.id must not be blank" }
-        require(walletInstanceId.isNotBlank()) { "CredentialRecord.walletInstanceId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "CredentialRecord.walletUnitId must not be blank" }
         require(credentialTypeRefs.isNotEmpty()) { "CredentialRecord.credentialTypeRefs must not be empty" }
-        require(instances.all { it.walletInstanceId == walletInstanceId }) {
-            "All credential instances must belong to the same walletInstanceId"
+        require(instances.all { it.walletUnitId == walletUnitId }) {
+            "All credential instances must belong to the same walletUnitId"
         }
         require(instances.all { it.credentialRecordId == id }) {
             "All credential instances must belong to the same credential record"
@@ -362,7 +465,7 @@ data class CredentialRecord(
     fun displayName(locale: String? = null): String? = (display.credentialDisplay.firstOrNull { it.locale == locale } ?: display.credentialDisplay.firstOrNull())?.name
 
     fun withAddedInstance(instance: CredentialInstance): CredentialRecord {
-        require(instance.walletInstanceId == walletInstanceId) { "Instance walletInstanceId mismatch" }
+        require(instance.walletUnitId == walletUnitId) { "Instance walletUnitId mismatch" }
         require(instance.credentialRecordId == id) { "Instance credentialRecordId mismatch" }
         return copy(
             instances = instances + instance,
@@ -375,7 +478,7 @@ data class CredentialRecord(
         instance: CredentialInstance,
         actualTypeRefs: Set<CredentialTypeRef> = emptySet(),
     ): CredentialRecord {
-        require(instance.walletInstanceId == walletInstanceId) { "Instance walletInstanceId mismatch" }
+        require(instance.walletUnitId == walletUnitId) { "Instance walletUnitId mismatch" }
         require(instance.credentialRecordId == id) { "Instance credentialRecordId mismatch" }
         require(instance.raw != null) { "Refreshed credential instance must carry a raw body before it is stored" }
         val supersedePrevious = refreshState?.policy?.supersedePreviousActiveInstance ?: true
@@ -447,6 +550,25 @@ data class CredentialRecord(
             return instances.count { it.lifecycleState == CredentialLifecycleState.ACTIVE } < refresh.policy.lowWatermark
         }
 
+    /**
+     * Active, in-validity instances that have NOT yet been presented (the pool a future one-time-use
+     * policy would draw from). Uses the same active/validity predicate as [presentableInstance], plus
+     * excluding instances where [CredentialInstance.isConsumed] is true.
+     *
+     * This is exposed for a FUTURE one-time-use enforcement and replenishment task; it is NOT yet
+     * consulted by [presentableInstance] or [needsRefresh].
+     */
+    fun unusedActiveInstances(now: Instant): List<CredentialInstance> = instances.filter { it.isActiveAndUnconsumedAt(now) }
+
+    /**
+     * Count of [unusedActiveInstances]. A future replenishment lower-watermark will compare against
+     * this instead of the raw active instance count.
+     *
+     * This is exposed for a FUTURE one-time-use enforcement and replenishment task; it is NOT yet
+     * consulted by [presentableInstance] or [needsRefresh].
+     */
+    fun unusedActiveInstanceCount(now: Instant): Int = unusedActiveInstances(now).size
+
     fun metadata(now: Instant): CredentialMetadata {
         val activeInstances = instances.filter { it.lifecycleState == CredentialLifecycleState.ACTIVE }
         val issuedAt = instances.mapNotNull { it.issuedAt ?: it.validity.validFrom }.minOrNull()
@@ -455,7 +577,7 @@ data class CredentialRecord(
 
         return CredentialMetadata(
             credentialRecordId = id,
-            walletInstanceId = walletInstanceId,
+            walletUnitId = walletUnitId,
             issuerRef = issuerRef,
             subjectRefs = subjectRefs,
             format = format,
@@ -499,6 +621,17 @@ data class CredentialRecord(
         }
     }
 
+    /**
+     * Mirrors the active/validity predicate used by [presentableInstance] exactly (ACTIVE lifecycle
+     * state, not NOT_YET_VALID, not EXPIRED), plus the additional one-time-use consumption check. Keep
+     * this in sync with [presentableInstance]'s predicate if that predicate ever changes.
+     */
+    private fun CredentialInstance.isActiveAndUnconsumedAt(now: Instant): Boolean =
+        lifecycleState == CredentialLifecycleState.ACTIVE &&
+            validity.stateAt(now) != CredentialValidityState.NOT_YET_VALID &&
+            validity.stateAt(now) != CredentialValidityState.EXPIRED &&
+            !isConsumed
+
     private fun CredentialInstance.formatTypeRef(): CredentialTypeRef? = credentialTypeRefs.firstOrNull { it.format == format }
 
     private fun refreshDiagnostics(
@@ -524,7 +657,7 @@ data class CredentialRecord(
 @Serializable
 data class IssuanceSession(
     val id: String,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val protocol: IssuanceProtocol = IssuanceProtocol.OID4VCI,
     val issuerRef: IdentifierRef,
     val credentialIssuerUrl: String,
@@ -533,6 +666,7 @@ data class IssuanceSession(
     val credentialIdentifier: String? = null,
     val expectedCredentialTypeRefs: Set<CredentialTypeRef> = emptySet(),
     val holderKeyRef: KeyRef? = null,
+    val holderKeyRefs: List<KeyRef> = emptyList(),
     val status: IssuanceSessionStatus,
     val deferred: DeferredIssuanceState? = null,
     val notification: IssuanceNotificationState? = null,
@@ -542,7 +676,7 @@ data class IssuanceSession(
 ) {
     init {
         require(id.isNotBlank()) { "IssuanceSession.id must not be blank" }
-        require(walletInstanceId.isNotBlank()) { "IssuanceSession.walletInstanceId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "IssuanceSession.walletUnitId must not be blank" }
         require(credentialIssuerUrl.isNotBlank()) { "IssuanceSession.credentialIssuerUrl must not be blank" }
         require(credentialConfigurationId.isNotBlank()) { "IssuanceSession.credentialConfigurationId must not be blank" }
     }
@@ -611,7 +745,7 @@ data class IssuanceNotificationState(
 @Serializable
 data class WalletOperation(
     val id: String,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val credentialRecordId: String?,
     val operationType: WalletOperationType,
     val baseRemoteRevision: String?,
@@ -621,7 +755,7 @@ data class WalletOperation(
 ) {
     init {
         require(id.isNotBlank()) { "WalletOperation.id must not be blank" }
-        require(walletInstanceId.isNotBlank()) { "WalletOperation.walletInstanceId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "WalletOperation.walletUnitId must not be blank" }
         require(createdByDeviceId.isNotBlank()) { "WalletOperation.createdByDeviceId must not be blank" }
     }
 }

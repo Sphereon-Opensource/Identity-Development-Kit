@@ -21,6 +21,7 @@ import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -190,6 +191,30 @@ class ClientMetadataSerializationTest {
         assertEquals(listOf(-7), decoded.vpFormatsSupported?.get("mso_mdoc")?.issuerAuthAlgValuesSupported)
         assertEquals(listOf("A128GCM", "A256GCM"), decoded.encryptedResponseEncValuesSupported)
         assertEquals(1, decoded.jwks?.keys?.size)
+    }
+
+    @Test
+    fun `wire decoder ignores unrecognized verifier metadata parameters`() {
+        val decoded =
+            Oid4vpJson.wire.decodeFromString<ClientMetadata>(
+                """
+                {
+                  "vp_formats_supported": {
+                    "dc+sd-jwt": {
+                      "sd-jwt_alg_values": ["ES256"],
+                      "kb-jwt_alg_values": ["ES256"]
+                    }
+                  },
+                  "encrypted_response_enc_values_supported": ["A128GCM", "A256GCM"],
+                  "client_name": "Verifier Playground",
+                  "authorization_encrypted_response_alg": "ECDH-ES",
+                  "authorization_encrypted_response_enc": "A256GCM"
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(setOf("dc+sd-jwt"), decoded.vpFormatsSupported?.keys)
+        assertEquals(listOf("A128GCM", "A256GCM"), decoded.encryptedResponseEncValuesSupported)
     }
 }
 

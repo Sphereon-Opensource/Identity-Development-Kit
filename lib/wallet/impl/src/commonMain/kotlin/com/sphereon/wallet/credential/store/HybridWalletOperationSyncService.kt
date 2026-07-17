@@ -52,8 +52,8 @@ class HybridWalletOperationSyncService(
         operationQueue: WalletOperationQueue,
     ) : this(localStore as WalletCredentialStore, remoteStore as WalletCredentialStore, operationQueue)
 
-    override suspend fun replayPending(walletInstanceId: String): IdkResult<WalletOperationReplayResult, IdkError> {
-        val pending = operationQueue.listPending(walletInstanceId)
+    override suspend fun replayPending(walletUnitId: String): IdkResult<WalletOperationReplayResult, IdkError> {
+        val pending = operationQueue.listPending(walletUnitId)
         if (pending.isErr) return Err(pending.error)
 
         var applied = 0
@@ -62,7 +62,7 @@ class HybridWalletOperationSyncService(
         for (operation in pending.value) {
             when (operation.operationType) {
                 WalletOperationType.PUT_CREDENTIAL -> {
-                    val result = replayPut(walletInstanceId, operation)
+                    val result = replayPut(walletUnitId, operation)
                     when (result) {
                         ReplayOutcome.APPLIED -> applied++
                         is ReplayOutcome.CONFLICT -> conflicts += result.conflict
@@ -71,7 +71,7 @@ class HybridWalletOperationSyncService(
                 }
 
                 WalletOperationType.DELETE_CREDENTIAL -> {
-                    val result = replayDelete(walletInstanceId, operation)
+                    val result = replayDelete(walletUnitId, operation)
                     when (result) {
                         ReplayOutcome.APPLIED -> applied++
                         is ReplayOutcome.CONFLICT -> conflicts += result.conflict
@@ -102,73 +102,73 @@ class HybridWalletOperationSyncService(
     }
 
     private suspend fun replayPut(
-        walletInstanceId: String,
+        walletUnitId: String,
         operation: WalletOperation,
     ): ReplayOutcome {
         val credentialRecordId =
             operation.credentialRecordId
                 ?: return ReplayOutcome.FAILED(operation.failure("WALLET_OPERATION_MISSING_RECORD_ID", "PUT_CREDENTIAL operation has no credentialRecordId"))
-        val local = localStore.getCredential(walletInstanceId, credentialRecordId)
+        val local = localStore.getCredential(walletUnitId, credentialRecordId)
         if (local.isErr) return ReplayOutcome.FAILED(operation.failureFrom(local.error))
         val localRecord =
             local.value
                 ?: return ReplayOutcome.FAILED(operation.failure("WALLET_OPERATION_LOCAL_RECORD_MISSING", "Local credential '$credentialRecordId' is missing"))
 
-        val remote = remoteStore.getCredential(walletInstanceId, credentialRecordId)
+        val remote = remoteStore.getCredential(walletUnitId, credentialRecordId)
         if (remote.isErr) return ReplayOutcome.FAILED(operation.failureFrom(remote.error))
         if (remote.value?.syncState?.remoteRevision == nextRemoteRevision(operation)) {
-            return acknowledgeAppliedPut(walletInstanceId, localRecord, operation)
+            return acknowledgeAppliedPut(walletUnitId, localRecord, operation)
         }
         if (remote.value.hasRemoteConflict(operation.baseRemoteRevision)) {
             return ReplayOutcome.CONFLICT(operation.conflict(remote.value))
         }
 
         val syncedRecord = localRecord.withSyncedOperation(operation)
-        val remotePut = remoteStore.putCredential(walletInstanceId, syncedRecord)
+        val remotePut = remoteStore.putCredential(walletUnitId, syncedRecord)
         if (remotePut.isErr) return ReplayOutcome.FAILED(operation.failureFrom(remotePut.error))
 
-        return acknowledgeAppliedPut(walletInstanceId, syncedRecord, operation)
+        return acknowledgeAppliedPut(walletUnitId, syncedRecord, operation)
     }
 
     private suspend fun acknowledgeAppliedPut(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
         operation: WalletOperation,
     ): ReplayOutcome {
         val syncedRecord = record.withSyncedOperation(operation)
-        val ackLocal = localStore.putCredential(walletInstanceId, syncedRecord)
+        val ackLocal = localStore.putCredential(walletUnitId, syncedRecord)
         if (ackLocal.isErr) return ReplayOutcome.FAILED(operation.failureFrom(ackLocal.error))
 
-        val removed = operationQueue.remove(walletInstanceId, operation.id)
+        val removed = operationQueue.remove(walletUnitId, operation.id)
         return if (removed.isOk) ReplayOutcome.APPLIED else ReplayOutcome.FAILED(operation.failureFrom(removed.error))
     }
 
     private suspend fun replayDelete(
-        walletInstanceId: String,
+        walletUnitId: String,
         operation: WalletOperation,
     ): ReplayOutcome {
         val credentialRecordId =
             operation.credentialRecordId
                 ?: return ReplayOutcome.FAILED(operation.failure("WALLET_OPERATION_MISSING_RECORD_ID", "DELETE_CREDENTIAL operation has no credentialRecordId"))
 
-        val remote = remoteStore.getCredential(walletInstanceId, credentialRecordId)
+        val remote = remoteStore.getCredential(walletUnitId, credentialRecordId)
         if (remote.isErr) return ReplayOutcome.FAILED(operation.failureFrom(remote.error))
         if (remote.value.hasRemoteConflict(operation.baseRemoteRevision)) {
             return ReplayOutcome.CONFLICT(operation.conflict(remote.value))
         }
 
-        val remoteDelete = remoteStore.deleteCredential(walletInstanceId, credentialRecordId)
+        val remoteDelete = remoteStore.deleteCredential(walletUnitId, credentialRecordId)
         if (remoteDelete.isErr) return ReplayOutcome.FAILED(operation.failureFrom(remoteDelete.error))
 
-        val local = localStore.getCredential(walletInstanceId, credentialRecordId)
+        val local = localStore.getCredential(walletUnitId, credentialRecordId)
         if (local.isErr) return ReplayOutcome.FAILED(operation.failureFrom(local.error))
         val localRecord = local.value
         if (localRecord != null) {
-            val ackLocal = localStore.putCredential(walletInstanceId, localRecord.withSyncedOperation(operation))
+            val ackLocal = localStore.putCredential(walletUnitId, localRecord.withSyncedOperation(operation))
             if (ackLocal.isErr) return ReplayOutcome.FAILED(operation.failureFrom(ackLocal.error))
         }
 
-        val removed = operationQueue.remove(walletInstanceId, operation.id)
+        val removed = operationQueue.remove(walletUnitId, operation.id)
         return if (removed.isOk) ReplayOutcome.APPLIED else ReplayOutcome.FAILED(operation.failureFrom(removed.error))
     }
 

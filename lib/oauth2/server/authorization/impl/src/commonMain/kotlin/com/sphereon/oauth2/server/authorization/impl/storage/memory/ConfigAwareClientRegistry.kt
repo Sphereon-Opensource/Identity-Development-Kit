@@ -95,14 +95,16 @@ class ConfigAwareClientRegistry(
         val result = linkedMapOf<String, ClientRegistration>()
         for ((_, server) in serversConfigProvider.getConfig().servers) {
             for ((_, credentials) in server.internalClients) {
-                val (clientId, clientSecret) = credentials
+                val clientId = credentials.clientId
                 if (clientId.isBlank()) continue
                 result[clientId] =
                     ClientRegistration(
                         clientId = clientId,
-                        clientSecret = clientSecret,
+                        clientSecret = credentials.clientSecret,
                         clientType = ClientType.CONFIDENTIAL,
                         grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                        defaultAccessTokenAudience = credentials.defaultAccessTokenAudience,
+                        allowedAccessTokenAudiences = credentials.allowedAccessTokenAudiences,
                         tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
                     )
             }

@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 private val operationJson = Json { ignoreUnknownKeys = true }
 
 private const val OPERATION_CONTENT_TYPE = "application/vnd.sphereon.wallet.operation+json"
-private const val META_WALLET_INSTANCE_ID = "walletInstanceId"
+private const val META_WALLET_UNIT_ID = "walletUnitId"
 private const val META_OPERATION_ID = "operationId"
 private const val META_CREDENTIAL_RECORD_ID = "credentialRecordId"
 private const val META_OPERATION_TYPE = "operationType"
@@ -53,18 +53,18 @@ class BlobWalletOperationQueue(
     private val blobService: BlobService,
 ) : WalletOperationQueue {
     override suspend fun enqueue(
-        walletInstanceId: String,
+        walletUnitId: String,
         operation: WalletOperation,
     ): IdkResult<WalletOperation, IdkError> {
-        if (operation.walletInstanceId != walletInstanceId) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "operation.walletInstanceId must match walletInstanceId"))
+        if (operation.walletUnitId != walletUnitId) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "operation.walletUnitId must match walletUnitId"))
         }
 
         val result =
             blobService.storeBlob(
                 target =
                     BlobInfo(
-                        path = operationPath(walletInstanceId, operation.id),
+                        path = operationPath(walletUnitId, operation.id),
                         contentType = OPERATION_CONTENT_TYPE,
                         metadata = operationIndex(operation),
                     ),
@@ -73,14 +73,14 @@ class BlobWalletOperationQueue(
         return if (result.isOk) Ok(operation) else Err(result.error)
     }
 
-    override suspend fun listPending(walletInstanceId: String): IdkResult<List<WalletOperation>, IdkError> {
+    override suspend fun listPending(walletUnitId: String): IdkResult<List<WalletOperation>, IdkError> {
         val findResult =
             blobService.findByMetadata(
                 info = BlobInfo(),
                 query =
                     MetadataSearchQuery(
-                        pathPrefix = operationPrefix(walletInstanceId),
-                        customMetadata = mapOf(META_WALLET_INSTANCE_ID to walletInstanceId),
+                        pathPrefix = operationPrefix(walletUnitId),
+                        customMetadata = mapOf(META_WALLET_UNIT_ID to walletUnitId),
                         maxResults = 1000,
                     ),
             )
@@ -91,32 +91,32 @@ class BlobWalletOperationQueue(
             val getResult = blobService.getBlob(BlobInfo(path = descriptor.path, storeId = descriptor.storeId))
             if (getResult.isOk) {
                 val operation = operationJson.decodeFromString<WalletOperation>(getResult.value.data.decodeToString())
-                if (operation.walletInstanceId == walletInstanceId) operations += operation
+                if (operation.walletUnitId == walletUnitId) operations += operation
             }
         }
         return Ok(operations.sortedBy { it.createdAt })
     }
 
     override suspend fun remove(
-        walletInstanceId: String,
+        walletUnitId: String,
         operationId: String,
     ): IdkResult<Boolean, IdkError> {
-        val result = blobService.deleteBlob(BlobInfo(path = operationPath(walletInstanceId, operationId)))
+        val result = blobService.deleteBlob(BlobInfo(path = operationPath(walletUnitId, operationId)))
         return if (result.isOk) Ok(result.value) else Err(result.error)
     }
 
     private fun operationIndex(operation: WalletOperation): Map<String, String> =
         buildMap {
-            put(META_WALLET_INSTANCE_ID, operation.walletInstanceId)
+            put(META_WALLET_UNIT_ID, operation.walletUnitId)
             put(META_OPERATION_ID, operation.id)
             put(META_OPERATION_TYPE, operation.operationType.name)
             operation.credentialRecordId?.let { put(META_CREDENTIAL_RECORD_ID, it) }
         }
 }
 
-internal fun operationPrefix(walletInstanceId: String): String = "wallet-instances/${walletPathSegment(walletInstanceId, "walletInstanceId")}/ops/"
+internal fun operationPrefix(walletUnitId: String): String = "wallet-units/${walletPathSegment(walletUnitId, "walletUnitId")}/ops/"
 
 internal fun operationPath(
-    walletInstanceId: String,
+    walletUnitId: String,
     operationId: String,
-): String = operationPrefix(walletInstanceId) + walletPathSegment(operationId, "operationId")
+): String = operationPrefix(walletUnitId) + walletPathSegment(operationId, "operationId")

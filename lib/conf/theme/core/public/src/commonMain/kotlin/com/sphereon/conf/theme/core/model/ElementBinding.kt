@@ -17,7 +17,6 @@
 package com.sphereon.conf.theme.core.model
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.data.store.asset.model.AssetReference
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Instant
@@ -46,7 +45,7 @@ data class ElementBinding
         val elementId: String,
         val variant: ThemeVariant? = null,
         val applicationId: String? = null,
-        val asset: AssetReference? = null,
+        val asset: ThemeAssetReference? = null,
         val text: String? = null,
         val updatedAt: Instant? = null,
     )
@@ -62,6 +61,6 @@ data class ElementBindingInput
     constructor(
         val variant: ThemeVariant? = null,
         val applicationId: String? = null,
-        val asset: AssetReference? = null,
+        val asset: ThemeAssetReference? = null,
         val text: String? = null,
     )

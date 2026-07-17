@@ -39,8 +39,8 @@ internal object WalletInstanceAttestationProductionPolicy {
         if (evidence.attestationExpiresAtEpochSeconds <= nowEpochSeconds) {
             return "Wallet Instance Attestation evidence has expired"
         }
-        evidence.localOrSoftwareToken()?.let {
-            return "Wallet Instance Attestation evidence uses local or SOFTWARE_TEST trust material"
+        evidence.localOrTestToken()?.let {
+            return "Wallet Instance Attestation evidence uses local or LOCAL_EVALUATION trust material"
         }
 
         val status = evidence.clientStatus
@@ -76,14 +76,14 @@ internal object WalletInstanceAttestationProductionPolicy {
         return null
     }
 
-    private fun WalletInstanceAttestationEvidence.localOrSoftwareToken(): String? =
+    private fun WalletInstanceAttestationEvidence.localOrTestToken(): String? =
         listOfNotNull(
             profile,
             signerCertificateProfile,
             trust.signerCertificateProfile,
         ).firstOrNull { token ->
             val normalized = token.normalized()
-            normalized in LOCAL_OR_SOFTWARE_TOKENS || normalized.contains("SOFTWARE_TEST")
+            normalized in LOCAL_OR_TEST_TOKENS
         }
 
     private fun String.normalized(): String = trim().uppercase().replace('-', '_')
@@ -91,12 +91,11 @@ internal object WalletInstanceAttestationProductionPolicy {
     private const val PROFILE_TS03_JWT = "TS03_JWT"
     private const val FORMAT_JWT = "JWT"
     private const val STATUS_VALID = "VALID"
-    private val LOCAL_OR_SOFTWARE_TOKENS =
+    private val LOCAL_OR_TEST_TOKENS =
         setOf(
             "LOCAL",
-            "LOCAL_TEST",
-            "LOCAL_TEST_REFERENCE",
-            "SOFTWARE_TEST",
+            "LOCAL_EVALUATION",
+            "LOCAL_EVALUATION_REFERENCE",
         )
     private val REJECTED_TRUST_DECISIONS =
         setOf(
@@ -107,8 +106,7 @@ internal object WalletInstanceAttestationProductionPolicy {
             "UNSUPPORTED",
             "UNSUPPORTED_PROFILE",
             "LOCAL",
-            "LOCAL_TEST",
-            "LOCAL_TEST_REFERENCE",
-            "SOFTWARE_TEST",
+            "LOCAL_EVALUATION",
+            "LOCAL_EVALUATION_REFERENCE",
         )
 }

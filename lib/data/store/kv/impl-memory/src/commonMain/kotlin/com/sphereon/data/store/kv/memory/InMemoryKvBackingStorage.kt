@@ -37,9 +37,23 @@ data class InMemoryKvStoredBytes(
     val expiresAtEpochMillis: Long,
 )
 
+data class InMemoryKvVersionedStoredBytes(
+    val versionId: String,
+    val previousVersionId: String?,
+    val value: ByteArray,
+    val createdAtEpochMillis: Long,
+    val expiresAtEpochMillis: Long,
+)
+
+data class InMemoryKvVersionChain(
+    var headVersionId: String,
+    val entries: MutableMap<String, InMemoryKvVersionedStoredBytes> = mutableMapOf(),
+)
+
 data class InMemoryKvPartition(
     internal val mutex: Mutex = Mutex(),
     internal val entries: MutableMap<InMemoryKvEntryKey, InMemoryKvStoredBytes> = mutableMapOf(),
+    internal val versionChains: MutableMap<InMemoryKvEntryKey, InMemoryKvVersionChain> = mutableMapOf(),
 )
 
 @OptIn(ExperimentalObjCName::class)

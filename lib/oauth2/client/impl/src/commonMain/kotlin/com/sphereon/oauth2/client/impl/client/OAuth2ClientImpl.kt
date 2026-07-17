@@ -70,6 +70,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Implementation of OAuth2Client facade
@@ -111,7 +112,13 @@ class OAuth2ClientImpl(
                 prompt: String?,
                 loginHint: String?,
                 tenantId: String?,
-            ): IdkResult<OidcLoginInitiation, IdkError> = initiateOidcLogin(issuer, clientId, redirectUri, scopes, responseMode, prompt, loginHint, tenantId)
+                resource: String?,
+                audience: String?,
+                ownerHandleDigest: String?,
+                grantBinding: String?,
+                clientCorrelation: String?,
+            ): IdkResult<OidcLoginInitiation, IdkError> =
+                initiateOidcLogin(issuer, clientId, redirectUri, scopes, responseMode, prompt, loginHint, tenantId, resource, audience, ownerHandleDigest, grantBinding, clientCorrelation)
 
             override suspend fun initiate(
                 authorizationServerMetadata: AuthorizationServerMetadata,
@@ -122,6 +129,11 @@ class OAuth2ClientImpl(
                 prompt: String?,
                 loginHint: String?,
                 tenantId: String?,
+                resource: String?,
+                audience: String?,
+                ownerHandleDigest: String?,
+                grantBinding: String?,
+                clientCorrelation: String?,
             ): IdkResult<OidcLoginInitiation, IdkError> =
                 initiateOidcLogin(
                     authorizationServerMetadata = authorizationServerMetadata,
@@ -132,6 +144,11 @@ class OAuth2ClientImpl(
                     prompt = prompt,
                     loginHint = loginHint,
                     tenantId = tenantId,
+                    resource = resource,
+                    audience = audience,
+                    ownerHandleDigest = ownerHandleDigest,
+                    grantBinding = grantBinding,
+                    clientCorrelation = clientCorrelation,
                 )
 
             override suspend fun complete(
@@ -167,6 +184,11 @@ class OAuth2ClientImpl(
         prompt: String?,
         loginHint: String?,
         tenantId: String?,
+        resource: String?,
+        audience: String?,
+        ownerHandleDigest: String?,
+        grantBinding: String?,
+        clientCorrelation: String?,
     ): IdkResult<OidcLoginInitiation, IdkError> {
         // OIDC RPs want the openid-configuration document first — it carries the richer
         // OIDC metadata (id_token_signing_alg_values_supported, userinfo_endpoint, etc.)
@@ -185,6 +207,11 @@ class OAuth2ClientImpl(
             prompt = prompt,
             loginHint = loginHint,
             tenantId = tenantId,
+            resource = resource,
+            audience = audience,
+            ownerHandleDigest = ownerHandleDigest,
+            grantBinding = grantBinding,
+            clientCorrelation = clientCorrelation,
         )
     }
 
@@ -197,6 +224,11 @@ class OAuth2ClientImpl(
         prompt: String?,
         loginHint: String?,
         tenantId: String?,
+        resource: String?,
+        audience: String?,
+        ownerHandleDigest: String?,
+        grantBinding: String?,
+        clientCorrelation: String?,
     ): IdkResult<OidcLoginInitiation, IdkError> {
         val state = secureRandom.newToken()
         val nonce = secureRandom.newToken()
@@ -224,6 +256,8 @@ class OAuth2ClientImpl(
                 codeChallengeMethod = pkce.codeChallengeMethod.value,
                 prompt = prompt,
                 loginHint = loginHint,
+                resource = resource,
+                additionalParameters = if (resource != null) audience?.let { mapOf("audience" to JsonPrimitive(it)) }.orEmpty() else emptyMap(),
             )
 
         val urlResult =
@@ -248,6 +282,11 @@ class OAuth2ClientImpl(
                 createdAt = now,
                 expiresAt = now + LOGIN_TRANSACTION_TTL,
                 tenantId = tenantId,
+                resource = resource,
+                audience = audience,
+                ownerHandleDigest = ownerHandleDigest,
+                grantBinding = grantBinding,
+                clientCorrelation = clientCorrelation,
             )
         val putResult = oidcLoginTransactionStore.put(transaction)
         if (putResult.isErr) return Err(IdkError.fromDTO(putResult.error))
@@ -398,6 +437,7 @@ class OAuth2ClientImpl(
         pkceData: PkceData?,
         resource: List<String>?,
         dpopContext: DpopContext?,
+        audience: List<String>?,
     ): IdkResult<TokenResponse, IdkError> {
         val tokenEndpoint =
             authorizationServerMetadata.tokenEndpoint
@@ -429,6 +469,7 @@ class OAuth2ClientImpl(
                     clientId = clientId,
                     clientSecret = clientSecret,
                     resource = resource ?: emptyList(),
+                    audience = audience ?: emptyList(),
                     dpop = dpopProof,
                 )
             },
@@ -488,6 +529,7 @@ class OAuth2ClientImpl(
         scope: String?,
         resource: List<String>?,
         dpopContext: DpopContext?,
+        audience: List<String>?,
     ): IdkResult<TokenResponse, IdkError> {
         val tokenEndpoint =
             authorizationServerMetadata.tokenEndpoint
@@ -513,6 +555,7 @@ class OAuth2ClientImpl(
                     refreshToken = refreshToken,
                     scope = scope,
                     resource = resource ?: emptyList(),
+                    audience = audience ?: emptyList(),
                     dpop = dpopProof,
                 )
             },

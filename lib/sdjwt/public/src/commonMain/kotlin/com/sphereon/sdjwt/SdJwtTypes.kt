@@ -92,6 +92,12 @@ data class SdJwt<JwtType>(
         const val SD_ALG_CLAIM = "_sd_alg"
 
         /**
+         * The RFC 9901 array-element digest marker: an array element of the form
+         * {"...": "<digest>"} stands in for a selectively disclosable array entry.
+         */
+        const val SD_ARRAY_ELEMENT_CLAIM = "..."
+
+        /**
          * Separator character used in SD-JWT serialization
          */
         const val SEPARATOR = '~'
@@ -130,11 +136,14 @@ data class SdJwtPayload(
 /**
  * Represents a single disclosure in an SD-JWT
  *
- * A disclosure is an array: [salt, claim_name, claim_value]
- * It is base64url-encoded when included in an SD-JWT
+ * An object-property disclosure is an array: [salt, claim_name, claim_value].
+ * An array-element disclosure (RFC 9901) is an array: [salt, claim_value] and has NO claim
+ * name - its [key] is null; the payload references it via an {"...": "<digest>"} marker
+ * inside a JSON array.
+ * Both forms are base64url-encoded when included in an SD-JWT.
  *
  * @param salt The random salt value
- * @param key The claim name
+ * @param key The claim name (null for an array-element disclosure)
  * @param value The claim value (can be any JSON type)
  * @param encoded The base64url-encoded disclosure string
  * @param digest The hash digest of the encoded disclosure
@@ -144,7 +153,7 @@ data class SdJwtPayload(
 @JsExportCompat
 data class Disclosure(
     val salt: String,
-    val key: String,
+    val key: String?,
     val value: JsonElement,
     val encoded: String,
     val digest: String? = null,
@@ -202,7 +211,7 @@ data class Disclosure(
                     .encodeToBase64Url()
             return Disclosure(
                 salt = salt,
-                key = "", // Array elements don't have a key
+                key = null, // Array elements don't have a key (same representation parseDisclosure yields)
                 value = elementValue,
                 encoded = encoded,
             )

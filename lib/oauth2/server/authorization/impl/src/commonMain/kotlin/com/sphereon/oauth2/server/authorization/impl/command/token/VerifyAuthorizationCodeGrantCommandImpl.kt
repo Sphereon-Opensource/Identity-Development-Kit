@@ -92,7 +92,13 @@ class VerifyAuthorizationCodeGrantCommandImpl(
         applyDuring: (VerifyAuthorizationCodeGrantArgs) -> VerifyAuthorizationCodeGrantArgs,
     ): IdkResult<VerifiedAuthorizationCodeGrant, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.code, applied.redirectUri, applied.clientId, applied.codeVerifier).mapError { IdkError.fromDTO(it) }
+        return executeInternal(
+            applied.code,
+            applied.redirectUri,
+            applied.clientId,
+            applied.codeVerifier,
+            applied.requestedResource,
+        ).mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
@@ -100,6 +106,7 @@ class VerifyAuthorizationCodeGrantCommandImpl(
         redirectUri: String,
         clientId: String,
         codeVerifier: String?,
+        requestedResource: List<String>,
     ): IdkResult<VerifiedAuthorizationCodeGrant, AuthorizationServerError> {
         // Retrieve and consume authorization code (atomic operation)
         // This prevents replay attacks by ensuring the code can only be used once
@@ -157,6 +164,15 @@ class VerifyAuthorizationCodeGrantCommandImpl(
                     exception = null,
                 ),
             )
+        }
+
+        // RFC 8707: a token request may repeat the resource indicator only when it is the
+        // exact set bound to the authorization request. Omitting it derives the bound resource.
+        if (requestedResource.any { !isSecureResourceIndicator(it) }) {
+            return Err(AuthorizationServerError.InvalidTarget(resource = requestedResource.first(), reason = "resource must be a secure absolute URI without a fragment"))
+        }
+        if (requestedResource.isNotEmpty() && requestedResource != codeData.resource) {
+            return Err(AuthorizationServerError.InvalidGrant(details = "resource does not match authorization request"))
         }
 
         // Verify redirect_uri matches (if present in original request)
@@ -277,6 +293,8 @@ class VerifyAuthorizationCodeGrantCommandImpl(
                 subject = codeData.subject,
                 clientId = codeData.clientId,
                 scope = codeData.scope,
+                resource = codeData.resource,
+                defaultAccessTokenAudience = codeData.defaultAccessTokenAudience,
                 dpopJkt = codeData.dpopJkt,
                 userClaims = codeData.userClaims,
                 additionalData = codeData.additionalData,
@@ -284,3 +302,8 @@ class VerifyAuthorizationCodeGrantCommandImpl(
         )
     }
 }
+
+private fun isSecureResourceIndicator(value: String): Boolean =
+    SECURE_RESOURCE_URI.matches(value)
+
+private val SECURE_RESOURCE_URI = Regex("^https://[a-z0-9.-]+(?::[0-9]{1,5})?(?:/[^#\\s]*)?$", RegexOption.IGNORE_CASE)

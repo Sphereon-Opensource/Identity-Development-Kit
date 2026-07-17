@@ -16,23 +16,27 @@
 
 package com.sphereon.conf.theme.ui.compose.card
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.sphereon.conf.theme.ui.compose.ComponentTheme
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
 import com.sphereon.conf.theme.ui.compose.tokens.LocalCardTokens
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 @Composable
 fun Card(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    contentPadding: PaddingValues? = null,
     content: @Composable () -> Unit,
 ) {
     val tokens = LocalCardTokens.current
@@ -42,6 +46,14 @@ fun Card(
             containerColor = parseColor(tokens.background),
             contentColor = parseColor(tokens.foreground),
         )
+    // comp.card carries a border and a raised shadow in every theme tier; without them the card
+    // is indistinguishable from the page background (the web Card renders both).
+    val borderWidth = parseDp(tokens.borderWidth, 1.dp)
+    val border = if (borderWidth > 0.dp) BorderStroke(borderWidth, parseColor(tokens.border)) else null
+    val elevation =
+        CardDefaults.cardElevation(
+            defaultElevation = if (tokens.shadow.trim().equals("none", ignoreCase = true)) 0.dp else 1.dp,
+        )
 
     if (onClick != null) {
         androidx.compose.material3.Card(
@@ -49,8 +61,10 @@ fun Card(
             modifier = modifier,
             shape = shape,
             colors = colors,
+            elevation = elevation,
+            border = border,
         ) {
-            Box(Modifier.padding(parseDp(tokens.padding))) {
+            Box(Modifier.padding(contentPadding ?: PaddingValues(parseDp(tokens.padding)))) {
                 content()
             }
         }
@@ -59,8 +73,10 @@ fun Card(
             modifier = modifier,
             shape = shape,
             colors = colors,
+            elevation = elevation,
+            border = border,
         ) {
-            Box(Modifier.padding(parseDp(tokens.padding))) {
+            Box(Modifier.padding(contentPadding ?: PaddingValues(parseDp(tokens.padding)))) {
                 content()
             }
         }

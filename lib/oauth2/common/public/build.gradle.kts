@@ -64,6 +64,8 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                // defaultSecureRandom() for DpopProofAssemblyTest.
+                implementation(projects.libCoreApiDefault)
             }
         }
     }

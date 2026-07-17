@@ -41,7 +41,9 @@ import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken.Companion.toJson
 import com.sphereon.openid.oid4vp.common.responseUri
+import com.sphereon.openid.oid4vp.common.selectEncryptedResponseJwk
 import com.sphereon.openid.oid4vp.common.vpToken
+import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SubmissionResult
 import com.sphereon.openid.oid4vp.holder.SubmitAuthorizationResponseArgs
@@ -119,7 +121,8 @@ class SubmitAuthorizationResponseCommandImpl(
         resolvedRequest: ResolvedOid4vpRequest,
         response: AuthorizationResponse,
         responseMode: ResponseMode?,
-    ): IdkResult<SubmissionResult, IdkError> = execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode))
+        jarmOptions: JarmOptions?,
+    ): IdkResult<SubmissionResult, IdkError> = execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode, jarmOptions))
 
     override suspend fun doExecute(
         args: SubmitAuthorizationResponseArgs,
@@ -538,14 +541,7 @@ class SubmitAuthorizationResponseCommandImpl(
         // logic (curve preference, multiple keys, jwks_uri fallback) lives in
         // resolveEncryptionRecipient — here we only need to know IF encryption is on
         // and which JWE alg to advertise.
-        val encJwk =
-            clientMetadata.jwks?.keys?.firstOrNull { jwk ->
-                (
-                    jwk.use == "enc" ||
-                        jwk.key_ops?.any { it == JoseKeyOperations.ENCRYPT || it == JoseKeyOperations.WRAP_KEY } == true
-                ) &&
-                    jwk.alg != null
-            } ?: return null
+        val encJwk = clientMetadata.selectEncryptedResponseJwk() ?: return null
 
         val keyAlg = encJwk.alg!!.value
         val contentEnc =
@@ -577,8 +573,7 @@ class SubmitAuthorizationResponseCommandImpl(
         // Prefer an encryption-capable key from embedded JWKS when present. If no suitable key exists there,
         // fall back to resolving jwks_uri via external identifier resolution (it may contain a different key set
         // than the signing/JAR keys).
-        val embeddedJwks = clientMetadata.jwks
-        val embeddedEncKey = embeddedJwks?.keys?.firstOrNull(isEncKey)
+        val embeddedEncKey = clientMetadata.selectEncryptedResponseJwk()
 
         val selectedKeyInfo =
             when {

@@ -10,6 +10,7 @@ import com.sphereon.core.events.AppEventService
 import com.sphereon.core.events.EventContext
 import com.sphereon.core.events.EventEncryptionService
 import com.sphereon.core.events.EventHub
+import com.sphereon.core.events.EventPersistenceSink
 import com.sphereon.core.events.EventService
 import com.sphereon.core.events.EventSigningService
 import com.sphereon.core.events.EventStore
@@ -59,7 +60,8 @@ class UserEventServiceImpl(
     eventStore: EventStore,
     signingService: EventSigningService,
     encryptionService: EventEncryptionService,
-) : AbstractEventService(eventHub, eventStore, signingService, encryptionService),
+    persistenceSinks: Set<EventPersistenceSink>,
+) : AbstractEventService(eventHub, eventStore, signingService, encryptionService, persistenceSinks),
     UserEventService {
     override val userContext: UserContext
         get() = userContextInstance.context

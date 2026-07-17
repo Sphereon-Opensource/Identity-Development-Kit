@@ -19,11 +19,15 @@ package com.sphereon.data.store.blob.impl
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.data.store.blob.BlobByteSource
 import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobInfo
+import com.sphereon.data.store.blob.BlobReadRange
+import com.sphereon.data.store.blob.BlobReadStream
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.BlobStoreCapabilities
 import com.sphereon.data.store.blob.BlobStoreError
+import com.sphereon.data.store.blob.DeleteOptions
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.ListResult
 import com.sphereon.data.store.blob.PutOptions
@@ -42,7 +46,13 @@ class ReadOnlyBlobStore(
     private val delegate: BlobStore,
 ) : BlobStore {
     override val schemeId: String get() = delegate.schemeId
-    override val capabilities: BlobStoreCapabilities get() = delegate.capabilities
+    override val capabilities: BlobStoreCapabilities
+        get() =
+            delegate.capabilities.copy(
+                supportsConditionalWrites = false,
+                supportsConditionalDelete = false,
+                supportsStreamingWrite = false,
+            )
 
     private fun readOnlyError(): IdkError = BlobStoreError.PermissionDenied("Blob store is read-only").toIdkError()
 
@@ -54,7 +64,25 @@ class ReadOnlyBlobStore(
 
     override suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError> = delegate.get(info)
 
+    override suspend fun openRead(info: BlobInfo): IdkResult<BlobReadStream, IdkError> = delegate.openRead(info)
+
+    override suspend fun openReadRange(
+        info: BlobInfo,
+        range: BlobReadRange,
+    ): IdkResult<BlobReadStream, IdkError> = delegate.openReadRange(info, range)
+
+    override suspend fun putStream(
+        target: BlobInfo,
+        source: BlobByteSource,
+        options: PutOptions,
+    ): IdkResult<BlobDescriptor, IdkError> = Err(readOnlyError())
+
     override suspend fun delete(info: BlobInfo): IdkResult<Boolean, IdkError> = Err(readOnlyError())
+
+    override suspend fun deleteConditional(
+        info: BlobInfo,
+        options: DeleteOptions,
+    ): IdkResult<Boolean, IdkError> = Err(readOnlyError())
 
     override suspend fun exists(info: BlobInfo): IdkResult<Boolean, IdkError> = delegate.exists(info)
 

@@ -138,6 +138,7 @@ internal class FakeCreateCredentialOfferCommand : CreateCredentialOfferCommand {
             )
         return Ok(
             CreatedCredentialOffer(
+                instanceId = args.instanceId,
                 offerId = "fresh-offer-id-$mint",
                 sessionId = "fresh-session-id-$mint",
                 offer = offer,

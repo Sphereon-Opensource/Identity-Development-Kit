@@ -18,7 +18,7 @@ class WalletProtocolExecutorTest {
                 WalletProtocolExecutionRequest(
                     operationId = "op-1",
                     sessionId = WalletInteractionSessionId("s1"),
-                    walletInstanceId = "wallet",
+                    sessionWalletUnitId = "wallet",
                     protocol = WalletProtocol.OID4VP,
                     operation = WalletSecurityOperation.PRESENTATION_SHARING,
                     audience = "verifier",
@@ -42,7 +42,7 @@ class WalletProtocolExecutorTest {
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
-                    walletInstanceId = "wallet",
+                    walletUnitId = "wallet",
                     executionMode = WalletInteractionExecutionMode.SPLIT,
                     protocolExecutor =
                         StaticDecisionProtocolExecutor(
@@ -62,13 +62,14 @@ class WalletProtocolExecutorTest {
                             ),
                         ),
                     securityGate = gate,
+                    sensitiveInputAuthority = RejectingSensitiveInputAuthority,
                 )
 
             context.authorizeProtocolOperation(
                 WalletProtocolExecutionRequest(
                     operationId = "op-1",
                     sessionId = WalletInteractionSessionId("s1"),
-                    walletInstanceId = "wallet",
+                    sessionWalletUnitId = "wallet",
                     protocol = WalletProtocol.OID4VP,
                     operation = WalletSecurityOperation.PRESENTATION_SHARING,
                     audience = "verifier",
@@ -86,6 +87,58 @@ class WalletProtocolExecutorTest {
             assertEquals("nonce-1", gate.lastRequest.nonce)
             assertEquals(WalletSecurityAssurance.HARDWARE_BACKED, gate.lastRequest.requiredAssurance)
         }
+
+    @Test
+    fun contextAuthorizationFallsBackToAuthoritativeSessionWalletUnit() =
+        runTest {
+            val gate = RecordingSecurityGate()
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("s1"),
+                    walletUnitId = "session-wallet-unit",
+                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    securityGate = gate,
+                    sensitiveInputAuthority = RejectingSensitiveInputAuthority,
+                )
+
+            context.authorizeProtocolOperation(
+                WalletProtocolExecutionRequest(
+                    operationId = "op-1",
+                    sessionId = WalletInteractionSessionId("s1"),
+                    sessionWalletUnitId = "session-wallet-unit",
+                    protocol = WalletProtocol.OID4VCI,
+                    operation = WalletSecurityOperation.HOLDER_PROOF,
+                ),
+            )
+
+            assertEquals("session-wallet-unit", gate.lastRequest.walletUnitId)
+        }
+}
+
+private object RejectingSensitiveInputAuthority : WalletInteractionSensitiveInputAuthority {
+    override suspend fun register(
+        sessionId: WalletInteractionSessionId,
+        purpose: WalletInteractionSensitiveInputPurpose,
+        value: String,
+    ): WalletInteractionSensitiveInputRef = error("not used")
+
+    override suspend fun consume(
+        sessionId: WalletInteractionSessionId,
+        purpose: WalletInteractionSensitiveInputPurpose,
+        ref: WalletInteractionSensitiveInputRef,
+    ): String? = null
+
+    override suspend fun registerSecurityGrant(
+        sessionId: WalletInteractionSessionId,
+        grant: WalletSecurityGrant,
+    ): WalletInteractionSensitiveInputRef = error("not used")
+
+    override suspend fun consumeSecurityGrant(
+        sessionId: WalletInteractionSessionId,
+        ref: WalletInteractionSensitiveInputRef,
+    ): WalletSecurityGrant? = null
+
+    override suspend fun clear(sessionId: WalletInteractionSessionId) = Unit
 }
 
 private class StaticDecisionProtocolExecutor(

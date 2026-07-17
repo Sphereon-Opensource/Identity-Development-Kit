@@ -22,8 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.events.EventCategories
-import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
@@ -36,7 +34,9 @@ import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestCommandService
 import com.sphereon.openid.oid4vp.verifier.CreatedAuthorizationRequest
+import com.sphereon.openid.oid4vp.verifier.impl.event.emitOid4vpSessionHistoryEvent
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
+import com.sphereon.openid.oid4vp.verifier.model.Oid4vpSessionIdentity
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
@@ -80,6 +80,7 @@ class CreateAuthorizationRequestCommandImpl(
     CreateAuthorizationRequestCommand,
     CreateAuthorizationRequestCommandService {
     override val commandId: String get() = CreateAuthorizationRequestCommand.COMMAND_ID
+    private var pendingHistorySession: AuthorizationSession? = null
 
     override suspend fun supports(args: Any): Boolean = args is CreateAuthorizationRequestArgs
 
@@ -89,32 +90,28 @@ class CreateAuthorizationRequestCommandImpl(
         args: CreateAuthorizationRequestArgs,
         applyDuring: (CreateAuthorizationRequestArgs) -> CreateAuthorizationRequestArgs,
     ): IdkResult<CreatedAuthorizationRequest, IdkError> {
+        pendingHistorySession = null
         val result = doExecuteInternal(args, applyDuring)
-        emitOutcome(args, result)
+        emitOutcome(result)
+        pendingHistorySession = null
         return result
     }
 
     private suspend fun emitOutcome(
-        args: CreateAuthorizationRequestArgs,
         result: IdkResult<CreatedAuthorizationRequest, IdkError>,
     ) {
         if (!result.isOk) return
-        val payload =
-            buildJsonObject {
-                put("clientId", args.clientId)
-                put("responseMode", args.responseMode.toString())
-                args.responseUri?.let { put("responseUri", it) }
-            }
         val es = eventService ?: return
-        es.emit(
-            es
-                .eventBuilder()
-                .type(EventTypes.OID4VP_REQUEST_CREATED)
-                .subsystem(EventSubsystems.OID4VP)
-                .category(EventCategories.OPERATION)
-                .origin(CreateAuthorizationRequestCommand.COMMAND_ID)
-                .payload(payload)
-                .build(),
+        es.emitOid4vpSessionHistoryEvent(
+            type = EventTypes.OID4VP_REQUEST_CREATED,
+            origin = CreateAuthorizationRequestCommand.COMMAND_ID,
+            session = requireNotNull(pendingHistorySession) {
+                "Created OID4VP request has no persisted authorization session"
+            },
+            oldState = null,
+            newState = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED.name,
+            stage = "REQUEST_CREATED",
+            outcome = "SUCCEEDED",
         )
     }
 
@@ -123,6 +120,12 @@ class CreateAuthorizationRequestCommandImpl(
         applyDuring: (CreateAuthorizationRequestArgs) -> CreateAuthorizationRequestArgs,
     ): IdkResult<CreatedAuthorizationRequest, IdkError> {
         val rawArgs = applyDuring(args)
+        val instanceId =
+            try {
+                Oid4vpSessionIdentity.normalize("instanceId", rawArgs.instanceId)
+            } catch (e: IllegalArgumentException) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = e.message ?: "Invalid verifier instanceId"))
+            }
 
         // When JAR signing is enabled the verifier self-identifies per OID4VP 1.0 §5.9.3
         // via a prefixed client_id (decentralized_identifier:..., x509_san_dns:..., or
@@ -258,6 +261,7 @@ class CreateAuthorizationRequestCommandImpl(
         val ttlSeconds = AuthorizationSessionStore.DEFAULT_TTL_SECONDS
         val session =
             AuthorizationSession(
+                instanceId = instanceId,
                 sessionId = sessionId,
                 correlationId = effectiveState,
                 queryId = processedArgs.dcqlQueryId,
@@ -284,6 +288,7 @@ class CreateAuthorizationRequestCommandImpl(
         authorizationSessionStore.put(effectiveState, session, ttlSeconds).getOrElse { e ->
             return Err(e)
         }
+        pendingHistorySession = session
 
         return Ok(
             CreatedAuthorizationRequest(

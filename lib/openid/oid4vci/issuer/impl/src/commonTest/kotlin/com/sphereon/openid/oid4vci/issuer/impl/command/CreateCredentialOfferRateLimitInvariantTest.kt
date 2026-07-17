@@ -25,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class CreateCredentialOfferRateLimitInvariantTest {
+    private val instanceId = "issuer-instance-rate-limit-invariant"
     private val issuerId = "https://issuer.example.com/oid4vci"
 
     private fun makeCommand() =
@@ -42,6 +43,7 @@ class CreateCredentialOfferRateLimitInvariantTest {
             val cmd = makeCommand()
             val args =
                 CreateCredentialOfferArgs(
+                    instanceId = instanceId,
                     issuerId = issuerId,
                     credentialConfigurationIds = listOf("PID"),
                     uriLifecycle = OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,
@@ -57,6 +59,7 @@ class CreateCredentialOfferRateLimitInvariantTest {
             val cmd = makeCommand()
             val args =
                 CreateCredentialOfferArgs(
+                    instanceId = instanceId,
                     issuerId = issuerId,
                     credentialConfigurationIds = listOf("PID"),
                     uriLifecycle = OfferUriLifecycle.SINGLE_USE,
@@ -72,6 +75,7 @@ class CreateCredentialOfferRateLimitInvariantTest {
             val cmd = makeCommand()
             val args =
                 CreateCredentialOfferArgs(
+                    instanceId = instanceId,
                     issuerId = issuerId,
                     credentialConfigurationIds = listOf("PID"),
                     uriLifecycle = OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,

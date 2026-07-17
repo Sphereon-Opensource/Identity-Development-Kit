@@ -33,7 +33,7 @@ data class CredentialLifecycleSummary(
 @Serializable
 data class CredentialMetadata(
     val credentialRecordId: String,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val issuerRef: IdentifierRef,
     val subjectRefs: List<IdentifierRef> = emptyList(),
     val format: CredentialFormat,
@@ -50,7 +50,7 @@ data class CredentialMetadata(
 ) {
     init {
         require(credentialRecordId.isNotBlank()) { "CredentialMetadata.credentialRecordId must not be blank" }
-        require(walletInstanceId.isNotBlank()) { "CredentialMetadata.walletInstanceId must not be blank" }
+        require(walletUnitId.isNotBlank()) { "CredentialMetadata.walletUnitId must not be blank" }
         require(credentialTypeRefs.isNotEmpty()) { "CredentialMetadata.credentialTypeRefs must not be empty" }
     }
 

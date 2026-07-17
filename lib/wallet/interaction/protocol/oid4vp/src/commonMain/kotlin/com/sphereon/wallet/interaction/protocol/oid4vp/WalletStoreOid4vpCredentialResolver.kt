@@ -43,7 +43,7 @@ class WalletStoreOid4vpCredentialResolver(
             ?.credentials
             .orEmpty()
             .associate { query ->
-                query.id to candidateMetadata(context.walletInstanceId, query).map { it.credentialRecordId }
+                query.id to candidateMetadata(context.walletUnitId, query).map { it.credentialRecordId }
             }
 
     override suspend fun resolveSelectedCredentials(
@@ -58,7 +58,7 @@ class WalletStoreOid4vpCredentialResolver(
 
         for (query in queries) {
             for (credentialRecordId in selectedCredentialIdsByRequirement[query.id].orEmpty().distinct()) {
-                val record = credentialStore.requireCredential(context.walletInstanceId, credentialRecordId)
+                val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
                 val instance =
                     record.presentableInstance(now)
                         ?: error("Credential record '$credentialRecordId' has no presentable instance")
@@ -112,7 +112,7 @@ class WalletStoreOid4vpCredentialResolver(
             if (selectedInstanceIds.isEmpty()) continue
 
             for (credentialRecordId in credentialRecordIds.distinct()) {
-                val record = credentialStore.requireCredential(context.walletInstanceId, credentialRecordId)
+                val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
                 val updated =
                     record.copy(
                         instances =
@@ -140,13 +140,13 @@ class WalletStoreOid4vpCredentialResolver(
         }
 
         for (record in updates.values) {
-            val putResult = credentialStore.putCredential(context.walletInstanceId, record)
+            val putResult = credentialStore.putCredential(context.walletUnitId, record)
             if (putResult.isErr) error("Failed to update wallet presentation history: ${putResult.error.code}")
         }
     }
 
     private suspend fun candidateMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         query: DcqlCredentialQuery,
     ): List<CredentialMetadata> {
         val requestedTypeRefs = query.credentialTypeRefs()
@@ -154,7 +154,7 @@ class WalletStoreOid4vpCredentialResolver(
             if (requestedTypeRefs.isNotEmpty()) {
                 val collected = linkedMapOf<String, CredentialMetadata>()
                 for (ref in requestedTypeRefs) {
-                    val result = credentialStore.findByCredentialTypeRef(walletInstanceId, ref)
+                    val result = credentialStore.findByCredentialTypeRef(walletUnitId, ref)
                     if (result.isErr) error("Failed to query wallet credential metadata: ${result.error.code}")
                     for (candidate in result.value) {
                         collected[candidate.credentialRecordId] = candidate
@@ -165,7 +165,7 @@ class WalletStoreOid4vpCredentialResolver(
                 val format = query.format?.let { CredentialFormat.fromValueLenient(it) }
                 val result =
                     credentialStore.listMetadata(
-                        walletInstanceId = walletInstanceId,
+                        walletUnitId = walletUnitId,
                         filter =
                             CredentialMetadataFilter(
                                 formats = format?.let { setOf(it) }.orEmpty(),
@@ -180,10 +180,10 @@ class WalletStoreOid4vpCredentialResolver(
     }
 
     private suspend fun WalletCredentialStore.requireCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): CredentialRecord {
-        val result = getCredential(walletInstanceId, credentialRecordId)
+        val result = getCredential(walletUnitId, credentialRecordId)
         if (result.isErr) error("Failed to open wallet credential '$credentialRecordId': ${result.error.code}")
         return result.value ?: error("Wallet credential '$credentialRecordId' was not found")
     }
@@ -199,7 +199,7 @@ class WalletStoreOid4vpCredentialResolver(
                 .orEmpty()
                 .distinct()
         for (credentialRecordId in selectedCredentialIds) {
-            val record = credentialStore.requireCredential(context.walletInstanceId, credentialRecordId)
+            val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
             val alias =
                 record
                     .presentableInstance(now)

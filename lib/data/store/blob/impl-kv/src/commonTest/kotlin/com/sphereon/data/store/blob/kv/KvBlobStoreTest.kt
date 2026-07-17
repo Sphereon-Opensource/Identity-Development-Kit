@@ -17,8 +17,10 @@
 package com.sphereon.data.store.blob.kv
 
 import com.sphereon.data.store.blob.BlobInfo
+import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.PutOptions
+import com.sphereon.data.store.blob.testing.BlobStoreContract
 import com.sphereon.data.store.kv.InMemoryKvStoreConfig
 import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.memory.InMemoryKvBackingStorageImpl
@@ -321,4 +323,12 @@ class KvBlobStoreTest {
             val result = store.createTempUrl(info("temp.txt"))
             assertTrue(result.isErr, "KvBlobStore should not support temp URLs")
         }
+}
+
+class KvBlobStoreContractTest : BlobStoreContract() {
+    override fun createStore(): BlobStore {
+        val backing = InMemoryKvBackingStorageImpl()
+        val factory = InMemoryKvStoreFactoryImpl(backing)
+        return KvBlobStore(factory.create(InMemoryKvStoreConfig(id = "contract", scopeBinding = KvStoreScopeBinding.APP)))
+    }
 }

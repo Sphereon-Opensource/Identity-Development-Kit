@@ -12,6 +12,7 @@ import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
+import com.sphereon.wallet.wscd.SoftwareWscdKeyStoreConfiguration
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.DependencyGraph
@@ -25,7 +26,8 @@ import dev.zacsweers.metro.createGraphFactory
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<WalletInteractionClient>())
-class Iso18013MdocIntegrationWalletInteractionClient : WalletInteractionClient by DefaultWalletInteractionEngine()
+class Iso18013MdocIntegrationWalletInteractionClient :
+    WalletInteractionClient by DefaultWalletInteractionEngine(sensitiveInputAuthority = Iso18013TestSensitiveInputAuthority)
 
 @DependencyGraph(AppScope::class)
 abstract class Iso18013MdocIntegrationTestAppGraph : AbstractAppGraph() {
@@ -37,6 +39,7 @@ abstract class Iso18013MdocIntegrationTestAppGraph : AbstractAppGraph() {
             @Provides @Named("profile") profile: String,
             @Provides @Named("version") version: String,
             @Provides rootScopeProvider: RootScopeProvider,
+            @Provides softwareWscdKeyStoreConfiguration: SoftwareWscdKeyStoreConfiguration,
         ): Iso18013MdocIntegrationTestAppGraph
     }
 }
@@ -54,6 +57,7 @@ fun createIso18013MdocIntegrationTestAppGraph(
             profile = profile,
             version = version,
             rootScopeProvider = DefaultRootScopeProvider(),
+            softwareWscdKeyStoreConfiguration = SoftwareWscdKeyStoreConfiguration.InMemoryForTestingOnly,
         )
     graph.initRootScopeProvider()
     return graph

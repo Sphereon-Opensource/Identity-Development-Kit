@@ -60,17 +60,20 @@ object Oid4vciRestEventTypes {
      */
     val SESSION_DELETED = EventType("oid4vci.rest.session.deleted")
 
+    /** Emitted immediately before a configured session callback is attempted. */
+    val CALLBACK_ATTEMPTED = EventType("oid4vci.rest.callback.attempted")
+
     /**
      * Emitted when a webhook callback is successfully dispatched.
      *
-     * Payload includes: correlationId, callbackUrl, status
+     * Payload includes only safe protocol correlation and callback status fields.
      */
     val CALLBACK_DISPATCHED = EventType("oid4vci.rest.callback.dispatched")
 
     /**
      * Emitted when a webhook callback fails.
      *
-     * Payload includes: correlationId, callbackUrl, error
+     * Payload includes only safe protocol correlation, callback status, and bounded error code fields.
      */
     val CALLBACK_FAILED = EventType("oid4vci.rest.callback.failed")
 
@@ -80,4 +83,14 @@ object Oid4vciRestEventTypes {
      * Payload includes: correlationId, status, polledAt
      */
     val STATUS_POLLED = EventType("oid4vci.rest.status.polled")
+
+    val ALL: Set<EventType> = setOf(
+        SESSION_CREATED,
+        SESSION_STATUS_CHANGED,
+        SESSION_DELETED,
+        CALLBACK_ATTEMPTED,
+        CALLBACK_DISPATCHED,
+        CALLBACK_FAILED,
+        STATUS_POLLED,
+    )
 }

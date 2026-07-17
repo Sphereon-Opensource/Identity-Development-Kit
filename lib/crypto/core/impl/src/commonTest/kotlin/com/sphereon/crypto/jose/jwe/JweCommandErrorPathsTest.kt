@@ -1970,6 +1970,43 @@ class JweCommandErrorPathsTest {
             kotlin.test.assertEquals(plaintext.decodeToString(), decryptResult.value.plaintext?.decodeToString())
         }
 
+    @Test
+    fun testCreateJweCompact_ProtectedHeaderPreservesRecipientKid() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val expectedKid = keyInfo.kid ?: error("Generated test key must have a kid")
+
+            val recipient =
+                ManagedOptsKeyInfo(
+                    identifier = keyInfo,
+                    context =
+                        IdentifierContext(
+                            clientId = "compact-kid-recipient",
+                            clientIdScheme = null,
+                            issuer = "https://example.com",
+                        ),
+                )
+
+            val prepareResult =
+                jweService.prepareJwe(
+                    PrepareJweArgs(
+                        plaintext = "preserve recipient kid".encodeToByteArray(),
+                        recipient = recipient,
+                        keyEncryptionAlg = "ECDH-ES",
+                        contentEncryptionAlg = "A256GCM",
+                    ),
+                )
+            assertTrue(prepareResult.isOk, "Prepare with ECDH-ES should succeed: ${if (prepareResult.isErr) prepareResult.error else ""}")
+
+            val createResult =
+                jweService.createJweCompact(
+                    CreateJweCompactArgs(preparedJwe = prepareResult.value),
+                )
+            assertTrue(createResult.isOk, "Create compact JWE should succeed: ${if (createResult.isErr) createResult.error else ""}")
+            kotlin.test.assertEquals(expectedKid, createResult.value.header.kid)
+        }
+
     // ========================================================================
     // Direct Encryption with Different Key Sizes
     // ========================================================================

@@ -27,7 +27,7 @@ import kotlin.test.assertNotNull
  * Unit tests for ResolveIssuerMetadataCommandImpl.
  *
  * Covers:
- * - Well-known URL construction (OID4VCI 1.1 Section 13.2)
+ * - Well-known URL construction (OID4VCI 1.0 Final Section 12.2.2)
  * - Metadata deserialization from spec example JSON
  *
  * No HTTP calls are made — these tests use the internal URL-building
@@ -39,12 +39,6 @@ class ResolveIssuerMetadataTest {
     @Test
     fun rootIssuerUrlProducesWellKnownUrl() {
         val result = Oid4vciUrls.buildWellKnownUrl("https://issuer.example.com")
-        assertEquals("https://issuer.example.com/.well-known/openid-credential-issuer", result)
-    }
-
-    @Test
-    fun rootIssuerUrlWithTrailingSlashProducesWellKnownUrl() {
-        val result = Oid4vciUrls.buildWellKnownUrl("https://issuer.example.com/")
         assertEquals("https://issuer.example.com/.well-known/openid-credential-issuer", result)
     }
 
@@ -70,6 +64,12 @@ class ResolveIssuerMetadataTest {
     fun issuerUrlWithPortAndPathInsertsWellKnownBetweenHostAndPath() {
         val result = Oid4vciUrls.buildWellKnownUrl("https://issuer.example.com:8443/tenant1")
         assertEquals("https://issuer.example.com:8443/.well-known/openid-credential-issuer/tenant1", result)
+    }
+
+    @Test
+    fun issuerUrlWithTerminatingPathSlashRemovesSlashByDefault() {
+        val result = Oid4vciUrls.buildWellKnownUrl("https://issuer.example.com:8443/test/a/issuer/")
+        assertEquals("https://issuer.example.com:8443/.well-known/openid-credential-issuer/test/a/issuer", result)
     }
 
     @Test

@@ -52,6 +52,7 @@ interface Oid4vpHolderService {
         resolvedRequest: ResolvedOid4vpRequest,
         response: AuthorizationResponse,
         responseMode: ResponseMode? = null,
+        jarmOptions: JarmOptions? = null,
     ): IdkResult<SubmissionResult, IdkError>
 }
 
@@ -168,11 +169,13 @@ interface Oid4vpHolder : Oid4vpHolderAdapter {
      * @param resolvedRequest The resolved authorization request (contains response_uri/redirect_uri)
      * @param response The authorization response to submit
      * @param responseMode Optional override for response mode (defaults to request's response_mode or DIRECT_POST)
+     * @param jarmOptions Optional JARM options for `direct_post.jwt`
      * @return Result of the submission or error
      */
     override suspend fun submitAuthorizationResponse(
         resolvedRequest: ResolvedOid4vpRequest,
         response: AuthorizationResponse,
         responseMode: ResponseMode?,
+        jarmOptions: JarmOptions?,
     ): IdkResult<SubmissionResult, IdkError>
 }

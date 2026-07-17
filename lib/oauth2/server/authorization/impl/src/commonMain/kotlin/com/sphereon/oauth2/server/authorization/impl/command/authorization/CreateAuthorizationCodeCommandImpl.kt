@@ -257,6 +257,8 @@ class CreateAuthorizationCodeCommandImpl(
                 subject = userId,
                 redirectUri = session.redirectUri,
                 scope = consent.grantedScopes?.joinToString(" "),
+                resource = session.resource,
+                defaultAccessTokenAudience = session.defaultAccessTokenAudience,
                 codeChallenge = session.codeChallenge,
                 codeChallengeMethod = pkceMethod,
                 dpopJkt = session.dpopJkt,

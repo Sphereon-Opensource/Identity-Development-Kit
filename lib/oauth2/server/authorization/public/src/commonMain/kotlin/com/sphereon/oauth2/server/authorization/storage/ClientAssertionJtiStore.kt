@@ -21,10 +21,10 @@ import kotlin.time.Instant
 /**
  * Replay guard for OIDC Core §9 / RFC 7523 client assertion `jti` values.
  *
- * The authorization server must reject a reused `jti` within an assertion's lifetime. WP2 Task 2.5
- * adds an in-memory TTL-backed default — sufficient for single-node conformance. Production
- * deployments will override with a Redis or Postgres-backed implementation (flagged as a WP5
- * follow-up in the OIDF readiness plan).
+ * The authorization server must reject a reused `jti` within an assertion's lifetime. This
+ * interface's default implementation is in-memory and TTL-backed, sufficient for single-node
+ * conformance; multi-node production deployments should override it with a Redis- or
+ * Postgres-backed implementation.
  */
 public interface ClientAssertionJtiStore {
     /**

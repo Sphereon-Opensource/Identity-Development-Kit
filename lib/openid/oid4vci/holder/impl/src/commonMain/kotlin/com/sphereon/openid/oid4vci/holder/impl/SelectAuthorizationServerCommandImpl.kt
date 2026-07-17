@@ -24,9 +24,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
-import com.sphereon.ktor.http.client.provider.HttpClientFactory
-import com.sphereon.ktor.http.client.provider.withClient
-import com.sphereon.openid.oid4vci.common.Oid4vciJson
+import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
+import com.sphereon.oauth2.client.command.FetchServerMetadataArgs
 import com.sphereon.openid.oid4vci.holder.ResolvedAuthorizationServer
 import com.sphereon.openid.oid4vci.holder.SelectAuthorizationServerArgs
 import com.sphereon.openid.oid4vci.holder.SelectAuthorizationServerCommand
@@ -34,26 +33,23 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.isSuccess
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 
 /**
- * Selects and fetches the Authorization Server metadata.
+ * Selects and resolves the Authorization Server metadata.
  *
  * Per OID4VCI 1.1 and RFC 8414:
  * - If issuerMetadata.authorizationServers is null, AS URL = issuer URL itself.
- * - Tries /.well-known/oauth-authorization-server first (RFC 8414 Section 3).
- * - Falls back to /.well-known/openid-configuration (OpenID Connect Discovery).
+ *
+ * The actual metadata fetch (discovery-URL ordering, RFC 8414 vs OpenID Connect Discovery,
+ * HTTP retrieval) is delegated to [FetchAuthorizationServerMetadataCommand], the single AS
+ * metadata-fetch command shared with lib-oauth2-client. This command owns only AS *selection*.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<SelectAuthorizationServerCommand>())
 class SelectAuthorizationServerCommandImpl(
     execution: SessionExecution,
-    private val httpClientFactory: HttpClientFactory,
+    private val fetchAuthorizationServerMetadataCommand: FetchAuthorizationServerMetadataCommand,
 ) : TypedServiceCommandAdapter<SelectAuthorizationServerArgs, ResolvedAuthorizationServer, IdkError>(
         commandId = SelectAuthorizationServerCommand.COMMAND_ID,
         execution = execution,
@@ -83,55 +79,15 @@ class SelectAuthorizationServerCommandImpl(
 
         log.debug("Selecting authorization server: $asUrl")
 
-        return try {
-            httpClientFactory.withClient { httpClient ->
-                // Try RFC 8414 /.well-known/oauth-authorization-server first
-                val oauthWellKnown = "$asUrl/.well-known/oauth-authorization-server"
-                log.debug("Trying AS metadata from: $oauthWellKnown")
-
-                val metadata =
-                    fetchJsonObject(httpClient, oauthWellKnown)
-                        ?: run {
-                            // Fallback to OpenID Connect discovery
-                            val oidcWellKnown = "$asUrl/.well-known/openid-configuration"
-                            log.debug("Falling back to OIDC discovery at: $oidcWellKnown")
-                            fetchJsonObject(httpClient, oidcWellKnown)
-                        }
-                        ?: return@withClient Err(
-                            IdkError.fromString(
-                                message = "Could not fetch AS metadata from $asUrl (tried oauth-authorization-server and openid-configuration)",
-                                code = "AS_METADATA_NOT_FOUND",
-                            ),
-                        )
-
-                log.debug("Successfully resolved AS metadata for: $asUrl")
-                Ok(ResolvedAuthorizationServer(authorizationServerUrl = asUrl, metadata = metadata))
-            }
-        } catch (expected: Exception) {
-            Err(
-                IdkError.fromString(
-                    message = "Network error fetching AS metadata from $asUrl: ${expected.message}",
-                    code = "AS_METADATA_NETWORK_ERROR",
-                    exception = expected,
-                ),
-            )
+        val metadataResult = fetchAuthorizationServerMetadataCommand.execute(FetchServerMetadataArgs(issuer = asUrl))
+        if (metadataResult.isErr) {
+            // Propagate the fetch command's own error surface as-is: it already carries a
+            // specific code/message (NotFound / FetchFailed / ValidationFailed / IssuerMismatch /
+            // InvalidUrl) via IdkError.fromDTO, so no new AS-selection-specific codes are needed.
+            return Err(metadataResult.error)
         }
-    }
 
-    private suspend fun fetchJsonObject(
-        httpClient: io.ktor.client.HttpClient,
-        url: String,
-    ): JsonObject? {
-        return try {
-            val response = httpClient.get(url)
-            if (!response.status.isSuccess()) {
-                return null
-            }
-            val body = response.bodyAsText()
-            Oid4vciJson.lenient.parseToJsonElement(body).jsonObject
-        } catch (expected: Exception) {
-            log.debug("Failed to fetch from $url: ${expected.message}")
-            null
-        }
+        log.debug("Successfully resolved AS metadata for: $asUrl")
+        return Ok(ResolvedAuthorizationServer(authorizationServerUrl = asUrl, metadata = metadataResult.value))
     }
 }

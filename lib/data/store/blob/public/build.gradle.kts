@@ -20,6 +20,8 @@ kotlin {
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 api(sphereonlib.org.jetbrains.kotlinx.datetime)
                 api(sphereonlib.org.jetbrains.kotlinx.atomicfu)
+                implementation(sphereonlib.org.kotlincrypto.core.digest)
+                implementation(sphereonlib.org.kotlincrypto.hash.sha2)
             }
         }
         val commonTest by getting {

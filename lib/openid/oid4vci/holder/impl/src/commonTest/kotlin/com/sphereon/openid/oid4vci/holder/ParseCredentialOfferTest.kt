@@ -114,6 +114,53 @@ class ParseCredentialOfferTest {
         }
 
     @Test
+    fun errorWhenCredentialOfferEndpointHasBothOfferParameters() =
+        runTest {
+            val encoded = encodeForUri(jsonOffer)
+            val result =
+                makeImpl().execute(
+                    ParseCredentialOfferArgs(
+                        rawOffer =
+                            "https://wallet.example.com/credential-offer?" +
+                                "credential_offer=$encoded&credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffer",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertTrue(result.errorOrNull()!!.message.defaultMessage.contains("exactly one query parameter"))
+        }
+
+    @Test
+    fun errorWhenCredentialOfferUriDoesNotUseHttps() =
+        runTest {
+            val result =
+                makeImpl().execute(
+                    ParseCredentialOfferArgs(
+                        rawOffer =
+                            "openid-credential-offer://?" +
+                                "credential_offer_uri=http%3A%2F%2Fissuer.example.com%2Foffer",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertTrue(result.errorOrNull()!!.message.defaultMessage.contains("https scheme"))
+        }
+
+    @Test
+    fun errorOnPathAssignmentInsteadOfCredentialOfferEndpointQuery() =
+        runTest {
+            val result =
+                makeImpl().execute(
+                    ParseCredentialOfferArgs(
+                        rawOffer = "https://wallet.example.com/credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffer",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertTrue(result.errorOrNull()!!.message.defaultMessage.contains("No query string"))
+        }
+
+    @Test
     fun errorOnEmptyCredentialConfigurationIds() =
         runTest {
             val impl = makeImpl()

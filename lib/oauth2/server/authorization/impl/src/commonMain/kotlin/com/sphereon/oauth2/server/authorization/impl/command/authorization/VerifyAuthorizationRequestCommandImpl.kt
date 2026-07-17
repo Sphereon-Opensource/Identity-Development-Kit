@@ -382,6 +382,7 @@ class VerifyAuthorizationRequestCommandImpl(
                 clientId = request.clientId,
                 redirectUri = finalRedirectUri,
                 grantedScopes = grantedScopes,
+                defaultAccessTokenAudience = client.defaultAccessTokenAudience,
                 pkceRequired = pkceRequired,
                 parRequired = client.requirePushedAuthorizationRequests,
                 resolvedPkceMethod = resolvedPkceMethod,

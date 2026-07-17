@@ -66,6 +66,7 @@ interface MdocOid4vpService {
         clientId: String,
         responseUri: String,
         authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
     ): DeviceResponse
 
     suspend fun signDocument(
@@ -73,6 +74,7 @@ interface MdocOid4vpService {
         responseUri: String,
         mdocNonce: String,
         authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
         deviceNamespaces: DeviceNameSpaces,
         document: Document?,
         inputDescriptor: IOid4VPInputDescriptor?,

@@ -17,7 +17,6 @@
 package com.sphereon.conf.theme.core.model
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.data.store.asset.model.AssetReference
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 
@@ -34,7 +33,7 @@ import kotlin.jvm.JvmOverloads
 data class ResolvedElement
     @JvmOverloads
     constructor(
-        val asset: AssetReference? = null,
+        val asset: ThemeAssetReference? = null,
         val text: String? = null,
         val origin: ElementOrigin,
     )

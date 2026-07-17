@@ -20,6 +20,28 @@ interface Oid4vciIssuanceExecutor {
         action: WalletInteractionAction? = null,
     ): Oid4vciIssuanceExecutionResult
 
+    /**
+     * Wallet-initiated credential refresh/reissuance: re-requests [credentialRecordId] from its
+     * issuer using a stored OAuth2 refresh token, rather than an offer the wallet is currently
+     * receiving. Reuses the SAME [Oid4vciIssuanceExecutionResult] vocabulary as [requestCredential]
+     * (`Received` / `Failed`); a conforming implementation never returns
+     * `Deferred`/`AuthorizationRequired`/`NestedPresentationRequired` from this entry point.
+     *
+     * Defaults to a typed "not configured" failure so implementations that do not support refresh
+     * (including [notConfigured] and any pre-existing test double) keep compiling and degrade
+     * gracefully instead of crashing.
+     */
+    suspend fun refreshCredential(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+        credentialRecordId: String,
+    ): Oid4vciIssuanceExecutionResult =
+        Oid4vciIssuanceExecutionResult.Failed(
+            code = "oid4vci.execution_not_configured",
+            messageKey = "wallet.interaction.error.oid4vci_execution_not_configured",
+            retryable = true,
+        )
+
     suspend fun notifyCredentialAccepted(
         context: WalletInteractionContext,
         state: WalletInteractionState,

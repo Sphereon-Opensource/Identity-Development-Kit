@@ -22,8 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.events.EventCategories
-import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
@@ -35,9 +33,14 @@ import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestCommand
+import com.sphereon.openid.oid4vci.issuer.Oid4vciIssuerSessionEventTypes
+import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
+import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
+import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
+import com.sphereon.openid.oid4vci.issuer.store.NotificationStateStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -53,7 +56,7 @@ import kotlin.time.Clock
  * 1. Validate access token via AS bridge
  * 2. Look up deferred entry by transaction ID
  * 3. If READY: deliver credential, mark as DELIVERED
- * 4. If PENDING: enforce `expiresAt`, then (Task 7.3) hand off to
+ * 4. If PENDING: enforce `expiresAt`, then hand off to
  *    [DeferredPipelineReExecutor] which runs the DEFERRED pipeline phase, re-checks
  *    completeness, and dispatches the format handler when complete. If re-execution does not
  *    fire (pure-IDK, no pipeline binding, still incomplete, etc.) return the OID4VCI 1.1 §10.2
@@ -68,6 +71,8 @@ class HandleDeferredCredentialRequestCommandImpl(
     execution: SessionExecution,
     private val asBridge: Oid4vciAuthorizationServerBridge,
     private val deferredStore: DeferredCredentialStore,
+    private val sessionStore: CredentialIssuanceSessionStore,
+    private val notificationStore: NotificationStateStore,
     private val clock: Clock,
     private val eventService: SessionEventService? = null,
     /**
@@ -96,6 +101,13 @@ class HandleDeferredCredentialRequestCommandImpl(
                 runCatching { execution.sessionContext.context.tenant.tenantId }.getOrNull()
             },
         )
+    private var pendingHistorySession: IssuanceSession? = null
+    private var pendingHistoryProtocolSessionId: String? = null
+    private var pendingHistoryInstanceId: String? = null
+    private var pendingDeferredExpiresAt: Long? = null
+    private var pendingDeferredStatus: DeferredCredentialStatus? = null
+    private var pendingCredentialConfigurationId: String? = null
+    private var pendingRetryAfterSeconds: Int? = null
 
     override suspend fun supports(args: Any): Boolean = args is HandleDeferredCredentialRequestArgs
 
@@ -103,41 +115,87 @@ class HandleDeferredCredentialRequestCommandImpl(
         args: HandleDeferredCredentialRequestArgs,
         applyDuring: (HandleDeferredCredentialRequestArgs) -> HandleDeferredCredentialRequestArgs,
     ): IdkResult<CredentialResponse, IdkError> {
-        val result = doExecuteInternal(args, applyDuring)
-        emitOutcome(args, result)
+        pendingHistorySession = null
+        pendingHistoryProtocolSessionId = null
+        pendingHistoryInstanceId = null
+        pendingDeferredExpiresAt = null
+        pendingDeferredStatus = null
+        pendingCredentialConfigurationId = null
+        pendingRetryAfterSeconds = null
+        var result = doExecuteInternal(args, applyDuring)
+        if (result.isOk) {
+            val response = result.value
+            val notificationId = response.notificationId
+            val protocolSessionId = pendingHistoryProtocolSessionId
+            if (notificationId != null && protocolSessionId != null) {
+                val instanceId = pendingHistoryInstanceId
+                    ?: return Err(IdkError.INVALID_STATE(message = "instanceId must be resolved before notification registration"))
+                val expiresAt = pendingHistorySession?.expiresAt ?: pendingDeferredExpiresAt ?: clock.now().toEpochMilliseconds() + 86_400_000L
+                val remainingMillis = expiresAt - clock.now().toEpochMilliseconds()
+                val ttlSeconds = ((remainingMillis + 999L) / 1000L).coerceAtLeast(1L)
+                result =
+                    notificationStore
+                        .registerNotification(notificationId, protocolSessionId, instanceId, ttlSeconds)
+                        .map { response }
+            }
+        }
+        emitOutcome(result)
+        pendingHistorySession = null
+        pendingHistoryProtocolSessionId = null
+        pendingHistoryInstanceId = null
+        pendingDeferredExpiresAt = null
+        pendingDeferredStatus = null
+        pendingCredentialConfigurationId = null
+        pendingRetryAfterSeconds = null
         return result
     }
 
     private suspend fun emitOutcome(
-        args: HandleDeferredCredentialRequestArgs,
         result: IdkResult<CredentialResponse, IdkError>,
     ) {
         val es = eventService ?: return
+        val session = pendingHistorySession
+        val protocolSessionId =
+            pendingHistoryProtocolSessionId
+                ?: run {
+                    check(!result.isOk) { "Successful deferred credential request has no protocolSessionId for history" }
+                    return
+                }
+        val instanceId =
+            pendingHistoryInstanceId
+                ?: run {
+                    check(!result.isOk) { "Successful deferred credential request has no instanceId for history" }
+                    return
+                }
         val credentialIssued = result.isOk && result.value.credentials != null
         val type =
             when {
                 credentialIssued -> EventTypes.OID4VCI_CREDENTIAL_DEFERRED_ISSUED
 
-                result.isOk -> return
+                result.isOk -> Oid4vciIssuerSessionEventTypes.DEFERRED_RETRY
 
-                // still-pending 202: no event
-                else -> EventTypes.OID4VCI_CREDENTIAL_FAILED
+                else -> Oid4vciIssuerSessionEventTypes.DEFERRED_FAILED
             }
-        val category = if (credentialIssued) EventCategories.OPERATION else EventCategories.ERROR
-        val payload =
-            buildJsonObject {
-                put("transactionId", args.deferredRequest.transactionId)
-                if (!result.isOk) put("operation", "deferredCredential")
-            }
-        es.emit(
-            es
-                .eventBuilder()
-                .type(type)
-                .subsystem(EventSubsystems.OID4VCI)
-                .category(category)
-                .origin(HandleDeferredCredentialRequestCommand.COMMAND_ID)
-                .payload(payload)
-                .build(),
+        es.emitOid4vciSessionHistoryEvent(
+            type = type,
+            origin = HandleDeferredCredentialRequestCommand.COMMAND_ID,
+            instanceId = instanceId,
+            protocolSessionId = protocolSessionId,
+            correlationId = session?.lifecycleCorrelationId,
+            oldState = pendingDeferredStatus?.name,
+            newState = when {
+                credentialIssued -> DeferredCredentialStatus.DELIVERED.name
+                result.isOk -> DeferredCredentialStatus.PENDING.name
+                else -> DeferredCredentialStatus.FAILED.name
+            },
+            stage = "DEFERRED_CREDENTIAL",
+            outcome = when {
+                credentialIssued -> "RETURNED"
+                result.isOk -> "RETRY"
+                else -> "FAILED"
+            },
+            credentialConfigurationId = pendingCredentialConfigurationId,
+            retryAfterSeconds = pendingRetryAfterSeconds,
         )
     }
 
@@ -165,6 +223,18 @@ class HandleDeferredCredentialRequestCommandImpl(
         val entry =
             deferredStore.get(transactionId).getOrElse { return Err(it) }
                 ?: return invalidTransactionId()
+        pendingDeferredStatus = entry.status
+        pendingCredentialConfigurationId = entry.credentialConfigurationId
+        pendingRetryAfterSeconds = entry.retryAfterSeconds
+        pendingDeferredExpiresAt = entry.expiresAt
+        val protocolSessionId = entry.issuanceSessionId.takeIf(String::isNotBlank) ?: return invalidTransactionId()
+        pendingHistoryProtocolSessionId = protocolSessionId
+        pendingHistorySession = sessionStore.get(protocolSessionId).getOrElse { return Err(it) }
+        val storedInstanceId = pendingHistorySession?.instanceId ?: entry.instanceId
+        if (pendingHistorySession != null && pendingHistorySession?.instanceId != entry.instanceId) {
+            return Err(IdkError.INVALID_STATE(message = "Deferred credential identity does not match its issuance session"))
+        }
+        pendingHistoryInstanceId = storedInstanceId
 
         // 3. Handle based on status
         return when (entry.status) {
@@ -209,7 +279,7 @@ class HandleDeferredCredentialRequestCommandImpl(
     }
 
     /**
-     * PENDING branch: enforce expiry, then attempt a pipeline re-execution per Task 7.3, and
+     * PENDING branch: enforce expiry, then attempt a pipeline re-execution, and
      * finally fall back to the OID4VCI 1.1 §10.2 transactionId+interval response so the HTTP
      * adapter answers 202.
      */

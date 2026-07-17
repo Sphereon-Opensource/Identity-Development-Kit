@@ -29,14 +29,20 @@ import com.sphereon.data.store.kv.KvPutResult
 import com.sphereon.data.store.kv.KvStore
 import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreListing
+import com.sphereon.data.store.kv.KvStoreVersioning
+import com.sphereon.data.store.kv.KvVersionAppendResult
+import com.sphereon.data.store.kv.KvVersionedEntry
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 internal class InMemoryKvStore(
     override val config: KvStoreConfigBase,
     private val partition: InMemoryKvPartition,
-) : KvStoreListing {
+) : KvStoreListing,
+    KvStoreVersioning {
     override suspend fun <V : Any> put(
         namespace: KvNamespace<V>,
         key: String,
@@ -174,7 +180,22 @@ internal class InMemoryKvStore(
                         }.map { it.key }
 
                 keysToRemove.forEach { partition.entries.remove(it) }
-                Ok(keysToRemove.size)
+                var removed = keysToRemove.size
+                val chainIterator = partition.versionChains.entries.iterator()
+                while (chainIterator.hasNext()) {
+                    val (entryKey, chain) = chainIterator.next()
+                    if (namespace != null && entryKey.namespace != namespace.name) continue
+                    val head = chain.entries[chain.headVersionId]
+                    if (head == null || head.expiresAtEpochMillis <= now) {
+                        removed += chain.entries.size
+                        chainIterator.remove()
+                    } else {
+                        val expiredVersions = chain.entries.filterValues { it.expiresAtEpochMillis <= now }.keys
+                        expiredVersions.forEach { chain.entries.remove(it) }
+                        removed += expiredVersions.size
+                    }
+                }
+                Ok(removed)
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to cleanup expired KV entries: ${expected.message}", exception = expected, code = "KV_CLEANUP_FAILED"))
             }
@@ -204,4 +225,130 @@ internal class InMemoryKvStore(
                 Err(IdkError.fromString(message = "Failed to list KV keys for namespace '${namespace.name}': ${expected.message}", exception = expected, code = "KV_LIST_KEYS_FAILED"))
             }
         }
+
+    override suspend fun <V : Any> getHead(
+        namespace: KvNamespace<V>,
+        key: String,
+    ): IdkResult<KvVersionedEntry<V>?, IdkError> =
+        partition.mutex.withLock {
+            try {
+                val chain = liveChain(namespace, key, Clock.System.now().toEpochMilliseconds()) ?: return@withLock Ok(null)
+                Ok(chain.entries[chain.headVersionId]?.decode(namespace))
+            } catch (expected: Exception) {
+                versionError(namespace, key, "get head", "KV_VERSION_GET_HEAD_FAILED", expected)
+            }
+        }
+
+    override suspend fun <V : Any> getVersion(
+        namespace: KvNamespace<V>,
+        key: String,
+        versionId: String,
+    ): IdkResult<KvVersionedEntry<V>?, IdkError> =
+        partition.mutex.withLock {
+            try {
+                val now = Clock.System.now().toEpochMilliseconds()
+                val chain = liveChain(namespace, key, now) ?: return@withLock Ok(null)
+                val stored = chain.entries[versionId]?.takeIf { it.expiresAtEpochMillis > now }
+                Ok(stored?.decode(namespace))
+            } catch (expected: Exception) {
+                versionError(namespace, key, "get version", "KV_VERSION_GET_FAILED", expected)
+            }
+        }
+
+    @OptIn(ExperimentalUuidApi::class)
+    override suspend fun <V : Any> append(
+        namespace: KvNamespace<V>,
+        key: String,
+        expectedPreviousVersionId: String?,
+        value: V,
+        ttl: Duration,
+    ): IdkResult<KvVersionAppendResult<V>, IdkError> =
+        partition.mutex.withLock {
+            try {
+                val now = Clock.System.now().toEpochMilliseconds()
+                val entryKey = InMemoryKvEntryKey(namespace = namespace.name, key = key)
+                val chain = liveChain(entryKey, now)
+                val currentHead = chain?.entries?.get(chain.headVersionId)
+                if (currentHead?.versionId != expectedPreviousVersionId || (chain != null && expectedPreviousVersionId == null)) {
+                    return@withLock Ok(KvVersionAppendResult.Conflict(currentHead = currentHead?.decode(namespace)))
+                }
+
+                val expiresAt = if (ttl.isInfinite()) Long.MAX_VALUE else now + ttl.inWholeMilliseconds
+                val stored =
+                    InMemoryKvVersionedStoredBytes(
+                        versionId = Uuid.random().toString(),
+                        previousVersionId = expectedPreviousVersionId,
+                        value = namespace.codec.encode(value),
+                        createdAtEpochMillis = now,
+                        expiresAtEpochMillis = expiresAt,
+                    )
+                if (chain == null) {
+                    partition.versionChains[entryKey] =
+                        InMemoryKvVersionChain(
+                            headVersionId = stored.versionId,
+                            entries = mutableMapOf(stored.versionId to stored),
+                        )
+                } else {
+                    chain.entries[stored.versionId] = stored
+                    chain.headVersionId = stored.versionId
+                }
+                Ok(KvVersionAppendResult.Applied(entry = stored.decode(namespace)))
+            } catch (expected: Exception) {
+                versionError(namespace, key, "append", "KV_VERSION_APPEND_FAILED", expected)
+            }
+        }
+
+    override suspend fun deleteVersioned(
+        namespace: KvNamespaceId,
+        key: String,
+    ): IdkResult<Boolean, IdkError> =
+        partition.mutex.withLock {
+            try {
+                Ok(partition.versionChains.remove(InMemoryKvEntryKey(namespace = namespace.name, key = key)) != null)
+            } catch (expected: Exception) {
+                versionError(namespace, key, "delete", "KV_VERSION_DELETE_FAILED", expected)
+            }
+        }
+
+    private fun liveChain(
+        namespace: KvNamespaceId,
+        key: String,
+        now: Long,
+    ): InMemoryKvVersionChain? = liveChain(InMemoryKvEntryKey(namespace = namespace.name, key = key), now)
+
+    private fun liveChain(
+        entryKey: InMemoryKvEntryKey,
+        now: Long,
+    ): InMemoryKvVersionChain? {
+        val chain = partition.versionChains[entryKey] ?: return null
+        val head = chain.entries[chain.headVersionId]
+        if (head == null || head.expiresAtEpochMillis <= now) {
+            partition.versionChains.remove(entryKey)
+            return null
+        }
+        return chain
+    }
+
+    private fun <V : Any> InMemoryKvVersionedStoredBytes.decode(namespace: KvNamespace<V>): KvVersionedEntry<V> =
+        KvVersionedEntry(
+            versionId = versionId,
+            previousVersionId = previousVersionId,
+            value = namespace.codec.decode(value),
+            metadata = KvEntryMetadata(createdAtEpochMillis = createdAtEpochMillis, expiresAtEpochMillis = expiresAtEpochMillis),
+        )
+
+    private fun <T> versionError(
+        namespace: KvNamespaceId,
+        key: String,
+        operation: String,
+        code: String,
+        expected: Exception,
+    ): IdkResult<T, IdkError> =
+        Err(
+            IdkError.fromString(
+                message = "Failed to $operation versioned KV entry '${namespace.name}:$key': ${expected.message}",
+                exception = expected,
+                code = code,
+            ),
+        )
 }

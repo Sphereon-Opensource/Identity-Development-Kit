@@ -58,13 +58,19 @@ class VerifyRefreshTokenGrantCommandImpl(
         applyDuring: (VerifyRefreshTokenGrantArgs) -> VerifyRefreshTokenGrantArgs,
     ): IdkResult<VerifiedRefreshTokenGrant, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.refreshToken, applied.clientId, applied.requestedScope).mapError { IdkError.fromDTO(it) }
+        return executeInternal(
+            applied.refreshToken,
+            applied.clientId,
+            applied.requestedScope,
+            applied.requestedResource,
+        ).mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
         refreshToken: String,
         clientId: String,
         requestedScope: String?,
+        requestedResource: List<String>,
     ): IdkResult<VerifiedRefreshTokenGrant, AuthorizationServerError> {
         // Retrieve refresh token data
         val tokenData =
@@ -120,6 +126,13 @@ class VerifyRefreshTokenGrantCommandImpl(
             )
         }
 
+        if (requestedResource.any { !isSecureResourceIndicator(it) }) {
+            return Err(AuthorizationServerError.InvalidTarget(resource = requestedResource.first(), reason = "resource must be a secure absolute URI without a fragment"))
+        }
+        if (requestedResource.isNotEmpty() && requestedResource != tokenData.resource) {
+            return Err(AuthorizationServerError.InvalidGrant(details = "resource does not match refresh token grant"))
+        }
+
         // Verify requested scope (if provided)
         if (requestedScope != null && requestedScope.isNotBlank()) {
             val originalScope = tokenData.scope
@@ -162,6 +175,8 @@ class VerifyRefreshTokenGrantCommandImpl(
                 subject = tokenData.subject,
                 clientId = tokenData.clientId,
                 scope = finalScope,
+                resource = tokenData.resource,
+                defaultAccessTokenAudience = tokenData.defaultAccessTokenAudience,
                 dpopJkt = tokenData.dpopJkt,
                 refreshTokenId = tokenData.refreshToken,
                 authTime = tokenData.authTime,
@@ -185,3 +200,8 @@ class VerifyRefreshTokenGrantCommandImpl(
         const val REUSE_DETECTED_META_KEY: String = "refresh_token_reuse_detected"
     }
 }
+
+private fun isSecureResourceIndicator(value: String): Boolean =
+    SECURE_RESOURCE_URI.matches(value)
+
+private val SECURE_RESOURCE_URI = Regex("^https://[a-z0-9.-]+(?::[0-9]{1,5})?(?:/[^#\\s]*)?$", RegexOption.IGNORE_CASE)

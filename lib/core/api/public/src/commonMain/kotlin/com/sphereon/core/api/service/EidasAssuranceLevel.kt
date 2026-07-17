@@ -17,6 +17,8 @@ import kotlinx.serialization.Serializable
  */
 @JsExportCompat
 @Serializable
+// Do not reorder: declaration order encodes strength (weakest first). LocalWsca's
+// key-attestation ceiling check compares ordinals against WscdProfile capabilities.
 enum class EidasAssuranceLevel(
     val serializedValue: String,
 ) {

@@ -19,6 +19,15 @@ package com.sphereon.oauth2.common.config
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
+@JsExportCompat
+@Serializable
+data class InternalClientConfig(
+    val clientId: String,
+    val clientSecret: String,
+    val defaultAccessTokenAudience: String? = null,
+    val allowedAccessTokenAudiences: Set<String> = emptySet(),
+)
+
 /**
  * Configuration for a single authorization server instance.
  *
@@ -246,12 +255,13 @@ data class OAuth2ServerInstanceConfig(
     val introspectionEndpoint: String? = null,
     val revocationEndpoint: String? = null,
     val jwksUri: String? = null,
-    // Internal service-to-service clients (role → clientId, clientSecret)
-    val internalClients: Map<String, Pair<String, String>> = emptyMap(),
+    // Internal service-to-service clients (role → client configuration)
+    val internalClients: Map<String, InternalClientConfig> = emptyMap(),
     // Public client policy for authorization code flow (OID4VCI wallets)
     val publicClients: PublicClientConfig = PublicClientConfig(),
     // Browser-login session lifetimes (OIDC Core 1.0 §2 auth_time, prompt/max_age semantics)
     val session: SessionConfig = SessionConfig(),
+    val webAuthn: WebAuthnLoginConfig = WebAuthnLoginConfig(),
     /**
      * Optional plain-text notice rendered above the credential form on the AS login page (for
      * example, a demo deployment advertising its seeded test account). Null or blank renders
@@ -281,6 +291,21 @@ data class OAuth2ServerInstanceConfig(
         const val CONFIG_PREFIX = "oauth2.servers"
     }
 }
+
+@JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
+@Serializable
+data class WebAuthnLoginConfig(
+    val enabled: Boolean = false,
+    val rpId: String? = null,
+    val allowedOrigins: Set<String> = emptySet(),
+    val attestationPolicy: String = "none",
+    val userVerification: String = "required",
+    val allowedTransports: Set<String> = emptySet(),
+    val backupStatePolicy: String = "allow-any",
+    val challengeTtlSeconds: Long = 300,
+    val level3PrfEnabled: Boolean = false,
+)
 
 /**
  * TTLs for the OIDC browser-login session backing the `oidc_login_sid` cookie.

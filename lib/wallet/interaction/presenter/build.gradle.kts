@@ -42,9 +42,10 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(projects.libWalletInteractionPublic)
+                api(projects.libWalletInteractionPresenterContracts)
                 api(sphereonlib.software.amazon.app.platform.presenter.molecule.public)
                 implementation(sphereonlib.software.amazon.app.platform.presenter.molecule.impl)
-                implementation(compose.runtime)
+                implementation(sphereonlib.org.jetbrains.compose.runtime.runtime)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
             }
         }
@@ -52,6 +53,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
             }
         }
     }

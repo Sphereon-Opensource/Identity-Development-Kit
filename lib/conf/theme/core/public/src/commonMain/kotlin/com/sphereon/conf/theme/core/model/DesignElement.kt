@@ -17,7 +17,6 @@
 package com.sphereon.conf.theme.core.model
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.data.store.asset.model.AssetReference
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 
@@ -49,6 +48,6 @@ data class DesignElement
         val maxSizeBytes: Long? = null,
         val maxLength: Int? = null,
         val fallbackTokenKey: String? = null,
-        val defaultAsset: AssetReference? = null,
+        val defaultAsset: ThemeAssetReference? = null,
         val defaultText: String? = null,
     )

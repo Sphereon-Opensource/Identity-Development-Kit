@@ -21,6 +21,8 @@ import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciOfferLifecycleArgs
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciOfferLifecycleResult
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleResult
+import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionCallbackConfig
+import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionStatus
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
@@ -29,6 +31,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CreateCredentialOfferCommandImplLifecycleTest {
+    private val instanceId = "issuer-instance-offer-lifecycle"
     private val issuerId = "https://issuer.example.com/oid4vci"
 
     private class RecordingLifecycleHook(
@@ -50,12 +53,19 @@ class CreateCredentialOfferCommandImplLifecycleTest {
 
     private fun sampleArgs() =
         CreateCredentialOfferArgs(
+            instanceId = instanceId,
             issuerId = issuerId,
             credentialConfigurationIds = listOf("PID"),
             preAuthorizedCodeGrant = true,
             authorizationCodeGrant = false,
             preSeededAttributes = mapOf("given_name" to JsonPrimitive("Ada")),
             initialLifecycleFields = mapOf("employee_id" to JsonPrimitive("E1042")),
+            callback = IssuanceSessionCallbackConfig(
+                url = "https://operator.example/callback",
+                statuses = listOf(IssuanceSessionStatus.DEFERRED, IssuanceSessionStatus.COMPLETED),
+                includeIssuanceData = true,
+            ),
+            state = "opaque-workflow-state",
         )
 
     @Test
@@ -75,11 +85,14 @@ class CreateCredentialOfferCommandImplLifecycleTest {
             val out = cmd.execute(sampleArgs())
 
             assertTrue(out.isOk)
+            assertEquals(instanceId, sessionStore.created.first().instanceId)
             assertEquals("corr-1", sessionStore.created.first().lifecycleCorrelationId)
             assertEquals(JsonPrimitive("Ada"), hook.offerArgs?.initialFields?.get("given_name"))
             assertEquals(JsonPrimitive("E1042"), hook.offerArgs?.initialFields?.get("employee_id"))
             assertEquals(listOf(Oid4vciIssuancePhase.START, Oid4vciIssuancePhase.PRE_AUTHORIZED), hook.phases.map { it.phase })
             assertTrue(hook.phases.all { it.correlationId == "corr-1" })
+            assertEquals("https://operator.example/callback", sessionStore.created.first().callback?.url)
+            assertEquals("opaque-workflow-state", sessionStore.created.first().state)
         }
 
     @Test

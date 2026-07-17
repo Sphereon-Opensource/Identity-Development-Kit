@@ -88,6 +88,7 @@ value class IdentifierType(
 
         val EMAIL = IdentifierType("email")
         val PHONE = IdentifierType("phone")
+        val PASSKEY_CREDENTIAL_ID = IdentifierType("passkey_credential_id")
         val DOMAIN = IdentifierType("domain")
         val URL = IdentifierType("url")
         val WEBSITE = IdentifierType("website")

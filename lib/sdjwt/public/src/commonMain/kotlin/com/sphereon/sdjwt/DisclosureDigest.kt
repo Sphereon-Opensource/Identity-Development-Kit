@@ -163,7 +163,8 @@ object DisclosureDigestUtil {
     /**
      * Extract all disclosure digests from an SD-JWT payload
      *
-     * This includes digests from the top-level _sd array and nested _sd arrays
+     * This includes digests from top-level and nested _sd arrays, plus RFC 9901
+     * array-element digest markers ({"...": "<digest>"}) at any depth.
      *
      * @param payload The JSON payload to extract digests from
      * @return Set of all disclosure digests found
@@ -196,6 +197,35 @@ object DisclosureDigestUtil {
                     // Recursively process nested objects
                     extractDigestsRecursive(value, digests)
                 }
+
+                value is JsonArray -> {
+                    extractDigestsFromArray(value, digests)
+                }
+            }
+        }
+    }
+
+    /**
+     * Walk a JSON array collecting {"...": "<digest>"} array-element markers and recursing
+     * into nested containers.
+     */
+    private fun extractDigestsFromArray(
+        array: JsonArray,
+        digests: MutableSet<String>,
+    ) {
+        array.forEach { element ->
+            when (element) {
+                is JsonObject -> {
+                    val marker = element.takeIf { it.size == 1 }?.get(SdJwt.SD_ARRAY_ELEMENT_CLAIM)
+                    if (marker is JsonPrimitive) {
+                        digests.add(marker.content)
+                    } else {
+                        extractDigestsRecursive(element, digests)
+                    }
+                }
+
+                is JsonArray -> extractDigestsFromArray(element, digests)
+                else -> Unit
             }
         }
     }

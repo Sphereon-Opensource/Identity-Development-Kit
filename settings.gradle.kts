@@ -67,7 +67,7 @@ pluginManagement {
         }
     }
     plugins {
-        id("app.cash.sqldelight") version "2.2.1"
+        id("app.cash.sqldelight") version "2.3.2"
         id("com.sphereon.gradle.toml-catalog") version settings.extra["gbsVersion"] as String
     }
 }
@@ -269,6 +269,7 @@ develocity {
 includeProject("lib-cbor-public", "lib/cbor/public")
 includeProject("lib-cbor-impl", "lib/cbor/impl")
 includeProject("lib-core-api-public", "lib/core/api/public")
+includeProject("lib-core-compat-annotations", "lib/core/compat-annotations")
 includeProject("lib-core-api-default", "lib/core/api/default")
 includeProject("lib-core-benchmarks", "lib/core/benchmarks")
 includeProject("lib-conf-settings", "lib/conf/settings")
@@ -282,6 +283,7 @@ includeProject("lib-conf-theme-compose", "lib/conf/theme/compose")
 includeProject("lib-conf-theme-web", "lib/conf/theme/web")
 // UI Components
 includeProject("lib-ui-compose", "lib/ui/compose")
+includeProject("lib-ui-compose-blob-adapter", "lib/ui/compose-blob-adapter")
 includeProject("lib-core-test", "lib/core/test")
 includeProject("lib-data-link-http-client-public", "lib/data/link/http/client/public")
 includeProject("lib-data-link-http-client-impl", "lib/data/link/http/client/impl")
@@ -384,22 +386,48 @@ includeProject("lib-openid-oid4vp-universal-impl", "lib/openid/oid4vp/universal/
 // Wallet SDK
 includeProject("lib-wallet-public", "lib/wallet/public")
 includeProject("lib-wallet-impl", "lib/wallet/impl")
-includeProject("lib-wallet-cli", "lib/wallet/cli")
+includeProject("lib-wallet-unit-public", "lib/wallet/unit/public")
+includeProject("lib-wallet-unit-impl", "lib/wallet/unit/impl")
+includeProject("lib-wallet-wsca-public", "lib/wallet/wsca/public")
+includeProject("lib-wallet-wsca-impl", "lib/wallet/wsca/impl")
+includeProject("lib-wallet-wscd-public", "lib/wallet/wscd/public")
+includeProject("lib-wallet-wscd-software", "lib/wallet/wscd/software")
+includeProject("lib-wallet-wscd-mobile", "lib/wallet/wscd/mobile")
+includeProject("lib-wallet-wscd-test-fixtures", "lib/wallet/wscd/test-fixtures")
+includeProject("lib-wallet-provider-public", "lib/wallet/provider/public")
+includeProject("lib-wallet-provider-local", "lib/wallet/provider/local")
+includeProject("lib-wallet-party-public", "lib/wallet/party/public")
+includeProject("lib-wallet-party-local", "lib/wallet/party/local")
 
 // Wallet Interaction API (protocol-neutral headless wallet runtime)
 includeProject("lib-wallet-interaction-public", "lib/wallet/interaction/public")
 includeProject("lib-wallet-interaction-impl", "lib/wallet/interaction/impl")
 includeProject("lib-wallet-interaction-client-rest", "lib/wallet/interaction/client-rest")
 includeProject("lib-wallet-interaction-presenter", "lib/wallet/interaction/presenter")
+includeProject("lib-wallet-interaction-presenter-contracts", "lib/wallet/interaction/presenter-contracts")
 includeProject("lib-wallet-interaction-protocol-oid4vci", "lib/wallet/interaction/protocol/oid4vci")
 includeProject("lib-wallet-interaction-protocol-oid4vp", "lib/wallet/interaction/protocol/oid4vp")
 includeProject("lib-wallet-interaction-protocol-iso18013", "lib/wallet/interaction/protocol/iso18013")
+includeProject("lib-wallet-interaction-holder-wiring", "lib/wallet/interaction/holder-wiring")
 
 includeProject("wallet-profile-public", "wallet/profile/public")
 includeProject("wallet-profile-impl", "wallet/profile/impl")
 includeProject("wallet-app-public", "wallet/app/public") // Phase 1
 includeProject("wallet-app-impl", "wallet/app/impl")
+includeProject("wallet-kit", "wallet/kit")
+includeProject("wallet-presentation-contracts", "wallet/presentation/contracts")
+includeProject("wallet-presentation", "wallet/presentation/presenter")
+includeProject("wallet-presentation-molecule", "wallet/presentation/molecule")
+includeProject("wallet-ui-compose", "wallet/ui/compose")
+includeProject("wallet-ui-navigation3", "wallet/ui/navigation3")
+includeProject("wallet-reference-app", "wallet/reference/app")
+includeProject("wallet-reference-compose", "wallet/reference/compose")
+includeProject("wallet-reference-local", "wallet/reference/local")
+includeProject("wallet-reference-node", "wallet/reference/node")
+includeProject("wallet-reference-wasm", "wallet/reference/wasm")
 includeProject("wallet-cli", "wallet/cli")
+includeProject("wallet-runner", "wallet/runner")
+includeProject("wallet-example-custom-wscd", "wallet/examples/custom-wscd")
 
 // Data Link - BLE
 includeProject("lib-data-link-ble-public", "lib/data/link/ble/public")
@@ -415,10 +443,15 @@ includeProject("lib-data-store-kv-public", "lib/data/store/kv/public")
 includeProject("lib-data-store-kv-impl", "lib/data/store/kv/impl")
 includeProject("lib-data-store-kv-impl-memory", "lib/data/store/kv/impl-memory")
 includeProject("lib-data-store-kv-impl-kottage", "lib/data/store/kv/impl-kottage")
+includeProject("lib-data-store-kv-impl-android-protected", "lib/data/store/kv/impl-android-protected")
 
 // Data Store - Blob (cross-cutting blob/object storage abstraction)
 includeProject("lib-data-store-blob-public", "lib/data/store/blob/public")
 includeProject("lib-data-store-blob-impl", "lib/data/store/blob/impl")
+
+// Data Store - Vault (provider-neutral protected file/folder contract)
+includeProject("lib-data-store-vault-public", "lib/data/store/vault/public")
+includeProject("lib-data-store-vault-portability", "lib/data/store/vault/portability")
 
 // Data Integration (cross-cutting transport/resource/operation taxonomy for connectors,
 // inventory, workflows, forms, and policy).

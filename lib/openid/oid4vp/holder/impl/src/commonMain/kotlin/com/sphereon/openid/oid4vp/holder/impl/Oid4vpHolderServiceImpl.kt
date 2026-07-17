@@ -24,6 +24,7 @@ import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommand
+import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder.Commands
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderAdapter
@@ -88,5 +89,6 @@ class Oid4vpHolderServiceImpl(
         resolvedRequest: ResolvedOid4vpRequest,
         response: AuthorizationResponse,
         responseMode: ResponseMode?,
-    ): IdkResult<SubmissionResult, IdkError> = submitAuthorizationResponseCommand.execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode))
+        jarmOptions: JarmOptions?,
+    ): IdkResult<SubmissionResult, IdkError> = submitAuthorizationResponseCommand.execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode, jarmOptions))
 }

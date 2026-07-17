@@ -30,7 +30,7 @@ import com.sphereon.conf.theme.core.model.ThemeVariant
 import com.sphereon.conf.theme.core.store.InMemoryThemeStore
 import com.sphereon.conf.theme.core.token.TokenKeyConstants
 import com.sphereon.conf.theme.core.token.buildTokens
-import com.sphereon.data.store.asset.model.AssetReference
+import com.sphereon.conf.theme.core.model.ThemeAssetReference
 import dev.zacsweers.metro.Provider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -62,7 +62,7 @@ class DefaultFeatureResolverTest {
                     DesignElement(
                         elementId = "background",
                         kind = ElementKind.ASSET,
-                        defaultAsset = AssetReference(uri = "/defaults/login-background.png"),
+                        defaultAsset = ThemeAssetReference(uri = "/defaults/login-background.png"),
                     ),
                     DesignElement(
                         elementId = "tagline",
@@ -101,7 +101,7 @@ class DefaultFeatureResolverTest {
             elementId = "logo",
             variant = variant,
             applicationId = applicationId,
-            asset = AssetReference(uri = uri),
+            asset = ThemeAssetReference(uri = uri),
         )
 
     @Test
@@ -209,7 +209,7 @@ class DefaultFeatureResolverTest {
         }
 
     @Test
-    fun assetElementWrapsFallbackTokenValueAsAssetReference() =
+    fun assetElementWrapsFallbackTokenValueAsThemeAssetReference() =
         runTest {
             val store = InMemoryThemeStore()
             store.saveDefinition(

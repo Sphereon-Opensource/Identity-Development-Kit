@@ -30,6 +30,7 @@ import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.client.command.DiscoveryMode
 import com.sphereon.oauth2.client.command.FetchAuthorizationServerMetadataCommand
 import com.sphereon.oauth2.client.command.FetchServerMetadataArgs
+import com.sphereon.oauth2.client.command.authorizationServerMetadataDiscoveryUrls
 import com.sphereon.oauth2.client.util.isSecureUrl
 import com.sphereon.oauth2.client.validation.validateAuthorizationServerMetadata
 import com.sphereon.oauth2.common.error.MetadataError
@@ -96,23 +97,9 @@ class FetchAuthorizationServerMetadataCommandImpl(
             )
         }
 
-        // Parse issuer to extract origin and path
-        val issuerUrl =
+        val candidates =
             try {
-                // Remove trailing slash
-                val normalizedIssuer = issuer.trimEnd('/')
-                val protocolEnd =
-                    if (normalizedIssuer.startsWith("https://")) {
-                        HTTPS_PREFIX_LENGTH
-                    } else {
-                        HTTP_PREFIX_LENGTH
-                    }
-                val originEnd = normalizedIssuer.indexOf('/', protocolEnd)
-                if (originEnd == -1) {
-                    Pair(normalizedIssuer, "")
-                } else {
-                    Pair(normalizedIssuer.substring(0, originEnd), normalizedIssuer.substring(originEnd))
-                }
+                authorizationServerMetadataDiscoveryUrls(issuer, discoveryMode)
             } catch (e: Exception) {
                 return Err(
                     MetadataError.InvalidUrl(
@@ -122,38 +109,8 @@ class FetchAuthorizationServerMetadataCommandImpl(
                 )
             }
 
-        val (origin, path) = issuerUrl
-
-        // Construct well-known URLs
-        val oauthServerWellKnownUrl = "$origin/.well-known/oauth-authorization-server$path"
-        val legacyOauthServerWellKnownUrl = "$issuer/.well-known/oauth-authorization-server"
-        val openIdConfigurationUrl = "$issuer/.well-known/openid-configuration"
-
         // OAUTH2_FIRST tries RFC 8414 first (legacy OAuth2 callers — prior behaviour);
         // OIDC_FIRST tries OIDC Discovery first so OIDC RPs see the richer metadata document.
-        val candidates: List<String> =
-            when (discoveryMode) {
-                DiscoveryMode.OAUTH2_FIRST -> {
-                    buildList {
-                        add(oauthServerWellKnownUrl)
-                        if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
-                            add(legacyOauthServerWellKnownUrl)
-                        }
-                        add(openIdConfigurationUrl)
-                    }
-                }
-
-                DiscoveryMode.OIDC_FIRST -> {
-                    buildList {
-                        add(openIdConfigurationUrl)
-                        add(oauthServerWellKnownUrl)
-                        if (legacyOauthServerWellKnownUrl != oauthServerWellKnownUrl) {
-                            add(legacyOauthServerWellKnownUrl)
-                        }
-                    }
-                }
-            }
-
         val attemptedUrls = mutableListOf<String>()
         var firstError: MetadataError? = null
         for (url in candidates) {
@@ -188,6 +145,7 @@ class FetchAuthorizationServerMetadataCommandImpl(
                 HttpClientOptions(
                     engine = null,
                     enableContentNegotiation = true,
+                    additionalConfig = { followRedirects = false },
                 ),
             )
 
@@ -265,8 +223,11 @@ class FetchAuthorizationServerMetadataCommandImpl(
             return validationResult
         }
 
-        // Check issuer match
-        if (metadata.issuer != requestedIssuer.trimEnd('/')) {
+        // Check issuer match. Trailing-slash-insensitive on BOTH sides: authorization servers
+        // legitimately publish their issuer with a trailing slash while callers pass the bare
+        // URL (the OIDF conformance suite does exactly this), and a one-sided trim rejects
+        // conformant servers.
+        if (metadata.issuer.trimEnd('/') != requestedIssuer.trimEnd('/')) {
             return Err(
                 MetadataError.IssuerMismatch(
                     requestedIssuer = requestedIssuer.trimEnd('/'),
@@ -277,10 +238,5 @@ class FetchAuthorizationServerMetadataCommandImpl(
         }
 
         return Ok(metadata)
-    }
-
-    companion object {
-        private const val HTTPS_PREFIX_LENGTH = 8
-        private const val HTTP_PREFIX_LENGTH = 7
     }
 }

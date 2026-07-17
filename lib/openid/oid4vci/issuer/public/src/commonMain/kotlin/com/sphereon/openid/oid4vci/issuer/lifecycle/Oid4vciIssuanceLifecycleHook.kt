@@ -63,6 +63,7 @@ data class Oid4vciOfferLifecycleResult(
 @Serializable
 data class Oid4vciPhaseLifecycleArgs(
     val correlationId: String?,
+    val protocolSessionId: String,
     val phase: Oid4vciIssuancePhase,
     val credentialConfigurationId: String? = null,
     @JsExportIgnoreCompat

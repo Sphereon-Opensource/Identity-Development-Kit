@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.data.store.blob.cas.ContentAddress
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -55,7 +56,38 @@ interface BlobStore {
 
     suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError>
 
+    /** Opens a lazy body stream without materializing the entire blob at this API boundary. */
+    suspend fun openRead(info: BlobInfo): IdkResult<BlobReadStream, IdkError> = Err(BlobStoreError.Unsupported("openRead").toIdkError())
+
+    suspend fun openReadRange(
+        info: BlobInfo,
+        range: BlobReadRange,
+    ): IdkResult<BlobReadStream, IdkError> = Err(BlobStoreError.Unsupported("openReadRange").toIdkError())
+
+    suspend fun verifyIntegrity(
+        info: BlobInfo,
+        expected: ContentAddress,
+    ): IdkResult<Boolean, IdkError> {
+        if (!capabilities.supportsStreamingRead) return Err(BlobStoreError.Unsupported("verifyIntegrity").toIdkError())
+        val opened = openRead(info)
+        if (opened.isErr) return Err(opened.error)
+        return verifyBlobSourceIntegrity(opened.value.source, expected)
+    }
+
+    /** Stores bytes consumed incrementally from [source]. */
+    suspend fun putStream(
+        target: BlobInfo,
+        source: BlobByteSource,
+        options: PutOptions = PutOptions.DEFAULT,
+    ): IdkResult<BlobDescriptor, IdkError> = Err(BlobStoreError.Unsupported("putStream").toIdkError())
+
     suspend fun delete(info: BlobInfo): IdkResult<Boolean, IdkError>
+
+    /** Atomically deletes only if [options] still match the current object. */
+    suspend fun deleteConditional(
+        info: BlobInfo,
+        options: DeleteOptions,
+    ): IdkResult<Boolean, IdkError> = Err(BlobStoreError.Unsupported("deleteConditional").toIdkError())
 
     suspend fun exists(info: BlobInfo): IdkResult<Boolean, IdkError> {
         val statResult = stat(info)

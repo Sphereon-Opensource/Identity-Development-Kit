@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
@@ -40,6 +41,8 @@ import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -48,13 +51,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 
 /**
  * Unit tests for ValidateAuthorizationResponseCommandImpl
  */
 class ValidateAuthorizationResponseCommandImplTest {
     private val testContext = Oid4vpVerifierTestContext("validate-auth-response-test", this)
-    private val command = createTestCommand()
 
     @Test
     fun `test validate response with matching SD-JWT credential`() =
@@ -82,7 +85,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("identity_credential", sdJwt),
                     state = "state123",
-                    rawVpToken = """{"identity_credential":"$sdJwt"}""",
+                    rawVpToken = """{"identity_credential":["$sdJwt"]}""",
                 )
 
             val originalRequest =
@@ -101,7 +104,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 )
 
             // When: Validating the response
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-sd-jwt-validation")
 
             // Then: Should validate successfully
             assertIs<Ok<*>>(result)
@@ -118,32 +121,35 @@ class ValidateAuthorizationResponseCommandImplTest {
     fun `credential trust validation receives stored dcql query id separately from credential query id`() =
         runTest {
             val trustValidator = CapturingTrustValidator()
-            val command = createTestCommand(credentialTrustValidators = setOf(trustValidator))
             val dcqlQuery =
                 DcqlQuery(
                     credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt")),
                 )
             val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse =
+                        ParsedAuthorizationResponse(
+                            vpToken = vpTokenOf("identity_credential", sdJwt),
+                            state = "state123",
+                            rawVpToken = """{"identity_credential":["$sdJwt"]}""",
+                        ),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "state123",
+                        ),
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce123",
+                    verifierId = "verifier-a",
+                    dcqlQueryId = "employee-vp",
+                )
             val result =
-                command.validateAuthorizationResponse(
-                    ValidateAuthorizationResponseArgs(
-                        parsedResponse =
-                            ParsedAuthorizationResponse(
-                                vpToken = vpTokenOf("identity_credential", sdJwt),
-                                state = "state123",
-                                rawVpToken = """{"identity_credential":"$sdJwt"}""",
-                            ),
-                        originalRequest =
-                            AuthorizationRequest(
-                                clientId = "https://verifier.example.com",
-                                redirectUri = "https://verifier.example.com/callback",
-                                state = "state123",
-                            ),
-                        dcqlQuery = dcqlQuery,
-                        expectedNonce = "nonce123",
-                        verifierId = "verifier-a",
-                        dcqlQueryId = "employee-vp",
-                    ),
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-instance-trust-validation",
+                    credentialTrustValidators = setOf(trustValidator),
                 )
 
             assertIs<Ok<*>>(result)
@@ -168,7 +174,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                         ParsedAuthorizationResponse(
                             vpToken = vpTokenOf("identity_credential", sdJwt),
                             state = "state123",
-                            rawVpToken = """{"identity_credential":"$sdJwt"}""",
+                            rawVpToken = """{"identity_credential":["$sdJwt"]}""",
                         ),
                     originalRequest =
                         AuthorizationRequest(
@@ -181,8 +187,12 @@ class ValidateAuthorizationResponseCommandImplTest {
                 )
 
             // A revoked status with no per-query policy uses the strict default → reject + discard.
-            val command = createTestCommand(setOf(FixedStatusVerifier(value = 1)))
-            val result = command.validateAuthorizationResponse(args)
+            val result =
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-instance-revoked-status-validation",
+                    credentialStatusVerifiers = setOf(FixedStatusVerifier(value = 1)),
+                )
 
             assertIs<Ok<*>>(result)
             assertFalse(result.value.valid)
@@ -194,7 +204,12 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertTrue(result.value.errors.none { it.contains("status list") || it.contains("https://") })
 
             // An active status passes the same default policy.
-            val activeResult = createTestCommand(setOf(FixedStatusVerifier(value = 0))).validateAuthorizationResponse(args)
+            val activeResult =
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-instance-active-status-validation",
+                    credentialStatusVerifiers = setOf(FixedStatusVerifier(value = 0)),
+                )
             assertIs<Ok<*>>(activeResult)
             assertTrue(activeResult.value.valid)
             assertEquals(1, activeResult.value.matchedCredentials.size)
@@ -221,7 +236,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("mdl_credential", mdocPresentation),
                     state = "state456",
-                    rawVpToken = """{"mdl_credential":"$mdocPresentation"}""",
+                    rawVpToken = """{"mdl_credential":["$mdocPresentation"]}""",
                 )
 
             val originalRequest =
@@ -240,7 +255,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 )
 
             // When: Validating the response
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-mdoc-validation")
 
             // Then: Should validate successfully
             assertIs<Ok<*>>(result)
@@ -265,7 +280,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("test", sdjwt),
                     state = "wrong_state",
-                    rawVpToken = """{"test":"$sdjwt"}""",
+                    rawVpToken = """{"test":["$sdjwt"]}""",
                 )
 
             val originalRequest =
@@ -283,7 +298,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce123",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-state-mismatch-validation")
 
             assertIs<Ok<*>>(result)
             val validation = result.value
@@ -318,7 +333,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                             ),
                         ),
                     state = "state789",
-                    rawVpToken = """{"identity_cred":"$sdJwt","mdl_cred":"$mdoc"}""",
+                    rawVpToken = """{"identity_cred":["$sdJwt"],"mdl_cred":["$mdoc"]}""",
                 )
 
             val originalRequest =
@@ -336,7 +351,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce789",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-multiple-credential-validation")
 
             assertIs<Ok<*>>(result)
             val validation = result.value
@@ -375,7 +390,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("mdl", mdoc),
                     state = "state_or",
-                    rawVpToken = """{"mdl":"$mdoc"}""",
+                    rawVpToken = """{"mdl":["$mdoc"]}""",
                 )
 
             val originalRequest =
@@ -393,7 +408,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce_or",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-credential-set-validation")
 
             assertIs<Ok<*>>(result)
             val validation = result.value
@@ -422,7 +437,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("required_cred", jwt),
                     state = "state_missing",
-                    rawVpToken = """{"required_cred":"$jwt"}""",
+                    rawVpToken = """{"required_cred":["$jwt"]}""",
                 )
 
             val originalRequest =
@@ -440,7 +455,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce_missing",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-missing-credential-validation")
 
             assertIs<Ok<*>>(result)
             val validation = result.value
@@ -451,7 +466,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
-    fun `test validate response without state in original request`() =
+    fun `test rejects response without session correlation state`() =
         runTest {
             // Given: Original request without state
             val dcqlQuery =
@@ -464,7 +479,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("test", sdjwt),
                     state = null,
-                    rawVpToken = """{"test":"$sdjwt"}""",
+                    rawVpToken = """{"test":["$sdjwt"]}""",
                 )
 
             val originalRequest =
@@ -482,13 +497,10 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce_no_state",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = createTestCommand().validateAuthorizationResponse(args)
 
-            assertIs<Ok<*>>(result)
-            val validation = result.value
-
-            // Should pass - state validation skipped when original has no state
-            assertTrue(validation.valid)
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("session correlation state"))
         }
 
     @Test
@@ -512,7 +524,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("any_format_cred", jwtVp),
                     state = "state_any",
-                    rawVpToken = """{"any_format_cred":"$jwtVp"}""",
+                    rawVpToken = """{"any_format_cred":["$jwtVp"]}""",
                 )
 
             val originalRequest =
@@ -530,7 +542,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce_any",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-any-format-validation")
 
             assertIs<Ok<*>>(result)
             val validation = result.value
@@ -565,7 +577,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("dpp", jwt),
                     state = "state123",
-                    rawVpToken = """{"dpp":"$jwt"}""",
+                    rawVpToken = """{"dpp":["$jwt"]}""",
                 )
             val originalRequest =
                 AuthorizationRequest(
@@ -581,7 +593,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     expectedNonce = "nonce123",
                 )
 
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-jsonld-vocab-validation")
             assertIs<Ok<*>>(result)
             val validation = result.value
 
@@ -611,7 +623,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("id", sdJwt),
                     state = "s",
-                    rawVpToken = """{"id":"$sdJwt"}""",
+                    rawVpToken = """{"id":["$sdJwt"]}""",
                 )
             val originalRequest =
                 AuthorizationRequest(
@@ -626,7 +638,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     dcqlQuery = dcqlQuery,
                     expectedNonce = "n",
                 )
-            val result = command.validateAuthorizationResponse(args)
+            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-non-jsonld-validation")
             assertIs<Ok<*>>(result)
             assertTrue(result.value.valid)
             assertEquals(1, result.value.matchedCredentials.size)
@@ -691,6 +703,43 @@ class ValidateAuthorizationResponseCommandImplTest {
             credentialStatusVerifiers = credentialStatusVerifiers,
             credentialTrustValidators = credentialTrustValidators,
         )
+    }
+
+    private suspend fun validateWithPersistedSession(
+        args: ValidateAuthorizationResponseArgs,
+        instanceId: String,
+        credentialStatusVerifiers: Set<com.sphereon.statuslist.spi.CredentialStatusVerifier> = emptySet(),
+        credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
+    ): IdkResult<com.sphereon.openid.oid4vp.verifier.ValidationResult, IdkError> {
+        val correlationState = requireNotNull(args.originalRequest.state) { "Test authorization request must have correlation state" }
+        val authorizationSessionStore = TestAuthorizationSessionStore()
+        val now = Clock.System.now().toEpochMilliseconds()
+        val session =
+            AuthorizationSession(
+                instanceId = instanceId,
+                sessionId = "validation-session-$correlationState",
+                correlationId = correlationState,
+                dcqlQuery = args.dcqlQuery,
+                dcqlQueryId = args.dcqlQueryId,
+                verifierId = args.verifierId,
+                authorizationRequest = args.originalRequest,
+                status = AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_RECEIVED,
+                parsedResponse = args.parsedResponse,
+                createdAt = now,
+                updatedAt = now,
+                expiresAt = now + 600_000,
+            )
+
+        assertIs<Ok<*>>(authorizationSessionStore.put(correlationState, session, ttlSeconds = 600))
+        val persistedSession = authorizationSessionStore.get(correlationState)
+        assertIs<Ok<*>>(persistedSession)
+        assertEquals(instanceId, persistedSession.value?.instanceId)
+
+        return createTestCommand(
+            credentialStatusVerifiers = credentialStatusVerifiers,
+            credentialTrustValidators = credentialTrustValidators,
+            authorizationSessionStore = authorizationSessionStore,
+        ).validateAuthorizationResponse(args)
     }
 }
 

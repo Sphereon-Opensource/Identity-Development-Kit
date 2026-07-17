@@ -37,14 +37,14 @@ class WalletStoreIso18013DocumentProviderResolver(
     ): DocumentProvider =
         WalletStoreIso18013DocumentProvider(
             credentialStore = credentialStore,
-            walletInstanceId = context.walletInstanceId,
+            walletUnitId = context.walletUnitId,
             issuerSignedCborCodec = issuerSignedCborCodec,
         )
 }
 
 class WalletStoreIso18013DocumentProvider(
     private val credentialStore: WalletCredentialStore,
-    private val walletInstanceId: String,
+    private val walletUnitId: String,
     private val issuerSignedCborCodec: IssuerSignedCborCodec,
 ) : DocumentProvider {
     override suspend fun getDocuments(selectorData: Any?): Set<DocumentWithKeyAlias> {
@@ -62,7 +62,7 @@ class WalletStoreIso18013DocumentProvider(
         if (requestedDocTypes.isEmpty()) {
             val result =
                 credentialStore.listMetadata(
-                    walletInstanceId = walletInstanceId,
+                    walletUnitId = walletUnitId,
                     filter =
                         com.sphereon.wallet.credential.CredentialMetadataFilter(
                             formats = setOf(CredentialFormat.MSO_MDOC),
@@ -77,7 +77,7 @@ class WalletStoreIso18013DocumentProvider(
         for (docType in requestedDocTypes) {
             val result =
                 credentialStore.findByCredentialTypeRef(
-                    walletInstanceId = walletInstanceId,
+                    walletUnitId = walletUnitId,
                     ref =
                         CredentialTypeRef(
                             format = CredentialFormat.MSO_MDOC,
@@ -96,7 +96,7 @@ class WalletStoreIso18013DocumentProvider(
     }
 
     private suspend fun CredentialMetadata.toWalletDocument(now: Instant): DocumentWithKeyAlias? {
-        val recordResult = credentialStore.getCredential(walletInstanceId, credentialRecordId)
+        val recordResult = credentialStore.getCredential(walletUnitId, credentialRecordId)
         if (recordResult.isErr) error("Failed to open mdoc wallet credential '$credentialRecordId': ${recordResult.error.code}")
         val record = recordResult.value ?: return null
         val instance =

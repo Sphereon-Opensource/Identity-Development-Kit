@@ -229,7 +229,7 @@ class Oid4vciIssuanceE2ETest {
                 holder.createCredentialRequestProof(
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
-                    signingKeyId = signingKeyId,
+                    signingKeyIds = listOf(signingKeyId),
                     signingAlgorithm = "ES256",
                 )
             assertTrue(
@@ -388,7 +388,7 @@ class Oid4vciIssuanceE2ETest {
                 holder.createCredentialRequestProof(
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
-                    signingKeyId = signingKeyId,
+                    signingKeyIds = listOf(signingKeyId),
                     signingAlgorithm = "ES256",
                 )
             assertTrue(proofResult.isOk, "Proof creation should succeed")
@@ -517,7 +517,7 @@ class Oid4vciIssuanceE2ETest {
                 holder.createCredentialRequestProof(
                     issuerUrl = "https://issuer.example.com",
                     cNonce = "test-nonce-123",
-                    signingKeyId = signingKeyId,
+                    signingKeyIds = listOf(signingKeyId),
                     signingAlgorithm = "ES256",
                 )
             assertTrue(

@@ -222,9 +222,11 @@ class RequestCredentialWithFlowCommandImpl(
             CreateCredentialRequestProofArgs(
                 issuerUrl = args.issuerUrl,
                 cNonce = cNonce,
-                signingKeyId = args.signingKeyId,
+                signingKeyIds = listOf(args.signingKeyId),
                 signingAlgorithm = args.signingAlgorithm,
                 clientId = config.clientId,
+                keyAttestationJwt = args.keyAttestationJwt,
+                proofType = args.proofType,
             ),
         )
 

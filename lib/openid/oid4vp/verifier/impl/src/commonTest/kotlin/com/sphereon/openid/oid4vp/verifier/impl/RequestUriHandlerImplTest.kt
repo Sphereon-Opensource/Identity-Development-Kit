@@ -141,6 +141,7 @@ class RequestUriHandlerImplTest {
         val now = Clock.System.now().toEpochMilliseconds()
         val session =
             AuthorizationSession(
+                instanceId = "verifier-instance-request-uri-handler",
                 sessionId = sessionId,
                 correlationId = sessionId,
                 dcqlQuery = DcqlQuery(credentials = emptyList()),
@@ -159,6 +160,9 @@ class RequestUriHandlerImplTest {
             )
         val put = store.put(sessionId, session, ttlSeconds = 600)
         assertIs<Ok<*>>(put)
+        val persistedSession = store.get(sessionId)
+        assertIs<Ok<*>>(persistedSession)
+        assertEquals(session.instanceId, persistedSession.value?.instanceId)
         return sessionId
     }
 

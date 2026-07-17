@@ -147,7 +147,7 @@ class Oid4vciIssuerExternalIdentifierResolutionServiceImpl(
                     message = "Issuer metadata from $wellKnownUrl is missing credential_issuer field",
                 ).asErrorResult()
         }
-        if (claimedIssuer.trimEnd('/') != issuerUrl) {
+        if (claimedIssuer != issuerUrl) {
             log.warn(
                 "credential_issuer '$claimedIssuer' does not match requested issuer URL '$issuerUrl'; proceeding with caution",
             )

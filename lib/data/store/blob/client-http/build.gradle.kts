@@ -32,6 +32,7 @@ kotlin {
             }
         }
         val commonTest by getting {
+            kotlin.srcDir("../test-fixtures/src/commonTest/kotlin")
             dependencies {
                 implementation(kotlin("test"))
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)

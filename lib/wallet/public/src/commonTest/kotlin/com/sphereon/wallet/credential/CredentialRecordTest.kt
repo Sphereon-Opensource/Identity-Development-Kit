@@ -8,9 +8,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlin.time.Instant
 
-private const val WALLET_INSTANCE_ID = "wallet-personal"
+private const val WALLET_UNIT_ID = "wallet-personal"
 
 private val NOW = Instant.fromEpochSeconds(1_800_000_000)
 private val ISSUER_REF = IdentifierRef(type = IdentifierType.DID, value = "did:ex:issuer")
@@ -28,11 +29,11 @@ private fun instance(
     state: CredentialLifecycleState = CredentialLifecycleState.ACTIVE,
 ) = CredentialInstance(
     id = id,
-    walletInstanceId = WALLET_INSTANCE_ID,
+    walletUnitId = WALLET_UNIT_ID,
     credentialRecordId = "record-1",
     format = CredentialFormat.SD_JWT_DC,
     raw = "raw-$id",
-    bodyStorageRef = BodyStorageRef(BodyStorageKind.WALLET_STORE, "wallet-instances/$WALLET_INSTANCE_ID/credentials/record-1/instances/$id/body"),
+    bodyStorageRef = BodyStorageRef(BodyStorageKind.WALLET_STORE, "wallet-units/$WALLET_UNIT_ID/credentials/record-1/instances/$id/body"),
     holderKeyRef = KeyRef(alias = "key-$id"),
     lifecycleState = state,
     validity = CredentialValidityWindow(validFrom = Instant.fromEpochSeconds(1_700_000_000), validUntil = Instant.fromEpochSeconds(1_900_000_000)),
@@ -44,7 +45,7 @@ private fun instance(
 private fun record() =
     CredentialRecord(
         id = "record-1",
-        walletInstanceId = WALLET_INSTANCE_ID,
+        walletUnitId = WALLET_UNIT_ID,
         issuerRef = ISSUER_REF,
         format = CredentialFormat.SD_JWT_DC,
         credentialTypeRefs = setOf(TYPE_REF),
@@ -150,5 +151,77 @@ class CredentialRecordTest {
         assertEquals(CredentialLifecycleState.REVOKED, updated.instances.single().lifecycleState)
         assertEquals(statusAt, updated.updatedAt)
         assertFalse(updated.needsRefresh)
+    }
+
+    @Test
+    fun freshInstanceIsNotConsumedUntilABindingRefIsRecorded() {
+        val fresh = instance("ci-1")
+        assertFalse(fresh.isConsumed)
+
+        val presented =
+            fresh.copy(
+                bindingRefs =
+                    listOf(
+                        CredentialBindingRef(
+                            verifierRef = IdentifierRef(type = IdentifierType.DID, value = "did:ex:verifier"),
+                            boundAt = NOW,
+                        ),
+                    ),
+            )
+        assertTrue(presented.isConsumed)
+    }
+
+    @Test
+    fun unusedActiveInstancesExcludesOnlyThePresentedInstance() {
+        val presentedInstance =
+            instance("ci-1").copy(
+                bindingRefs =
+                    listOf(
+                        CredentialBindingRef(
+                            verifierRef = IdentifierRef(type = IdentifierType.DID, value = "did:ex:verifier"),
+                            boundAt = NOW,
+                        ),
+                    ),
+            )
+        val unpresentedInstance = instance("ci-2")
+        val record = record().copy(instances = listOf(presentedInstance, unpresentedInstance))
+
+        assertEquals(1, record.unusedActiveInstanceCount(NOW))
+        assertEquals(listOf(unpresentedInstance), record.unusedActiveInstances(NOW))
+    }
+
+    @Test
+    fun presentableInstanceStillReturnsAConsumedInstanceProvingNoExclusion() {
+        val presentedInstance =
+            instance("ci-1").copy(
+                bindingRefs =
+                    listOf(
+                        CredentialBindingRef(
+                            verifierRef = IdentifierRef(type = IdentifierType.DID, value = "did:ex:verifier"),
+                            boundAt = NOW,
+                        ),
+                    ),
+            )
+        val record = record().copy(instances = listOf(presentedInstance))
+
+        assertTrue(presentedInstance.isConsumed)
+        assertEquals(presentedInstance, record.presentableInstance(NOW))
+    }
+
+    @Test
+    fun unusedActiveInstancesExcludesExpiredAndNotYetValidUnpresentedInstances() {
+        val expiredInstance =
+            instance("ci-2").copy(
+                validity = CredentialValidityWindow(validFrom = Instant.fromEpochSeconds(1_600_000_000), validUntil = Instant.fromEpochSeconds(1_700_000_000)),
+            )
+        val notYetValidInstance =
+            instance("ci-3").copy(
+                validity = CredentialValidityWindow(validFrom = Instant.fromEpochSeconds(1_900_000_000), validUntil = Instant.fromEpochSeconds(2_000_000_000)),
+            )
+        val activeUnpresentedInstance = instance("ci-1")
+        val record = record().copy(instances = listOf(activeUnpresentedInstance, expiredInstance, notYetValidInstance))
+
+        assertEquals(1, record.unusedActiveInstanceCount(NOW))
+        assertEquals(listOf(activeUnpresentedInstance), record.unusedActiveInstances(NOW))
     }
 }

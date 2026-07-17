@@ -55,6 +55,9 @@ data class PartyCreateInput
         /** Reference to the owning party */
         @SerialName("ownerId")
         val ownerId: Uuid? = null,
+        /** Home organization unit. Null is valid for tenant-root and organization-unit Parties. */
+        @SerialName("organizationUnitId")
+        val organizationUnitId: Uuid? = null,
     )
 
 /**
@@ -80,4 +83,7 @@ data class PartyUpdateInput
         /** New owner ID (null = keep current) */
         @SerialName("ownerId")
         val ownerId: Uuid? = null,
+        /** New home organization unit (null = keep current). */
+        @SerialName("organizationUnitId")
+        val organizationUnitId: Uuid? = null,
     )

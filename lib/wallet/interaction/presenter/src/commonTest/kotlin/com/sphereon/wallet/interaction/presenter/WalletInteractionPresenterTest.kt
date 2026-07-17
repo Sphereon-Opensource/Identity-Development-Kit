@@ -7,16 +7,15 @@
 package com.sphereon.wallet.interaction.presenter
 
 import com.sphereon.wallet.interaction.WalletInteractionAction
-import com.sphereon.wallet.interaction.WalletInteractionActionType
-import com.sphereon.wallet.interaction.WalletInteractionActivitySummary
-import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionClient
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionSession
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.presenter.DefaultWalletInteractionScreenSource
+import com.sphereon.wallet.interaction.presenter.WalletScreenModelMapper
+import com.sphereon.wallet.interaction.presenter.contracts.WalletScreenIntent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,100 +25,26 @@ import software.amazon.app.platform.presenter.Presenter
 import software.amazon.app.platform.presenter.molecule.MoleculePresenter
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class WalletInteractionPresenterTest {
     @Test
-    fun screenModelUsesLocalizationKeysForTitlesAndActions() {
-        val model =
-            WalletInteractionState(
-                sessionId = WalletInteractionSessionId("s1"),
-                walletInstanceId = "wallet",
-                status = WalletInteractionStatus.CredentialOfferReview,
-            ).toScreenModel()
-
-        assertEquals("wallet.interaction.status.credential_offer_review", model.titleKey)
-        assertEquals("wallet.interaction.action.continue", model.primaryAction?.labelKey)
-        assertEquals("wallet.interaction.action.decline", model.secondaryAction?.labelKey)
-        assertIs<BaseModel>(model)
-    }
-
-    @Test
-    fun screenModelUsesStateSpecificDecisionActions() {
-        val received =
-            WalletInteractionState(
-                sessionId = WalletInteractionSessionId("s1"),
-                walletInstanceId = "wallet",
-                status = WalletInteractionStatus.ReceivedCredentialReview,
-            ).toScreenModel()
-        val disclosure =
-            WalletInteractionState(
-                sessionId = WalletInteractionSessionId("s2"),
-                walletInstanceId = "wallet",
-                status = WalletInteractionStatus.DisclosureConsent,
-            ).toScreenModel()
-        val selection =
-            WalletInteractionState(
-                sessionId = WalletInteractionSessionId("s3"),
-                walletInstanceId = "wallet",
-                status = WalletInteractionStatus.CredentialSelection,
-            ).toScreenModel()
-
-        assertEquals("wallet.interaction.action.accept_credential", received.primaryAction?.labelKey)
-        assertEquals(WalletInteractionActionType.ACCEPT_RECEIVED_CREDENTIAL, received.primaryAction?.action?.type)
-        assertEquals("wallet.interaction.action.decline_credential", received.secondaryAction?.labelKey)
-        assertEquals(WalletInteractionActionType.DECLINE_RECEIVED_CREDENTIAL, received.secondaryAction?.action?.type)
-        assertEquals("wallet.interaction.action.share", disclosure.primaryAction?.labelKey)
-        assertEquals(WalletInteractionActionType.CONTINUE, disclosure.primaryAction?.action?.type)
-        assertEquals(null, selection.primaryAction)
-    }
-
-    @Test
-    fun loginPresentationUsesLoginTitlesAndSignInAction() {
-        val disclosure =
-            WalletInteractionState(
-                sessionId = WalletInteractionSessionId("s1"),
-                walletInstanceId = "wallet",
-                status = WalletInteractionStatus.DisclosureConsent,
-                activity = WalletInteractionActivitySummary(WalletInteractionActivityType.LOGIN),
-            ).toScreenModel()
-        val selection =
-            WalletInteractionState(
-                sessionId = WalletInteractionSessionId("s2"),
-                walletInstanceId = "wallet",
-                status = WalletInteractionStatus.CredentialSelection,
-                activity = WalletInteractionActivitySummary(WalletInteractionActivityType.LOGIN),
-            ).toScreenModel()
-
-        assertEquals("wallet.interaction.login.status.disclosure_consent", disclosure.titleKey)
-        assertEquals("wallet.interaction.action.sign_in", disclosure.primaryAction?.labelKey)
-        assertEquals(WalletInteractionActionType.CONTINUE, disclosure.primaryAction?.action?.type)
-        assertEquals("wallet.interaction.login.status.credential_selection", selection.titleKey)
-    }
-
-    @Test
-    fun screenModelRejectsHardcodedDisplayTextForUiChrome() {
+    fun screenModelIsAThinBaseModelWrapperOverTheContractsMapper() {
         val state =
             WalletInteractionState(
                 sessionId = WalletInteractionSessionId("s1"),
-                walletInstanceId = "wallet",
+                walletUnitId = "wallet",
                 status = WalletInteractionStatus.CredentialOfferReview,
             )
+        val model = WalletInteractionScreenModel(WalletScreenModelMapper.map(state))
 
-        assertFailsWith<IllegalArgumentException> {
-            WalletInteractionScreenModel(
-                sessionId = WalletInteractionSessionId("s1"),
-                titleKey = "invalid_title",
-                state = state,
-            )
-        }
-        assertFailsWith<IllegalArgumentException> {
-            WalletInteractionScreenAction(
-                labelKey = "invalid_label",
-                action = WalletInteractionAction.continueFlow(),
-            )
-        }
+        assertEquals("wallet.interaction.status.credential_offer_review", model.screen.titleKey)
+        // The generic interaction presenter remains a thin, protocol-neutral wrapper. The typed
+        // receive presenter owns offer acceptance and its selected-credential invariants.
+        assertNull(model.screen.primaryAction)
+        assertEquals("wallet.interaction.action.decline", model.screen.secondaryAction?.labelKey)
+        assertIs<BaseModel>(model)
     }
 
     @Test
@@ -129,16 +54,17 @@ class WalletInteractionPresenterTest {
             val state =
                 WalletInteractionState(
                     sessionId = sessionId,
-                    walletInstanceId = "wallet",
+                    walletUnitId = "wallet",
                     status = WalletInteractionStatus.DisclosureConsent,
                 )
             val client = RecordingWalletInteractionClient(state)
-            val sessionPresenter = WalletInteractionSessionPresenter(client, backgroundScope, sessionId)
+            val screenSource = DefaultWalletInteractionScreenSource(client, backgroundScope)
+            val sessionPresenter = WalletInteractionSessionPresenter(screenSource, backgroundScope, sessionId)
             val presenter: Presenter<WalletInteractionScreenModel> = sessionPresenter
 
-            assertEquals("wallet.interaction.status.disclosure_consent", presenter.model.value.titleKey)
+            assertEquals("wallet.interaction.status.disclosure_consent", presenter.model.value.screen.titleKey)
 
-            sessionPresenter.dispatch(WalletInteractionAction.continueFlow())
+            sessionPresenter.dispatch(WalletScreenIntent.CONTINUE)
 
             assertEquals(WalletInteractionAction.continueFlow(), client.dispatched.single())
         }

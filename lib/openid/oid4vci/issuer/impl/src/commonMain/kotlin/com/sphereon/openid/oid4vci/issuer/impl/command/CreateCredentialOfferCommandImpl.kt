@@ -47,6 +47,7 @@ import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionStatus
+import com.sphereon.openid.oid4vci.issuer.store.Oid4vciSessionIdentity
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -92,8 +93,9 @@ class CreateCredentialOfferCommandImpl(
         args: CreateCredentialOfferArgs,
         applyDuring: (CreateCredentialOfferArgs) -> CreateCredentialOfferArgs,
     ): IdkResult<CreatedCredentialOffer, IdkError> {
-        val result = doExecuteInternal(args, applyDuring)
-        emitOutcome(args, result)
+        val applied = applyDuring(args)
+        val result = doExecuteInternal(applied)
+        emitOutcome(applied, result)
         return result
     }
 
@@ -112,6 +114,8 @@ class CreateCredentialOfferCommandImpl(
                 )
                 put("preAuthorizedCodeGrant", args.preAuthorizedCodeGrant)
                 put("authorizationCodeGrant", args.authorizationCodeGrant)
+                put("instanceId", result.value.instanceId)
+                put("protocolSessionId", result.value.sessionId)
             }
         val es = eventService ?: return
         es.emit(
@@ -128,12 +132,9 @@ class CreateCredentialOfferCommandImpl(
 
     private suspend fun doExecuteInternal(
         args: CreateCredentialOfferArgs,
-        applyDuring: (CreateCredentialOfferArgs) -> CreateCredentialOfferArgs,
     ): IdkResult<CreatedCredentialOffer, IdkError> {
-        val applied = applyDuring(args)
-
-        validateRequestShape(applied).getOrElse { return Err(it) }
-        lifecycleInitializer.validateGrants(applied).getOrElse { return Err(it) }
+        validateRequestShape(args).getOrElse { return Err(it) }
+        lifecycleInitializer.validateGrants(args).getOrElse { return Err(it) }
 
         val now = Clock.System.now()
         val offerId = Uuid.random().toString()
@@ -142,26 +143,27 @@ class CreateCredentialOfferCommandImpl(
         // Resolve a pipeline configuration and initialise a pipeline session when one is
         // configured. A failure here does not block offer creation; the session is
         // created without a pipeline link instead.
-        val lifecycleCorrelationId = lifecycleInitializer.initializeLifecycle(applied)
+        val lifecycleCorrelationId = lifecycleInitializer.initializeLifecycle(args, sessionId)
 
-        val session = buildSession(applied, sessionId, lifecycleCorrelationId, now.epochSeconds)
+        val session = buildSession(args, sessionId, lifecycleCorrelationId, now.epochSeconds)
         sessionStore.create(session).getOrElse { return Err(it) }
 
-        val grantsAndTxCode = buildGrants(applied, sessionId, session).getOrElse { return Err(it) }
+        val grantsAndTxCode = buildGrants(args, sessionId, session).getOrElse { return Err(it) }
 
         val offer =
             CredentialOffer(
-                credentialIssuer = applied.issuerId,
-                credentialConfigurationIds = applied.credentialConfigurationIds,
+                credentialIssuer = args.issuerId,
+                credentialConfigurationIds = args.credentialConfigurationIds,
                 grants = grantsAndTxCode.grants,
             )
 
-        offerStore.store(offerId, offer, applied.offerTtlSeconds, sessionId = sessionId).getOrElse { return Err(it) }
+        offerStore.store(offerId, offer, args.offerTtlSeconds, sessionId = sessionId).getOrElse { return Err(it) }
 
-        val offerUri = buildOfferUri(applied, offerId)
+        val offerUri = buildOfferUri(args, offerId)
 
         return Ok(
             CreatedCredentialOffer(
+                instanceId = session.instanceId,
                 offerId = offerId,
                 sessionId = sessionId,
                 offer = offer,
@@ -172,6 +174,11 @@ class CreateCredentialOfferCommandImpl(
     }
 
     private fun validateRequestShape(args: CreateCredentialOfferArgs): IdkResult<Unit, IdkError> {
+        try {
+            Oid4vciSessionIdentity.normalize("instanceId", args.instanceId)
+        } catch (e: IllegalArgumentException) {
+            return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid issuer instanceId"))
+        }
         if (args.credentialConfigurationIds.isEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "At least one credential_configuration_id is required"))
         }
@@ -193,6 +200,7 @@ class CreateCredentialOfferCommandImpl(
     ): IssuanceSession =
         IssuanceSession(
             sessionId = sessionId,
+            instanceId = Oid4vciSessionIdentity.normalize("instanceId", args.instanceId),
             issuerId = args.issuerId,
             credentialConfigurationIds = args.credentialConfigurationIds,
             issuerState =
@@ -205,6 +213,8 @@ class CreateCredentialOfferCommandImpl(
             preSeededAttributes = args.preSeededAttributes,
             boundUsageToken = args.boundUsageToken,
             postIssuanceHookAllowList = args.postIssuanceHookAllowList,
+            callback = args.callback,
+            state = args.state,
             lifecycleCorrelationId = lifecycleCorrelationId,
             createdAt = nowEpochSeconds,
             expiresAt = nowEpochSeconds + args.offerTtlSeconds,

@@ -26,7 +26,7 @@ import com.sphereon.conf.theme.core.model.ResolvedElement
 import com.sphereon.conf.theme.core.model.ResolvedFeature
 import com.sphereon.conf.theme.core.model.ThemeVariant
 import com.sphereon.conf.theme.core.store.ThemeStore
-import com.sphereon.data.store.asset.model.AssetReference
+import com.sphereon.conf.theme.core.model.ThemeAssetReference
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -42,7 +42,7 @@ import dev.zacsweers.metro.binding
  * variant null), the feature descriptor's default (PRODUCT_DEFAULT for built-in
  * features, ELEMENT_DEFAULT for custom ones), and finally the element's fallback
  * token key through token resolution (TOKEN_FALLBACK), where asset elements wrap
- * the token value as an [AssetReference].
+ * the token value as a [ThemeAssetReference].
  *
  * The theme resolver is Provider-deferred: token resolution is only needed when a
  * fallback token key is actually consulted, and assemblies may bind a [ThemeResolver]
@@ -143,7 +143,7 @@ class DefaultFeatureResolver(
         val tokenKey = element.fallbackTokenKey ?: return null
         val value = tokens()[tokenKey]?.takeIf { it.isNotBlank() } ?: return null
         return when (element.kind) {
-            ElementKind.ASSET -> ResolvedElement(asset = AssetReference(uri = value), origin = ElementOrigin.TOKEN_FALLBACK)
+            ElementKind.ASSET -> ResolvedElement(asset = ThemeAssetReference(uri = value), origin = ElementOrigin.TOKEN_FALLBACK)
             ElementKind.TEXT -> ResolvedElement(text = value, origin = ElementOrigin.TOKEN_FALLBACK)
         }
     }

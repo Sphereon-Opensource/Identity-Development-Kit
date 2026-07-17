@@ -35,6 +35,7 @@ import com.sphereon.openid.oid4vp.universal.UniversalOid4vpEventTypes
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
+import com.sphereon.openid.oid4vp.universal.impl.event.putSessionEventIdentity
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.buildJsonObject
@@ -93,7 +94,7 @@ class GetAuthRequestStatusServiceCommandImpl(
             }
 
         // 3. Emit STATUS_POLLED event
-        emitStatusPolledEvent(correlationId, session.status)
+        emitStatusPolledEvent(session)
 
         // 4. Build response
         val sessionError =
@@ -107,6 +108,10 @@ class GetAuthRequestStatusServiceCommandImpl(
                 queryId = session.queryId,
                 status = session.status,
                 lastUpdated = session.updatedAt,
+                sessionId = session.sessionId,
+                verifierId = session.verifierId,
+                createdAt = session.createdAt,
+                expiresAt = session.expiresAt,
                 error = sessionError,
                 verifiedData = verifiedData,
             )
@@ -115,25 +120,35 @@ class GetAuthRequestStatusServiceCommandImpl(
     }
 
     private suspend fun emitStatusPolledEvent(
-        correlationId: String,
-        status: AuthorizationSessionStatus,
+        session: AuthorizationSession,
     ) {
-        try {
-            sessionEventService.emit(
+        sessionEventService.emit(
                 sessionEventService
                     .eventBuilder()
                     .type(UniversalOid4vpEventTypes.STATUS_POLLED)
                     .origin(GetAuthRequestStatusServiceCommand.COMMAND_ID)
                     .payload(
                         buildJsonObject {
-                            put("correlationId", correlationId)
-                            put("status", status.name)
+                            put("correlationId", session.correlationId)
+                            put("status", session.status.name)
+                            putSessionEventIdentity(
+                                protocolSessionId = session.sessionId,
+                                instanceId = session.instanceId,
+                                oldState = session.status.name,
+                                newState = session.status.name,
+                                currentResult = buildJsonObject {
+                                    put("correlationId", session.correlationId)
+                                    session.queryId?.let { put("queryId", it) }
+                                    put("sessionId", session.sessionId)
+                                    put("status", session.status.name)
+                                    put("createdAt", session.createdAt)
+                                    put("expiresAt", session.expiresAt)
+                                    put("lastUpdated", session.updatedAt)
+                                    session.error?.code?.let { put("errorCode", it) }
+                                },
+                            )
                         },
                     ).build(),
             )
-        } catch (expected: Exception) {
-            // Best effort - don't fail the request if event emission fails
-            log.debug("Failed to emit STATUS_POLLED event: ${expected.message}")
-        }
     }
 }

@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.issuer.impl.proof
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
@@ -57,5 +58,16 @@ interface ProofVerifier {
         expectedClientId: String?,
         credentialConfigId: String,
         proofTypeSupported: ProofTypeSupported? = null,
+        expectedNonce: String? = null,
+        consumeNonce: Boolean = true,
     ): IdkResult<VerifiedProof, IdkError>
+
+    /**
+     * Extract the credential request nonce from an unverified proof envelope.
+     *
+     * Batch credential requests carry multiple proofs in one request. The issuer consumes the
+     * request nonce once after all proofs verify, so the command needs the nonce value before
+     * invoking [verify] with [consumeNonce] set to false.
+     */
+    fun extractNonce(proofValue: JsonElement): IdkResult<String?, IdkError> = Ok(null)
 }

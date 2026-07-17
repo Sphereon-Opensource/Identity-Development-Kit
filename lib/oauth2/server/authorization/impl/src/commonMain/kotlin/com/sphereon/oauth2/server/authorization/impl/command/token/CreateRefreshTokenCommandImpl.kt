@@ -108,6 +108,8 @@ class CreateRefreshTokenCommandImpl(
                 clientId = args.clientId,
                 subject = args.subject,
                 scope = args.scope,
+                resource = args.resource,
+                defaultAccessTokenAudience = args.defaultAccessTokenAudience,
                 issuedAt = now,
                 expiresAt = expiresAt,
                 revoked = false,

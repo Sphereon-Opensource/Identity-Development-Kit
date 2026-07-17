@@ -46,9 +46,13 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
  * At least one grant type must be enabled via [CreateCredentialOfferArgsBuilder.preAuthorizedCodeGrant]
  * or [CreateCredentialOfferArgsBuilder.authorizationCodeGrant].
  */
-fun createOfferArgs(builder: CreateCredentialOfferArgsBuilder.() -> Unit): CreateCredentialOfferArgs {
+fun createOfferArgs(
+    instanceId: String,
+    builder: CreateCredentialOfferArgsBuilder.() -> Unit,
+): CreateCredentialOfferArgs {
     val state = CreateCredentialOfferArgsBuilder().apply(builder).buildState()
     return CreateCredentialOfferArgs(
+        instanceId = instanceId,
         issuerId = state.issuerId,
         credentialConfigurationIds = state.credentialConfigurationIds,
         preAuthorizedCodeGrant = state.preAuthorizedCodeGrant,

@@ -116,15 +116,34 @@ enum class WalletProtocolMatchStrength {
 
 data class WalletInteractionContext(
     val sessionId: WalletInteractionSessionId,
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val executionMode: WalletInteractionExecutionMode,
     val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
     val trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     val trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
-    val securityGate: WalletSecurityGate = WalletSecurityGate.allow,
+    val securityGate: WalletSecurityGate = WalletSecurityGate.deny,
     val privateSessionStore: WalletInteractionPrivateSessionStore = WalletInteractionPrivateSessionStore.none,
+    val sensitiveInputAuthority: WalletInteractionSensitiveInputAuthority,
     val attributes: Map<String, String> = emptyMap(),
+    val counterpartyEncounterRegistry: WalletCounterpartyEncounterRegistry = WalletCounterpartyEncounterRegistry.none,
 ) {
+    suspend fun recordCounterpartyEncounter(
+        protocol: WalletProtocol,
+        counterparty: WalletCounterpartySummary,
+    ): WalletCounterpartyEncounterResult {
+        val result =
+            counterpartyEncounterRegistry.encounter(
+                WalletCounterpartyEncounterRequest(
+                    walletUnitId = walletUnitId,
+                    protocol = protocol,
+                    counterparty = counterparty,
+                ),
+            )
+        require(result.counterparty.role == counterparty.role) { "wallet_counterparty_encounter_role_changed" }
+        require(result.counterparty.identifier == counterparty.identifier) { "wallet_counterparty_encounter_identifier_changed" }
+        return result
+    }
+
     fun baseState(
         status: WalletInteractionStatus,
         flowKind: WalletInteractionFlowKind?,
@@ -134,7 +153,7 @@ data class WalletInteractionContext(
     ): WalletInteractionState =
         WalletInteractionState(
             sessionId = sessionId,
-            walletInstanceId = walletInstanceId,
+            walletUnitId = walletUnitId,
             status = status,
             flowKind = flowKind,
             protocol = protocol,
@@ -144,7 +163,7 @@ data class WalletInteractionContext(
 
     suspend fun authorizeProtocolOperation(request: WalletProtocolExecutionRequest): WalletSecurityGateResult {
         require(request.sessionId == sessionId) { "wallet_interaction_protocol_request_session_mismatch" }
-        require(request.walletInstanceId == walletInstanceId) { "wallet_interaction_protocol_request_wallet_mismatch" }
+        require(request.sessionWalletUnitId == walletUnitId) { "wallet_interaction_protocol_request_wallet_mismatch" }
 
         val decision = protocolExecutor.plan(request)
         if (!decision.securityGateRequired) {
@@ -167,7 +186,7 @@ data class WalletInteractionContext(
                 operation = decision.securityOperation ?: request.operation,
                 audience = decision.audience ?: request.audience,
                 keyRef = decision.keyRef ?: request.keyRef,
-                walletUnitId = decision.walletUnitId ?: request.walletUnitId,
+                walletUnitId = decision.walletUnitId ?: request.walletUnitId ?: request.sessionWalletUnitId,
                 walletAccountId = decision.walletAccountId ?: request.walletAccountId,
                 activationDecisionId = decision.activationDecisionId ?: request.activationDecisionId,
                 operationType = decision.operationType ?: request.operationType,
@@ -204,7 +223,7 @@ interface WalletProtocolExecutor {
 data class WalletProtocolExecutionRequest(
     val operationId: String,
     val sessionId: WalletInteractionSessionId,
-    val walletInstanceId: String,
+    val sessionWalletUnitId: String,
     val protocol: WalletProtocol,
     val operation: WalletSecurityOperation,
     val audience: String? = null,
@@ -219,7 +238,7 @@ data class WalletProtocolExecutionRequest(
 ) {
     init {
         require(operationId.isNotBlank()) { "wallet_interaction_operation_id_blank" }
-        require(walletInstanceId.isNotBlank()) { "wallet_interaction_wallet_instance_id_blank" }
+        require(sessionWalletUnitId.isNotBlank()) { "wallet_interaction_wallet_unit_id_blank" }
     }
 }
 

@@ -16,23 +16,30 @@
 
 package com.sphereon.conf.theme.ui.compose.tabs
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.sphereon.conf.theme.ui.compose.ComponentTheme
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.tokens.LocalTabTokens
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TabRow(
     selectedTabIndex: Int,
     modifier: Modifier = Modifier,
+    containerColor: Color? = null,
     tabs: @Composable () -> Unit,
 ) {
     val tokens = LocalTabTokens.current
@@ -40,12 +47,20 @@ fun TabRow(
     PrimaryTabRow(
         selectedTabIndex = selectedTabIndex,
         modifier = modifier,
-        containerColor = parseColor(tokens.background),
+        containerColor = containerColor ?: parseColor(tokens.background),
         contentColor = parseColor(tokens.foreground),
         indicator = {
-            TabRowDefaults.PrimaryIndicator(
-                Modifier.tabIndicatorOffset(selectedTabIndex),
-                color = parseColor(tokens.activeIndicator),
+            // The indicator spans the tab width minus a fixed inset, so it always covers at least
+            // the label. Both the M3 24dp pip and content-size matching render too narrow.
+            Box(
+                Modifier
+                    .tabIndicatorOffset(selectedTabIndex)
+                    .padding(horizontal = 20.dp)
+                    .height(3.dp)
+                    .background(
+                        parseColor(tokens.activeIndicator),
+                        RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                    ),
             )
         },
         divider = {},
@@ -78,10 +93,13 @@ fun Tab(
         selectedContentColor = parseColor(tokens.activeForeground),
         unselectedContentColor = parseColor(tokens.foreground),
     ) {
-        if (content != null) {
-            content()
-        } else if (text != null) {
-            Text(text, color = color)
+        // Vertical air around the label; without it the active indicator hugs the text baseline.
+        Box(Modifier.padding(vertical = 14.dp)) {
+            if (content != null) {
+                content()
+            } else if (text != null) {
+                Text(text, color = color)
+            }
         }
     }
 }

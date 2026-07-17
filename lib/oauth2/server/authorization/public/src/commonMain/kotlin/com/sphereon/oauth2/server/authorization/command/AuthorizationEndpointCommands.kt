@@ -355,6 +355,8 @@ data class VerifiedAuthorizationRequest(
      * Granted scopes (may be subset of requested)
      */
     val grantedScopes: List<String>,
+    /** Exact AS-client default access-token audience bound at authorization time. */
+    val defaultAccessTokenAudience: String? = null,
     /**
      * Whether PKCE is required for this client
      */

@@ -132,6 +132,48 @@ class TokenEndpointFlowTest {
         }
 
     @Test
+    fun `authorization code redemption rejects a different RFC8707 resource`() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val codeStorage = InMemoryAuthorizationCodeStorageImpl(storage)
+            val clientRegistry = InMemoryClientRegistryImpl(storage)
+            assertTrue(clientRegistry.registerClient(TestFixtures.publicClient).isOk)
+            val now = Clock.System.now()
+            val codeData = AuthorizationCodeData(
+                code = "resource-bound-code",
+                clientId = TestFixtures.publicClient.clientId,
+                subject = "user-resource",
+                redirectUri = TestFixtures.publicClient.redirectUris.first(),
+                resource = listOf("https://issuer.example.test/api/developer/v1"),
+                scope = "read",
+                codeChallenge = TestFixtures.Pkce.CODE_CHALLENGE_S256,
+                codeChallengeMethod = PkceMethod.S256,
+                issuedAt = now,
+                expiresAt = now + 10.minutes,
+            )
+            assertTrue(codeStorage.storeAuthorizationCode(codeData.code, codeData).isOk)
+            val verifier = VerifyAuthorizationCodeGrantCommandImpl(
+                execution = execution,
+                authorizationCodeStorage = codeStorage,
+                tokenStorage = InMemoryTokenStorageImpl(storage),
+                clientRegistry = clientRegistry,
+                configProvider = configProvider,
+            )
+
+            val result = verifier.execute(
+                VerifyAuthorizationCodeGrantArgs(
+                    code = codeData.code,
+                    redirectUri = codeData.redirectUri,
+                    clientId = codeData.clientId,
+                    codeVerifier = TestFixtures.Pkce.CODE_VERIFIER,
+                    requestedResource = listOf("https://verifier.example.test/api/developer/v1"),
+                ),
+            )
+
+            assertTrue(result.isErr)
+        }
+
+    @Test
     fun `test authorization code grant with wrong PKCE verifier fails`() =
         runTest {
             val storage = InMemoryOAuth2BackingStorageImpl()
@@ -290,7 +332,11 @@ class TokenEndpointFlowTest {
             val clientRegistry = InMemoryClientRegistryImpl(storage)
 
             // Register client with client_credentials grant
-            val registerResult = clientRegistry.registerClient(TestFixtures.confidentialClient)
+            val client =
+                TestFixtures.confidentialClient.copy(
+                    defaultAccessTokenAudience = "enterprise-platform",
+                )
+            val registerResult = clientRegistry.registerClient(client)
             assertTrue(registerResult.isOk)
 
             val verifyCommand =
@@ -302,14 +348,124 @@ class TokenEndpointFlowTest {
             val result =
                 verifyCommand.execute(
                     VerifyClientCredentialsGrantArgs(
-                        clientId = TestFixtures.confidentialClient.clientId,
+                        clientId = client.clientId,
                         requestedScope = "read",
                     ),
                 )
             assertTrue(result.isOk)
 
-            assertEquals(TestFixtures.confidentialClient.clientId, result.value.clientId)
+            assertEquals(client.clientId, result.value.clientId)
             assertEquals("read", result.value.scope)
+            assertEquals(listOf("enterprise-platform"), result.value.audience)
+        }
+
+    @Test
+    fun `client credentials uses the registered default audience when omitted`() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val clientRegistry = InMemoryClientRegistryImpl(storage)
+            val client = TestFixtures.confidentialClient.copy(
+                clientId = "portal-bff",
+                defaultAccessTokenAudience = "application-bff-oauth-client",
+            )
+            assertTrue(clientRegistry.registerClient(client).isOk)
+
+            val result = VerifyClientCredentialsGrantCommandImpl(execution, clientRegistry).execute(
+                VerifyClientCredentialsGrantArgs(clientId = client.clientId, requestedScope = "read"),
+            )
+
+            assertTrue(result.isOk)
+            assertEquals(listOf("application-bff-oauth-client"), result.value.audience)
+        }
+
+    @Test
+    fun `client credentials accepts the default and an explicitly allowed audience`() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val clientRegistry = InMemoryClientRegistryImpl(storage)
+            val client = TestFixtures.confidentialClient.copy(
+                clientId = "issuer-service",
+                defaultAccessTokenAudience = "enterprise-platform",
+                allowedAccessTokenAudiences = setOf("enterprise-tenant-kms", "enterprise-wallet-interaction"),
+            )
+            assertTrue(clientRegistry.registerClient(client).isOk)
+            val command = VerifyClientCredentialsGrantCommandImpl(execution, clientRegistry)
+
+            val firstTarget = command.execute(
+                VerifyClientCredentialsGrantArgs(
+                    clientId = client.clientId,
+                    requestedScope = "read",
+                    requestedAudience = listOf("enterprise-tenant-kms"),
+                ),
+            )
+            val secondTarget = command.execute(
+                VerifyClientCredentialsGrantArgs(
+                    clientId = client.clientId,
+                    requestedScope = "read",
+                    requestedAudience = listOf("enterprise-wallet-interaction"),
+                ),
+            )
+
+            assertTrue(firstTarget.isOk)
+            assertEquals(listOf("enterprise-tenant-kms"), firstTarget.value.audience)
+            assertTrue(secondTarget.isOk)
+            assertEquals(listOf("enterprise-wallet-interaction"), secondTarget.value.audience)
+        }
+
+    @Test
+    fun `client credentials rejects unregistered and multiple audiences`() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val clientRegistry = InMemoryClientRegistryImpl(storage)
+            val client =
+                TestFixtures.confidentialClient.copy(
+                    clientId = "issuer-service",
+                    defaultAccessTokenAudience = "enterprise-platform",
+                    allowedAccessTokenAudiences = setOf("enterprise-tenant-kms", "enterprise-wallet-interaction"),
+                )
+            assertTrue(clientRegistry.registerClient(client).isOk)
+            val command = VerifyClientCredentialsGrantCommandImpl(execution, clientRegistry)
+
+            val unregistered = command.execute(
+                VerifyClientCredentialsGrantArgs(
+                    clientId = client.clientId,
+                    requestedScope = "read",
+                    requestedAudience = listOf("enterprise-wallet-unit"),
+                ),
+            )
+            val multiple = command.execute(
+                VerifyClientCredentialsGrantArgs(
+                    clientId = client.clientId,
+                    requestedScope = "read",
+                    requestedAudience = listOf("enterprise-tenant-kms", "enterprise-wallet-interaction"),
+                ),
+            )
+
+            assertTrue(unregistered.isErr)
+            assertEquals("invalid_target", unregistered.error.code)
+            assertTrue(multiple.isErr)
+            assertEquals("invalid_target", multiple.error.code)
+        }
+
+    @Test
+    fun `client credentials rejects an omitted audience when no default is registered`() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val clientRegistry = InMemoryClientRegistryImpl(storage)
+            val client =
+                TestFixtures.confidentialClient.copy(
+                    clientId = "issuer-service",
+                    allowedAccessTokenAudiences = setOf("enterprise-wallet-interaction"),
+                )
+            assertTrue(clientRegistry.registerClient(client).isOk)
+
+            val result =
+                VerifyClientCredentialsGrantCommandImpl(execution, clientRegistry).execute(
+                    VerifyClientCredentialsGrantArgs(clientId = client.clientId, requestedScope = "read"),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_target", result.error.code)
         }
 
     @Test

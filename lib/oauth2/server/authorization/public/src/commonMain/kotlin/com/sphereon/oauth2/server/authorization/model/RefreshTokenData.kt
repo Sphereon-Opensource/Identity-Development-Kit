@@ -46,6 +46,10 @@ data class RefreshTokenData(
      * RFC 6749 Section 6: The requested scope MUST NOT include any scope not originally granted
      */
     val scope: String? = null,
+    /** RFC 8707 resource indicators preserved through this refresh-token chain. */
+    val resource: List<String> = emptyList(),
+    /** Exact AS-client default audience preserved through this refresh-token chain. */
+    val defaultAccessTokenAudience: String? = null,
     /**
      * When the token was issued
      */

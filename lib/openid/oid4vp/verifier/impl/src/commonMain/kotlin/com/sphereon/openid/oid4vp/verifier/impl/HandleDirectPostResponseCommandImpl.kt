@@ -23,8 +23,6 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.events.EventCategories
-import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.ServiceCommandRegistry
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
@@ -41,6 +39,8 @@ import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.hook.PostPresentationHookArgs
 import com.sphereon.openid.oid4vp.verifier.impl.hook.PostPresentationHookDispatcher
+import com.sphereon.openid.oid4vp.verifier.impl.event.emitOid4vpSessionHistoryEvent
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
 import dev.zacsweers.metro.Inject
@@ -110,6 +110,7 @@ class HandleDirectPostResponseCommandImpl(
     HandleDirectPostResponseCommand,
     HandleDirectPostResponseCommandService {
     override val commandId: String get() = HandleDirectPostResponseCommand.COMMAND_ID
+    private var pendingHistorySession: AuthorizationSession? = null
 
     override suspend fun supports(args: Any): Boolean = args is HandleDirectPostResponseArgs
 
@@ -119,11 +120,15 @@ class HandleDirectPostResponseCommandImpl(
         args: HandleDirectPostResponseArgs,
         applyDuring: (HandleDirectPostResponseArgs) -> HandleDirectPostResponseArgs,
     ): IdkResult<DirectPostHandledResponse, IdkError> {
+        pendingHistorySession = null
         val result = doExecuteInternal(args, applyDuring)
-        emitOutcome(result)
+        if (pendingHistorySession != null) {
+            emitOutcome(result)
+        }
         if (result.isOk) {
             dispatchPostPresentationHooks(args, result.value)
         }
+        pendingHistorySession = null
         return result
     }
 
@@ -179,18 +184,17 @@ class HandleDirectPostResponseCommandImpl(
     }
 
     private suspend fun emitOutcome(result: IdkResult<DirectPostHandledResponse, IdkError>,) {
-        val type = if (result.isOk) EventTypes.OID4VP_RESPONSE_RECEIVED else EventTypes.OID4VP_RESPONSE_FAILED
-        val category = if (result.isOk) EventCategories.OPERATION else EventCategories.ERROR
+        if (result.isOk) return
         val es = eventService ?: return
-        es.emit(
-            es
-                .eventBuilder()
-                .type(type)
-                .subsystem(EventSubsystems.OID4VP)
-                .category(category)
-                .origin(HandleDirectPostResponseCommand.COMMAND_ID)
-                .payload(buildJsonObject { put("transport", "direct_post") })
-                .build(),
+        es.emitOid4vpSessionHistoryEvent(
+            type = EventTypes.OID4VP_RESPONSE_FAILED,
+            origin = HandleDirectPostResponseCommand.COMMAND_ID,
+            session = requireNotNull(pendingHistorySession) {
+                "OID4VP direct-post failure has no persisted authorization session"
+            },
+            stage = "DIRECT_POST",
+            outcome = "FAILED",
+            errorCode = "authorization_response_failed",
         )
     }
 
@@ -199,6 +203,21 @@ class HandleDirectPostResponseCommandImpl(
         applyDuring: (HandleDirectPostResponseArgs) -> HandleDirectPostResponseArgs,
     ): IdkResult<DirectPostHandledResponse, IdkError> {
         val processedArgs = applyDuring(args)
+        val historyCorrelationId =
+            processedArgs.originalRequest.state?.takeIf { it.isNotBlank() }
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "OID4VP direct_post response has no session correlation state",
+                    ),
+                )
+        pendingHistorySession =
+            authorizationSessionStore.get(historyCorrelationId).getOrElse { return Err(it) }
+                ?: return Err(
+                    IdkError.NOT_FOUND_ERROR(
+                        resource = "authorizationSession:$historyCorrelationId",
+                        message = "OID4VP authorization session not found",
+                    ),
+                )
 
         log.debug("Handling direct_post authorization response")
         // Raw form params received from the wallet — the actual authorization response on the wire.
@@ -245,14 +264,20 @@ class HandleDirectPostResponseCommandImpl(
             }
         }
 
-        // Best-effort session update using state as session correlation key.
-        val correlationId = processedArgs.originalRequest.state
-        if (!correlationId.isNullOrBlank()) {
-            authorizationSessionStore.storeResponse(correlationId = correlationId, parsedResponse = parsedResponse).fold(
-                success = { },
-                failure = { e -> log.warn("Failed to update authorization session after direct_post response: ${e.message.defaultMessage}") },
-            )
-        }
+        val responseSession =
+            authorizationSessionStore
+                .storeResponse(correlationId = historyCorrelationId, parsedResponse = parsedResponse)
+                .getOrElse { return Err(it) }
+        pendingHistorySession = responseSession
+        eventService?.emitOid4vpSessionHistoryEvent(
+            type = EventTypes.OID4VP_RESPONSE_RECEIVED,
+            origin = HandleDirectPostResponseCommand.COMMAND_ID,
+            session = responseSession,
+            oldState = null,
+            newState = responseSession.status.name,
+            stage = "DIRECT_POST",
+            outcome = "RECEIVED",
+        )
 
         // Step 2: Validate the authorization response against the DCQL query
         val validateArgs =

@@ -21,7 +21,9 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import kotlinx.serialization.Serializable
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * User authentication provider abstraction
@@ -181,6 +183,47 @@ data class AuthenticationContext(
 )
 
 /**
+ * Backend boundary for starting a WebAuthn assertion ceremony from the Authorization Server login
+ * surface. The returned options are browser-edge inputs only; WSCD provider/profile details remain
+ * behind Wallet Unit and WSCD services.
+ */
+interface WebAuthnAssertionChallengeProvider {
+    suspend fun beginAssertion(request: BeginWebAuthnAssertionChallenge): IdkResult<WebAuthnAssertionChallengeOptions, AuthenticationError>
+}
+
+@Serializable
+data class BeginWebAuthnAssertionChallenge(
+    val sessionId: String,
+    val applicationId: String,
+    val tenantId: String? = null,
+    val identityId: String? = null,
+    val origin: String,
+    val rpId: String,
+    val allowedOrigins: Set<String>,
+    val attestationPolicy: String,
+    val userVerification: String,
+    val allowedTransports: Set<String> = emptySet(),
+    val backupStatePolicy: String = "allow-any",
+    val challengeTtlSeconds: Long,
+    val level3PrfEnabled: Boolean = false,
+    val credentialId: String? = null,
+)
+
+@Serializable
+data class WebAuthnAssertionChallengeOptions(
+    val challengeId: String,
+    val challenge: String,
+    val rpId: String,
+    val rpName: String,
+    val allowedOrigins: Set<String>,
+    val userVerification: String,
+    val allowedTransports: Set<String>,
+    val level3PrfEnabled: Boolean,
+    val expiresAt: Instant,
+    val credentialIds: Set<String> = emptySet(),
+)
+
+/**
  * Authenticated user information
  */
 data class AuthenticatedUser(
@@ -218,6 +261,29 @@ sealed interface UserCredentials {
     data class UsernamePassword(
         val username: String,
         val password: String,
+    ) : UserCredentials
+
+    /**
+     * WebAuthn/passkey assertion evidence produced by an external ceremony service.
+     */
+    data class WebAuthnAssertion(
+        val credentialId: String,
+        val challengeId: String,
+        val authenticatorData: String,
+        val clientDataJson: String,
+        val signature: String,
+        val userHandle: String? = null,
+        val userIdHint: String? = null,
+        val origin: String? = null,
+        val rpId: String? = null,
+        val userVerified: Boolean? = null,
+        val transport: String? = null,
+        val backupEligible: Boolean? = null,
+        val backupState: Boolean? = null,
+        val prfCapable: Boolean = false,
+        val assertionEvidenceRef: String? = null,
+        val oidcSessionId: String? = null,
+        val oidcApplicationId: String? = null,
     ) : UserCredentials
 
     /**

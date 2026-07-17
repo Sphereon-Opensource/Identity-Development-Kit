@@ -29,6 +29,8 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 class KvDeferredCredentialStoreTest {
+    private val instanceId = "issuer-instance-deferred-credential-store"
+
     private fun createStore(): DeferredCredentialStore {
         val kvStoreManager = InMemoryTestKvStoreManager()
         return KvDeferredCredentialStore(
@@ -47,6 +49,7 @@ class KvDeferredCredentialStoreTest {
                 DeferredCredentialEntry(
                     transactionId = "txn-001",
                     issuanceSessionId = "session-abc",
+                    instanceId = instanceId,
                     credentialConfigurationId = "IdentityCredential",
                     status = DeferredCredentialStatus.PENDING,
                     retryAfterSeconds = 10,
@@ -64,6 +67,7 @@ class KvDeferredCredentialStoreTest {
             assertNotNull(retrieved)
             assertEquals("txn-001", retrieved.transactionId)
             assertEquals("session-abc", retrieved.issuanceSessionId)
+            assertEquals(instanceId, retrieved.instanceId)
             assertEquals("IdentityCredential", retrieved.credentialConfigurationId)
             assertEquals(DeferredCredentialStatus.PENDING, retrieved.status)
             assertNull(retrieved.credentialResponse)
@@ -92,6 +96,7 @@ class KvDeferredCredentialStoreTest {
                 DeferredCredentialEntry(
                     transactionId = "txn-002",
                     issuanceSessionId = "session-def",
+                    instanceId = instanceId,
                     credentialConfigurationId = "IdentityCredential",
                     status = DeferredCredentialStatus.PENDING,
                     createdAt = now,
@@ -127,6 +132,7 @@ class KvDeferredCredentialStoreTest {
                 DeferredCredentialEntry(
                     transactionId = "txn-003",
                     issuanceSessionId = "session-ghi",
+                    instanceId = instanceId,
                     credentialConfigurationId = "IdentityCredential",
                     status = DeferredCredentialStatus.READY,
                     credentialResponse = JsonPrimitive("eyJhbGciOiJFUzI1NiJ9.credential.sig"),

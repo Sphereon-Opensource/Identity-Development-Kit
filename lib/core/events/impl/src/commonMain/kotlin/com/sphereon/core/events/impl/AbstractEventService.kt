@@ -12,6 +12,7 @@ import com.sphereon.core.events.EventBuilder
 import com.sphereon.core.events.EventContext
 import com.sphereon.core.events.EventEncryptionService
 import com.sphereon.core.events.EventHub
+import com.sphereon.core.events.EventPersistenceSink
 import com.sphereon.core.events.EventService
 import com.sphereon.core.events.EventSigningService
 import com.sphereon.core.events.EventStore
@@ -32,6 +33,7 @@ abstract class AbstractEventService(
     protected val eventStore: EventStore,
     protected val signingService: EventSigningService,
     protected val encryptionService: EventEncryptionService,
+    private val persistenceSinks: Set<EventPersistenceSink>,
 ) : EventService {
     /**
      * Get the EventContext for events emitted from this service.
@@ -73,8 +75,10 @@ abstract class AbstractEventService(
             // The caller can check event.encryption to verify
         }
 
-        // Store the event
-        eventStore.store(finalEvent)
+        // The generic store and all typed durable sinks complete before publication. Any
+        // failure propagates to the command, so callers cannot observe success without history.
+        eventStore.store(finalEvent).getOrThrow()
+        persistenceSinks.forEach { it.persist(finalEvent) }
 
         // Broadcast the event
         eventHub.publish(finalEvent)

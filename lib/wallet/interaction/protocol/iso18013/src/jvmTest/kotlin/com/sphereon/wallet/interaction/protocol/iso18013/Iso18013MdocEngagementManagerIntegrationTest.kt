@@ -19,9 +19,7 @@ import com.sphereon.crypto.core.cose.CoseKeyCborCodecImpl
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
-import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
-import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
-import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
+import com.sphereon.wallet.wscd.testfixtures.TestWscdSupport
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
@@ -46,6 +44,7 @@ import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
@@ -77,7 +76,7 @@ class Iso18013MdocEngagementManagerIntegrationTest {
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("iso-real-path"),
-                    walletInstanceId = "wallet",
+                    walletUnitId = "wallet",
                     executionMode = WalletInteractionExecutionMode.LOCAL,
                 )
 
@@ -106,6 +105,8 @@ class Iso18013MdocEngagementManagerIntegrationTest {
                 )
             val engine =
                 DefaultWalletInteractionEngine(
+                    sensitiveInputAuthority = Iso18013TestSensitiveInputAuthority,
+                    securityGate = WalletSecurityGate.allow,
                     adapters =
                         listOf(
                             Iso18013WalletInteractionProtocolAdapter(
@@ -119,7 +120,7 @@ class Iso18013MdocEngagementManagerIntegrationTest {
                 val session =
                     engine.start(
                         WalletInteractionInput(
-                            walletInstanceId = "wallet",
+                            walletUnitId = "wallet",
                             entryPoint = WalletEntryPoint.rawQr(RDW_WEBSITE_READER_ENGAGEMENT),
                         ),
                     )
@@ -173,14 +174,14 @@ class Iso18013MdocEngagementManagerIntegrationTest {
             val context =
                 WalletInteractionContext(
                     sessionId = sessionId,
-                    walletInstanceId = "wallet",
+                    walletUnitId = "wallet",
                     executionMode = WalletInteractionExecutionMode.BACKEND,
                     privateSessionStore = privateSessionStore,
                 )
             val state =
                 WalletInteractionState(
                     sessionId = context.sessionId,
-                    walletInstanceId = context.walletInstanceId,
+                    walletUnitId = context.walletUnitId,
                     status = WalletInteractionStatus.DisclosureConsent,
                     flowKind = WalletInteractionFlowKind.AttendedPresent,
                     protocol = WalletProtocol.ISO18013,
@@ -213,17 +214,8 @@ class Iso18013MdocEngagementManagerIntegrationTest {
                 .getAnonymous()
                 .sessionContextManager
                 .createOrGetFromId(sessionId)
-        val kms = session.graph.asKeyManagerServiceGraph().keyManagerService
-        val config =
-            SoftwareKmsProviderConfig(
-                id = "$sessionId-software-kms",
-                cryptographyProvider = CryptographyProvider.Default.name,
-            )
-        val provider =
-            (app as SoftwareKmsProviderFactoryImpl.Graph)
-                .softwareKmsProvider
-                .create(config, session.asCoreApiServiceGraph().serviceExecution)
-        kms.registerProvider(provider, makeDefaultKms = true)
+        // Sanctioned test KMS wiring lives in the wscd test-fixtures module.
+        val kms = TestWscdSupport.ensureSoftwareKmsProvider(app, session, "$sessionId-software-kms")
         return (session.graph as MdocEngagementManagerImpl.Graph).mdocEngagementManager
     }
 
@@ -270,17 +262,8 @@ class Iso18013MdocEngagementManagerIntegrationTest {
                 .getAnonymous()
                 .sessionContextManager
                 .createOrGetFromId(sessionId)
-        val kms = session.graph.asKeyManagerServiceGraph().keyManagerService
-        val config =
-            SoftwareKmsProviderConfig(
-                id = "$sessionId-software-kms",
-                cryptographyProvider = CryptographyProvider.Default.name,
-            )
-        val provider =
-            (app as SoftwareKmsProviderFactoryImpl.Graph)
-                .softwareKmsProvider
-                .create(config, session.asCoreApiServiceGraph().serviceExecution)
-        kms.registerProvider(provider, makeDefaultKms = true)
+        // Sanctioned test KMS wiring lives in the wscd test-fixtures module.
+        val kms = TestWscdSupport.ensureSoftwareKmsProvider(app, session, "$sessionId-software-kms")
         return kms
     }
 

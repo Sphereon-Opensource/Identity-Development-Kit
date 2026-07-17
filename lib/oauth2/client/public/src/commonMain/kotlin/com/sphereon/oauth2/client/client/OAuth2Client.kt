@@ -105,6 +105,11 @@ interface OAuth2Client {
         prompt: String? = null,
         loginHint: String? = null,
         tenantId: String? = null,
+        resource: String? = null,
+        audience: String? = null,
+        ownerHandleDigest: String? = null,
+        grantBinding: String? = null,
+        clientCorrelation: String? = null,
     ): IdkResult<OidcLoginInitiation, IdkError>
 
     /**
@@ -122,6 +127,11 @@ interface OAuth2Client {
         prompt: String? = null,
         loginHint: String? = null,
         tenantId: String? = null,
+        resource: String? = null,
+        audience: String? = null,
+        ownerHandleDigest: String? = null,
+        grantBinding: String? = null,
+        clientCorrelation: String? = null,
     ): IdkResult<OidcLoginInitiation, IdkError>
 
     /**
@@ -187,6 +197,7 @@ interface OAuth2Client {
         pkceData: PkceData? = null,
         resource: List<String>? = null,
         dpopContext: DpopContext? = null,
+        audience: List<String>? = null,
     ): IdkResult<TokenResponse, IdkError>
 
     /**
@@ -227,6 +238,7 @@ interface OAuth2Client {
         scope: String? = null,
         resource: List<String>? = null,
         dpopContext: DpopContext? = null,
+        audience: List<String>? = null,
     ): IdkResult<TokenResponse, IdkError>
 
     /**
@@ -313,6 +325,11 @@ interface OidcLoginApi {
         prompt: String? = null,
         loginHint: String? = null,
         tenantId: String? = null,
+        resource: String? = null,
+        audience: String? = null,
+        ownerHandleDigest: String? = null,
+        grantBinding: String? = null,
+        clientCorrelation: String? = null,
     ): IdkResult<OidcLoginInitiation, IdkError>
 
     /** Metadata-typed variant of [initiate] — useful when metadata is cached elsewhere. */
@@ -325,6 +342,11 @@ interface OidcLoginApi {
         prompt: String? = null,
         loginHint: String? = null,
         tenantId: String? = null,
+        resource: String? = null,
+        audience: String? = null,
+        ownerHandleDigest: String? = null,
+        grantBinding: String? = null,
+        clientCorrelation: String? = null,
     ): IdkResult<OidcLoginInitiation, IdkError>
 
     /** Complete an OIDC login by handling the authorization response callback. */

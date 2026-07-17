@@ -136,16 +136,14 @@ class HolderCommandDslTest {
                 signingKey("key-id-1", JwaAlgorithm.ES384)
                 nonce("c_nonce_abc")
                 clientId("wallet-client")
-                batch(count = 3)
                 keyMode(JwsIdentifierMode.JWK)
-            }
+        }
 
         assertEquals("https://issuer.example.com", args.issuerUrl)
-        assertEquals("key-id-1", args.signingKeyId)
+        assertEquals(listOf("key-id-1"), args.signingKeyIds)
         assertEquals("ES384", args.signingAlgorithm)
         assertEquals("c_nonce_abc", args.cNonce)
         assertEquals("wallet-client", args.clientId)
-        assertEquals(3, args.count)
         assertEquals(JwsIdentifierMode.JWK, args.keyInclusionMode)
     }
 
@@ -162,7 +160,7 @@ class HolderCommandDslTest {
             }
 
         assertEquals("ES256", args.signingAlgorithm)
-        assertEquals(1, args.count)
+        assertEquals(listOf("key-id-1"), args.signingKeyIds)
         assertEquals(JwsIdentifierMode.KID, args.keyInclusionMode)
         assertNull(args.cNonce)
         assertNull(args.clientId)
@@ -190,6 +188,21 @@ class HolderCommandDslTest {
         assertFailsWith<IllegalArgumentException> {
             createProofArgs {
                 issuerUrl("https://issuer.example.com")
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // createProofArgs — batch count > 1 must fail closed
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun createProofArgsBatchCountGreaterThanOneFailsClosed() {
+        assertFailsWith<IllegalArgumentException> {
+            createProofArgs {
+                issuerUrl("https://issuer.example.com")
+                signingKey("key-id-1")
+                batch(count = 3)
             }
         }
     }

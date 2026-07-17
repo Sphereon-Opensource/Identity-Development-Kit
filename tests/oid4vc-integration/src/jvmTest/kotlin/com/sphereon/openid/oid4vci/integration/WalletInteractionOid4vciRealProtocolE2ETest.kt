@@ -7,28 +7,54 @@
 package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
+import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.command.DpopProofAssembly
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
+import com.sphereon.openid.oid4vci.issuer.command.IssueNonceArgs
+import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
+import com.sphereon.openid.oid4vci.issuer.impl.proof.KeyAttestationVerifier
+import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
+import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.CredentialLifecycleState
+import com.sphereon.wallet.credential.CredentialSubjectExtractor
 import com.sphereon.wallet.credential.WalletCredentialStore
+import com.sphereon.wallet.credential.WalletIssuanceSessionStore
+import com.sphereon.wallet.interaction.WalletCredentialSelection
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceOptions
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuedCredentialAcceptance
+import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciKeyAttestationProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.protocol.oid4vci.WalletStoreOid4vciCredentialResponseReceiver
+import com.sphereon.wallet.unit.SecureComponentUsage
+import com.sphereon.wallet.unit.attestation.KeyAttestationIssueRequest
+import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
+import com.sphereon.wallet.wsca.impl.DevModeWalletUserAuthenticator
+import com.sphereon.wallet.wsca.impl.LocalWsca
+import com.sphereon.wallet.wscd.software.KmsProviderBootstrap
+import com.sphereon.wallet.wscd.software.SoftwareWscd
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -38,6 +64,10 @@ import kotlin.test.assertTrue
 @ContributesTo(SessionScope::class)
 interface WalletInteractionOid4vciStoreTestGraph {
     val walletCredentialStore: WalletCredentialStore
+    val walletIssuanceSessionStore: WalletIssuanceSessionStore
+    val walletIdentityResolver: WalletIdentityResolver
+    val credentialSubjectExtractor: CredentialSubjectExtractor
+    val verifySdJwtVcCommand: VerifySdJwtVcCommand
 }
 
 class WalletInteractionOid4vciRealProtocolE2ETest {
@@ -46,7 +76,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
         private const val SD_JWT_VCT = "https://issuer.example.com/public/schema/vct/NeutralOid4vciDegreeSdJwt"
         private const val ISSUER_SIGNING_KEY_ALIAS = "neutral-oid4vci-issuer-signing-key"
         private const val HOLDER_SIGNING_KEY_ALIAS = "neutral-oid4vci-holder-proof-key"
-        private const val WALLET_INSTANCE_ID = "wallet-interaction-oid4vci-e2e"
+        private const val WALLET_UNIT_ID = "wallet-interaction-oid4vci-e2e"
         private const val WALLET_CLIENT_ID = "https://wallet.example.com"
 
         init {
@@ -77,6 +107,10 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             DefaultPrincipalMapPropertySource.addProperty(
                 "oid4vci.issuer.credentials.[$CREDENTIAL_CONFIG_ID].proofTypes.jwt.signingAlgorithms",
                 "ES256",
+            )
+            DefaultPrincipalMapPropertySource.addProperty(
+                "oid4vci.issuer.credentials.[$CREDENTIAL_CONFIG_ID].validityPeriod",
+                "P365D",
             )
             DefaultPrincipalMapPropertySource.addProperty(
                 "oid4vci.issuer.credentials.[$CREDENTIAL_CONFIG_ID].signingKeyAlias",
@@ -112,7 +146,15 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             val graph = ctx.session.graph as Oid4vciIssuanceTestGraph
             val issuer = graph.oid4vciIssuerService
             val holder = graph.oid4vciHolder
-            val credentialStore = (ctx.session.graph as WalletInteractionOid4vciStoreTestGraph).walletCredentialStore
+            val storeGraph = ctx.session.graph as WalletInteractionOid4vciStoreTestGraph
+            val credentialStore = storeGraph.walletCredentialStore
+            val issuanceSessionStore = storeGraph.walletIssuanceSessionStore
+            val acceptance =
+                Oid4vciIssuedCredentialAcceptance(
+                    verifySdJwtVcCommand = storeGraph.verifySdJwtVcCommand,
+                    subjectExtractor = storeGraph.credentialSubjectExtractor,
+                    identityResolver = storeGraph.walletIdentityResolver,
+                )
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
@@ -150,15 +192,27 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                                             credentialConfigurationId = CREDENTIAL_CONFIG_ID,
                                         )
                                 },
-                            credentialReceiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore),
+                            credentialReceiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore, issuanceSessionStore, acceptance),
+                            credentialStore = credentialStore,
+                            issuanceSessionStore = issuanceSessionStore,
+                            refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
+                            keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
+                            // HOLDER_SIGNING_KEY_ALIAS is provisioned directly in the KMS (see
+                            // ensureHolderSigningKey()), not through Wsca, so the generic
+                            // KMS-resolving provider is correct here.
+                            credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                         ),
                 )
-            val engine = DefaultWalletInteractionEngine(adapters = listOf(adapter))
+            val engine =
+                DefaultWalletInteractionEngine(
+                    sensitiveInputAuthority = integrationSensitiveInputAuthority(),
+                    adapters = listOf(adapter),
+                )
 
             val session =
                 engine.start(
                     WalletInteractionInput(
-                        walletInstanceId = WALLET_INSTANCE_ID,
+                        walletUnitId = WALLET_UNIT_ID,
                         entryPoint = WalletEntryPoint.rawQr(offerResult.value.offerUri),
                     ),
                 )
@@ -168,22 +222,24 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             assertEquals(WalletInteractionStatus.CredentialOfferReview, session.state.status)
             assertFalse(startStateJson.contains(preAuthorizedCode))
 
-            engine.dispatch(session.sessionId, WalletInteractionAction.continueFlow())
-            val receivedState = engine.observe(session.sessionId).value
-            val receivedStateJson = json.encodeToString(receivedState)
-
-            assertEquals(WalletInteractionStatus.ReceivedCredentialReview, receivedState.status, "Received state: $receivedState")
-            assertFalse(receivedState.terminal)
-            assertFalse(receivedStateJson.contains("access_token"))
-            assertFalse(receivedStateJson.contains(preAuthorizedCode))
-
-            engine.dispatch(session.sessionId, WalletInteractionAction.acceptReceivedCredential())
+            engine.dispatch(
+                session.sessionId,
+                WalletInteractionAction.selectCredentials(
+                    WalletCredentialSelection(
+                        selectedCredentialIdsByRequirement =
+                            mapOf("oid4vci-offer" to session.state.credentialOffer!!.credentialConfigurationIds),
+                    ),
+                ),
+            )
             val completedState = engine.observe(session.sessionId).value
+            val completedStateJson = json.encodeToString(completedState)
 
             assertEquals(WalletInteractionStatus.Completed, completedState.status)
             assertTrue(completedState.terminal)
+            assertFalse(completedStateJson.contains("access_token"))
+            assertFalse(completedStateJson.contains(preAuthorizedCode))
 
-            val metadataResult = credentialStore.listMetadata(WALLET_INSTANCE_ID)
+            val metadataResult = credentialStore.listMetadata(WALLET_UNIT_ID)
             assertTrue(
                 metadataResult.isOk,
                 "Stored credential metadata should be readable: ${if (metadataResult.isErr) metadataResult.error.message.defaultMessage else ""}",
@@ -193,7 +249,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             assertEquals(CREDENTIAL_CONFIG_ID, storedMetadata.credentialConfigurationId)
             assertEquals(setOf(SD_JWT_VCT), storedMetadata.credentialTypeRefs.map { it.value }.toSet())
 
-            val recordResult = credentialStore.getCredential(WALLET_INSTANCE_ID, storedMetadata.credentialRecordId)
+            val recordResult = credentialStore.getCredential(WALLET_UNIT_ID, storedMetadata.credentialRecordId)
             assertTrue(
                 recordResult.isOk,
                 "Stored credential should be readable: ${if (recordResult.isErr) recordResult.error.message.defaultMessage else ""}",
@@ -205,6 +261,121 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                     .single()
                     .holderKeyRef
                     ?.alias
+            )
+        }
+
+    /**
+     * KA-on-demand acceptance leg. [CREDENTIAL_CONFIG_ID] declares NO
+     * `key_attestations_required` at all (see the class init block): a non-null
+     * `KeyAttestationsRequired` policy triggers `KeyAttestationEvidenceEnforcer`'s full hard-coded
+     * production gate (x5c-bound signer, `iso_18045_high`, `non_exportable`), which a Software-
+     * profile custody can never honestly satisfy - proving REQUIRED-policy acceptance with an OSS
+     * wallet is a contradiction in terms, so this leg does not attempt it (the "required -> attach"
+     * BRANCHING logic is covered by `lib-wallet-interaction-protocol-oid4vci`'s own unit tests
+     * instead). This leg proves the voluntary-attachment half: a real OSS wallet that VOLUNTARILY
+     * attaches a key attestation minted by [LocalWsca.attestKeys] (the exact production KA-minting
+     * surface [com.sphereon.wallet.provider.local.LocalWalletProvider] and the runner's
+     * `RunnerOid4vciKeyAttestationProvider` both route through) onto a REAL credential-request proof
+     * built by the production `CreateCredentialRequestProofCommandImpl` (proving the wire shape - the
+     * `key_attestation` JOSE header - round-trips correctly), and that the resulting KA is fully
+     * verified and ACCEPTED by the real issuer's
+     * [com.sphereon.openid.oid4vci.issuer.impl.proof.KeyAttestationVerifier] under the permissive
+     * `policy = null` path (mirroring `WalletProviderProvisioningE2ETest`'s pinned-trust-anchor
+     * pattern in idk wallet-runner, since this ad hoc WSCA identity is not pre-registered with the
+     * real issuer's own trust-anchor resolution).
+     */
+    @Test
+    fun keyAttestationVoluntarilyAttachedToARealCredentialRequestProofIsAcceptedUnderPermissivePolicy() =
+        runTest {
+            ctx.ensureAsSigningKey()
+            ensureIssuerSigningKey()
+
+            val graph = ctx.session.graph as Oid4vciIssuanceTestGraph
+            val issuer = graph.oid4vciIssuerService
+            val holder = graph.oid4vciHolder
+            val keyAttestationVerifier = (ctx.session.graph as KeyAttestationVerifierTestGraph).keyAttestationVerifier
+
+            // Real, Software-profile WSCA/WSCD over the SAME KMS the holder-proof command signs
+            // with: the credential-request proof's signing key and the key attestation's attested
+            // key must be the SAME key (the issuer requires their JWK thumbprints to match - see
+            // JwtProofVerifier's holder-binding-key check).
+            val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+            val wsca =
+                LocalWsca(
+                    SoftwareWscd(kms, providerBootstrap = KmsProviderBootstrap {}),
+                    DpopProofAssembly(defaultSecureRandom()),
+                    DevModeWalletUserAuthenticator(),
+                )
+            val holderKey =
+                wsca
+                    .createCredentialKey(WALLET_UNIT_ID, SecureComponentUsage.WALLET_CREDENTIAL_PROOF, SignatureAlgorithm.ECDSA_SHA256)
+                    .let {
+                        assertTrue(it.isOk, "createCredentialKey failed: ${if (it.isErr) it.error.message.defaultMessage else ""}")
+                        it.value
+                    }
+            val holderSigningKeyId = holderKey.keyRef ?: holderKey.keyId
+
+            val nonceResult = issuer.issueNonce(IssueNonceArgs(ttlSeconds = 300))
+            assertTrue(nonceResult.isOk, "Nonce issuance should succeed")
+            val cNonce = nonceResult.value.cNonce
+
+            val kaResult =
+                wsca.attestKeys(
+                    KeyAttestationIssueRequest(
+                        walletUnitId = WALLET_UNIT_ID,
+                        walletAccountId = WALLET_UNIT_ID,
+                        operationBinding = "test:oid4vci:key-attestation",
+                        profile = WalletUnitAttestationProfile.TS03_JWT,
+                        attestedKeys = listOf(holderKey),
+                        audience = issuerUrl,
+                        nonce = cNonce,
+                    ),
+                )
+            assertTrue(kaResult.isOk, "Key attestation issuance should succeed: ${if (kaResult.isErr) kaResult.error.message.defaultMessage else ""}")
+            val kaJwt = kaResult.value.artifact.material.value
+
+            // Attach through the REAL, production holder-proof command - the same
+            // holder.createCredentialRequestProof(keyAttestationJwt = ...) call
+            // Oid4vciHolderIssuanceExecutor makes.
+            val proofResult =
+                holder.createCredentialRequestProof(
+                    issuerUrl = issuerUrl,
+                    cNonce = cNonce,
+                    signingKeyIds = listOf(holderSigningKeyId),
+                    signingAlgorithm = "ES256",
+                    keyAttestationJwt = kaJwt,
+                )
+            assertTrue(proofResult.isOk, "Proof creation should succeed: ${if (proofResult.isErr) proofResult.error.message.defaultMessage else ""}")
+            val proofJwt = (proofResult.value.proofs.proofValues.single() as JsonPrimitive).content
+            val proofHeader = Json.parseToJsonElement(proofJwt.split('.')[0].decodeFromBase64Url().decodeToString()).jsonObject
+            assertEquals(kaJwt, proofHeader["key_attestation"]?.jsonPrimitive?.content, "the produced proof JWT must carry the KA verbatim in its key_attestation header")
+
+            // The signer of the KA is LocalWsca's OWN attestation key (ensureKey(usage =
+            // WALLET_ATTESTATION), resolved deterministically per walletUnitId since no explicit
+            // signer was requested) - mirrors LocalWalletProvider.trustAnchor()'s KDoc: same call,
+            // same key, since attestKeys() resolved it internally the same way.
+            val signerKey =
+                wsca
+                    .ensureKey(WALLET_UNIT_ID, SecureComponentUsage.WALLET_ATTESTATION, SignatureAlgorithm.ECDSA_SHA256)
+                    .let {
+                        assertTrue(it.isOk, "ensureKey failed")
+                        it.value
+                    }
+            val kaHeader = Json.parseToJsonElement(kaJwt.split('.')[0].decodeFromBase64Url().decodeToString()).jsonObject
+            val kaKid = kaHeader["kid"]?.jsonPrimitive?.content
+            assertNotNull(kaKid, "the KA must carry a kid header (no x5c was requested)")
+            val pinnedTrustAnchor = Json.decodeFromString(Jwk.serializer(), signerKey.publicKeyJwk!!).copy(kid = kaKid)
+
+            val permissive =
+                keyAttestationVerifier.verify(
+                    keyAttestationJwt = kaJwt,
+                    trustConfig = KeyAttesterTrustConfig(trustedJwks = listOf(pinnedTrustAnchor)),
+                    policy = null,
+                )
+            assertTrue(
+                permissive.isOk,
+                "the issuer's KeyAttestationVerifier must accept an honest Software-backed key attestation under a " +
+                    "permissive/dev policy: ${if (permissive.isErr) permissive.error.message.defaultMessage else ""}",
             )
         }
 
@@ -247,4 +418,15 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             "Holder proof key generation should succeed: ${if (result.isErr) result.error.message.defaultMessage else ""}",
         )
     }
+}
+
+/**
+ * Session-graph accessor for [KeyAttestationVerifier], scoped to this test file only - mirrors
+ * `WalletProviderProvisioningE2ETest`'s locally-declared `KeyAttestationVerifierGraph` (idk
+ * wallet-runner). The issuer module contributes no such accessor itself since nothing in its own
+ * production code needs one (issuer-internal callers inject [KeyAttestationVerifier] directly).
+ */
+@ContributesTo(SessionScope::class)
+interface KeyAttestationVerifierTestGraph {
+    val keyAttestationVerifier: KeyAttestationVerifier
 }

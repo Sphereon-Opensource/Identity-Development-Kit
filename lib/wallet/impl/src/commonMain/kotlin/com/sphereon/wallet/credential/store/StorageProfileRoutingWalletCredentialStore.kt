@@ -55,41 +55,41 @@ class StorageProfileRoutingWalletCredentialStore(
     private val hybridStore: HybridWalletCredentialStoreDelegate,
 ) : WalletCredentialStore {
     override suspend fun putCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
-    ): IdkResult<CredentialRecord, IdkError> = delegateFor(walletInstanceId).flatMap { it.putCredential(walletInstanceId, record) }
+    ): IdkResult<CredentialRecord, IdkError> = delegateFor(walletUnitId).flatMap { it.putCredential(walletUnitId, record) }
 
     override suspend fun getCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
-    ): IdkResult<CredentialRecord?, IdkError> = delegateFor(walletInstanceId).flatMap { it.getCredential(walletInstanceId, credentialRecordId) }
+    ): IdkResult<CredentialRecord?, IdkError> = delegateFor(walletUnitId).flatMap { it.getCredential(walletUnitId, credentialRecordId) }
 
     override suspend fun getMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
-    ): IdkResult<CredentialMetadata?, IdkError> = delegateFor(walletInstanceId).flatMap { it.getMetadata(walletInstanceId, credentialRecordId) }
+    ): IdkResult<CredentialMetadata?, IdkError> = delegateFor(walletUnitId).flatMap { it.getMetadata(walletUnitId, credentialRecordId) }
 
     override suspend fun listMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter,
-    ): IdkResult<List<CredentialMetadata>, IdkError> = delegateFor(walletInstanceId).flatMap { it.listMetadata(walletInstanceId, filter) }
+    ): IdkResult<List<CredentialMetadata>, IdkError> = delegateFor(walletUnitId).flatMap { it.listMetadata(walletUnitId, filter) }
 
     override suspend fun findByCredentialTypeRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         ref: CredentialTypeRef,
-    ): IdkResult<List<CredentialMetadata>, IdkError> = delegateFor(walletInstanceId).flatMap { it.findByCredentialTypeRef(walletInstanceId, ref) }
+    ): IdkResult<List<CredentialMetadata>, IdkError> = delegateFor(walletUnitId).flatMap { it.findByCredentialTypeRef(walletUnitId, ref) }
 
     override suspend fun deleteCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
-    ): IdkResult<Boolean, IdkError> = delegateFor(walletInstanceId).flatMap { it.deleteCredential(walletInstanceId, credentialRecordId) }
+    ): IdkResult<Boolean, IdkError> = delegateFor(walletUnitId).flatMap { it.deleteCredential(walletUnitId, credentialRecordId) }
 
-    private suspend fun delegateFor(walletInstanceId: String): IdkResult<WalletCredentialStore, IdkError> {
-        val profileResult = storageProfileResolver.resolveStorageProfile(walletInstanceId)
+    private suspend fun delegateFor(walletUnitId: String): IdkResult<WalletCredentialStore, IdkError> {
+        val profileResult = storageProfileResolver.resolveStorageProfile(walletUnitId)
         if (profileResult.isErr) return Err(profileResult.error)
 
         val profile = profileResult.value
-        val validationError = profile.validationError(walletInstanceId)
+        val validationError = profile.validationError(walletUnitId)
         if (validationError != null) return Err(validationError)
 
         return Ok(
@@ -101,9 +101,9 @@ class StorageProfileRoutingWalletCredentialStore(
         )
     }
 
-    private fun StorageProfile.validationError(walletInstanceId: String): IdkError? {
-        if (this.walletInstanceId != walletInstanceId) {
-            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "StorageProfile.walletInstanceId must match walletInstanceId")
+    private fun StorageProfile.validationError(walletUnitId: String): IdkError? {
+        if (this.walletUnitId != walletUnitId) {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "StorageProfile.walletUnitId must match walletUnitId")
         }
         return when (mode) {
             WalletStorageMode.LOCAL -> {

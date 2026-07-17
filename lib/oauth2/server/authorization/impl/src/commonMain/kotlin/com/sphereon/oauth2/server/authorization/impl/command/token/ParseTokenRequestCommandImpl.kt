@@ -189,11 +189,13 @@ class ParseTokenRequestCommandImpl(
         val code = requestBody["code"]?.firstOrNull() ?: ""
         val redirectUri = requestBody["redirect_uri"]?.firstOrNull() ?: ""
         val codeVerifier = requestBody["code_verifier"]?.firstOrNull()
+        val resource = requestBody["resource"].orEmpty().map(String::trim).filter(String::isNotEmpty).distinct()
 
         return GrantParameters.AuthorizationCode(
             code = code,
             redirectUri = redirectUri,
             codeVerifier = codeVerifier,
+            resource = resource,
         )
     }
 
@@ -203,10 +205,12 @@ class ParseTokenRequestCommandImpl(
     private fun parseRefreshTokenGrant(requestBody: Map<String, List<String>>): GrantParameters {
         val refreshToken = requestBody["refresh_token"]?.firstOrNull() ?: ""
         val scope = requestBody["scope"]?.firstOrNull()
+        val resource = requestBody["resource"].orEmpty().map(String::trim).filter(String::isNotEmpty).distinct()
 
         return GrantParameters.RefreshToken(
             refreshToken = refreshToken,
             scope = scope,
+            resource = resource,
         )
     }
 

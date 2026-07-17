@@ -137,6 +137,8 @@ class CreateAuthorizationSessionCommandImpl(
                 clientId = request.clientId,
                 redirectUri = request.redirectUri,
                 scope = request.request.scope,
+                resource = request.request.resource.orEmpty(),
+                defaultAccessTokenAudience = request.defaultAccessTokenAudience,
                 state = request.request.state,
                 responseType = request.request.responseType.joinToString(" ") { it.value },
                 responseMode = request.responseMode,
@@ -167,6 +169,9 @@ class CreateAuthorizationSessionCommandImpl(
                 applicationId = applicationId,
                 additionalData =
                     buildMap {
+                        // OID4VCI authorization-code correlation. This is the issuance session ID
+                        // supplied in the credential offer and must reach the token grant intact.
+                        request.request.additionalParameters["issuer_state"]?.let { put("issuer_state", it) }
                         // Carry authorization_details through the session
                         request.request.additionalParameters["authorization_details"]?.let { ad ->
                             put("authorization_details", ad)

@@ -22,7 +22,7 @@ import com.sphereon.conf.theme.core.model.ResolvedElement
 import com.sphereon.conf.theme.core.model.ResolvedFeature
 import com.sphereon.conf.theme.core.model.ResolvedTheme
 import com.sphereon.conf.theme.core.model.ThemeVariant
-import com.sphereon.data.store.asset.model.AssetReference
+import com.sphereon.conf.theme.core.model.ThemeAssetReference
 import com.sphereon.conf.theme.core.resolve.FeatureResolver
 import com.sphereon.conf.theme.core.resolve.ThemeResolver
 import com.sphereon.core.api.IdkResult
@@ -208,6 +208,26 @@ class LoginHttpFlowTest {
         return body to cookie
     }
 
+    private suspend fun csrfWebAuthnFormAndCookie(
+        sessionId: String,
+        credentialId: String,
+        username: String = "alice",
+        returnUrl: String = "https://as/authorize/callback?session_id=$sessionId",
+    ): Pair<String, String> {
+        val token = csrfTokenizer.mint(sessionId)
+        val body =
+            "username=$username&session_id=$sessionId&webauthn_credential_id=$credentialId&webauthn_challenge_id=challenge-1" +
+                "&webauthn_authenticator_data=authenticator-data&webauthn_client_data_json=client-data-json" +
+                "&webauthn_signature=signature&webauthn_user_handle=$username" +
+                "&webauthn_origin=https://login.example&webauthn_rp_id=login.example" +
+                "&webauthn_user_verified=true&webauthn_transport=internal" +
+                "&webauthn_backup_eligible=true&webauthn_backup_state=true&webauthn_prf_capable=true" +
+                "&tab_id=${token.tabId}&session_code=${token.sessionCode}" +
+                "&return_url=${com.sphereon.core.api.http.query.percentEncodeQueryComponent(returnUrl)}"
+        val cookie = "oidc_login_csrf=${token.tabId}"
+        return body to cookie
+    }
+
     @Test
     fun loginPageRendersBrandedHtml() =
         runTest {
@@ -348,6 +368,148 @@ class LoginHttpFlowTest {
             assertEquals(AuthenticationMethod.PASSWORD, stored.authMethod)
             assertEquals(AuthAssuranceLevel.AAL2.acr, stored.acr)
             assertEquals(listOf(Amr.PWD, "otp"), stored.amr)
+        }
+
+    @Test
+    fun loginPostWithWebAuthnAssertionSetsCookieAndPersistsAssurance() =
+        runTest {
+            val provider =
+                StubUserAuthProvider(
+                    validPair = "alice" to "wonderland",
+                    validPasskeyCredentialId = "credential-1",
+                )
+            val (command, store) = newSubmitCommand(userAuthProvider = provider)
+            val (body, csrfCookie) = csrfWebAuthnFormAndCookie("sess-1", "credential-1")
+            val request =
+                GenericHttpRequest(
+                    method = "POST",
+                    path = "/login",
+                    headers =
+                        mapOf(
+                            "Content-Type" to "application/x-www-form-urlencoded",
+                            "Cookie" to csrfCookie,
+                        ),
+                    bodySupplier = { body },
+                )
+            val response = command.execute(request)
+            assertTrue(response.isOk)
+            val r = response.value
+            assertEquals(302, r.statusCode)
+            assertTrue(r.headers["Set-Cookie"]?.contains("oidc_login_sid=login-sid-1") == true)
+            val stored = store.loaded("login-sid-1")
+            assertNotNull(stored, "OidcLoginSession must be persisted")
+            assertEquals("alice", stored.sub)
+            assertEquals(AuthenticationMethod.WEBAUTHN, stored.authMethod)
+            assertEquals(AuthAssuranceLevel.AAL2.acr, stored.acr)
+            assertEquals(listOf(Amr.WEBAUTHN), stored.amr)
+        }
+
+    @Test
+    fun loginWebAuthnAssertionBeginUsesIdentityScopedChallengeProvider() =
+        runTest {
+            val pendingStore = InMemoryPendingAuthorizationSessionStore()
+            pendingStore.create(pendingSession("sess-1"))
+            val provider = CapturingWebAuthnAssertionChallengeProvider()
+            val command =
+                LoginWebAuthnAssertionBeginHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    pendingAuthorizationSessionStore = pendingStore,
+                    configProvider =
+                        TestOAuth2ServersConfigProvider(
+                            config =
+                                com.sphereon.oauth2.common.config.OAuth2ServersConfig(
+                                    servers =
+                                        mapOf(
+                                            "default" to
+                                                com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig(
+                                                    webAuthn =
+                                                        com.sphereon.oauth2.common.config.WebAuthnLoginConfig(
+                                                            enabled = true,
+                                                            rpId = "login.example",
+                                                            allowedOrigins = setOf("https://login.example"),
+                                                            allowedTransports = setOf("internal"),
+                                                            level3PrfEnabled = true,
+                                                        ),
+                                                ),
+                                        ),
+                                ),
+                        ),
+                    challengeProvider = Provider { provider },
+                )
+            val response =
+                command.execute(
+                    GenericHttpRequest(
+                        method = "POST",
+                        path = "/login/webauthn/assertion/begin",
+                        headers = mapOf("Content-Type" to "application/json"),
+                        bodySupplier = {
+                            """{"sessionId":"sess-1","tenantId":"tenant-a","identityId":"identity-a","origin":"https://login.example","credentialId":"credential-a"}"""
+                        },
+                    ),
+                )
+
+            assertTrue(response.isOk)
+            assertEquals(201, response.value.statusCode)
+            assertTrue(response.value.body?.contains("\"challengeId\":\"challenge-a\"") == true)
+            val captured = provider.captured ?: error("challenge request was not captured")
+            assertEquals("sess-1", captured.sessionId)
+            assertEquals("app-1", captured.applicationId)
+            assertEquals("tenant-a", captured.tenantId)
+            assertEquals("identity-a", captured.identityId)
+            assertEquals("credential-a", captured.credentialId)
+        }
+
+    @Test
+    fun loginWebAuthnAssertionBeginAllowsDiscoverablePasskeyWithoutIdentityHint() =
+        runTest {
+            val pendingStore = InMemoryPendingAuthorizationSessionStore()
+            pendingStore.create(pendingSession("sess-1"))
+            val provider = CapturingWebAuthnAssertionChallengeProvider()
+            val command =
+                LoginWebAuthnAssertionBeginHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    pendingAuthorizationSessionStore = pendingStore,
+                    configProvider =
+                        TestOAuth2ServersConfigProvider(
+                            config =
+                                com.sphereon.oauth2.common.config.OAuth2ServersConfig(
+                                    servers =
+                                        mapOf(
+                                            "default" to
+                                                com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig(
+                                                    webAuthn =
+                                                        com.sphereon.oauth2.common.config.WebAuthnLoginConfig(
+                                                            enabled = true,
+                                                            rpId = "login.example",
+                                                            allowedOrigins = setOf("https://login.example"),
+                                                            allowedTransports = setOf("internal"),
+                                                        ),
+                                                ),
+                                        ),
+                                ),
+                        ),
+                    challengeProvider = Provider { provider },
+                )
+            val response =
+                command.execute(
+                    GenericHttpRequest(
+                        method = "POST",
+                        path = "/login/webauthn/assertion/begin",
+                        headers = mapOf("Content-Type" to "application/json"),
+                        bodySupplier = {
+                            """{"sessionId":"sess-1","tenantId":"tenant-a","origin":"https://login.example"}"""
+                        },
+                    ),
+                )
+
+            assertTrue(response.isOk)
+            assertEquals(201, response.value.statusCode)
+            val captured = provider.captured ?: error("challenge request was not captured")
+            assertEquals("sess-1", captured.sessionId)
+            assertEquals("app-1", captured.applicationId)
+            assertEquals("tenant-a", captured.tenantId)
+            assertNull(captured.identityId)
+            assertNull(captured.credentialId)
         }
 
     @Test
@@ -925,7 +1087,7 @@ class LoginHttpFlowTest {
                 mapOf(
                     "logo" to
                         ResolvedElement(
-                            asset = AssetReference(uri = logoUri),
+                            asset = ThemeAssetReference(uri = logoUri),
                             origin = ElementOrigin.TENANT,
                         ),
                 ),
@@ -1067,10 +1229,35 @@ class LoginHttpFlowTest {
         override fun currentAsInstanceId(): String? = id
     }
 
+    private class CapturingWebAuthnAssertionChallengeProvider : com.sphereon.oauth2.server.authorization.provider.WebAuthnAssertionChallengeProvider {
+        var captured: com.sphereon.oauth2.server.authorization.provider.BeginWebAuthnAssertionChallenge? = null
+
+        override suspend fun beginAssertion(
+            request: com.sphereon.oauth2.server.authorization.provider.BeginWebAuthnAssertionChallenge,
+        ): IdkResult<com.sphereon.oauth2.server.authorization.provider.WebAuthnAssertionChallengeOptions, AuthenticationError> {
+            captured = request
+            return Ok(
+                com.sphereon.oauth2.server.authorization.provider.WebAuthnAssertionChallengeOptions(
+                    challengeId = "challenge-a",
+                    challenge = "challenge-value",
+                    rpId = request.rpId,
+                    rpName = "VDX",
+                    allowedOrigins = request.allowedOrigins,
+                    userVerification = request.userVerification,
+                    allowedTransports = request.allowedTransports,
+                    level3PrfEnabled = request.level3PrfEnabled,
+                    expiresAt = Clock.System.now() + 5.minutes,
+                    credentialIds = setOfNotNull(request.credentialId),
+                ),
+            )
+        }
+    }
+
     private class StubUserAuthProvider(
         private val validPair: Pair<String, String>,
         private val acr: String? = AuthAssuranceLevel.AAL1.acr,
         private val amr: List<String>? = listOf(Amr.PWD),
+        private val validPasskeyCredentialId: String? = null,
     ) : UserAuthenticationProvider {
         override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = Ok(null)
 
@@ -1093,6 +1280,30 @@ class LoginHttpFlowTest {
             credentials: UserCredentials,
             context: AuthenticationContext?,
         ): IdkResult<AuthenticatedUser?, AuthenticationError> {
+            val webAuthn = credentials as? UserCredentials.WebAuthnAssertion
+            if (webAuthn != null) {
+                val expectedMetadata =
+                    webAuthn.origin == "https://login.example" &&
+                        webAuthn.rpId == "login.example" &&
+                        webAuthn.userVerified == true &&
+                        webAuthn.transport == "internal" &&
+                        webAuthn.backupEligible == true &&
+                        webAuthn.backupState == true &&
+                        webAuthn.prfCapable
+                return if (webAuthn.credentialId == validPasskeyCredentialId && expectedMetadata) {
+                    Ok(
+                        AuthenticatedUser(
+                            userId = webAuthn.userIdHint ?: webAuthn.userHandle ?: "passkey-user",
+                            authenticatedAt = Clock.System.now(),
+                            authenticationMethod = AuthenticationMethod.WEBAUTHN,
+                            acr = AuthAssuranceLevel.AAL2.acr,
+                            amr = listOf(Amr.WEBAUTHN),
+                        ),
+                    )
+                } else {
+                    Ok(null)
+                }
+            }
             val up = credentials as? UserCredentials.UsernamePassword ?: return Ok(null)
             return if (up.username == validPair.first && up.password == validPair.second) {
                 Ok(

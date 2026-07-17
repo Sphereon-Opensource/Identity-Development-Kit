@@ -27,5 +27,5 @@ import com.sphereon.core.api.error.IdkError
  * protocol flows.
  */
 interface WalletStorageProfileResolver {
-    suspend fun resolveStorageProfile(walletInstanceId: String): IdkResult<StorageProfile, IdkError>
+    suspend fun resolveStorageProfile(walletUnitId: String): IdkResult<StorageProfile, IdkError>
 }

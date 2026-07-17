@@ -27,9 +27,13 @@ import com.sphereon.data.store.kv.KvNamespace
 import com.sphereon.data.store.kv.KvStore
 import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreScopeBinding
+import com.sphereon.data.store.kv.KvStoreVersioning
+import com.sphereon.data.store.kv.KvVersionAppendResult
 import com.sphereon.data.store.kv.impl.KvStoreManager
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
+import com.sphereon.openid.oid4vci.issuer.store.NotificationReceipt
+import com.sphereon.openid.oid4vci.issuer.store.NotificationSessionIdentity
 import com.sphereon.openid.oid4vci.issuer.store.NotificationStateStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -38,13 +42,15 @@ import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 
 @Serializable
 internal data class NotificationRecord(
-    val notificationId: String,
-    val event: CredentialNotificationEvent,
-    val processedAt: Long,
+    val protocolSessionId: String,
+    val instanceId: String,
+    val expiresAtEpochSeconds: Long,
+    val event: CredentialNotificationEvent? = null,
+    val processedAtEpochSeconds: Long? = null,
 )
 
 @Inject
@@ -70,22 +76,120 @@ class KvNotificationStateStore(
         kvStoreManager.createFromKvStoreConfig(storeConfig, execution)
     }
 
+    override suspend fun registerNotification(
+        notificationId: String,
+        protocolSessionId: String,
+        instanceId: String,
+        ttlSeconds: Long,
+    ): IdkResult<Unit, IdkError> {
+        require(notificationId.isNotBlank()) { "notificationId must not be blank" }
+        require(protocolSessionId.isNotBlank()) { "protocolSessionId must not be blank" }
+        require(instanceId.isNotBlank()) { "instanceId must not be blank" }
+        require(ttlSeconds > 0) { "ttlSeconds must be positive" }
+
+        val versioning = versioningStore().getOrElse { return Err(it) }
+        val existing = versioning.getHead(namespace, notificationId).getOrElse { return Err(it) }
+        if (existing != null) {
+            return if (existing.value.protocolSessionId == protocolSessionId && existing.value.instanceId == instanceId) {
+                Ok(Unit)
+            } else {
+                Err(notificationBindingConflict())
+            }
+        }
+
+        val now = Clock.System.now().epochSeconds
+        val record =
+            NotificationRecord(
+                protocolSessionId = protocolSessionId,
+                instanceId = instanceId,
+                expiresAtEpochSeconds = now + ttlSeconds,
+            )
+        return when (
+            val appended =
+                versioning
+                    .append(namespace, notificationId, expectedPreviousVersionId = null, value = record, ttl = ttlSeconds.seconds)
+                    .getOrElse { return Err(it) }
+        ) {
+            is KvVersionAppendResult.Applied -> Ok(Unit)
+            is KvVersionAppendResult.Conflict -> {
+                if (
+                    appended.currentHead?.value?.protocolSessionId == protocolSessionId &&
+                    appended.currentHead?.value?.instanceId == instanceId
+                ) {
+                    Ok(Unit)
+                } else {
+                    Err(notificationBindingConflict())
+                }
+            }
+        }
+    }
+
+    override suspend fun getNotificationIdentity(notificationId: String): IdkResult<NotificationSessionIdentity?, IdkError> {
+        require(notificationId.isNotBlank()) { "notificationId must not be blank" }
+        val versioning = versioningStore().getOrElse { return Err(it) }
+        val current = versioning.getHead(namespace, notificationId).getOrElse { return Err(it) }?.value ?: return Ok(null)
+        if (current.expiresAtEpochSeconds <= Clock.System.now().epochSeconds) return Ok(null)
+        return Ok(
+            NotificationSessionIdentity(
+                protocolSessionId = current.protocolSessionId,
+                instanceId = current.instanceId,
+            ),
+        )
+    }
+
     override suspend fun recordNotification(
         notificationId: String,
         event: CredentialNotificationEvent,
-    ): IdkResult<Unit, IdkError> {
-        val record =
-            NotificationRecord(
-                notificationId = notificationId,
-                event = event,
-                processedAt = Clock.System.now().epochSeconds,
-            )
-        kv.put(namespace, notificationId, record, ttl = 24.hours).getOrElse { return Err(it) }
-        return Ok(Unit)
+    ): IdkResult<NotificationReceipt?, IdkError> {
+        val versioning = versioningStore().getOrElse { return Err(it) }
+        while (true) {
+            val head = versioning.getHead(namespace, notificationId).getOrElse { return Err(it) } ?: return Ok(null)
+            val current = head.value
+            if (current.processedAtEpochSeconds != null) {
+                return Ok(
+                    NotificationReceipt(
+                        protocolSessionId = current.protocolSessionId,
+                        instanceId = current.instanceId,
+                        firstReceipt = false,
+                    ),
+                )
+            }
+
+            val now = Clock.System.now().epochSeconds
+            val remainingTtl = current.expiresAtEpochSeconds - now
+            if (remainingTtl <= 0) return Ok(null)
+            val recorded = current.copy(event = event, processedAtEpochSeconds = now)
+            when (
+                versioning
+                    .append(namespace, notificationId, expectedPreviousVersionId = head.versionId, value = recorded, ttl = remainingTtl.seconds)
+                    .getOrElse { return Err(it) }
+            ) {
+                is KvVersionAppendResult.Applied ->
+                    return Ok(
+                        NotificationReceipt(
+                            protocolSessionId = current.protocolSessionId,
+                            instanceId = current.instanceId,
+                            firstReceipt = true,
+                        ),
+                    )
+
+                is KvVersionAppendResult.Conflict -> Unit
+            }
+        }
     }
 
-    override suspend fun isProcessed(notificationId: String): IdkResult<Boolean, IdkError> {
-        val record = kv.get<NotificationRecord>(namespace, notificationId).getOrElse { return Err(it) }
-        return Ok(record != null)
-    }
+    private fun versioningStore(): IdkResult<KvStoreVersioning, IdkError> =
+        (kv as? KvStoreVersioning)?.let(::Ok)
+            ?: Err(
+                IdkError.fromString(
+                    code = "KV_VERSIONING_REQUIRED",
+                    message = "Notification state requires an atomic versioned KV backend",
+                ),
+            )
+
+    private fun notificationBindingConflict(): IdkError =
+        IdkError.fromString(
+            code = "NOTIFICATION_BINDING_CONFLICT",
+            message = "notification_id is already bound to another protocol session",
+        )
 }

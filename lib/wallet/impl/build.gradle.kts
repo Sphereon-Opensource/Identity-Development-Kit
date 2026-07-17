@@ -18,6 +18,14 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(projects.libWalletPublic)
+                api(projects.libWalletWscaPublic)
+                // LocalWsca (Wsca policy implementation): impl reaches it via this
+                // dependency so its @ContributesBinding merges into the session graph, exactly like the
+                // lib-wallet-wscd-software dependency below does for the Wscd/WscdFactory bindings.
+                api(projects.libWalletWscaImpl)
+                // Software WSCD implementation (SoftwareWscd, SoftwareWscdWalletCredentialBodyProtector,
+                // SoftwareWscdBootstrap) lives in its own module; impl reaches it via this dependency.
+                api(projects.libWalletWscdSoftware)
                 api(projects.libDataStoreBlobPublic)
                 api(projects.libDataStoreBlobImpl)
                 api(libs.bundles.app.platform.di)
@@ -29,7 +37,14 @@ kotlin {
                 // SD-JWT VC verification command (sdjwt.vc.verify): the wallet verifies the
                 // issuer signature of an issued SD-JWT VC on receipt before storing it.
                 api(projects.libSdjwtPublic)
-                api(projects.libCryptoCoreImpl)
+                // Deliberately NO direct api(projects.libCryptoCoreImpl) edge: no source in this
+                // module imports com.sphereon.crypto.core.impl.*
+                // directly; lib-crypto-core-impl's non-KMS JOSE/crypto command impls (JwtServiceImpl,
+                // JweServiceImpl, DefaultSignatureService, X509VerifyServiceImpl, CryptoServicesImpl)
+                // remain compile-visible transitively via libOpenidOid4vciHolderImpl's OWN
+                // api(projects.libCryptoCoreImpl) dependency (libOpenidOid4vciHolderImpl is itself an
+                // api dependency of this module, so the api chain to lib-crypto-core-impl is
+                // unbroken).
                 api(projects.libOauth2ClientImpl)
                 api(projects.libDataLinkHttpClientPublic)
             }
@@ -41,14 +56,25 @@ kotlin {
                 implementation(projects.libDataStoreBlobImplMemory)
                 implementation(projects.libDataStoreKvImplMemory)
                 implementation(projects.libCoreEventsImpl)
+                // defaultSecureRandom() for the LocalWsca(SoftwareWscd(...), DpopProofAssembly(...))
+                // wiring the fake-KMS-backed tests construct directly.
+                implementation(projects.libCoreApiDefault)
             }
         }
         val jvmMain by getting {
             dependencies {
                 // DefaultRootScopeProvider + DefaultPrincipalMapPropertySource for WalletAppGraph
                 api(projects.libCoreApiDefault)
-                // Software KMS provider: WalletBootstrap registers it so createHolderKey() works
-                api(projects.libCryptoKmsProviderSoftware)
+                // Deliberately NO api(projects.libCryptoKmsProviderSoftware) edge: software KMS
+                // provider registration lives behind the WSCA/WSCD boundary
+                // (SoftwareKmsProviderRegistrar, lib-wallet-wscd-software), which this module already
+                // depends on via libWalletWscdSoftware, so no source here needs the KMS provider
+                // module directly. libWalletWscdSoftware's OWN dependency on the KMS provider module
+                // is `implementation` (provider types must not leak onto consumers' compile
+                // classpath), so it does not re-expose it transitively either. If :lib-wallet-impl
+                // fails to compile/wire with a "no binding for SoftwareKmsProviderFactory" error,
+                // add `implementation(projects.libCryptoKmsProviderSoftware)` here (not `api` -
+                // nothing else needs it re-exposed).
                 // Event service bindings needed by the App/User/Session graph
                 api(projects.libCoreEventsImpl)
                 // HTTP client factory + URI command bindings needed by OID4VCI/OID4VP holder impls

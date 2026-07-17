@@ -27,12 +27,12 @@ import com.sphereon.openid.oid4vci.common.model.CredentialRequestProofs
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
+import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 // ============================================================================
 // ParseCredentialOfferCommand
@@ -94,20 +94,14 @@ data class SelectAuthorizationServerArgs(
 @Serializable
 data class ResolvedAuthorizationServer(
     val authorizationServerUrl: String,
-    val metadata: JsonObject,
+    val metadata: AuthorizationServerMetadata,
 ) {
-    val tokenEndpoint: String?
-        get() = metadata["token_endpoint"]?.jsonPrimitive?.contentOrNull
-    val authorizationEndpoint: String?
-        get() = metadata["authorization_endpoint"]?.jsonPrimitive?.contentOrNull
-    val pushedAuthorizationRequestEndpoint: String?
-        get() = metadata["pushed_authorization_request_endpoint"]?.jsonPrimitive?.contentOrNull
-    val interactiveAuthorizationEndpoint: String?
-        get() = metadata["interactive_authorization_endpoint"]?.jsonPrimitive?.contentOrNull
-    val jwksUri: String?
-        get() = metadata["jwks_uri"]?.jsonPrimitive?.contentOrNull
-    val issuer: String?
-        get() = metadata["issuer"]?.jsonPrimitive?.contentOrNull
+    val issuer: String get() = metadata.issuer
+    val tokenEndpoint: String get() = metadata.tokenEndpoint
+    val authorizationEndpoint: String? get() = metadata.authorizationEndpoint
+    val pushedAuthorizationRequestEndpoint: String? get() = metadata.pushedAuthorizationRequestEndpoint
+    val interactiveAuthorizationEndpoint: String? get() = metadata.interactiveAuthorizationEndpoint
+    val jwksUri: String? get() = metadata.jwksUri
 }
 
 interface SelectAuthorizationServerCommand : ServiceCommand<SelectAuthorizationServerArgs, ResolvedAuthorizationServer, IdkError> {
@@ -144,7 +138,21 @@ data class ExchangePreAuthorizedCodeArgs(
     val txCode: String? = null,
     val clientId: String? = null,
     val redirectUri: String? = null,
-)
+    /** Optional RFC 9449 DPoP proof JWT to send as the `DPoP` token endpoint header. */
+    val dpopProofJwt: String? = null,
+    /** Optional OAuth attestation-based client-auth JWT for the `OAuth-Client-Attestation` header. */
+    val clientAttestationJwt: String? = null,
+    /** Optional PoP JWT for the `OAuth-Client-Attestation-PoP` header. */
+    val clientAttestationPopJwt: String? = null,
+    /** Optional OAuth2 token endpoint client authentication configuration. */
+    val clientAuthentication: ClientAuthenticationConfig? = null,
+) {
+    init {
+        require((clientAttestationJwt == null) == (clientAttestationPopJwt == null)) {
+            "clientAttestationJwt and clientAttestationPopJwt must be supplied together"
+        }
+    }
+}
 
 @Serializable
 data class TokenResponseWithContext(
@@ -154,6 +162,8 @@ data class TokenResponseWithContext(
     @SerialName("authorization_details") val authorizationDetails: List<JsonElement>? = null,
     @SerialName("c_nonce") val cNonce: String? = null,
     @SerialName("c_nonce_expires_in") val cNonceExpiresIn: Int? = null,
+    /** OAuth2 refresh token, used later to silently replenish batch-issued credential instances. */
+    @SerialName("refresh_token") val refreshToken: String? = null,
     val additionalParameters: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -172,14 +182,20 @@ interface ExchangePreAuthorizedCodeCommand : ServiceCommand<ExchangePreAuthorize
 data class CreateCredentialRequestProofArgs(
     val issuerUrl: String,
     val cNonce: String? = null,
-    val signingKeyId: String,
+    val signingKeyIds: List<String>,
     val signingAlgorithm: String = "ES256",
     val clientId: String? = null,
-    val count: Int = 1,
     val keyInclusionMode: JwsIdentifierMode = JwsIdentifierMode.KID,
+    /** Optional OID4VCI key-attestation JWT to place in the PoP JWT header or send as an attestation proof. */
+    val keyAttestationJwt: String? = null,
     /** The proof type to create (e.g., "jwt", "cwt"). Defaults to "jwt". */
     val proofType: String = "jwt",
-)
+) {
+    init {
+        require(signingKeyIds.isNotEmpty()) { "CreateCredentialRequestProofArgs.signingKeyIds must not be empty" }
+        require(signingKeyIds.all { it.isNotBlank() }) { "CreateCredentialRequestProofArgs.signingKeyIds must not contain blank entries" }
+    }
+}
 
 @Serializable
 data class CreatedProof(
@@ -201,6 +217,7 @@ interface CreateCredentialRequestProofCommand : ServiceCommand<CreateCredentialR
 data class RequestCredentialArgs(
     val credentialEndpoint: String,
     val accessToken: String,
+    val dpopProofJwt: String? = null,
     val credentialConfigurationId: String? = null,
     val credentialIdentifier: String? = null,
     val proofs: CredentialRequestProofs? = null,

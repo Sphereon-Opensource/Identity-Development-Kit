@@ -21,24 +21,24 @@ import com.sphereon.core.api.error.IdkError
 import kotlinx.serialization.Serializable
 
 /**
- * Per-wallet-instance operation log used by hybrid local-first storage.
+ * Per-wallet-unit operation log used by hybrid local-first storage.
  */
 interface WalletOperationQueue {
     suspend fun enqueue(
-        walletInstanceId: String,
+        walletUnitId: String,
         operation: WalletOperation,
     ): IdkResult<WalletOperation, IdkError>
 
-    suspend fun listPending(walletInstanceId: String): IdkResult<List<WalletOperation>, IdkError>
+    suspend fun listPending(walletUnitId: String): IdkResult<List<WalletOperation>, IdkError>
 
     suspend fun remove(
-        walletInstanceId: String,
+        walletUnitId: String,
         operationId: String,
     ): IdkResult<Boolean, IdkError>
 }
 
 interface WalletOperationSyncService {
-    suspend fun replayPending(walletInstanceId: String): IdkResult<WalletOperationReplayResult, IdkError>
+    suspend fun replayPending(walletUnitId: String): IdkResult<WalletOperationReplayResult, IdkError>
 }
 
 @Serializable

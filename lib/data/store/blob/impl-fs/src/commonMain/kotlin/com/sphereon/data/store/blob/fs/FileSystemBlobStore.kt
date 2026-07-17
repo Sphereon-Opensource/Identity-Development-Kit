@@ -20,21 +20,28 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.data.store.blob.BlobByteSource
 import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.BlobMetadata
+import com.sphereon.data.store.blob.BlobReadRange
+import com.sphereon.data.store.blob.BlobReadStream
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.BlobStoreCapabilities
 import com.sphereon.data.store.blob.BlobStoreError
 import com.sphereon.data.store.blob.BlobStoreSchemes
+import com.sphereon.data.store.blob.DEFAULT_BLOB_STREAM_CHUNK_SIZE
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.ListResult
 import com.sphereon.data.store.blob.PutOptions
 import com.sphereon.data.store.blob.ResolvedBlobInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okio.Buffer
+import okio.BufferedSource
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
@@ -59,7 +66,13 @@ class FileSystemBlobStore(
 
     override val schemeId: String = BlobStoreSchemes.FILESYSTEM
 
-    override val capabilities: BlobStoreCapabilities = BlobStoreCapabilities.SIMPLE
+    override val capabilities: BlobStoreCapabilities =
+        BlobStoreCapabilities.SIMPLE.copy(
+            supportsStreamingRead = true,
+            supportsStreamingWrite = true,
+            supportsRangeReads = true,
+            supportsIntegrityVerification = true,
+        )
 
     private fun resolvePath(info: BlobInfo): Path = rootDir.toPath() / requireNotNull(info.path) { "BlobInfo.path must not be null" }
 
@@ -78,6 +91,9 @@ class FileSystemBlobStore(
     ): IdkResult<BlobDescriptor, IdkError> =
         mutex.withLock {
             try {
+                if (options.ifMatch != null || options.ifNoneMatch != null || options.expectedRevision != null) {
+                    return@withLock Err(BlobStoreError.Unsupported("conditional filesystem write").toIdkError())
+                }
                 val effectiveInfo =
                     if (target.path == null) {
                         target.copy(path = Uuid.random().toString())
@@ -111,8 +127,84 @@ class FileSystemBlobStore(
 
                 val fsMetadata = fileSystem.metadata(path)
                 Ok(toDescriptor(effectiveInfo.path!!, fsMetadata, readSidecarMetadata(path), metadata))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to put blob '${target.path}': ${expected.message}", exception = expected, code = "BLOB_PUT_FAILED"))
+            }
+        }
+
+    @OptIn(ExperimentalUuidApi::class)
+    override suspend fun putStream(
+        target: BlobInfo,
+        source: BlobByteSource,
+        options: PutOptions,
+    ): IdkResult<BlobDescriptor, IdkError> =
+        mutex.withLock {
+            var temporaryPath: Path? = null
+            try {
+                if (options.ifMatch != null || options.ifNoneMatch != null || options.expectedRevision != null) {
+                    return@withLock Err(BlobStoreError.Unsupported("conditional filesystem stream write").toIdkError())
+                }
+                val effectiveInfo = target.copy(path = target.path ?: Uuid.random().toString())
+                val path = resolvePath(effectiveInfo)
+                if (!options.overwrite && fileSystem.exists(path)) {
+                    return@withLock Err(BlobStoreError.AlreadyExists(effectiveInfo.path!!).toIdkError())
+                }
+                if (autoCreateDirs) {
+                    path.parent?.let { fileSystem.createDirectories(it) }
+                }
+
+                val temp = (path.toString() + ".upload-${Uuid.random()}.tmp").toPath()
+                temporaryPath = temp
+                var totalSize = 0L
+                fileSystem.sink(temp).buffer().use { sink ->
+                    while (true) {
+                        val readResult = source.read(DEFAULT_BLOB_STREAM_CHUNK_SIZE)
+                        if (readResult.isErr) {
+                            return@withLock Err(readResult.error)
+                        }
+                        val chunk = readResult.value ?: break
+                        if (chunk.isEmpty()) {
+                            return@withLock Err(BlobStoreError.BackendError("Blob stream returned an empty chunk before EOF").toIdkError())
+                        }
+                        totalSize += chunk.size
+                        if (totalSize > capabilities.maxBlobSizeBytes) {
+                            return@withLock Err(BlobStoreError.QuotaExceeded("Blob stream exceeds max size ${capabilities.maxBlobSizeBytes}").toIdkError())
+                        }
+                        sink.write(chunk)
+                    }
+                }
+                fileSystem.atomicMove(temp, path)
+                temporaryPath = null
+
+                val metadata = effectiveInfo.toBlobMetadata()
+                if (metadata.contentType != null) {
+                    writeSidecarMetadata(path, SidecarMetadata(contentType = metadata.contentType))
+                }
+                val fsMetadata = fileSystem.metadata(path)
+                Ok(toDescriptor(effectiveInfo.path!!, fsMetadata, readSidecarMetadata(path), metadata))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (expected: Exception) {
+                Err(
+                    IdkError.fromString(
+                        message = "Failed to stream blob '${target.path}': ${expected.message}",
+                        exception = expected,
+                        code = "BLOB_PUT_FAILED",
+                    ),
+                )
+            } finally {
+                try {
+                    source.close()
+                } catch (_: Exception) {
+                    // The operation result is authoritative; close failures must not hide it.
+                }
+                temporaryPath?.let { temp ->
+                    if (fileSystem.exists(temp)) {
+                        fileSystem.delete(temp)
+                    }
+                }
             }
         }
 
@@ -136,6 +228,54 @@ class FileSystemBlobStore(
                 Ok(ResolvedBlobInfo.fromContent(info, data, descriptor))
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to get blob '${info.path}': ${expected.message}", exception = expected, code = "BLOB_GET_FAILED"))
+            }
+        }
+
+    override suspend fun openRead(info: BlobInfo): IdkResult<BlobReadStream, IdkError> =
+        mutex.withLock {
+            try {
+                val path = resolvePath(info)
+                if (!fileSystem.exists(path)) {
+                    return@withLock Err(BlobStoreError.NotFound(info.path!!).toIdkError())
+                }
+                val descriptor = toDescriptor(info.path!!, fileSystem.metadata(path), readSidecarMetadata(path))
+                Ok(
+                    BlobReadStream(
+                        descriptor = descriptor,
+                        source = OkioBlobByteSource(fileSystem.source(path).buffer()),
+                    ),
+                )
+            } catch (expected: Exception) {
+                Err(IdkError.fromString(message = "Failed to open blob '${info.path}': ${expected.message}", exception = expected, code = "BLOB_GET_FAILED"))
+            }
+        }
+
+    override suspend fun openReadRange(
+        info: BlobInfo,
+        range: BlobReadRange,
+    ): IdkResult<BlobReadStream, IdkError> =
+        mutex.withLock {
+            try {
+                val path = resolvePath(info)
+                if (!fileSystem.exists(path)) return@withLock Err(BlobStoreError.NotFound(info.path!!).toIdkError())
+                val metadata = fileSystem.metadata(path)
+                val size = metadata.size ?: 0L
+                if (range.startInclusive > size) {
+                    return@withLock Err(BlobStoreError.PreconditionFailed("Range starts beyond end of blob: ${info.path}").toIdkError())
+                }
+                val source = fileSystem.source(path).buffer()
+                source.skip(range.startInclusive)
+                val length = (range.endExclusive?.coerceAtMost(size) ?: size) - range.startInclusive
+                Ok(
+                    BlobReadStream(
+                        descriptor = toDescriptor(info.path!!, metadata, readSidecarMetadata(path)),
+                        source = OkioBlobByteSource(source, length),
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (expected: Exception) {
+                Err(IdkError.fromString(message = "Failed to open blob range '${info.path}': ${expected.message}", exception = expected, code = "BLOB_GET_FAILED"))
             }
         }
 
@@ -340,6 +480,16 @@ class FileSystemBlobStore(
         }
     }
 
+    private fun writeSidecarMetadata(
+        blobPath: Path,
+        metadata: SidecarMetadata,
+    ) {
+        val metaJson = json.encodeToString(SidecarMetadata.serializer(), metadata)
+        fileSystem.sink(metaPath(blobPath)).buffer().use { sink ->
+            sink.writeUtf8(metaJson)
+        }
+    }
+
     private fun toDescriptor(
         path: String,
         fsMetadata: okio.FileMetadata,
@@ -377,3 +527,38 @@ class FileSystemBlobStore(
 internal data class SidecarMetadata(
     val contentType: String? = null,
 )
+
+private class OkioBlobByteSource(
+    private val source: BufferedSource,
+    private var remaining: Long? = null,
+) : BlobByteSource {
+    override suspend fun read(maxBytes: Int): IdkResult<ByteArray?, IdkError> {
+        require(maxBytes > 0) { "maxBytes must be greater than zero" }
+        return try {
+            if (remaining == 0L) return Ok(null)
+            val buffer = Buffer()
+            val requested = remaining?.let { minOf(it, maxBytes.toLong()) } ?: maxBytes.toLong()
+            val count = source.read(buffer, requested)
+            if (count == -1L) {
+                Ok(null)
+            } else {
+                remaining = remaining?.minus(count)
+                Ok(buffer.readByteArray())
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (expected: Exception) {
+            Err(
+                IdkError.fromString(
+                    message = "Failed to read filesystem blob stream: ${expected.message}",
+                    exception = expected,
+                    code = "BLOB_GET_FAILED",
+                ),
+            )
+        }
+    }
+
+    override suspend fun close() {
+        source.close()
+    }
+}

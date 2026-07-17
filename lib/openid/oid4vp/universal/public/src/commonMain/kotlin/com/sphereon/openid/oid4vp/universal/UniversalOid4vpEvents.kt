@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vp.universal
 import com.sphereon.core.api.events.EventCategory
 import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventType
+import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierSessionEventTypes
 
 /**
  * Event subsystem identifiers for Universal OID4VP.
@@ -54,7 +55,7 @@ object UniversalOid4vpEventTypes {
      *
      * Payload includes: correlationId, previousStatus, currentStatus
      */
-    val SESSION_STATUS_CHANGED = EventType("oid4vp.universal.session.status_changed")
+    val SESSION_STATUS_CHANGED = Oid4vpVerifierSessionEventTypes.STATUS_CHANGED
 
     /**
      * Emitted when a session is deleted via the REST API.
@@ -63,19 +64,22 @@ object UniversalOid4vpEventTypes {
      */
     val SESSION_DELETED = EventType("oid4vp.universal.session.deleted")
 
+    /** Emitted immediately before a configured session callback is attempted. */
+    val CALLBACK_ATTEMPTED = Oid4vpVerifierSessionEventTypes.CALLBACK_ATTEMPTED
+
     /**
      * Emitted when a webhook callback is successfully dispatched.
      *
      * Payload includes: correlationId, callbackUrl, status
      */
-    val CALLBACK_DISPATCHED = EventType("oid4vp.universal.callback.dispatched")
+    val CALLBACK_DISPATCHED = Oid4vpVerifierSessionEventTypes.CALLBACK_SUCCEEDED
 
     /**
      * Emitted when a webhook callback fails.
      *
      * Payload includes: correlationId, callbackUrl, error
      */
-    val CALLBACK_FAILED = EventType("oid4vp.universal.callback.failed")
+    val CALLBACK_FAILED = Oid4vpVerifierSessionEventTypes.CALLBACK_FAILED
 
     /**
      * Emitted when a status poll request is received.
@@ -83,4 +87,14 @@ object UniversalOid4vpEventTypes {
      * Payload includes: correlationId, status
      */
     val STATUS_POLLED = EventType("oid4vp.universal.status.polled")
+
+    val ALL: Set<EventType> = setOf(
+        SESSION_CREATED,
+        SESSION_STATUS_CHANGED,
+        SESSION_DELETED,
+        CALLBACK_ATTEMPTED,
+        CALLBACK_DISPATCHED,
+        CALLBACK_FAILED,
+        STATUS_POLLED,
+    )
 }

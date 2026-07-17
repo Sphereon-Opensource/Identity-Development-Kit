@@ -38,32 +38,32 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<RemoteWalletCredentialStore>())
 class UnsupportedRemoteWalletCredentialStore : RemoteWalletCredentialStore {
     override suspend fun putCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         record: CredentialRecord,
     ): IdkResult<CredentialRecord, IdkError> = unsupported()
 
     override suspend fun getCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialRecord?, IdkError> = unsupported()
 
     override suspend fun getMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<CredentialMetadata?, IdkError> = unsupported()
 
     override suspend fun listMetadata(
-        walletInstanceId: String,
+        walletUnitId: String,
         filter: CredentialMetadataFilter,
     ): IdkResult<List<CredentialMetadata>, IdkError> = unsupported()
 
     override suspend fun findByCredentialTypeRef(
-        walletInstanceId: String,
+        walletUnitId: String,
         ref: CredentialTypeRef,
     ): IdkResult<List<CredentialMetadata>, IdkError> = unsupported()
 
     override suspend fun deleteCredential(
-        walletInstanceId: String,
+        walletUnitId: String,
         credentialRecordId: String,
     ): IdkResult<Boolean, IdkError> = unsupported()
 

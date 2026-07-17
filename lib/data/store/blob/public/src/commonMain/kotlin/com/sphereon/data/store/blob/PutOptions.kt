@@ -32,8 +32,18 @@ import kotlin.native.ObjCName
 data class PutOptions(
     val overwrite: Boolean = true,
     val digestAlgorithm: DigestAlg? = null,
+    /** Exact current ETag, or `*` to require that the blob already exists. */
+    val ifMatch: String? = null,
+    /** Reject the write when this ETag exists. `*` implements create-only semantics. */
     val ifNoneMatch: String? = null,
+    /** Backend-neutral numeric revision that must match before an update is applied. */
+    val expectedRevision: Long? = null,
 ) {
+    init {
+        require(ifMatch == null || ifNoneMatch == null) { "ifMatch and ifNoneMatch are mutually exclusive" }
+        require(expectedRevision == null || expectedRevision >= 0) { "expectedRevision must not be negative" }
+    }
+
     companion object {
         val DEFAULT = PutOptions()
         val NO_OVERWRITE = PutOptions(overwrite = false)

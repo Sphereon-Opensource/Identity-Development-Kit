@@ -47,6 +47,7 @@ import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
+import com.sphereon.openid.oid4vp.common.Oid4vpJson
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommandService
@@ -284,7 +285,7 @@ class ParseAuthorizationRequestCommandImpl(
      * Per RFC 9101 Section 3.2: Request Object params take precedence, with specific override rules.
      *
      * JWT validation parameters:
-     * - audience: From walletConfig (wallet's identifier for JWT `aud` claim validation)
+     * - audience: From walletConfig (the expected Request Object JWT `aud` claim)
      * - decryptionKey: From walletConfig (for decrypting JWE request objects)
      * - verificationKey: Should be resolved from client metadata (jwks/jwks_uri)
      *   TODO: Implement client metadata resolution to fetch verificationKey
@@ -301,36 +302,49 @@ class ParseAuthorizationRequestCommandImpl(
         walletConfig: WalletConfig?,
     ): IdkResult<io.ktor.http.Parameters, IdkError> {
         val header = extractJwtHeader(requestObjectJwt)
+        val payloadHint = extractJwtPayload(requestObjectJwt)
         val kid = header["kid"]?.jsonPrimitive?.contentOrNull
         val x5cHeader =
             (header["x5c"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
         val clientId = queryParameters["client_id"]
+        val signedClientId = payloadHint["client_id"]?.jsonPrimitive?.contentOrNull
+        if (!clientId.isNullOrBlank() && !signedClientId.isNullOrBlank() && clientId != signedClientId) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Request object client_id mismatch: outer='$clientId', signed='$signedClientId'",
+                ),
+            )
+        }
+        val outerClientIdScheme = queryParameters["client_id_scheme"]?.takeIf { it.isNotBlank() }
+        val signedClientIdScheme = payloadHint["client_id_scheme"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        if (outerClientIdScheme != null && signedClientIdScheme != null && outerClientIdScheme != signedClientIdScheme) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message =
+                        "Request object client_id_scheme mismatch: " +
+                            "outer='$outerClientIdScheme', signed='$signedClientIdScheme'",
+                ),
+            )
+        }
         val clientMetadata = resolveClientMetadataFromQuery(queryParameters).getOrElse { return Err(it) }
         val verificationKey =
             resolveJarVerificationKey(
                 clientId = clientId,
+                clientIdSchemeHint = outerClientIdScheme ?: signedClientIdScheme,
                 clientMetadata = clientMetadata,
                 requestedKid = kid,
                 x5cHeader = x5cHeader,
             ).getOrElse { return Err(it) }
 
-        // OID4VP §5.9.3/§5.10: JAR `iss` carries the bare identifier (DID, DNS name, …)
-        // not the prefixed form. Strip a known scheme prefix so iss validation lines up.
-        val jarIssuer =
-            clientId?.let { cid ->
-                val prefixVal = cid.substringBefore(':', missingDelimiterValue = "")
-                if (ClientIdScheme.entries.any { it.prefix == prefixVal }) {
-                    cid.substringAfter(':')
-                } else {
-                    cid
-                }
-            }
+        // RFC 9101 binds `iss` to the complete OAuth client identifier. OID4VP 1.0 also
+        // requires outer and signed client_id values to match, including the identifier prefix.
+        val jarIssuer = oid4vpJarIssuer(clientId)
         val mergeArgs =
             MergeRequestObjectArgs(
                 requestObjectJwt = requestObjectJwt,
                 queryParameters = queryParameters,
                 issuer = jarIssuer,
-                audience = walletConfig?.audience, // Wallet identifier from config
+                audience = walletConfig?.audience,
                 verificationKey = verificationKey,
                 decryptionKey = walletConfig?.decryptionKey, // Wallet decryption key from config
             )
@@ -387,11 +401,30 @@ class ParseAuthorizationRequestCommandImpl(
         }
     }
 
+    /**
+     * Decode an unverified Request Object payload solely for verification-key selection hints.
+     * No authorization parameter returned by this helper is trusted: [JarService] verifies the
+     * JWS before its payload is merged into the request.
+     */
+    private fun extractJwtPayload(jwt: String): JsonObject {
+        val parts = jwt.split(".")
+        if (parts.size != 3) {
+            return JsonObject(emptyMap())
+        }
+        return try {
+            val payloadJson = parts[1].decodeFromBase64Url().decodeToString()
+            Json.parseToJsonElement(payloadJson).jsonObject
+        } catch (expected: Exception) {
+            log.debug("Failed to decode JWT payload hint: ${expected.message}")
+            JsonObject(emptyMap())
+        }
+    }
+
     private suspend fun resolveClientMetadataFromQuery(queryParameters: io.ktor.http.Parameters): IdkResult<ClientMetadata?, IdkError> {
         val embedded = queryParameters["client_metadata"]?.trim()
         if (!embedded.isNullOrBlank()) {
             return try {
-                Ok(Json.decodeFromString(ClientMetadata.serializer(), embedded))
+                Ok(Oid4vpJson.wire.decodeFromString(ClientMetadata.serializer(), embedded))
             } catch (expected: Exception) {
                 Err(
                     IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -421,7 +454,7 @@ class ParseAuthorizationRequestCommandImpl(
                 return Err(IdkError.UNKNOWN_ERROR(message = "Failed to fetch client_metadata from $uri: HTTP ${response.status.value}"))
             }
             val responseBody = response.body<String>()
-            Ok(Json.decodeFromString(ClientMetadata.serializer(), responseBody))
+            Ok(Oid4vpJson.wire.decodeFromString(ClientMetadata.serializer(), responseBody))
         } catch (expected: Exception) {
             Err(IdkError.UNKNOWN_ERROR(message = "Failed to fetch client_metadata from $uri: ${expected.message}"))
         }
@@ -429,15 +462,16 @@ class ParseAuthorizationRequestCommandImpl(
 
     private suspend fun resolveJarVerificationKey(
         clientId: String?,
+        clientIdSchemeHint: String?,
         clientMetadata: ClientMetadata?,
         requestedKid: String?,
         x5cHeader: List<String>?,
     ): IdkResult<KeyInfoType<*>, IdkError> {
         // Per OID4VP 1.0 §5.9.3/§5.10: for prefixed client_ids, the JAR verification key is
         // derived from the client identifier scheme and JOSE header (not client_metadata).
-        val prefix = clientId?.substringBefore(':', missingDelimiterValue = "")?.takeIf { it.isNotBlank() }
-        when (prefix) {
-            ClientIdScheme.DECENTRALIZED_IDENTIFIER.prefix -> {
+        val effectiveScheme = jarVerificationScheme(clientId, clientIdSchemeHint)
+        when (effectiveScheme) {
+            ClientIdScheme.DECENTRALIZED_IDENTIFIER -> {
                 val vmId =
                     requestedKid?.takeIf { it.isNotBlank() } ?: return Err(
                         IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID-bound JAR missing kid header"),
@@ -456,9 +490,9 @@ class ParseAuthorizationRequestCommandImpl(
                 return Ok(resolved.keyInfo)
             }
 
-            ClientIdScheme.X509_SAN_DNS.prefix,
-            ClientIdScheme.X509_SAN_URI.prefix,
-            ClientIdScheme.X509_HASH.prefix,
+            ClientIdScheme.X509_SAN_DNS,
+            ClientIdScheme.X509_SAN_URI,
+            ClientIdScheme.X509_HASH,
             -> {
                 val chain =
                     x5cHeader?.takeIf { it.isNotEmpty() } ?: return Err(
@@ -472,6 +506,8 @@ class ParseAuthorizationRequestCommandImpl(
                         }
                 return Ok(resolved.keyInfo)
             }
+
+            else -> Unit
         }
 
         if (clientMetadata == null) {
@@ -513,4 +549,23 @@ class ParseAuthorizationRequestCommandImpl(
 
         return Ok(resolved.keyInfo)
     }
+}
+
+/** RFC 9101 issuer binding uses the complete OAuth client identifier, prefix included. */
+internal fun oid4vpJarIssuer(clientId: String?): String? = clientId
+
+/**
+ * Resolve only the identity method needed to verify a JAR. A signed payload declaration can
+ * select the verification method for ISO 18013-7 requests with a bare client_id, but becomes
+ * trusted request data only after the JAR signature has been verified.
+ */
+internal fun jarVerificationScheme(
+    clientId: String?,
+    clientIdSchemeHint: String?,
+): ClientIdScheme? {
+    val prefixedScheme =
+        clientId
+            ?.let(ClientIdScheme::fromClientId)
+            ?.takeUnless { it == ClientIdScheme.PRE_REGISTERED }
+    return prefixedScheme ?: ClientIdScheme.fromPrefix(clientIdSchemeHint)
 }

@@ -42,7 +42,7 @@ interface ResumeWalletInteractionCommand : ServiceCommand<ResumeWalletInteractio
 
 @Serializable
 data class ResumeWalletInteractionArgs(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
 )
 
@@ -57,7 +57,7 @@ interface SubmitWalletInteractionActionCommand : ServiceCommand<SubmitWalletInte
 
 @Serializable
 data class SubmitWalletInteractionActionArgs(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
     val action: WalletInteractionAction,
 )
@@ -73,7 +73,7 @@ interface CancelWalletInteractionCommand : ServiceCommand<CancelWalletInteractio
 
 @Serializable
 data class CancelWalletInteractionArgs(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
 )
 
@@ -88,7 +88,7 @@ interface GetWalletInteractionStateCommand : ServiceCommand<GetWalletInteraction
 
 @Serializable
 data class GetWalletInteractionStateArgs(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
 )
 
@@ -103,7 +103,7 @@ interface GetWalletInteractionEventsCommand : ServiceCommand<GetWalletInteractio
 
 @Serializable
 data class GetWalletInteractionEventsArgs(
-    val walletInstanceId: String,
+    val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
     val afterRevision: Long? = null,
 )

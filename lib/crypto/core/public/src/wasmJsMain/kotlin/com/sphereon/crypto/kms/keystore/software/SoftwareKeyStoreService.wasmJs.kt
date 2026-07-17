@@ -648,10 +648,7 @@ actual class SoftwareKeyStoreService actual constructor(
             }
         } catch (expected: Throwable) {
             consoleError("Failed to load keystore: ${expected.message}".toJsString())
-            if (config.persist) {
-                keyStoreData = KeyStoreData()
-                persist()
-            }
+            throw PKIException("Failed to load encrypted keystore without modifying it: ${expected.message}")
         }
 
         isInitialized = true
@@ -753,13 +750,17 @@ actual class SoftwareKeyStoreService actual constructor(
             when {
                 !certChain.isNullOrEmpty() -> certChain.map { certificateJwkEncode(it.der) }.toTypedArray()
                 !keyInfo.x5c.isNullOrEmpty() -> keyInfo.x5c!!
-                else -> throw IllegalArgumentException("Either certChain or keyInfo.x5c must be present and contain at least one certificate")
+                // The encrypted WasmJS keystore persists JWK key material directly. A certificate
+                // chain is optional metadata, not a prerequisite for an asymmetric holder key.
+                // OID4VCI mdoc device keys are intentionally holder-generated bare EC keys.
+                else -> emptyArray()
             }
+        val jwk = keyInfo.key as? Jwk ?: throw PKIException("Encrypted file keystore requires JWK key material")
 
         val entry =
             KeyStoreEntry(
                 type = "key",
-                jwk = json.encodeToString(keyInfo.key),
+                jwk = json.encodeToString(Jwk.serializer(), jwk),
                 certChain = certificates.toList(),
                 keyType = keyInfo.keyType?.let { it::class.simpleName },
                 signatureAlgorithm = keyInfo.signatureAlgorithm?.jose?.value,

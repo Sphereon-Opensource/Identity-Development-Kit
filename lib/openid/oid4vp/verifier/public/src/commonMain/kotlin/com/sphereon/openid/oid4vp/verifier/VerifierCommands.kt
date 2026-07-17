@@ -161,7 +161,7 @@ interface VerifyHolderBindingCommandService {
  * - Used as deep link
  * - Sent via redirect
  *
- * Supports schemes: openid4vp://, openid://, haip://
+ * Supports schemes: openid4vp://, openid://, haip-vp://
  *
  * @see BuildAuthorizationRequestUriArgs
  */

@@ -168,6 +168,10 @@ data class ValidatedTokenContext(
      * when production Wallet Instance Attestation enforcement was applied at PAR/token time.
      */
     val walletInstanceAttestation: ValidatedWalletInstanceAttestationEvidence? = null,
+    /** AS-authenticated token identifier (`jti`) when supplied, bounded and non-blank. */
+    val tokenId: String? = null,
+    /** Access-token expiration from introspection, in epoch seconds when supplied by the AS. */
+    val expiresAtEpochSeconds: Long? = null,
 )
 
 @JsExportCompat

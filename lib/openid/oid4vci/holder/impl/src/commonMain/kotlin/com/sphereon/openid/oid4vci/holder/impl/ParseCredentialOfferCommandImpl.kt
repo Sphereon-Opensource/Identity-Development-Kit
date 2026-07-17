@@ -37,6 +37,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 
 @Inject
@@ -69,19 +70,37 @@ class ParseCredentialOfferCommandImpl(
                     raw
                 }
 
-                raw.startsWith("openid-credential-offer://") || raw.startsWith("https://") || raw.startsWith("http://") -> {
+                raw.startsWith("openid-credential-offer://") || raw.startsWith("https://") -> {
                     val queryString =
                         extractQueryString(raw)
                             ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "No query string found in URI: $raw"))
 
+                    val parameterNames = parseQueryParameterNames(queryString)
+                    if (parameterNames.size != 1 || parameterNames.single() !in CREDENTIAL_OFFER_PARAMETER_NAMES) {
+                        return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "Credential Offer Endpoint URI must contain exactly one query parameter: credential_offer or credential_offer_uri",
+                            ),
+                        )
+                    }
                     val params = parseQueryParams(queryString)
+                    val parameterName = parameterNames.single()
+                    val parameterValue = params[parameterName].orEmpty()
+                    if (parameterValue.isBlank()) {
+                        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "$parameterName query parameter is empty"))
+                    }
 
-                    when {
-                        params.containsKey("credential_offer_uri") -> {
-                            // OID4VCI 1.1 Section 4: fetch the offer by reference
-                            val offerUri =
-                                params["credential_offer_uri"]
-                                    ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "credential_offer_uri query parameter is empty"))
+                    when (parameterName) {
+                        "credential_offer_uri" -> {
+                            // OID4VCI 1.0 Final Section 4.1.3: fetch the offer by HTTPS reference.
+                            val offerUri = parameterValue
+                            if (!offerUri.startsWith("https://", ignoreCase = true)) {
+                                return Err(
+                                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                        message = "credential_offer_uri must use the https scheme",
+                                    ),
+                                )
+                            }
                             fetchCredentialOfferByReference(offerUri)
                                 ?: return Err(
                                     IdkError.fromString(
@@ -91,14 +110,8 @@ class ParseCredentialOfferCommandImpl(
                                 )
                         }
 
-                        params.containsKey("credential_offer") -> {
-                            params["credential_offer"]
-                                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "credential_offer query parameter is empty"))
-                        }
-
-                        else -> {
-                            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "URI must contain either credential_offer or credential_offer_uri query parameter"))
-                        }
+                        "credential_offer" -> parameterValue
+                        else -> error("Credential Offer parameter name was validated before dispatch")
                     }
                 }
 
@@ -128,7 +141,7 @@ class ParseCredentialOfferCommandImpl(
     /**
      * Fetches a credential offer JSON string from a by-reference URI.
      *
-     * Per OID4VCI 1.1 Section 4.1: HTTP GET the credential_offer_uri and return the response body.
+     * Per OID4VCI 1.0 Final Section 4.1.3: HTTP GET the credential_offer_uri and return the JSON response body.
      * Returns null on network or HTTP error (caller converts to Err).
      */
     private suspend fun fetchCredentialOfferByReference(offerUri: String): String? {
@@ -143,6 +156,14 @@ class ParseCredentialOfferCommandImpl(
             val response = httpClient.get(offerUri)
             if (!response.status.isSuccess()) {
                 log.warn("credential_offer_uri fetch returned HTTP ${response.status.value}: $offerUri")
+                return null
+            }
+            val responseContentType = response.contentType()
+            if (responseContentType == null ||
+                responseContentType.contentType != "application" ||
+                responseContentType.contentSubtype != "json"
+            ) {
+                log.warn("credential_offer_uri fetch returned non-JSON Content-Type: $responseContentType")
                 return null
             }
             response.bodyAsText()
@@ -185,5 +206,15 @@ class ParseCredentialOfferCommandImpl(
             }
         }
         return result
+    }
+
+    private fun parseQueryParameterNames(queryString: String): List<String> =
+        queryString
+            .split('&')
+            .filter { it.isNotBlank() }
+            .map { pair -> pair.substringBefore('=').percentDecode(plusAsSpace = true) }
+
+    private companion object {
+        val CREDENTIAL_OFFER_PARAMETER_NAMES = setOf("credential_offer", "credential_offer_uri")
     }
 }

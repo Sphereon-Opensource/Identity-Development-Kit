@@ -29,6 +29,12 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
+/**
+ * Symbolic Request Object audience required by OpenID4VP 1.0 Final section 5.8
+ * when the Verifier uses static discovery metadata.
+ */
+const val OID4VP_STATIC_DISCOVERY_REQUEST_OBJECT_AUDIENCE: String = "https://self-issued.me/v2"
+
 // ============================================================================
 // Command Interfaces
 // ============================================================================
@@ -36,7 +42,7 @@ import kotlin.native.ObjCName
 /**
  * Arguments for parsing an OpenID4VP authorization request
  *
- * @property requestUri The authorization request URI (can be openid4vp://, openid://, or haip://)
+ * @property requestUri The authorization request URI (for example openid4vp:// or HAIP 1.0 Final's haip-vp://)
  * @property walletConfig Optional wallet configuration for JWT validation
  */
 @OptIn(ExperimentalObjCName::class)
@@ -51,10 +57,11 @@ data class ParseAuthorizationRequestArgs(
  * Wallet configuration for request object validation
  *
  * Per OpenID4VP 1.0 Final and RFC 9101:
- * - audience: The wallet's identifier (used for JWT `aud` claim validation)
+ * - audience: The expected Request Object JWT `aud` claim. For static discovery this is
+ *   [OID4VP_STATIC_DISCOVERY_REQUEST_OBJECT_AUDIENCE]; dynamic discovery uses the Verifier `iss`.
  * - decryptionKey: Optional key for decrypting encrypted request objects (JWE)
  *
- * @property audience The wallet's identifier (e.g., wallet endpoint URL or DID)
+ * @property audience Exact audience expected in a signed Request Object
  * @property decryptionKey Optional private key for decrypting encrypted request objects
  */
 @OptIn(ExperimentalObjCName::class)
@@ -212,5 +219,6 @@ interface SubmitAuthorizationResponseCommandService {
         resolvedRequest: ResolvedOid4vpRequest,
         response: AuthorizationResponse,
         responseMode: ResponseMode? = null,
+        jarmOptions: JarmOptions? = null,
     ): IdkResult<SubmissionResult, IdkError>
 }

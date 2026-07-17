@@ -25,6 +25,7 @@ import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreFactory
 import com.sphereon.data.store.kv.KvStoreScopeBinding
 import io.github.irgaly.kottage.Kottage
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * Creates Kottage-backed [KvStore] instances from a provided [Kottage] database handle.
@@ -38,6 +39,9 @@ class KottageKvStoreFactory(
     private val storageNamePrefix: String = "idk-kv",
 ) : KvStoreFactory {
     override val backendId: String = KvStoreBackends.KOTTAGE
+
+    /** Serializes index/value mutations across every store view created by this app instance. */
+    private val mutationMutex = Mutex()
 
     override fun create(
         config: KvStoreConfigBase,
@@ -95,7 +99,7 @@ class KottageKvStoreFactory(
 
         val storageName = storageNameFor(partitionKey)
         val storage = kottage.storage(storageName)
-        return KottageKvStore(config = config, storage = storage)
+        return KottageKvStore(config = config, storage = storage, mutationMutex = mutationMutex)
     }
 
     private fun storageNameFor(partitionKey: KvPartitionKey): String {

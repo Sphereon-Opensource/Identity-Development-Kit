@@ -71,7 +71,7 @@ class WalletStoreIso18013DocumentProviderTest {
             val provider =
                 WalletStoreIso18013DocumentProvider(
                     credentialStore = store,
-                    walletInstanceId = WALLET_INSTANCE_ID,
+                    walletUnitId = WALLET_UNIT_ID,
                     issuerSignedCborCodec = codec,
                 )
 
@@ -91,8 +91,8 @@ class WalletStoreIso18013DocumentProviderTest {
             assertEquals("holder-mdl-key", document.keyAlias)
             assertEquals(
                 listOf(
-                    "find:$WALLET_INSTANCE_ID:$MDL_DOCTYPE",
-                    "get:$WALLET_INSTANCE_ID:mdl-record",
+                    "find:$WALLET_UNIT_ID:$MDL_DOCTYPE",
+                    "get:$WALLET_UNIT_ID:mdl-record",
                 ),
                 store.calls,
             )
@@ -114,7 +114,7 @@ class WalletStoreIso18013DocumentProviderTest {
             val provider =
                 WalletStoreIso18013DocumentProvider(
                     credentialStore = store,
-                    walletInstanceId = WALLET_INSTANCE_ID,
+                    walletUnitId = WALLET_UNIT_ID,
                     issuerSignedCborCodec = codec,
                 )
 
@@ -122,7 +122,7 @@ class WalletStoreIso18013DocumentProviderTest {
 
             assertEquals(1, documents.size)
             assertEquals(DocType(MDL_DOCTYPE), documents.single().document.docType)
-            assertEquals(listOf("list:$WALLET_INSTANCE_ID", "get:$WALLET_INSTANCE_ID:mdl-record"), store.calls)
+            assertEquals(listOf("list:$WALLET_UNIT_ID", "get:$WALLET_UNIT_ID:mdl-record"), store.calls)
         }
 
     private class RecordingWalletCredentialStore(
@@ -134,63 +134,63 @@ class WalletStoreIso18013DocumentProviderTest {
         private val records = initialRecords.associateBy { it.id }.toMutableMap()
 
         override suspend fun putCredential(
-            walletInstanceId: String,
+            walletUnitId: String,
             record: CredentialRecord,
         ): IdkResult<CredentialRecord, IdkError> {
-            calls += "put:$walletInstanceId:${record.id}"
+            calls += "put:$walletUnitId:${record.id}"
             records[record.id] = record
             return Ok(record)
         }
 
         override suspend fun getCredential(
-            walletInstanceId: String,
+            walletUnitId: String,
             credentialRecordId: String,
         ): IdkResult<CredentialRecord?, IdkError> {
-            calls += "get:$walletInstanceId:$credentialRecordId"
-            return Ok(records[credentialRecordId]?.takeIf { it.walletInstanceId == walletInstanceId })
+            calls += "get:$walletUnitId:$credentialRecordId"
+            return Ok(records[credentialRecordId]?.takeIf { it.walletUnitId == walletUnitId })
         }
 
         override suspend fun getMetadata(
-            walletInstanceId: String,
+            walletUnitId: String,
             credentialRecordId: String,
         ): IdkResult<CredentialMetadata?, IdkError> {
-            calls += "metadata:$walletInstanceId:$credentialRecordId"
-            return Ok(records[credentialRecordId]?.takeIf { it.walletInstanceId == walletInstanceId }?.metadata(NOW))
+            calls += "metadata:$walletUnitId:$credentialRecordId"
+            return Ok(records[credentialRecordId]?.takeIf { it.walletUnitId == walletUnitId }?.metadata(NOW))
         }
 
         override suspend fun listMetadata(
-            walletInstanceId: String,
+            walletUnitId: String,
             filter: CredentialMetadataFilter,
         ): IdkResult<List<CredentialMetadata>, IdkError> {
-            calls += "list:$walletInstanceId"
-            return Ok(metadata(walletInstanceId).filter { it.matches(filter) })
+            calls += "list:$walletUnitId"
+            return Ok(metadata(walletUnitId).filter { it.matches(filter) })
         }
 
         override suspend fun findByCredentialTypeRef(
-            walletInstanceId: String,
+            walletUnitId: String,
             ref: CredentialTypeRef,
         ): IdkResult<List<CredentialMetadata>, IdkError> {
-            calls += "find:$walletInstanceId:${ref.value}"
-            return Ok(metadata(walletInstanceId).filter { it.hasTypeRef(ref) })
+            calls += "find:$walletUnitId:${ref.value}"
+            return Ok(metadata(walletUnitId).filter { it.hasTypeRef(ref) })
         }
 
         override suspend fun deleteCredential(
-            walletInstanceId: String,
+            walletUnitId: String,
             credentialRecordId: String,
         ): IdkResult<Boolean, IdkError> {
-            calls += "delete:$walletInstanceId:$credentialRecordId"
+            calls += "delete:$walletUnitId:$credentialRecordId"
             return Ok(records.remove(credentialRecordId) != null)
         }
 
-        private fun metadata(walletInstanceId: String): List<CredentialMetadata> =
+        private fun metadata(walletUnitId: String): List<CredentialMetadata> =
             records
                 .values
-                .filter { it.walletInstanceId == walletInstanceId }
+                .filter { it.walletUnitId == walletUnitId }
                 .map { it.metadata(NOW) }
     }
 
     private companion object {
-        private const val WALLET_INSTANCE_ID = "wallet-iso18013-provider"
+        private const val WALLET_UNIT_ID = "wallet-iso18013-provider"
         private const val MDL_DOCTYPE = "org.iso.18013.5.1.mDL"
         private const val PID_DOCTYPE = "eu.europa.ec.eudi.pid.1"
         private val NOW = Instant.fromEpochSeconds(1_800_000_000)
@@ -211,7 +211,7 @@ class WalletStoreIso18013DocumentProviderTest {
                 )
             return CredentialRecord(
                 id = id,
-                walletInstanceId = WALLET_INSTANCE_ID,
+                walletUnitId = WALLET_UNIT_ID,
                 issuerRef = IdentifierRef(type = IdentifierType("https"), value = "https://issuer.example"),
                 format = CredentialFormat.MSO_MDOC,
                 credentialTypeRefs = setOf(ref),
@@ -219,7 +219,7 @@ class WalletStoreIso18013DocumentProviderTest {
                     listOf(
                         CredentialInstance(
                             id = "$id-instance",
-                            walletInstanceId = WALLET_INSTANCE_ID,
+                            walletUnitId = WALLET_UNIT_ID,
                             credentialRecordId = id,
                             format = CredentialFormat.MSO_MDOC,
                             raw = raw,

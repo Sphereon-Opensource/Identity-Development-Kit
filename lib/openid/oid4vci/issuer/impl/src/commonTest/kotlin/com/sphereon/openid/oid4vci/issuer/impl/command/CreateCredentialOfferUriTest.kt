@@ -36,6 +36,7 @@ class CreateCredentialOfferUriTest {
             val result =
                 command.execute(
                     CreateCredentialOfferArgs(
+                        instanceId = "issuer-instance-protocol-base-path",
                         issuerId = "https://issuer.example.com",
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -70,6 +71,7 @@ class CreateCredentialOfferUriTest {
             val result =
                 command.execute(
                     CreateCredentialOfferArgs(
+                        instanceId = "issuer-instance-existing-base-path",
                         issuerId = "https://issuer.example.com/oid4vci",
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,

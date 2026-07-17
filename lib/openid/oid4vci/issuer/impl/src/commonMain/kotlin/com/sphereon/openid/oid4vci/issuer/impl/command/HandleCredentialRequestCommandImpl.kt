@@ -23,8 +23,6 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.events.EventCategories
-import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.events.EventTypes
 import com.sphereon.core.api.service.ServiceCommandRegistry
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
@@ -50,6 +48,9 @@ import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenArgs
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.Oid4vciIssuerSessionEventTypes
+import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SdPolicy
@@ -65,11 +66,14 @@ import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
+import com.sphereon.openid.oid4vci.issuer.store.CredentialRequestIdentityStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionStatus
+import com.sphereon.openid.oid4vci.issuer.store.NotificationStateStore
+import com.sphereon.openid.oid4vci.issuer.store.Oid4vciSessionIdentity
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -115,7 +119,9 @@ class HandleCredentialRequestCommandImpl(
     private val formatHandlers: Set<CredentialFormatHandler>,
     private val attributeContributor: CredentialAttributeContributor,
     private val sessionStore: CredentialIssuanceSessionStore,
+    private val credentialRequestIdentityStore: CredentialRequestIdentityStore,
     private val deferredStore: DeferredCredentialStore,
+    private val notificationStore: NotificationStateStore,
     private val encryptor: CredentialResponseEncryptor,
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
     /**
@@ -126,6 +132,7 @@ class HandleCredentialRequestCommandImpl(
      */
     private val credentialDesignService: CredentialDesignService? = null,
     private val eventService: SessionEventService? = null,
+    private val instanceIdProvider: Oid4vciIssuerInstanceIdProvider,
     /**
      * Optional service-command registry for post-issuance hook dispatch. When
      * null (pure-IDK deployment that didn't wire the command-framework
@@ -198,6 +205,11 @@ class HandleCredentialRequestCommandImpl(
      * single HTTP request is processed sequentially within its session.
      */
     private var pendingHookContext: HookContext? = null
+    private var pendingHistorySession: IssuanceSession? = null
+    private var pendingHistoryProtocolSessionId: String? = null
+    private var pendingHistoryInstanceId: String? = null
+    private var pendingHistoryOldState: String? = null
+    private var pendingHistoryCredentialConfigurationId: String? = null
 
     private data class HookContext(
         val boundUsageToken: String?,
@@ -213,8 +225,13 @@ class HandleCredentialRequestCommandImpl(
         applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs,
     ): IdkResult<CredentialResponse, IdkError> {
         pendingHookContext = null
+        pendingHistorySession = null
+        pendingHistoryProtocolSessionId = null
+        pendingHistoryInstanceId = null
+        pendingHistoryOldState = null
+        pendingHistoryCredentialConfigurationId = null
         val result = doExecuteInternal(args, applyDuring)
-        emitOutcome(args, result)
+        emitOutcome(result)
         // OID4VCI 1.0 §8.3.4: a 202 deferral envelope (transactionId set, credentials null) is NOT
         // an issuance — no credential exists yet, so notification/webhook hooks must NOT fire. The
         // eventual issuance fires post-issuance hooks from the /deferred_credential poll command
@@ -224,6 +241,11 @@ class HandleCredentialRequestCommandImpl(
             dispatchPostIssuanceHooks(args, result.value)
         }
         pendingHookContext = null
+        pendingHistorySession = null
+        pendingHistoryProtocolSessionId = null
+        pendingHistoryInstanceId = null
+        pendingHistoryOldState = null
+        pendingHistoryCredentialConfigurationId = null
         return result
     }
 
@@ -276,10 +298,8 @@ class HandleCredentialRequestCommandImpl(
     }
 
     private suspend fun emitOutcome(
-        args: HandleCredentialRequestArgs,
         result: IdkResult<CredentialResponse, IdkError>,
     ) {
-        val request = args.credentialRequest
         // OID4VCI 1.0 §8.3.4: an Ok with `transaction_id` and no `credentials` is the deferred
         // envelope, not a real issuance. Map it to OID4VCI_CREDENTIAL_DEFERRED so dashboards and
         // SIEM rules that filter on OID4VCI_CREDENTIAL_ISSUED don't count deferrals as issuances.
@@ -292,26 +312,37 @@ class HandleCredentialRequestCommandImpl(
                 result.isOk -> EventTypes.OID4VCI_CREDENTIAL_ISSUED
                 else -> EventTypes.OID4VCI_CREDENTIAL_FAILED
             }
-        val category = if (result.isOk) EventCategories.OPERATION else EventCategories.ERROR
-        val payload =
-            buildJsonObject {
-                request.credentialConfigurationId?.let { put("credentialConfigurationId", it) }
-                request.credentialIdentifier?.let { put("credentialIdentifier", it) }
-                request.format?.let { put("format", it.toString()) }
-                if (deferred) {
-                    result.value.transactionId?.let { put("transactionId", it) }
-                }
-            }
         val es = eventService ?: return
-        es.emit(
-            es
-                .eventBuilder()
-                .type(type)
-                .subsystem(EventSubsystems.OID4VCI)
-                .category(category)
-                .origin(HandleCredentialRequestCommand.COMMAND_ID)
-                .payload(payload)
-                .build(),
+        val session = pendingHistorySession
+        val protocolSessionId =
+            pendingHistoryProtocolSessionId
+                ?: run {
+                    check(!result.isOk) { "Successful credential request has no protocolSessionId for history" }
+                    return
+                }
+        val instanceId =
+            pendingHistoryInstanceId
+                ?: run {
+                    check(!result.isOk) { "Successful credential request has no instanceId for history" }
+                    return
+                }
+        val newState =
+            when {
+                deferred -> IssuanceSessionStatus.DEFERRED.name
+                result.isOk -> IssuanceSessionStatus.CREDENTIAL_ISSUED.name
+                else -> IssuanceSessionStatus.FAILED.name
+            }
+        es.emitOid4vciSessionHistoryEvent(
+            type = type,
+            origin = HandleCredentialRequestCommand.COMMAND_ID,
+            instanceId = instanceId,
+            protocolSessionId = protocolSessionId,
+            correlationId = session?.lifecycleCorrelationId,
+            oldState = pendingHistoryOldState,
+            newState = newState,
+            stage = "CREDENTIAL_REQUEST",
+            outcome = if (result.isOk) if (deferred) "DEFERRED" else "SUCCEEDED" else "FAILED",
+            credentialConfigurationId = pendingHistoryCredentialConfigurationId,
         )
     }
 
@@ -350,36 +381,128 @@ class HandleCredentialRequestCommandImpl(
         // request-supplied credential_identifier is by definition unknown — reject with the
         // dedicated `unknown_credential_identifier` error rather than letting the request fall
         // through to a generic configuration-resolution error.
-        val requestedIdentifier = request.credentialIdentifier
-        if (requestedIdentifier != null) {
-            val tokenIdentifiers = tokenContext.credentialIdentifiers
-            if (tokenIdentifiers.isNullOrEmpty() || requestedIdentifier !in tokenIdentifiers) {
-                return Err(
-                    IdkError.fromString(
-                        code = "unknown_credential_identifier",
-                        message = "Unknown credential_identifier: '$requestedIdentifier'",
-                    ),
-                )
-            }
-        }
+        val correlation =
+            resolveCredentialRequestCorrelation(
+                requestedIdentifier = request.credentialIdentifier,
+                tokenIdentifiers = tokenContext.credentialIdentifiers,
+                tokenId = tokenContext.tokenId,
+                sessionStore = sessionStore,
+            ).getOrElse { return Err(it) }
+        val session = correlation.issuanceSession
 
         // 3. Resolve credential configuration
         val configId =
             request.credentialConfigurationId
                 ?: tokenContext.credentialConfigurationIds.firstOrNull()
                 ?: return Err(IdkError.fromString(code = "unknown_credential_configuration", message = "Cannot resolve credential configuration"))
+        pendingHistoryCredentialConfigurationId = configId
 
-        // 4. Look up issuance session (pre-seeded attributes)
-        val sessionLookupId =
-            request.credentialIdentifier
-                ?: tokenContext.credentialIdentifiers?.firstOrNull()
-        val session =
-            sessionLookupId?.let { id ->
-                sessionStore.get(id).getOrElse { null }
-            } ?: sessionStore.findByCredentialConfigurationId(configId).getOrElse { null }
+        // 4. Offer-linked flows resolve the exact issuance session above. Wallet-initiated
+        // configuration-id flows deliberately remain sessionless and use token jti correlation.
+        if (session != null && configId !in session.credentialConfigurationIds) {
+            return Err(
+                IdkError.fromString(
+                    code = "unknown_credential_configuration",
+                    message = "Credential configuration is not authorized for the correlated issuance session",
+                ),
+            )
+        }
+        val protocolSessionId =
+            try {
+                Oid4vciSessionIdentity.normalize("protocolSessionId", correlation.protocolSessionId)
+            } catch (e: IllegalArgumentException) {
+                return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid protocolSessionId"))
+            }
+        val instanceId =
+            if (session != null) {
+                session.instanceId
+            } else {
+                val routedInstanceId =
+                    try {
+                        Oid4vciSessionIdentity.normalize(
+                            "instanceId",
+                            instanceIdProvider.currentInstanceId()
+                                ?: return Err(IdkError.INVALID_STATE(message = "instanceId must be resolved before credential processing")),
+                        )
+                    } catch (e: IllegalArgumentException) {
+                        return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid issuer instanceId"))
+                    }
+                val nowEpochSeconds = clock.now().epochSeconds
+                val ttlSeconds =
+                    ((tokenContext.expiresAtEpochSeconds ?: (nowEpochSeconds + WALLET_INITIATED_SESSION_TTL_SECONDS)) - nowEpochSeconds)
+                        .coerceAtLeast(1L)
+                credentialRequestIdentityStore
+                    .resolveOrCreate(
+                        protocolSessionId = protocolSessionId,
+                        instanceId = routedInstanceId,
+                        ttlSeconds = ttlSeconds,
+                    ).getOrElse { return Err(it) }
+                    .instanceId
+            }
+        pendingHistoryProtocolSessionId = protocolSessionId
+        pendingHistoryInstanceId = instanceId
 
-        if (session != null && session.status.ordinal < IssuanceSessionStatus.CREDENTIAL_REQUESTED.ordinal) {
-            sessionStore.update(session.copy(status = IssuanceSessionStatus.CREDENTIAL_REQUESTED))
+        if (session != null) {
+            val es = eventService
+            es?.emitOid4vciSessionHistoryEvent(
+                type = Oid4vciIssuerSessionEventTypes.TOKEN_VALIDATED,
+                origin = HandleCredentialRequestCommand.COMMAND_ID,
+                instanceId = instanceId,
+                protocolSessionId = session.sessionId,
+                correlationId = session.lifecycleCorrelationId,
+                oldState = session.status.name,
+                newState = session.status.name,
+                stage = "TOKEN",
+                outcome = "SUCCEEDED",
+                credentialConfigurationId = configId,
+            )
+            val requestSession =
+                if (session.status.ordinal < IssuanceSessionStatus.CREDENTIAL_REQUESTED.ordinal) {
+                    session.copy(status = IssuanceSessionStatus.CREDENTIAL_REQUESTED).also {
+                        sessionStore.update(it).getOrElse { error -> return Err(error) }
+                    }
+                } else {
+                    session
+            }
+            pendingHistorySession = requestSession
+            pendingHistoryOldState = requestSession.status.name
+            es?.emitOid4vciSessionHistoryEvent(
+                type = Oid4vciIssuerSessionEventTypes.CREDENTIAL_REQUESTED,
+                origin = HandleCredentialRequestCommand.COMMAND_ID,
+                instanceId = instanceId,
+                protocolSessionId = session.sessionId,
+                correlationId = session.lifecycleCorrelationId,
+                oldState = session.status.name,
+                newState = requestSession.status.name,
+                stage = "CREDENTIAL_REQUEST",
+                outcome = "ACCEPTED",
+                credentialConfigurationId = configId,
+            )
+        } else {
+            val es = eventService
+            es?.emitOid4vciSessionHistoryEvent(
+                type = Oid4vciIssuerSessionEventTypes.TOKEN_VALIDATED,
+                origin = HandleCredentialRequestCommand.COMMAND_ID,
+                instanceId = instanceId,
+                protocolSessionId = protocolSessionId,
+                oldState = null,
+                newState = "TOKEN_VALIDATED",
+                stage = "TOKEN",
+                outcome = "SUCCEEDED",
+                credentialConfigurationId = configId,
+            )
+            es?.emitOid4vciSessionHistoryEvent(
+                type = Oid4vciIssuerSessionEventTypes.CREDENTIAL_REQUESTED,
+                origin = HandleCredentialRequestCommand.COMMAND_ID,
+                instanceId = instanceId,
+                protocolSessionId = protocolSessionId,
+                oldState = "TOKEN_VALIDATED",
+                newState = IssuanceSessionStatus.CREDENTIAL_REQUESTED.name,
+                stage = "CREDENTIAL_REQUEST",
+                outcome = "ACCEPTED",
+                credentialConfigurationId = configId,
+            )
+            pendingHistoryOldState = IssuanceSessionStatus.CREDENTIAL_REQUESTED.name
         }
 
         // Capture the session-side correlation fields for post-issuance hooks.
@@ -463,23 +586,14 @@ class HandleCredentialRequestCommandImpl(
                 // §F.1 alg-allowlist + §11.2.3 key-attestation policy both live on the
                 // proof_types_supported.<type> block — pass it whole rather than fanning fields out.
                 val proofTypeSupported = configuration.proofTypesSupported?.get(proofs.proofType)
-                val results =
-                    coroutineScope {
-                        proofs.proofValues
-                            .map { proofValue ->
-                                async {
-                                    verifyProof(
-                                        proofType = proofs.proofType,
-                                        proofValue = proofValue,
-                                        audience = expectedAudience,
-                                        expectedClientId = tokenContext.clientId.takeIf { it.isNotEmpty() },
-                                        credentialConfigId = configId,
-                                        proofTypeSupported = proofTypeSupported,
-                                    )
-                                }
-                            }.awaitAll()
-                    }
-                results.map { result -> result.getOrElse { return Err(it) } }
+                verifyCredentialRequestProofs(
+                    proofType = proofs.proofType,
+                    proofValues = proofs.proofValues,
+                    audience = expectedAudience,
+                    expectedClientId = tokenContext.clientId.takeIf { it.isNotEmpty() },
+                    credentialConfigId = configId,
+                    proofTypeSupported = proofTypeSupported,
+                ).getOrElse { return Err(it) }
             } else {
                 null
             }
@@ -707,9 +821,26 @@ class HandleCredentialRequestCommandImpl(
                 )
             }
 
+        // Register the exact protocol correlation before returning a response that exposes the
+        // notification identifier. Offer sessions use their own lifetime; sessionless flows use
+        // token expiry when available and otherwise retain the mapping for the established 24h
+        // notification-state window.
+        response.notificationId?.let { notificationId ->
+            val now = Clock.System.now()
+            val ttlSeconds =
+                session?.let { ((it.expiresAt - now.toEpochMilliseconds() + 999L) / 1000L).coerceAtLeast(1L) }
+                    ?: tokenContext.expiresAtEpochSeconds?.let { (it - now.epochSeconds).coerceAtLeast(1L) }
+                    ?: DEFAULT_NOTIFICATION_TTL_SECONDS
+            notificationStore
+                .registerNotification(notificationId, protocolSessionId, instanceId, ttlSeconds)
+                .getOrElse { return Err(it) }
+        }
+
         // 9. Update session status to issued
-        if (session != null) {
-            sessionStore.update(session.copy(status = IssuanceSessionStatus.CREDENTIAL_ISSUED))
+        session?.let {
+            sessionStore
+                .update(it.copy(status = IssuanceSessionStatus.CREDENTIAL_ISSUED))
+                .getOrElse { return Err(it) }
         }
 
         contributeOid4vciPhase(
@@ -732,6 +863,7 @@ class HandleCredentialRequestCommandImpl(
             .recordPhase(
                 Oid4vciPhaseLifecycleArgs(
                     correlationId = correlationId,
+                    protocolSessionId = session.sessionId,
                     phase = phase,
                     fields = fields,
                 ),
@@ -778,10 +910,10 @@ class HandleCredentialRequestCommandImpl(
         buildMap {
             put("oid4vci.credentialConfigurationId", JsonPrimitive(configId))
             credentialIdentifier?.let { put("oid4vci.credentialIdentifier", JsonPrimitive(it)) }
-            format?.let { put("oid4vci.credentialFormat", JsonPrimitive(it.toString())) }
+            format?.let { put("oid4vci.credentialFormat", JsonPrimitive(it)) }
             put("oid4vci.proofCount", JsonPrimitive(proofs.size))
             put("oid4vci.keyAttestationCount", JsonPrimitive(proofs.count { it.keyAttestation != null }))
-            put("oid4vci.holderBindingKeyPresent", JsonPrimitive(proofs.any { it.holderBindingKey != null }))
+            put("oid4vci.holderBindingKeyPresent", JsonPrimitive(proofs.isNotEmpty()))
         }
 
     private fun preIssuePhaseFields(
@@ -896,7 +1028,14 @@ class HandleCredentialRequestCommandImpl(
         val entry =
             DeferredCredentialEntry(
                 transactionId = transactionId,
-                issuanceSessionId = session?.sessionId ?: "",
+                issuanceSessionId =
+                    session?.sessionId
+                        ?: pendingHistoryProtocolSessionId
+                        ?: return Err(IdkError.INVALID_STATE(message = "protocolSessionId must be resolved before deferral")),
+                instanceId =
+                    session?.instanceId
+                        ?: pendingHistoryInstanceId
+                        ?: return Err(IdkError.INVALID_STATE(message = "instanceId must be resolved before deferral")),
                 credentialConfigurationId = configId,
                 status = DeferredCredentialStatus.PENDING,
                 retryAfterSeconds = 5,
@@ -999,22 +1138,29 @@ class HandleCredentialRequestCommandImpl(
      * [proofValue] is a [JsonElement] — for JWT/CWT/attestation this is a [JsonPrimitive] string,
      * for di_vp it is a [JsonObject].
      */
-    private suspend fun verifyProof(
+    private suspend fun verifyCredentialRequestProofs(
         proofType: String,
-        proofValue: JsonElement,
+        proofValues: List<JsonElement>,
         audience: String,
         expectedClientId: String?,
         credentialConfigId: String,
         proofTypeSupported: com.sphereon.openid.oid4vci.common.model.ProofTypeSupported? = null,
-    ): IdkResult<VerifiedProof, IdkError> {
-        val verifier =
-            proofVerifiers.firstOrNull { it.supportedProofType == proofType }
-                ?: return Err(IdkError.fromString(code = "UNSUPPORTED_PROOF_TYPE", message = "Proof type '$proofType' is not supported"))
-        return verifier.verify(proofValue, audience, expectedClientId, credentialConfigId, proofTypeSupported)
+    ): IdkResult<List<VerifiedProof>, IdkError> {
+        return CredentialRequestProofBatchVerifier(proofVerifiers, nonceManager)
+            .verify(
+                proofType = proofType,
+                proofValues = proofValues,
+                audience = audience,
+                expectedClientId = expectedClientId,
+                credentialConfigId = credentialConfigId,
+                proofTypeSupported = proofTypeSupported,
+            )
     }
 
     private companion object {
         const val INVALID_CREDENTIAL_REQUEST = "invalid_credential_request"
+        const val DEFAULT_NOTIFICATION_TTL_SECONDS = 24L * 60L * 60L
+        const val WALLET_INITIATED_SESSION_TTL_SECONDS = 24L * 60L * 60L
 
         // §6.5 wallet-auth invariant — additional-parameter keys returned on the 202 when a
         // deferral-scoped access token is minted as a fallback for refresh-token-disabled AS.
